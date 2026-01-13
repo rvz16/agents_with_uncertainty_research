@@ -31,11 +31,13 @@ from sage_agent import (
     ToolRegistryExecutor,
     ToolSchema,
     UNK,
+    create_sage_propagator,
 )
 from sage_agent.core.belief import BeliefState
-from sage_agent.core.constraints import SimpleConstraintExtractor
+from sage_agent.core.constraints import SimpleConstraintExtractor, LLMConstraintExtractor, HybridConstraintExtractor
 from sage_agent.core.evpi import compute_evpi
-from sage_agent.core.types import ToolExecutor
+from sage_agent.core.types import ToolExecutor, ConstraintExtractor
+from sage_agent.core.uncertainty_propagation import UncertaintyPropagator
 from examples.ollama_client import OllamaClient
 from examples.tts_llm_client import TTSLLMClient
 
@@ -53,7 +55,9 @@ class AgentState(TypedDict):
     domains: Dict[str, Dict[str, ParameterDomain]]
     steps: int
     attempts: int
-    uncertainty: float
+    uncertainty: float  # Structured uncertainty from belief state
+    llm_uncertainty: float  # LLM/TTS uncertainty from sampling
+    combined_uncertainty: float  # Weighted combination for decisions
     status: Literal["pending", "asking", "executed", "done", "escalated"]
     result: Optional[ToolCall]
     error: Optional[str]
@@ -67,7 +71,8 @@ class GraphDeps:
     question_asker: "QuestionAsker"
     tool_executor: ToolExecutor
     config: SageAgentConfig
-    constraint_extractor: SimpleConstraintExtractor
+    constraint_extractor: "ConstraintExtractor"  # Can be Simple, LLM, or Hybrid
+    uncertainty_propagator: Optional[UncertaintyPropagator] = None
 
 
 class QuestionAsker:
@@ -80,16 +85,27 @@ class InteractiveQuestionAsker(QuestionAsker):
         print(f"\nAgent question: {question.text}")
         return input("Your answer: ").strip()
 
-USE_TTS = False # should be True by default
+USE_TTS = True  # should be True if use uncertainty from llm-tts-service
 TTS_CONFIG = {
     "service_url": "http://localhost:8001/v1",
-    "model": "openai/gpt-4o-mini",
+    "model": "xiaomi/mimo-v2-flash:free",
     "tts_budget": 8,
 }
 
 CONFIG = {
+    # Base uncertainty threshold for execution decision
     "uncertainty_threshold": 0.3,
+    # Maximum clarification attempts before escalation
     "max_attempts": 3,
+    # Weight for combining structured and LLM uncertainty (0-1)
+    # combined = structured_weight * structured + (1 - structured_weight) * llm
+    "structured_uncertainty_weight": 0.7,
+    # LLM uncertainty modulation factor for candidate weights
+    # Higher values = stronger effect of LLM uncertainty on weights
+    "llm_uncertainty_modulation": 0.5,
+    # Adaptive threshold settings for critical operations
+    "critical_tool_patterns": ["delete", "cancel", "remove", "drop", "terminate"],
+    "critical_threshold_reduction": 0.5,  # Multiply base threshold by this for critical tools
 }
 
 
@@ -104,22 +120,60 @@ def build_graph(deps: GraphDeps) -> StateGraph:
             return {**state, "error": "No candidates", "status": "done"}
 
         belief = BeliefState(domains=state["domains"], epsilon=deps.config.epsilon)
+        
+        # Get base weights from belief state (structured uncertainty)
         weights = [
             belief.candidate_weight(c, deps.tool_schemas[c.tool_name]) for c in candidates
         ]
-        probs = belief.normalize(weights)
-        best_idx = probs.index(max(probs))
-        uncertainty = 1.0 - (max(probs) if probs else 0.0)
+        
+        # Get LLM/TTS uncertainty if available
         llm = getattr(deps.candidate_generator, "llm", None)
-        llm_uncertainty = getattr(llm, "last_uncertainty", None)
-        if llm_uncertainty is not None:
-            uncertainty = llm_uncertainty
+        llm_uncertainty_raw = getattr(llm, "last_uncertainty", None)
+        llm_uncertainty = llm_uncertainty_raw if llm_uncertainty_raw is not None else 0.5
+        
+        # IMPROVEMENT 1: Use LLM uncertainty to modulate candidate weights
+        # When LLM is uncertain about parsing, reduce confidence in all candidates
+        # This prevents over-confident execution when the LLM struggles to interpret the request
+        if llm_uncertainty_raw is not None:
+            modulation = CONFIG["llm_uncertainty_modulation"]
+            # Scale factor: 1.0 when LLM is certain (uncertainty=0), lower when uncertain
+            uncertainty_factor = 1.0 - (llm_uncertainty * modulation)
+            weights = [w * uncertainty_factor for w in weights]
+        
+        # Normalize to get probabilities
+        probs = belief.normalize(weights)
+        best_idx = probs.index(max(probs)) if probs else 0
+        
+        # Compute structured uncertainty from belief state (this is the paper's core concept)
+        structured_uncertainty = 1.0 - (max(probs) if probs else 0.0)
+        
+        # IMPROVEMENT 2: Combine structured and LLM uncertainty properly
+        # Structured uncertainty: from parameter domain constraints
+        # LLM uncertainty: from sampling consistency (linguistic/semantic)
+        sw = CONFIG["structured_uncertainty_weight"]
+        combined_uncertainty = sw * structured_uncertainty + (1.0 - sw) * llm_uncertainty
+        
+        # IMPROVEMENT 5: Use uncertainty propagator for multi-step tracking
+        if deps.uncertainty_propagator is not None:
+            deps.uncertainty_propagator.observe(
+                step_uncertainty=structured_uncertainty,
+                step_type="candidate_generation",
+                metadata={"num_candidates": len(candidates), "best_prob": max(probs) if probs else 0.0},
+            )
+            if llm_uncertainty_raw is not None:
+                deps.uncertainty_propagator.observe(
+                    step_uncertainty=llm_uncertainty,
+                    step_type="llm_parsing",
+                )
+        
         return {
             **state,
             "candidates": candidates,
             "probabilities": probs,
             "best_candidate_index": best_idx,
-            "uncertainty": uncertainty,
+            "uncertainty": structured_uncertainty,  # Keep pure structured uncertainty
+            "llm_uncertainty": llm_uncertainty,
+            "combined_uncertainty": combined_uncertainty,
         }
 
     def generate_questions_node(state: AgentState) -> AgentState:
@@ -184,9 +238,35 @@ def build_graph(deps: GraphDeps) -> StateGraph:
         if state["error"]:
             return "execute"
         candidate = state["candidates"][state["best_candidate_index"]]
-        if _has_required_unknowns(candidate, deps.tool_schemas[candidate.tool_name]):
+        tool_schema = deps.tool_schemas[candidate.tool_name]
+        
+        # Check for required unknowns first
+        if _has_required_unknowns(candidate, tool_schema):
             return "ask"
-        if state["uncertainty"] <= CONFIG["uncertainty_threshold"]:
+        
+        # IMPROVEMENT 3: Adaptive threshold based on tool criticality
+        # Critical operations (delete, cancel, etc.) need lower uncertainty before execution
+        base_threshold = CONFIG["uncertainty_threshold"]
+        threshold = _compute_adaptive_threshold(candidate.tool_name, base_threshold)
+        
+        # Use combined uncertainty for decision making
+        effective_uncertainty = state.get("combined_uncertainty", state["uncertainty"])
+        
+        # IMPROVEMENT 5: Check propagator for accumulated uncertainty and escalation
+        if deps.uncertainty_propagator is not None:
+            accumulated = deps.uncertainty_propagator.accumulated_uncertainty
+            # Weight current combined with accumulated history
+            effective_uncertainty = 0.6 * effective_uncertainty + 0.4 * accumulated
+            
+            # Check if propagator recommends escalation
+            if deps.uncertainty_propagator.should_escalate(
+                escalation_threshold=0.85,
+                max_high_uncertainty_steps=3,
+                high_uncertainty_threshold=0.6,
+            ):
+                return "escalate"
+        
+        if effective_uncertainty <= threshold:
             return "execute"
         if state["attempts"] >= CONFIG["max_attempts"]:
             return "escalate"
@@ -234,6 +314,32 @@ def _redundancy_cost(question: Question, counts: Dict[str, int], weight: float) 
     return cost * weight
 
 
+def _compute_adaptive_threshold(tool_name: str, base_threshold: float) -> float:
+    """Compute adaptive uncertainty threshold based on tool criticality.
+    
+    Critical operations (delete, cancel, remove, etc.) require lower uncertainty
+    before execution to prevent costly mistakes. This implements the paper's
+    concept of task-dependent clarification strategies.
+    
+    Args:
+        tool_name: Name of the tool being considered for execution
+        base_threshold: Base uncertainty threshold from config
+        
+    Returns:
+        Adjusted threshold - lower for critical operations
+    """
+    tool_lower = tool_name.lower()
+    critical_patterns = CONFIG["critical_tool_patterns"]
+    
+    is_critical = any(pattern in tool_lower for pattern in critical_patterns)
+    
+    if is_critical:
+        # Reduce threshold for critical operations (more questions allowed)
+        return base_threshold * CONFIG["critical_threshold_reduction"]
+    
+    return base_threshold
+
+
 def _has_required_unknowns(candidate: ToolCallCandidate, tool_schema: ToolSchema) -> bool:
     for param in tool_schema.required:
         if candidate.arguments.get(param, UNK) == UNK:
@@ -279,6 +385,16 @@ def main() -> None:
         model = "qwen3:4b-instruct-2507-q8_0"
         llm = OllamaClient(model, verbose=True)
 
+    # IMPROVEMENT 2: Use hybrid constraint extractor for better domain refinement
+    # This combines fast rule-based extraction with LLM-backed semantic understanding
+    constraint_extractor = HybridConstraintExtractor(llm=llm, ambiguity_threshold=0.5)
+    
+    # IMPROVEMENT 5: Create uncertainty propagator for multi-step tracking
+    uncertainty_propagator = create_sage_propagator(
+        structured_weight=CONFIG["structured_uncertainty_weight"],
+        llm_weight=1.0 - CONFIG["structured_uncertainty_weight"],
+    )
+
     deps = GraphDeps(
         tool_schemas={tool.name: tool},
         candidate_generator=LLMBackedCandidateGenerator(llm),
@@ -286,7 +402,8 @@ def main() -> None:
         question_asker=InteractiveQuestionAsker(),
         tool_executor=ToolRegistryExecutor({"book_flight": lambda args: {"ok": True, "args": args}}),
         config=SageAgentConfig(max_questions=4, tau_execute=10.0, alpha=0.1),
-        constraint_extractor=SimpleConstraintExtractor(),
+        constraint_extractor=constraint_extractor,
+        uncertainty_propagator=uncertainty_propagator,
     )
 
     graph = build_graph(deps).compile()
@@ -306,6 +423,8 @@ def main() -> None:
         "steps": 0,
         "attempts": 0,
         "uncertainty": 1.0,
+        "llm_uncertainty": 0.5,
+        "combined_uncertainty": 1.0,
         "status": "pending",
         "result": None,
         "error": None,
