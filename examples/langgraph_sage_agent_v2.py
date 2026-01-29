@@ -107,6 +107,7 @@ class AgentState(TypedDict):
     steps: int
     attempts: int
     execution_attempts: int  # Track execution retries
+    reflexion_attempts: int
     last_execution_error: Optional[str]
     
     # Output
@@ -122,6 +123,8 @@ CONFIG = {
     "uncertainty_threshold": 0.3,  # max uncertainty to execute
     "max_attempts": 3,  # max clarification rounds
     "max_execution_retries": 2,  # max execution error recovery attempts
+    "enable_reflexion": True,
+    "max_reflexion_attempts": 2,
     
     # Uncertainty combination
     "structured_weight": 0.7,
@@ -174,6 +177,41 @@ def _compute_evpi_score(
     return evpi - cost * redundancy_weight
 
 
+def _coerce_to_domain(value: object, domain: ParameterDomain) -> object:
+    if not domain.is_finite():
+        return value
+    values = list(domain.values or [])
+    if not values:
+        return value
+    if isinstance(value, list):
+        # For boolean enums, collapse single-item list.
+        if all(isinstance(v, bool) for v in value) and len(value) == 1:
+            return value[0]
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        # Case-insensitive exact match.
+        for option in values:
+            if isinstance(option, str) and option.lower() == lowered:
+                return option
+        # Substring match.
+        for option in values:
+            if isinstance(option, str) and lowered in option.lower():
+                return option
+    return value
+
+
+def _normalize_candidate_arguments(
+    candidate: ToolCallCandidate,
+    schema: ToolSchema,
+) -> ToolCallCandidate:
+    normalized = dict(candidate.arguments)
+    for param, domain in schema.parameters.items():
+        if param in normalized:
+            normalized[param] = _coerce_to_domain(normalized[param], domain)
+    return ToolCallCandidate(tool_name=candidate.tool_name, arguments=normalized)
+
+
 def build_graph(deps: GraphDeps) -> StateGraph:
     """Build the enhanced SAGE-Agent graph."""
     
@@ -186,7 +224,12 @@ def build_graph(deps: GraphDeps) -> StateGraph:
             state["observations"], 
             deps.tool_schemas
         )
-        
+        candidates = [
+            _normalize_candidate_arguments(c, deps.tool_schemas[c.tool_name])
+            for c in candidates
+            if c.tool_name in deps.tool_schemas
+        ]
+
         if not candidates:
             return {
                 **state,
@@ -281,7 +324,17 @@ def build_graph(deps: GraphDeps) -> StateGraph:
         )
         
         if not questions:
-            # No questions generated, proceed to execution
+            candidate = state["candidates"][state["best_candidate_index"]]
+            schema = deps.tool_schemas[candidate.tool_name]
+            if _has_required_unknowns(candidate, schema):
+                return {
+                    **state,
+                    "questions": [],
+                    "best_question": None,
+                    "best_score": 0.0,
+                    "error": "Missing required parameters and no questions generated",
+                    "status": "done",
+                }
             return {**state, "questions": [], "best_question": None, "best_score": 0.0}
         
         # Score questions by EVPI - redundancy cost
@@ -427,12 +480,37 @@ def build_graph(deps: GraphDeps) -> StateGraph:
         """Handle execution error - prepare for retry."""
         exec_result = state.get("execution_result")
         error_msg = exec_result.error if exec_result else "Unknown error"
-        
+        observations = list(state["observations"])
+        observations.append(f"Execution failed: {error_msg}")
+
+        if _should_reflect(state):
+            reflection = _generate_reflection(
+                deps,
+                state["user_input"],
+                state["candidates"][state["best_candidate_index"]],
+                error_msg,
+            )
+            if reflection:
+                observations.append(reflection)
+            if deps.uncertainty_propagator:
+                deps.uncertainty_propagator.observe(
+                    step_uncertainty=state.get("combined_uncertainty", state["uncertainty"]),
+                    step_type="llm_parsing",
+                    metadata={"stage": "reflexion"},
+                )
+            return {
+                **state,
+                "last_execution_error": error_msg,
+                "execution_attempts": state.get("execution_attempts", 0) + 1,
+                "reflexion_attempts": state.get("reflexion_attempts", 0) + 1,
+                "observations": observations,
+            }
+
         return {
             **state,
             "last_execution_error": error_msg,
             "execution_attempts": state.get("execution_attempts", 0) + 1,
-            "observations": state["observations"] + [f"Execution failed: {error_msg}"],
+            "observations": observations,
         }
     
     def escalate_node(state: AgentState) -> AgentState:
@@ -524,12 +602,39 @@ def create_initial_state(
         "steps": 0,
         "attempts": 0,
         "execution_attempts": 0,
+        "reflexion_attempts": 0,
         "last_execution_error": None,
         "status": "pending",
         "result": None,
         "execution_result": None,
         "error": None,
     }
+
+
+def _should_reflect(state: AgentState) -> bool:
+    if not CONFIG.get("enable_reflexion", False):
+        return False
+    max_attempts = CONFIG.get("max_reflexion_attempts", 0)
+    return state.get("reflexion_attempts", 0) < max_attempts
+
+
+def _generate_reflection(
+    deps: GraphDeps,
+    user_input: str,
+    candidate: ToolCallCandidate,
+    error: str,
+) -> str:
+    llm = getattr(deps.candidate_generator, "llm", None)
+    if llm is None or not hasattr(llm, "complete"):
+        return ""
+    prompt = (
+        "Analyze why this tool call failed and suggest how to improve the next attempt.\n\n"
+        f"User input: {user_input}\n"
+        f"Tool call: {candidate.tool_name}({dict(candidate.arguments)})\n"
+        f"Error: {error}\n\n"
+        "Reflection:"
+    )
+    return llm.complete(prompt).strip()
 
 
 class InteractiveQuestionAsker:
@@ -594,4 +699,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
