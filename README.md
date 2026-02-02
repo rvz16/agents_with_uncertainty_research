@@ -270,6 +270,34 @@ python different_agents/pure_sage/run_sage_eval.py --dataset when2call --use-oll
 python different_agents/pure_sage/run_sage_eval.py --dataset when2call --tau 0.9 --alpha 0.05 --max-questions 4
 ```
 
+### ClarifyBench Benchmark
+
+ClarifyBench evaluates agents on tasks requiring clarification. Available splits:
+
+| Split | Description | Examples |
+|-------|-------------|----------|
+| `sample` | Sample examples | 10 |
+| `A` | Ambiguous queries (need clarification) | ~200 |
+| `E` | Explicit queries | ~240 |
+| `I` | Implicit queries | ~150 |
+
+```bash
+# Test on sample data
+python different_agents/evaluations/run_clarifybench_eval.py --split sample --limit 5 --print-each
+
+# Ambiguous split (most relevant for SAGE - requires clarification)
+python different_agents/evaluations/run_clarifybench_eval.py --split A --limit 50 --print-each
+
+# With OpenRouter
+python different_agents/evaluations/run_clarifybench_eval.py --split A --use-openrouter --model openai/gpt-4o-mini --limit 20
+
+# With Ollama (local)
+python different_agents/evaluations/run_clarifybench_eval.py --split sample --use-ollama --limit 10
+
+# Custom hyperparameters
+python different_agents/evaluations/run_clarifybench_eval.py --split A --tau 0.9 --alpha 0.05 --max-questions 4 --limit 20
+```
+
 ### Experimental Variants (V3)
 
 ```bash
@@ -377,6 +405,7 @@ agents_with_uncertainty_research/
 │   ├── evaluations/               # Benchmark evaluation scripts
 │   │   ├── run_multi_benchmark_eval.py
 │   │   ├── run_when2call_eval.py
+│   │   ├── run_clarifybench_eval.py
 │   │   └── run_swebench_eval.py
 │   └── misc/                      # Examples, old versions, tests
 │       ├── basic_usage.py
