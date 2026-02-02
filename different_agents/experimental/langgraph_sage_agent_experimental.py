@@ -15,8 +15,11 @@ import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional, TypedDict, Literal
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Project root is 2 levels up from different_agents/experimental/
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SHARED_DIR = os.path.join(ROOT, "different_agents", "shared")
 sys.path.insert(0, ROOT)
+sys.path.insert(0, SHARED_DIR)
 
 from langgraph.graph import StateGraph, END
 
@@ -38,9 +41,9 @@ from sage_agent.core.constraints import SimpleConstraintExtractor, LLMConstraint
 from sage_agent.core.evpi import compute_evpi
 from sage_agent.core.types import ToolExecutor, ConstraintExtractor
 from sage_agent.core.uncertainty_propagation import UncertaintyPropagator
-from examples.openrouter_client import OpenRouterClient
-from examples.ollama_client import OllamaClient
-from examples.tts_llm_client import TTSLLMClient
+from openrouter_client import OpenRouterClient
+from ollama_client import OllamaClient
+from tts_llm_client import TTSLLMClient
 
 
 class AgentState(TypedDict):
@@ -73,7 +76,7 @@ class GraphDeps:
     question_asker: "QuestionAsker"
     tool_executor: ToolExecutor
     config: SageAgentConfig
-    constraint_extractor: "ConstraintExtractor"  # Can be Simple, LLM, or Hybrid
+    constraint_extractor: "ConstraintExtractor"
     uncertainty_propagator: Optional[UncertaintyPropagator] = None
 
 
@@ -101,7 +104,7 @@ CONFIG = {
     "max_attempts": int(os.getenv("SAGE_MAX_ATTEMPTS", "3")),
     # Weight for combining structured and LLM uncertainty (0-1)
     # combined = structured_weight * structured + (1 - structured_weight) * llm
-    "structured_uncertainty_weight": 0.7,
+    "structured_uncertainty_weight": float(os.getenv("SAGE_STRUCTURED_WEIGHT", "0.7")),
     # LLM uncertainty modulation factor for candidate weights
     # Higher values = stronger effect of LLM uncertainty on weights
     "llm_uncertainty_modulation": 0.5,
@@ -134,8 +137,12 @@ def build_graph(deps: GraphDeps) -> StateGraph:
         
         # Get LLM/TTS uncertainty if available
         llm = getattr(deps.candidate_generator, "llm", None)
-        llm_uncertainty_raw = getattr(llm, "last_uncertainty", None)
-        llm_uncertainty = llm_uncertainty_raw if llm_uncertainty_raw is not None else 0.5
+        if os.getenv("SAGE_DISABLE_LLM_UNCERTAINTY") == "1":
+            llm_uncertainty_raw = None
+            llm_uncertainty = 0.0
+        else:
+            llm_uncertainty_raw = getattr(llm, "last_uncertainty", None)
+            llm_uncertainty = llm_uncertainty_raw if llm_uncertainty_raw is not None else 0.5
         
         # IMPROVEMENT 1: Use LLM uncertainty to modulate candidate weights
         # When LLM is uncertain about parsing, reduce confidence in all candidates
@@ -157,7 +164,10 @@ def build_graph(deps: GraphDeps) -> StateGraph:
         # Structured uncertainty: from parameter domain constraints
         # LLM uncertainty: from sampling consistency (linguistic/semantic)
         sw = CONFIG["structured_uncertainty_weight"]
-        combined_uncertainty = sw * structured_uncertainty + (1.0 - sw) * llm_uncertainty
+        if os.getenv("SAGE_DISABLE_LLM_UNCERTAINTY") == "1":
+            combined_uncertainty = structured_uncertainty
+        else:
+            combined_uncertainty = sw * structured_uncertainty + (1.0 - sw) * llm_uncertainty
         
         # IMPROVEMENT 5: Use uncertainty propagator for multi-step tracking
         if deps.uncertainty_propagator is not None:

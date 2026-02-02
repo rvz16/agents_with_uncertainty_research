@@ -50,8 +50,11 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, TypedDict, Literal, Any
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Project root is 2 levels up from different_agents/misc/
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SHARED_DIR = os.path.join(ROOT, "different_agents", "shared")
 sys.path.insert(0, ROOT)
+sys.path.insert(0, SHARED_DIR)
 
 from langgraph.graph import StateGraph, END
 
@@ -646,7 +649,7 @@ class InteractiveQuestionAsker:
 
 def main():
     """Demo the enhanced SAGE-Agent."""
-    from examples.ollama_client import OllamaClient
+    from ollama_client import OllamaClient
     
     # Define tool
     tool = ToolSchema(

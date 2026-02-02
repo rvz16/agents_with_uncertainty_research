@@ -68,8 +68,11 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, TypedDict, Literal, Any, Tuple
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Project root is 2 levels up from different_agents/v3/
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SHARED_DIR = os.path.join(ROOT, "different_agents", "shared")
 sys.path.insert(0, ROOT)
+sys.path.insert(0, SHARED_DIR)
 
 from langgraph.graph import StateGraph, END
 

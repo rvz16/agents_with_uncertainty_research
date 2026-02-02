@@ -1,14 +1,47 @@
-# SAGE-Agent
+# Uncertainty-Aware AI Agents Research
+
+Research repository exploring **uncertainty quantification**, **structured output**, and **constraint decoding** techniques for LLM-powered tool-calling agents.
+
+## Research Focus
+
+This repository implements and evaluates methods for building more reliable AI agents that:
+
+1. **Quantify uncertainty** in tool call decisions
+2. **Use structured outputs** with schema-guided reasoning (SGR)
+3. **Apply constraint decoding** to ensure valid tool calls
+4. **Ask clarifying questions** when uncertainty is high instead of guessing
+
+### Papers & Techniques Implemented
+
+| Technique | Paper | Description |
+|-----------|-------|-------------|
+| **SAGE-Agent** | [arXiv:2511.08798](https://arxiv.org/abs/2511.08798) | POMDP-based belief tracking with EVPI question selection |
+| **Self-Consistency UQ** | [arXiv:2203.11171](https://arxiv.org/abs/2203.11171) | Multiple sampling for uncertainty estimation |
+| **Schema-Guided Reasoning** | SGR | Pydantic schemas for structured tool calls |
+| **GRPO Training** | [arXiv:2402.03300](https://arxiv.org/abs/2402.03300) | Certainty-weighted reinforcement learning |
+| **Reflexion** | [arXiv:2303.11366](https://arxiv.org/abs/2303.11366) | Self-reflection for error recovery |
+
+### Evaluation Benchmarks
+
+| Benchmark | Type | Description |
+|-----------|------|-------------|
+| **When2Call** | Tool calling | NVIDIA benchmark for tool call disambiguation |
+| **ClarifyBench** | Clarification | Simulated clarification scenarios |
+| **BFCL** | Function calling | Berkeley Function Calling Leaderboard |
+| **HumanEval** | Code generation | OpenAI code generation benchmark |
+| **GSM8K** | Math reasoning | Grade school math problems |
+
+---
+
+## SAGE-Agent: Core Implementation
 
 **Structured Uncertainty Guided Clarification for LLM Agents**
 
-A Python implementation of the SAGE-Agent method from the paper [arXiv:2511.08798](https://arxiv.org/abs/2511.08798).
+The primary implementation is SAGE-Agent from [arXiv:2511.08798](https://arxiv.org/abs/2511.08798), which models tool calling as a POMDP and uses belief state tracking to decide when to ask clarifying questions.
 
-SAGE-Agent is a framework for building LLM-powered tool-calling agents that know when to ask clarifying questions instead of making uncertain tool calls.
+### Key Insight
 
-## Key Insight
-
-Traditional LLM agents often make tool calls with incomplete or ambiguous information, leading to errors. SAGE-Agent models tool calling as a POMDP (Partially Observable Markov Decision Process) and uses **belief state tracking** to quantify uncertainty, asking targeted clarification questions when uncertainty is high.
+Traditional LLM agents often make tool calls with incomplete information, leading to errors. SAGE-Agent quantifies uncertainty and asks targeted questions when confidence is low:
 
 ```
 User: "Book me a flight to NYC"
@@ -22,15 +55,59 @@ User: "March 15th"
 SAGE-Agent: book_flight(origin="BOS", dest="NYC", date="2024-03-15")  <- Confident execution
 ```
 
-## Features
+### Algorithm 1: SAGE Decision Loop
 
-- **Belief State Tracking**: Maintain probability distributions over tool call candidates
-- **EVPI-based Question Selection**: Choose questions that maximize expected information gain
-- **Structured Uncertainty**: Quantify uncertainty from parameter domain constraints
-- **Paper-Accurate Implementation**: Exact Algorithm 1 with hyperparameters tau=0.85, alpha=0.1, lambda=0.5
-- **LangGraph Integration**: Graph-based execution with state management
-- **Multiple LLM Backends**: OpenRouter, Ollama, TTS service support
-- **Benchmark Evaluation**: When2Call, ClarifyBench, HumanEval, GSM8K
+```
+1: Initialize belief B(0), aspect counts n(0), t <- 0
+2: while t < T_max do
+3:     Generate candidates C, compute pi_c(t)
+4:     if max_c pi_c(t) >= tau_exec then Execute and return
+5:     Generate questions Q
+6:     Score: q* = argmax[EVPI(q) - Cost(q)]
+7:     if Score(q*) < alpha * max_prob then Execute
+8:     Ask q*, update domains, t++
+9: end while
+10: Final execution or escalation
+```
+
+### Paper Hyperparameters
+
+| Parameter | Symbol | Default | Description |
+|-----------|--------|---------|-------------|
+| `tau_exec` | τ | 0.85 | Execution confidence threshold |
+| `alpha` | α | 0.1 | Termination threshold factor |
+| `lambda_redundancy` | λ | 0.5 | Redundancy weight |
+| `epsilon` | ε | 1e-4 | Small prob for infinite domains |
+| `max_questions` | T_max | 6 | Maximum clarification questions |
+
+---
+
+## Implementation Variants
+
+This repository contains multiple implementation variants for experimentation:
+
+| Implementation | File | Features |
+|---------------|------|----------|
+| **Pure SAGE** | `different_agents/pure_sage/langgraph_sage_agent.py` | Clean Algorithm 1, paper hyperparameters only |
+| **Experimental** | `different_agents/experimental/langgraph_sage_agent_experimental.py` | + SAUP uncertainty propagation, reflexion |
+| **V3 (Full)** | `different_agents/v3/langgraph_sage_agent_v3.py` | + SGR, dynamic resampling, epistemic/aleatoric decomposition |
+| **V4** | `different_agents/v4/langgraph_sage_agent_v4.py` | + Advanced configurations |
+| **SGR-SAGE-UQ** | `different_agents/sgr_sage_uq/sgr_sage_uq_agent.py` | Schema-Guided Reasoning + Self-Consistency UQ + SAGE |
+
+### Feature Comparison
+
+| Feature | Pure SAGE | Experimental | V3 | SGR-SAGE-UQ |
+|---------|-----------|--------------|-----|-------------|
+| Belief State Tracking | ✓ | ✓ | ✓ | ✓ |
+| EVPI Question Selection | ✓ | ✓ | ✓ | ✓ |
+| SAUP Propagation | - | ✓ | ✓ | - |
+| Reflexion | - | ✓ | - | - |
+| Schema-Guided Reasoning | - | - | ✓ | ✓ |
+| Self-Consistency UQ | - | - | ✓ | ✓ |
+| Dynamic Resampling | - | - | ✓ | - |
+| Epistemic/Aleatoric Split | - | - | ✓ | - |
+
+---
 
 ## Installation
 
@@ -50,23 +127,23 @@ pip install -e ".[langgraph]"
 # OpenRouter LLM client
 pip install -e ".[openrouter]"
 
-# GRPO training
+# GRPO training (requires torch)
 pip install -e ".[training]"
 
 # All dependencies
 pip install -e ".[all]"
 
-# Development
+# Development (includes pytest)
 pip install -e ".[dev]"
 ```
 
 ### External Requirements
 
-For running evaluations, you'll need:
-
 ```bash
-pip install datasets  # For When2Call, HumanEval, etc.
+pip install datasets  # For When2Call, HumanEval, GSM8K benchmarks
 ```
+
+---
 
 ## Quick Start
 
@@ -87,7 +164,7 @@ flight_tool = ToolSchema(
     parameters={
         "origin": ParameterDomain.from_values(["NYC", "BOS", "LAX", "SFO"]),
         "destination": ParameterDomain.from_values(["NYC", "BOS", "LAX", "SFO"]),
-        "date": ParameterDomain.continuous(),  # Any date string
+        "date": ParameterDomain.continuous(),
     },
     required=frozenset({"origin", "destination", "date"}),
 )
@@ -101,16 +178,14 @@ agent = SAGEAgent(
     tool_executor=my_executor,
     constraint_extractor=SimpleConstraintExtractor(),
     config=SAGEConfig(
-        tau_exec=0.85,      # Execute when 85% confident
-        alpha=0.1,          # Stop asking when score < 10% of max_prob
+        tau_exec=0.85,
+        alpha=0.1,
         lambda_redundancy=0.5,
         max_questions=6,
     ),
 )
 
-# Run the agent
 result = agent.run("Book me a flight to NYC")
-
 print(f"Tool call: {result.tool_call}")
 print(f"Questions asked: {result.total_questions}")
 print(f"Confidence: {result.final_probability:.2%}")
@@ -120,10 +195,7 @@ print(f"Confidence: {result.final_probability:.2%}")
 
 ```python
 from examples.langgraph_sage_agent import (
-    GraphDeps,
-    SAGEConfig,
-    build_graph,
-    create_initial_state,
+    GraphDeps, SAGEConfig, build_graph, create_initial_state,
 )
 from sage_agent import (
     LLMBackedCandidateGenerator,
@@ -131,12 +203,10 @@ from sage_agent import (
     SimpleConstraintExtractor,
     ToolRegistryExecutor,
 )
-
-# Setup LLM client
 from examples.openrouter_client import OpenRouterClient
+
 llm = OpenRouterClient(model="openai/gpt-4o-mini")
 
-# Build graph
 deps = GraphDeps(
     tool_schemas={tool.name: tool},
     candidate_generator=LLMBackedCandidateGenerator(llm),
@@ -151,110 +221,36 @@ graph = build_graph(deps).compile()
 result = graph.invoke(create_initial_state("Book flight to LAX", deps.tool_schemas))
 ```
 
-## Algorithm 1: SAGE-Agent Decision Loop
+### 3. SGR Tools (Schema-Guided Reasoning)
 
-```
-1: Initialize belief B(0), aspect counts n(0), t <- 0
-2: while t < T_max do
-3:     Generate candidates C, compute pi_c(t) proportional to Pi_c(t)
-4:     if max_c pi_c(t) >= tau_exec then
-5:         Execute argmax_c pi_c(t) and return
-6:     end if
-7:     Generate questions Q
-8:     For each q in Q: Score(q) = EVPI(q) - Cost(q)
-9:     Select q* = argmax_q Score(q)
-10:    if Score(q*) < alpha * max_c pi_c(t) then
-11:        Execute (cost exceeds benefit)
-12:    end if
-13:    Ask q*, update domains, t++
-14: end while
-15: Final execution or escalation
-```
+```python
+from sage_agent import GeneratePlanTool, ReasoningTool
 
-## Core Concepts
+# Structured plan generation
+plan = GeneratePlanTool(
+    reasoning="User needs flight booking with missing parameters",
+    research_goal="Book optimal flight based on user preferences",
+    planned_steps=[
+        "Clarify departure city",
+        "Clarify travel date",
+        "Search available flights",
+        "Present options to user"
+    ],
+    search_strategies=["Ask clarifying questions", "Use flight search API"]
+)
 
-### Belief State (Section 3.2)
-
-The belief state tracks probability distributions over tool call candidates:
-
-```
-Pi_i(t) proportional to product_j p(theta_{i,j} | observations_t)
-```
-
-Where parameter certainty is:
-- **1.0** if value is specified
-- **1/|D|** if unspecified with finite domain D
-- **epsilon** (1e-4) if domain is infinite/continuous
-
-### EVPI - Expected Value of Perfect Information
-
-```
-EVPI(q) = E_r[max_c pi_c(t|q,r)] - max_c pi_c(t)
+# Step-by-step reasoning
+reasoning = ReasoningTool(
+    reasoning_steps=["Origin is missing", "Need to ask clarifying question"],
+    current_situation="User requested flight to NYC, departure unknown",
+    plan_status="Step 1 of 3: Gathering required parameters",
+    enough_data=False,
+    remaining_steps=["Ask for origin", "Ask for date", "Execute search"],
+    task_completed=False
+)
 ```
 
-Questions are scored by information gain minus redundancy cost:
-```
-Score(q) = EVPI(q) - lambda * sum_{a in A(q)} n_a(t)
-```
-
-### Termination Conditions
-
-1. **Confident**: `max_c pi_c(t) >= tau_exec` (default 0.85)
-2. **Cost exceeds benefit**: `Score(q*) < alpha * max_c pi_c(t)`
-3. **Max questions**: `t >= T_max` (default 6)
-
-## Project Structure
-
-```
-agents_with_uncertainty_research/
-|-- sage_agent/                    # Main package
-|   |-- core/                      # Core algorithms
-|   |   |-- sage_algorithm.py      # SAGEAgent (Algorithm 1)
-|   |   |-- belief.py              # BeliefState
-|   |   |-- evpi.py                # EVPI computation
-|   |   |-- domains.py             # ParameterDomain
-|   |   |-- types.py               # Type definitions
-|   |   |-- pomdp.py               # POMDP formulation
-|   |   |-- constraints.py         # Constraint extractors
-|   |   |-- uncertainty_propagation.py  # SAUP
-|   |   +-- advanced_reasoning.py  # Decomposition, CoT, Reflexion
-|   |-- langgraph/                 # LangGraph integration
-|   |   +-- sage_graph.py          # Canonical LangGraph impl
-|   |-- training/                  # GRPO training
-|   |   +-- grpo.py                # Certainty-weighted GRPO
-|   |-- llm/                       # LLM clients
-|   |   |-- openrouter.py
-|   |   +-- tts_service.py
-|   |-- wiring/                    # LLM-backed generators
-|   |   +-- wiring.py
-|   |-- metrics/                   # Evaluation metrics
-|   |   +-- metrics.py
-|   +-- sim/                       # Simulation
-|       +-- clarifybench.py
-|
-|-- examples/                      # Example scripts
-|   |-- langgraph_sage_agent.py    # Pure SAGE (clean)
-|   |-- langgraph_sage_agent_experimental.py  # With SAUP, reflexion
-|   |-- langgraph_sage_agent_v3.py # SGR, resampling, SAUP
-|   |-- run_sage_eval.py           # Benchmark evaluation
-|   |-- run_when2call_eval.py      # When2Call evaluation
-|   |-- run_multi_benchmark_eval.py # Multi-benchmark
-|   |-- basic_usage.py             # Simple example
-|   |-- grpo_training.py           # GRPO training example
-|   +-- openrouter_client.py       # OpenRouter LLM client
-|
-+-- pyproject.toml                 # Package configuration
-```
-
-## Available Implementations
-
-| Implementation | File | Features |
-|---------------|------|----------|
-| **Pure SAGE** | `examples/langgraph_sage_agent.py` | Clean Algorithm 1, paper hyperparameters |
-| **Experimental** | `examples/langgraph_sage_agent_experimental.py` | + SAUP, reflexion, LLM uncertainty |
-| **V3 (Full)** | `examples/langgraph_sage_agent_v3.py` | + SGR, resampling, epistemic/aleatoric decomposition |
-| **Canonical** | `sage_agent/langgraph/sage_graph.py` | Package-level LangGraph implementation |
-| **Core** | `sage_agent/core/sage_algorithm.py` | Non-LangGraph SAGEAgent class |
+---
 
 ## Running Evaluations
 
@@ -262,68 +258,138 @@ agents_with_uncertainty_research/
 
 ```bash
 # Pure SAGE evaluation
-python examples/run_sage_eval.py --dataset when2call --limit 20 --print-each
+python different_agents/pure_sage/run_sage_eval.py --dataset when2call --limit 20 --print-each
 
 # With OpenRouter
-python examples/run_sage_eval.py --dataset when2call --use-openrouter --model openai/gpt-4o-mini
+python different_agents/pure_sage/run_sage_eval.py --dataset when2call --use-openrouter --model openai/gpt-4o-mini
 
-# With Ollama
-python examples/run_sage_eval.py --dataset when2call --use-ollama --ollama-model qwen2.5:7b-instruct
+# With Ollama (local)
+python different_agents/pure_sage/run_sage_eval.py --dataset when2call --use-ollama --ollama-model qwen2.5:7b-instruct
 
 # Custom hyperparameters
-python examples/run_sage_eval.py --dataset when2call --tau 0.9 --alpha 0.05 --max-questions 4
+python different_agents/pure_sage/run_sage_eval.py --dataset when2call --tau 0.9 --alpha 0.05 --max-questions 4
 ```
 
-### Experimental Features (V3)
+### Experimental Variants (V3)
 
 ```bash
 # V3 with full features
-python examples/run_when2call_eval.py --use-v3 --v3-config balanced --limit 10 --print-each
+python different_agents/evaluations/run_when2call_eval.py --use-v3 --v3-config balanced --limit 10 --print-each
 
 # V3 configurations: conservative, balanced, aggressive
-python examples/run_when2call_eval.py --use-v3 --v3-config aggressive --limit 50
+python different_agents/evaluations/run_when2call_eval.py --use-v3 --v3-config aggressive --limit 50
 ```
 
-### Multi-Benchmark
+### SGR-SAGE-UQ Benchmarks
 
 ```bash
-# HumanEval
-python examples/run_multi_benchmark_eval.py --benchmark humaneval --limit 10
+# BFCL benchmark
+python different_agents/sgr_sage_uq/run_sgr_sage_benchmarks.py --benchmark bfcl --limit 20
 
-# GSM8K
-python examples/run_multi_benchmark_eval.py --benchmark gsm8k --limit 20
+# GSM8K math reasoning
+python different_agents/sgr_sage_uq/run_sgr_sage_benchmarks.py --benchmark gsm8k --limit 50
+
+# HumanEval code generation
+python different_agents/sgr_sage_uq/run_sgr_sage_benchmarks.py --benchmark humaneval --limit 20
 
 # All benchmarks
-python examples/run_multi_benchmark_eval.py --benchmark all --limit 5
+python different_agents/sgr_sage_uq/run_sgr_sage_benchmarks.py --benchmark all --limit 10
 ```
 
-## Configuration
-
-### Paper Hyperparameters
-
-| Parameter | Symbol | Default | Description |
-|-----------|--------|---------|-------------|
-| `tau_exec` | tau | 0.85 | Execution confidence threshold |
-| `alpha` | alpha | 0.1 | Termination threshold factor |
-| `lambda_redundancy` | lambda | 0.5 | Redundancy weight |
-| `epsilon` | epsilon | 1e-4 | Small prob for infinite domains |
-| `max_questions` | T_max | 6 | Maximum clarification questions |
-
-### Environment Variables
+### Multi-Benchmark Evaluation
 
 ```bash
-# LLM Configuration
-export OPENROUTER_API_KEY="your-key"
-export SAGE_MODEL="openai/gpt-4o-mini"
-
-# TTS Service
-export SAGE_USE_TTS=1
-export SAGE_TTS_URL="http://localhost:8001/v1"
-
-# Debug
-export SAGE_DISABLE_LLM_UNCERTAINTY=1
-export SAGE_DISABLE_PROPAGATION=1
+python different_agents/evaluations/run_multi_benchmark_eval.py --benchmark humaneval --limit 10
+python different_agents/evaluations/run_multi_benchmark_eval.py --benchmark gsm8k --limit 20
+python different_agents/evaluations/run_multi_benchmark_eval.py --benchmark all --limit 5
 ```
+
+---
+
+## Evaluation Metrics
+
+| Metric | Description |
+|--------|-------------|
+| **Tool Match Rate** | Fraction of correct tool names |
+| **Parameter Match Rate** | Fraction of correct parameter values |
+| **Coverage Rate** | Fraction of non-escalated predictions |
+| **Avg Questions** | Average clarification questions asked |
+| **ECE** | Expected Calibration Error |
+| **Confident Accuracy** | Accuracy on low-uncertainty predictions |
+
+---
+
+## Project Structure
+
+```
+agents_with_uncertainty_research/
+├── sage_agent/                    # Main package
+│   ├── core/                      # Core algorithms
+│   │   ├── sage_algorithm.py      # SAGEAgent (Algorithm 1)
+│   │   ├── belief.py              # BeliefState
+│   │   ├── evpi.py                # EVPI computation
+│   │   ├── domains.py             # ParameterDomain
+│   │   ├── types.py               # Type definitions
+│   │   ├── pomdp.py               # POMDP formulation
+│   │   ├── constraints.py         # Constraint extractors
+│   │   ├── uncertainty_propagation.py  # SAUP
+│   │   └── advanced_reasoning.py  # Decomposition, CoT, Reflexion
+│   ├── langgraph/                 # LangGraph integration
+│   │   └── sage_graph.py          # Canonical LangGraph impl
+│   ├── tools/                     # SGR tools
+│   │   └── sgr_tools.py           # GeneratePlanTool, ReasoningTool
+│   ├── training/                  # GRPO training
+│   │   └── grpo.py                # Certainty-weighted GRPO
+│   ├── llm/                       # LLM clients
+│   │   ├── openrouter.py
+│   │   └── tts_service.py
+│   ├── wiring/                    # LLM-backed generators
+│   │   └── wiring.py
+│   ├── metrics/                   # Evaluation metrics
+│   │   └── metrics.py
+│   └── sim/                       # Simulation
+│       └── clarifybench.py
+│
+├── different_agents/              # Agent implementations & evaluations
+│   ├── pure_sage/                 # Pure SAGE (Algorithm 1 from paper)
+│   │   ├── langgraph_sage_agent.py
+│   │   └── run_sage_eval.py
+│   ├── experimental/              # SAUP + Reflexion
+│   │   └── langgraph_sage_agent_experimental.py
+│   ├── v3/                        # SGR + Resampling + SAUP
+│   │   ├── langgraph_sage_agent_v3.py
+│   │   ├── v3_configs.py
+│   │   └── run_multi_benchmark_sage_v3.py
+│   ├── v4/                        # Advanced configurations
+│   │   ├── langgraph_sage_agent_v4.py
+│   │   ├── langgraph_sage_agent_v4_swe.py
+│   │   ├── v4_configs.py
+│   │   └── run_*.py
+│   ├── sgr_sage_uq/               # SGR + SAGE + Self-Consistency UQ
+│   │   ├── sgr_sage_uq_agent.py
+│   │   ├── sgr_plan_sage_tts_agent.py
+│   │   ├── run_sgr_sage_benchmarks.py
+│   │   └── test_*.py
+│   ├── shared/                    # Shared LLM clients
+│   │   ├── openrouter_client.py
+│   │   ├── ollama_client.py
+│   │   └── tts_llm_client.py
+│   ├── evaluations/               # Benchmark evaluation scripts
+│   │   ├── run_multi_benchmark_eval.py
+│   │   ├── run_when2call_eval.py
+│   │   └── run_swebench_eval.py
+│   └── misc/                      # Examples, old versions, tests
+│       ├── basic_usage.py
+│       ├── grpo_training.py
+│       └── langgraph_sage_agent_v2.py
+│
+├── tests/                         # Test suite
+│   └── test_sage_agent_v1.py      # Pure SAGE tests
+│
+└── pyproject.toml                 # Package configuration
+```
+
+---
 
 ## LLM Backends
 
@@ -338,7 +404,7 @@ llm = OpenRouterClient(
 )
 ```
 
-### Ollama
+### Ollama (Local)
 
 ```python
 from examples.ollama_client import OllamaClient
@@ -346,7 +412,7 @@ from examples.ollama_client import OllamaClient
 llm = OllamaClient(model="qwen2.5:7b-instruct")
 ```
 
-### TTS Service (with uncertainty)
+### TTS Service (with Self-Consistency UQ)
 
 ```python
 from examples.tts_llm_client import TTSLLMClient
@@ -361,22 +427,31 @@ response = llm.complete("...")
 print(f"Uncertainty: {llm.last_uncertainty}")
 ```
 
-## Metrics
+---
 
-The evaluation scripts compute:
+## Configuration
 
-| Metric | Description |
-|--------|-------------|
-| **Tool Match Rate** | Fraction of correct tool names |
-| **Parameter Match Rate** | Fraction of correct parameter values |
-| **Coverage Rate** | Fraction of non-escalated predictions |
-| **Avg Questions** | Average clarification questions asked |
-| **ECE** | Expected Calibration Error |
-| **Confident Accuracy** | Accuracy on low-uncertainty predictions |
+### Environment Variables
 
-## GRPO Training (Section 6.2)
+```bash
+# LLM Configuration
+export OPENROUTER_API_KEY="your-key"
+export SAGE_MODEL="openai/gpt-4o-mini"
 
-Train agents with certainty-weighted rewards:
+# TTS Service (for self-consistency UQ)
+export SAGE_USE_TTS=1
+export SAGE_TTS_URL="http://localhost:8001/v1"
+
+# Debug flags
+export SAGE_DISABLE_LLM_UNCERTAINTY=1
+export SAGE_DISABLE_PROPAGATION=1
+```
+
+---
+
+## GRPO Training (Certainty-Weighted RL)
+
+Train agents with certainty-weighted rewards from Section 6.2 of the SAGE paper:
 
 ```python
 from sage_agent import (
@@ -386,7 +461,6 @@ from sage_agent import (
     CertaintyWeightedReward,
 )
 
-# Reward function returns (base_reward, action_type, max_prob)
 def sage_reward_fn(prompt, response):
     if "book_flight" in response:
         return (1.0, ActionType.TOOL_CALL, 0.85)
@@ -409,7 +483,24 @@ The certainty-weighted reward encourages:
 - Execute tool calls when confident (`Cert = max_c pi_c`)
 - Ask questions when uncertain (`Cert = 1 - max_c pi_c`)
 
-## Citation
+---
+
+## Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_sage_agent_v1.py -v
+
+# Run with coverage
+pytest tests/ --cov=sage_agent --cov-report=html
+```
+
+---
+
+## References
 
 ```bibtex
 @article{sage2024,
@@ -418,7 +509,30 @@ The certainty-weighted reward encourages:
   journal={arXiv preprint arXiv:2511.08798},
   year={2024}
 }
+
+@article{selfconsistency2022,
+  title={Self-Consistency Improves Chain of Thought Reasoning in Language Models},
+  author={Wang et al.},
+  journal={arXiv preprint arXiv:2203.11171},
+  year={2022}
+}
+
+@article{reflexion2023,
+  title={Reflexion: Language Agents with Verbal Reinforcement Learning},
+  author={Shinn et al.},
+  journal={arXiv preprint arXiv:2303.11366},
+  year={2023}
+}
+
+@article{grpo2024,
+  title={Group Relative Policy Optimization},
+  author={...},
+  journal={arXiv preprint arXiv:2402.03300},
+  year={2024}
+}
 ```
+
+---
 
 ## License
 

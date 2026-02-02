@@ -14,8 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, TypedDict
 
-ROOT = Path(__file__).resolve().parents[1]
+# Project root is 2 levels up from different_agents/evaluations/
+ROOT = Path(__file__).resolve().parents[2]
+SHARED_DIR = ROOT / "different_agents" / "shared"
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(SHARED_DIR))
 
 from langgraph.graph import StateGraph, END
 
@@ -107,9 +110,9 @@ class AgentState(TypedDict):
 
 def create_llm_client(args: argparse.Namespace):
     if args.use_ollama:
-        from examples.ollama_client import OllamaClient
+        from ollama_client import OllamaClient
         return OllamaClient(model=args.ollama_model, verbose=False)
-    from examples.tts_llm_client import TTSLLMClient
+    from tts_llm_client import TTSLLMClient
     return TTSLLMClient(
         base_url=args.service_url,
         model=args.model,

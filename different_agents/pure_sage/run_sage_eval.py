@@ -8,13 +8,13 @@ on various benchmarks:
 
 Usage:
     # When2Call evaluation
-    python examples/run_sage_eval.py --dataset when2call --limit 10 --print-each
+    python different_agents/pure_sage/run_sage_eval.py --dataset when2call --limit 10 --print-each
 
     # With different LLM
-    python examples/run_sage_eval.py --dataset when2call --model openai/gpt-4o-mini
+    python different_agents/pure_sage/run_sage_eval.py --dataset when2call --model openai/gpt-4o-mini
 
     # Custom hyperparameters
-    python examples/run_sage_eval.py --dataset when2call --tau 0.9 --alpha 0.05
+    python different_agents/pure_sage/run_sage_eval.py --dataset when2call --tau 0.9 --alpha 0.05
 """
 
 from __future__ import annotations
@@ -27,10 +27,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence
 
-ROOT = Path(__file__).resolve().parents[1]
+# Project root is 2 levels up from different_agents/pure_sage/
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "different_agents" / "shared"))
 
-from examples.langgraph_sage_agent import (
+from langgraph_sage_agent import (
     GraphDeps,
     SAGEConfig,
     build_graph,
@@ -115,16 +117,16 @@ def get_llm_client(args: argparse.Namespace):
     """Get LLM client based on arguments."""
 
     if args.use_ollama:
-        from examples.ollama_client import OllamaClient
+        from ollama_client import OllamaClient
         return OllamaClient(model=args.ollama_model)
 
     if args.use_openrouter:
-        from examples.openrouter_client import OpenRouterClient
+        from openrouter_client import OpenRouterClient
         return OpenRouterClient(model=args.model)
 
     # Default: TTS service
     try:
-        from examples.tts_llm_client import TTSLLMClient
+        from tts_llm_client import TTSLLMClient
         return TTSLLMClient(
             base_url=args.service_url,
             model=args.model,
@@ -132,7 +134,7 @@ def get_llm_client(args: argparse.Namespace):
         )
     except Exception:
         # Fallback to OpenRouter
-        from examples.openrouter_client import OpenRouterClient
+        from openrouter_client import OpenRouterClient
         return OpenRouterClient(model=args.model)
 
 

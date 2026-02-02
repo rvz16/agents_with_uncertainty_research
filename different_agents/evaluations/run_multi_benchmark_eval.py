@@ -29,8 +29,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Any
 
-ROOT = Path(__file__).resolve().parents[1]
+# Project root is 2 levels up from different_agents/evaluations/
+ROOT = Path(__file__).resolve().parents[2]
+SHARED_DIR = ROOT / "different_agents" / "shared"
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(SHARED_DIR))
 
 from sage_agent.core.advanced_reasoning import (
     UncertaintyDecomposer,
@@ -152,10 +155,10 @@ class BenchmarkResult:
 def create_llm_client(args: argparse.Namespace):
     """Create LLM client based on args."""
     if args.use_ollama:
-        from examples.ollama_client import OllamaClient
+        from ollama_client import OllamaClient
         return OllamaClient(model=args.ollama_model, verbose=False)
     else:
-        from examples.tts_llm_client import TTSLLMClient
+        from tts_llm_client import TTSLLMClient
         return TTSLLMClient(
             base_url=args.service_url,
             model=args.model,

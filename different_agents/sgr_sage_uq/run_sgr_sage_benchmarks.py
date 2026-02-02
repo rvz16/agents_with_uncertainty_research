@@ -34,8 +34,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+# Project root is 2 levels up from different_agents/sgr_sage_uq/
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOCAL_DIR = Path(__file__).resolve().parent
+SHARED_DIR = PROJECT_ROOT / "different_agents" / "shared"
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(LOCAL_DIR))
+sys.path.insert(0, str(SHARED_DIR))
 
 from sgr_sage_uq_agent import (
     TTSConfig,

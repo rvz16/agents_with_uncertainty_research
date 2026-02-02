@@ -66,9 +66,11 @@ from typing import (
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-# Add parent directory for imports
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Project root is 2 levels up from different_agents/sgr_sage_uq/
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SHARED_DIR = os.path.join(ROOT, "different_agents", "shared")
 sys.path.insert(0, ROOT)
+sys.path.insert(0, SHARED_DIR)
 
 from langgraph.graph import END, StateGraph
 
