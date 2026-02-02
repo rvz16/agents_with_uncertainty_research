@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Mapping, Optional
 from .belief import BeliefState
 from .constraints import SimpleConstraintExtractor
 from .evpi import compute_evpi
+from .uncertainty_propagation import create_sage_propagator
 from .types import (
     Aspect,
     CandidateGenerator,
@@ -32,6 +33,13 @@ class SageAgentConfig:
     tau_execute: float = 0.85
     alpha: float = 0.1
     epsilon: float = 1e-4
+    use_tts_uncertainty: bool = False
+    structured_uncertainty_weight: float = 0.7
+    llm_uncertainty_modulation: float = 0.5
+    uncertainty_threshold: float = 1.0
+    use_propagation: bool = False
+    use_reflexion: bool = False
+    max_reflexion_attempts: int = 0
 
 
 @dataclass
@@ -41,6 +49,11 @@ class AgentStep:
     question: Optional[Question]
     score: Optional[float]
     response: Optional[str]
+    structured_uncertainty: Optional[float] = None
+    llm_uncertainty: Optional[float] = None
+    combined_uncertainty: Optional[float] = None
+    propagated_uncertainty: Optional[float] = None
+    reflexion_note: Optional[str] = None
 
 
 @dataclass
@@ -74,6 +87,14 @@ class SageAgent:
             tool.name: {k: v for k, v in tool.parameters.items()} for tool in tool_schemas
         }
         self._belief = self._new_belief()
+        self._propagator = (
+            create_sage_propagator(
+                structured_weight=self.config.structured_uncertainty_weight,
+                llm_weight=1.0 - self.config.structured_uncertainty_weight,
+            )
+            if self.config.use_propagation
+            else None
+        )
 
     def _new_belief(self) -> BeliefState:
         return BeliefState(
@@ -87,6 +108,9 @@ class SageAgent:
         steps: List[AgentStep] = []
         aspect_counts: Dict[Aspect, int] = defaultdict(int)
         t = 0
+        reflexion_attempts = 0
+        if self._propagator is not None:
+            self._propagator.reset()
 
         while True:
             candidates = self.candidate_generator.generate_candidates(
@@ -104,12 +128,61 @@ class SageAgent:
                 self._belief.candidate_weight(candidate, self.tool_schemas[candidate.tool_name])
                 for candidate in candidates
             ]
+            llm_uncertainty = self._get_llm_uncertainty(self.candidate_generator)
+            if self.config.use_tts_uncertainty and llm_uncertainty is not None:
+                modulation = self.config.llm_uncertainty_modulation
+                uncertainty_factor = 1.0 - (llm_uncertainty * modulation)
+                weights = [w * uncertainty_factor for w in weights]
             probabilities = self._belief.normalize(weights)
             max_prob = max(probabilities)
             best_idx = probabilities.index(max_prob)
             best_candidate = candidates[best_idx]
+            structured_uncertainty = 1.0 - max_prob
+            combined_uncertainty = structured_uncertainty
+            if llm_uncertainty is not None:
+                sw = self.config.structured_uncertainty_weight
+                combined_uncertainty = sw * structured_uncertainty + (1.0 - sw) * llm_uncertainty
+
+            propagated_uncertainty = None
+            if self._propagator is not None:
+                self._propagator.observe(
+                    structured_uncertainty, "candidate_generation", {"max_prob": max_prob}
+                )
+                if llm_uncertainty is not None:
+                    self._propagator.observe(llm_uncertainty, "llm_parsing", {"stage": "candidate"})
+                propagated_uncertainty = self._propagator.accumulated_uncertainty
+                combined_uncertainty = propagated_uncertainty
 
             if max_prob >= self.config.tau_execute or t >= self.config.max_questions:
+                if combined_uncertainty <= self.config.uncertainty_threshold:
+                    result = self._execute_candidate(best_candidate, steps)
+                    if (
+                        result.execution_result.success
+                        or not self.config.use_reflexion
+                        or reflexion_attempts >= self.config.max_reflexion_attempts
+                    ):
+                        return result
+                    reflection = self._generate_reflection(
+                        user_input, result.tool_call, result.execution_result.error or ""
+                    )
+                    if reflection:
+                        observations.append(reflection)
+                        steps.append(
+                            AgentStep(
+                                candidates=[best_candidate],
+                                probabilities=[max_prob],
+                                question=None,
+                                score=None,
+                                response=None,
+                                structured_uncertainty=structured_uncertainty,
+                                llm_uncertainty=llm_uncertainty,
+                                combined_uncertainty=combined_uncertainty,
+                                propagated_uncertainty=propagated_uncertainty,
+                                reflexion_note=reflection,
+                            )
+                        )
+                    reflexion_attempts += 1
+                    continue
                 return self._execute_candidate(best_candidate, steps)
 
             questions = self.question_generator.generate_questions(
@@ -143,8 +216,16 @@ class SageAgent:
                     question=best_question,
                     score=best_score,
                     response=response,
+                    structured_uncertainty=structured_uncertainty,
+                    llm_uncertainty=llm_uncertainty,
+                    combined_uncertainty=combined_uncertainty,
+                    propagated_uncertainty=propagated_uncertainty,
                 )
             )
+            if self._propagator is not None:
+                self._propagator.observe(
+                    structured_uncertainty, "belief_update", {"response": response}
+                )
             t += 1
 
     def _update_domain(self, aspect: Aspect, response: str) -> None:
@@ -216,3 +297,34 @@ class SageAgent:
             if candidate.arguments.get(param, UNK) == UNK:
                 return True
         return False
+
+    def _get_llm_uncertainty(self, generator: object) -> Optional[float]:
+        if not self.config.use_tts_uncertainty:
+            return None
+        llm = getattr(generator, "llm", None)
+        if llm is None:
+            return None
+        return getattr(llm, "last_uncertainty", None)
+
+    def _generate_reflection(
+        self,
+        user_input: str,
+        tool_call: Optional[ToolCall],
+        error: str,
+    ) -> str:
+        llm = getattr(self.candidate_generator, "llm", None)
+        if llm is None or not hasattr(llm, "complete"):
+            return ""
+        call_desc = (
+            f"{tool_call.tool_name}({dict(tool_call.arguments)})"
+            if tool_call is not None
+            else "<none>"
+        )
+        prompt = (
+            "Analyze why this tool call failed and suggest how to improve the next attempt.\n\n"
+            f"User input: {user_input}\n"
+            f"Tool call: {call_desc}\n"
+            f"Error: {error}\n\n"
+            "Reflection:"
+        )
+        return llm.complete(prompt).strip()

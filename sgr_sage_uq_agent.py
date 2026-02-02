@@ -509,7 +509,7 @@ def _normalize_arguments(
 class SAGEConfig:
     """Configuration for SAGE decision engine."""
     # Base cost of asking a clarification question
-    cost_of_clarification: float = 0.1
+    cost_of_clarification: float = 0.2
 
     # Base penalty for executing with error (dynamic per tool)
     base_penalty_of_error: float = 1.0
@@ -524,13 +524,13 @@ class SAGEConfig:
     critical_penalty_multiplier: float = 2.0
 
     # Minimum probability to execute without clarification
-    min_confidence_to_act: float = 0.7
+    min_confidence_to_act: float = 0.6
 
     # Maximum allowed accumulated uncertainty
     max_accumulated_uncertainty: float = 0.85
 
     # Maximum clarification rounds before escalation
-    max_clarification_rounds: int = 5
+    max_clarification_rounds: int = 3
 
     # Weight for structured vs LLM uncertainty
     structured_uncertainty_weight: float = 0.7

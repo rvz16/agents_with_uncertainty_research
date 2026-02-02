@@ -30,6 +30,13 @@ class ParameterDomain:
 
     def contains(self, value: object) -> bool:
         if self.values is not None:
+            if isinstance(value, (list, tuple, set)):
+                try:
+                    if tuple(value) in self.values:
+                        return True
+                except TypeError:
+                    pass
+                return all(item in self.values for item in value)
             return value in self.values
         return all(constraint(value) for constraint in self.constraints)
 

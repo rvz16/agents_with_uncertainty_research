@@ -18,7 +18,12 @@ def partition_candidates(
                 key_parts.append(None)
                 continue
             value = candidate.arguments.get(aspect.param_name, UNK)
-            key_parts.append(value)
+            if isinstance(value, list):
+                key_parts.append(tuple(value))
+            elif isinstance(value, set):
+                key_parts.append(tuple(sorted(value)))
+            else:
+                key_parts.append(value)
         groups[tuple(key_parts)].append(idx)
     return groups
 

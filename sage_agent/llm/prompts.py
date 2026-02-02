@@ -52,7 +52,7 @@ def build_question_prompt(
     obs_text = "\n".join(observations)
     candidates_json = json.dumps(list(candidates), ensure_ascii=True)
     return (
-        "You are an agent that generates clarifying questions for tool calling.\n"
+        "You are an agent that generates clarifying questions for tool calling on different domain tasks.\n"
         "Return a JSON list. Each item must be: "
         "{\"question\": string, \"aspects\": [{\"tool\": string, \"param\": string}]}\n"
         "Only ask about parameters that are <UNK> in candidates.\n"
@@ -60,5 +60,5 @@ def build_question_prompt(
         f"Observations: {obs_text or '<none>'}\n"
         f"Candidates: {candidates_json}\n"
         f"Tool schemas: {tools_json}\n"
-        "JSON list only."
+        "!!!!USE JSON LIST only!!!!"
     )
