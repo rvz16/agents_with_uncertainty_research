@@ -20,6 +20,8 @@ This repository implements and evaluates methods for building more reliable AI a
 | **Schema-Guided Reasoning** | SGR | Pydantic schemas for structured tool calls |
 | **GRPO Training** | [arXiv:2402.03300](https://arxiv.org/abs/2402.03300) | Certainty-weighted reinforcement learning |
 | **Reflexion** | [arXiv:2303.11366](https://arxiv.org/abs/2303.11366) | Self-reflection for error recovery |
+| **AlphaEvolve** | [arXiv:2506.13131](https://arxiv.org/abs/2506.13131) | Evolutionary code optimization via LLM |
+| **KernelBench** | [arXiv:2502.10517](https://arxiv.org/abs/2502.10517) | GPU kernel generation benchmark (ICML 2025) |
 
 ### Evaluation Benchmarks
 
@@ -412,6 +414,13 @@ agents_with_uncertainty_research/
 │       ├── grpo_training.py
 │       └── langgraph_sage_agent_v2.py
 │
+├── alpha_evolve_kernels/          # GPU kernel optimization pipeline
+│   ├── evaluator/                 # KernelBench-aligned evaluation
+│   ├── evolve/                    # AlphaEvolve evolutionary loop + POMDP + UQ
+│   ├── bayesian_opt/              # Bayesian HP optimization
+│   ├── pipeline.py                # End-to-end pipeline
+│   └── examples/                  # Usage examples
+│
 ├── tests/                         # Test suite
 │   └── test_sage_agent_v1.py      # Pure SAGE tests
 │
@@ -559,6 +568,127 @@ pytest tests/ --cov=sage_agent --cov-report=html
   journal={arXiv preprint arXiv:2402.03300},
   year={2024}
 }
+```
+
+---
+
+## AlphaEvolve Kernels: Evolutionary GPU Kernel Optimization
+
+`alpha_evolve_kernels/` combines ideas from three research directions into an integrated pipeline for LLM-driven GPU kernel optimization:
+
+- **AlphaEvolve** ([arXiv:2506.13131](https://arxiv.org/abs/2506.13131)) — evolutionary code optimization via LLM with MAP-Elites diversity preservation
+- **KernelBench** (ICML 2025, [arXiv:2502.10517](https://arxiv.org/abs/2502.10517)) — benchmark for LLM-generated CUDA/Triton kernels with `fast_p` metric
+- **Bayesian optimization** — GP surrogate with acquisition functions for CUDA hyperparameter tuning
+
+The pipeline also integrates two techniques from the uncertainty-aware agents research in this repository:
+
+- **POMDP Strategy Selector** — adapts the Bayesian diagnostic controller from `article_implementation/bayesian/example.py` (`compute_posterior`, `get_optimal_policy_value`) to select which optimization strategy (tiling, fusion, shared memory, vectorization, algorithmic) to emphasize in the LLM prompt each iteration
+- **UQ Pre-Compilation Filter** — uses `UncertaintyEstimator` classes from `sgr+uncertainty/estimators.py` (perplexity, token entropy, etc.) to score LLM outputs by confidence and skip low-confidence generations before expensive compilation and evaluation
+
+### Architecture
+
+```
+alpha_evolve_kernels/
+├── evaluator/               # KernelBench-aligned evaluation pipeline
+│   ├── models.py            # KernelExecResult (aligned with KernelBench)
+│   ├── compiler.py          # CUDA load_inline / Triton tempfile loading
+│   ├── correctness.py       # Deterministic multi-trial correctness check
+│   ├── profiler.py          # CUDA event timing with L2 cache flush, fast_p
+│   └── evaluator.py         # KernelBenchEvaluator orchestrator
+├── evolve/                  # AlphaEvolve evolutionary loop
+│   ├── models.py            # Program, ProgramScore, IslandConfig
+│   ├── database.py          # MAP-Elites program database
+│   ├── prompt_sampler.py    # LLM prompt construction
+│   ├── diff_engine.py       # SEARCH/REPLACE diff parsing and application
+│   ├── llm_client.py        # OpenAI-compatible client (with logprobs support)
+│   ├── loop.py              # Main evolutionary loop
+│   ├── strategy_selector.py # POMDP mutation strategy selector (from example.py)
+│   └── uq_filter.py         # UQ pre-compilation filter (from estimators.py)
+├── bayesian_opt/            # Bayesian hyperparameter optimization
+│   ├── models.py            # ParameterDomain, HyperparamConfig
+│   ├── surrogate.py         # GP surrogate (Matern 5/2)
+│   ├── acquisition.py       # EI, UCB, PI acquisition functions
+│   └── optimizer.py         # BayesianKernelOptimizer
+├── pipeline.py              # End-to-end pipeline wiring
+└── examples/
+    └── matmul_optimize.py   # Matrix multiplication optimization example
+```
+
+### Integration Flow
+
+```
+                    ┌─────────────────┐
+                    │  LLM (GPT-4o)   │
+                    │  + logprobs     │
+                    └───────┬─────────┘
+                            │ SEARCH/REPLACE diffs
+            ┌───────────────┼───────────────┐
+            │               │               │
+    ┌───────▼──────┐  ┌─────▼─────┐  ┌──────▼──────┐
+    │ UQ Filter    │  │ Diff      │  │ Strategy    │
+    │ (estimators) │  │ Engine    │  │ Selector    │
+    │ skip if      │  │           │  │ (POMDP from │
+    │ uncertain    │  │           │  │ example.py) │
+    └───────┬──────┘  └─────┬─────┘  └──────┬──────┘
+            │               │               │
+            └───────┬───────┘               │
+                    ▼                       │
+          ┌─────────────────┐               │
+          │ KernelBench     │    observe     │
+          │ Evaluator       │───────────────►│
+          │ compile→correct │               │
+          │ →profile        │               │
+          └────────┬────────┘
+                   │
+          ┌────────▼────────┐
+          │ Bayesian HP Opt │
+          │ GP + EI/UCB     │──► suggest HP for next prompt
+          └─────────────────┘
+```
+
+### Quick Test
+
+```python
+# Strategy Selector (POMDP from example.py)
+from alpha_evolve_kernels.evolve.strategy_selector import MutationStrategySelector
+
+selector = MutationStrategySelector()
+s = selector.select_strategy()                # DP solver picks strategy
+selector.observe(s, improved=True)            # Bayes belief update
+print(selector.get_belief_summary())          # belief shifts toward s
+
+# UQ Filter (estimators from sgr+uncertainty)
+from alpha_evolve_kernels.evolve.uq_filter import UQPreCompilationFilter
+from estimators import GenerationLogprobs, TokenLogprob
+
+uq = UQPreCompilationFilter()
+confident = GenerationLogprobs([TokenLogprob("x", -0.5) for _ in range(20)])
+print(uq.should_evaluate(confident))         # (True, 1.65) — pass
+
+uncertain = GenerationLogprobs([TokenLogprob("x", -3.0) for _ in range(20)])
+print(uq.should_evaluate(uncertain))         # (False, 20.1) — filtered
+
+# Full Pipeline (requires OpenAI API key + GPU)
+from alpha_evolve_kernels.pipeline import AlphaEvolveKernelPipeline, PipelineConfig
+from alpha_evolve_kernels.evaluator.models import KernelTask
+
+pipeline = AlphaEvolveKernelPipeline(
+    task=KernelTask(task_id="matmul", reference_code="..."),
+    llm_config={"model": "gpt-4o", "api_key": "sk-..."},
+    config=PipelineConfig(
+        max_iterations=10,
+        use_strategy_selector=True,   # POMDP strategy selection
+        use_uq_filter=True,           # UQ pre-compilation filter
+        use_bayesian_opt=True,        # GP hyperparameter optimization
+    ),
+)
+result = pipeline.run(initial_code="class ModelNew(nn.Module): ...")
+```
+
+### Dependencies
+
+```
+torch, numpy, openai, scikit-learn, scipy
 ```
 
 ---
