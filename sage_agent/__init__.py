@@ -41,6 +41,15 @@ from .core.sage_algorithm import (
 )
 from .core.belief import BeliefState
 from .core.evpi import compute_evpi, partition_candidates
+from .core.bayesian_dp import (
+    compute_question_value_dp,
+    get_terminal_value,
+    compute_question_cost,
+    CostModel,
+    DEFAULT_COST_MODEL,
+    HIGH_STAKES_COST_MODEL,
+    LOW_STAKES_COST_MODEL,
+)
 from .core.pomdp import (
     # POMDP Actions
     Action,
@@ -186,6 +195,9 @@ __all__ = [
     "BeliefState",
     "compute_evpi",
     "partition_candidates",
+    # Bayesian DP Planner
+    "compute_question_value_dp",
+    "get_terminal_value",
     # POMDP Formulation (Section 3)
     "Action",
     "POMDPActionType",

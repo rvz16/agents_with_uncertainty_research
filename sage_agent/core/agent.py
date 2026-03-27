@@ -40,6 +40,9 @@ class SageAgentConfig:
     use_propagation: bool = False
     use_reflexion: bool = False
     max_reflexion_attempts: int = 0
+    use_dp_planning: bool = False
+    dp_query_cost: float = 0.05
+    dp_cost_model: object = None  # Optional CostModel from bayesian_dp
 
 
 @dataclass
@@ -191,13 +194,27 @@ class SageAgent:
             if not questions:
                 return self._execute_candidate(best_candidate, steps)
 
-            scored_questions = []
-            for question in questions:
-                evpi = compute_evpi(candidates, probabilities, question.aspects)
-                cost = self._redundancy_cost(question, aspect_counts)
-                scored_questions.append((evpi - cost, question))
-
-            scored_questions.sort(key=lambda item: item[0], reverse=True)
+            if self.config.use_dp_planning:
+                from .bayesian_dp import compute_question_value_dp
+                scored_questions = compute_question_value_dp(
+                    belief=self._belief,
+                    candidates=candidates,
+                    probabilities=probabilities,
+                    questions=questions,
+                    tool_schemas=self.tool_schemas,
+                    budget=self.config.max_questions - t,
+                    aspect_counts=aspect_counts,
+                    redundancy_weight=self.config.redundancy_weight,
+                    query_cost=self.config.dp_query_cost,
+                    cost_model=self.config.dp_cost_model,
+                )
+            else:
+                scored_questions = []
+                for question in questions:
+                    evpi = compute_evpi(candidates, probabilities, question.aspects)
+                    cost = self._redundancy_cost(question, aspect_counts)
+                    scored_questions.append((evpi - cost, question))
+                scored_questions.sort(key=lambda item: item[0], reverse=True)
             best_score, best_question = scored_questions[0]
             if best_score < self.config.alpha * max_prob:
                 if not self._has_required_unknowns(best_candidate):
