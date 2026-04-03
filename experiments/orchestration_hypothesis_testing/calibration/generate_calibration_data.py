@@ -60,13 +60,21 @@ log = logging.getLogger(__name__)
 
 # Defaults
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "data"
-DEFAULT_MODEL = "google/gemini-2.5-flash"
+DEFAULT_MODEL = "anthropic/claude-sonnet-4"
 DEFAULT_PATCHES_PER_INSTANCE = 3
 DEFAULT_TEMPERATURE = 0.8
 PATCH_GEN_TIMEOUT = 60  # seconds for LLM call
 TEST_TIMEOUT = 300  # seconds for full test suite
 FAST_TEST_TIMEOUT = 60  # seconds for single test file
 LINT_TIMEOUT = 30
+
+# Patch application strategies (from SWE-bench harness:
+# https://github.com/SWE-bench/SWE-bench/blob/main/swebench/harness/run_evaluation.py)
+GIT_APPLY_CMDS = [
+    "git apply --verbose",
+    "git apply --verbose --reject",
+    "patch --batch --fuzz=5 -p1 -i",
+]
 
 
 # ============================================================================
@@ -90,8 +98,10 @@ class PatchCalibrationRecord:
 
 
 # ============================================================================
-# Patch generation
+# Patch generation (oracle retrieval + complete file output)
 # ============================================================================
+
+MAX_FILE_LINES = 500  # Truncate very large files to keep prompt manageable
 
 PATCH_PROMPT_TEMPLATE = """\
 You are an expert software engineer fixing a bug in the {repo} repository.
@@ -101,18 +111,82 @@ You are an expert software engineer fixing a bug in the {repo} repository.
 
 {hints_section}
 
+## Files that likely need changes
+
+{file_contents}
+
 ## Task
-Generate a git diff patch that fixes this issue.
-Output ONLY the patch in unified diff format, starting with:
-```diff
---- a/path/to/file.py
-+++ b/path/to/file.py
-```
+Fix the issue by modifying the file(s) above. For each file you change, output the
+COMPLETE modified file content wrapped in a block like this:
 
-Focus on the minimal change needed to fix the issue. Do not add unrelated changes.
+<<<FILE path/to/file.py
+(entire file content with your fix applied)
+FILE>>>
 
-Your patch:
+Output ONLY the modified file blocks. Do not include files you did not change.
+Focus on the minimal change needed. Do not add unrelated changes.
 """
+
+
+def _read_oracle_files(repo_path: Path, gold_patch: str) -> dict[str, str]:
+    """Read the files that the gold patch modifies (oracle retrieval).
+
+    This gives the model actual file content so it can produce valid edits.
+    We use the gold patch file paths but NOT the gold patch content.
+    """
+    file_paths = _get_changed_files_from_patch(gold_patch)
+    contents: dict[str, str] = {}
+    for fpath in file_paths:
+        full_path = repo_path / fpath
+        if not full_path.exists():
+            continue
+        try:
+            text = full_path.read_text(errors="replace")
+            lines = text.split("\n")
+            if len(lines) > MAX_FILE_LINES:
+                text = "\n".join(lines[:MAX_FILE_LINES]) + f"\n... (truncated, {len(lines)} lines total)"
+            contents[fpath] = text
+        except Exception:
+            continue
+    return contents
+
+
+def _format_file_contents(files: dict[str, str]) -> str:
+    """Format file contents for the prompt."""
+    parts: list[str] = []
+    for fpath, content in files.items():
+        parts.append(f"### {fpath}\n```python\n{content}\n```")
+    return "\n\n".join(parts) if parts else "(no files available)"
+
+
+def _make_diff(original: str, modified: str, file_path: str) -> str:
+    """Compute unified diff between original and modified file content."""
+    import difflib
+    orig_lines = original.splitlines(keepends=True)
+    mod_lines = modified.splitlines(keepends=True)
+    diff = difflib.unified_diff(
+        orig_lines, mod_lines,
+        fromfile=f"a/{file_path}",
+        tofile=f"b/{file_path}",
+    )
+    return "".join(diff)
+
+
+def _parse_file_blocks(response: str) -> dict[str, str]:
+    """Parse <<<FILE path ... FILE>>> blocks from LLM response."""
+    blocks: dict[str, str] = {}
+    pattern = re.compile(
+        r"<<<FILE\s+(.+?)\s*\n([\s\S]*?)FILE>>>",
+        re.MULTILINE,
+    )
+    for match in pattern.finditer(response):
+        fpath = match.group(1).strip()
+        content = match.group(2)
+        # Strip trailing whitespace but keep the structure
+        if content.endswith("\n"):
+            content = content[:-1]
+        blocks[fpath] = content
+    return blocks
 
 
 def generate_patches(
@@ -122,24 +196,40 @@ def generate_patches(
     hints: str,
     n_patches: int,
     temperature: float,
+    repo_path: Optional[Path] = None,
+    gold_patch: str = "",
 ) -> list[str]:
-    """Generate N diverse patches for a SWE-bench instance."""
+    """Generate N diverse patches for a SWE-bench instance.
+
+    Uses oracle retrieval: reads the files that the gold patch modifies
+    and includes their content in the prompt. The model outputs complete
+    modified files, and we compute the diff programmatically — this
+    guarantees the patch always applies cleanly.
+    """
     hints_section = f"## Hints\n{hints}" if hints else ""
+
+    # Oracle retrieval: read files the gold patch touches
+    oracle_files: dict[str, str] = {}
+    if repo_path and gold_patch:
+        oracle_files = _read_oracle_files(repo_path, gold_patch)
+
+    file_contents = _format_file_contents(oracle_files)
     prompt = PATCH_PROMPT_TEMPLATE.format(
         repo=repo,
         problem_statement=problem_statement,
         hints_section=hints_section,
+        file_contents=file_contents,
     )
 
     patches: list[str] = []
     for i in range(n_patches):
         try:
             response = llm.complete(prompt)
-            patch = _extract_patch(response)
+            patch = _response_to_patch(response, oracle_files)
             if patch:
                 patches.append(patch)
             else:
-                log.warning("  Patch %d: empty after extraction", i)
+                log.warning("  Patch %d: no valid file blocks in response", i)
                 patches.append("")
         except Exception as e:
             log.warning("  Patch %d generation failed: %s", i, e)
@@ -148,21 +238,42 @@ def generate_patches(
     return patches
 
 
-def _extract_patch(response: str) -> str:
-    """Extract unified diff from LLM response."""
-    # Try ```diff block first
+def _response_to_patch(response: str, oracle_files: dict[str, str]) -> str:
+    """Convert LLM response (complete file blocks) to a unified diff patch.
+
+    If the response contains <<<FILE blocks, computes diff against originals.
+    Falls back to extracting raw diff from response if no blocks found.
+    """
+    # Try parsing <<<FILE blocks first
+    blocks = _parse_file_blocks(response)
+    if blocks:
+        diffs: list[str] = []
+        for fpath, modified_content in blocks.items():
+            original = oracle_files.get(fpath, "")
+            if not original:
+                # Try without leading path components
+                for opath, ocontent in oracle_files.items():
+                    if opath.endswith(fpath) or fpath.endswith(opath):
+                        original = ocontent
+                        fpath = opath
+                        break
+            diff = _make_diff(original, modified_content, fpath)
+            if diff:
+                diffs.append(diff)
+        return "\n".join(diffs) if diffs else ""
+
+    # Fallback: try extracting raw diff from response
     diff_match = re.search(r"```(?:diff)?\n([\s\S]*?)```", response)
     if diff_match:
         return diff_match.group(1).strip()
 
-    # Try raw unified diff
     diff_pattern = re.search(
         r"(---\s+a/.*?\n\+\+\+\s+b/.*?\n[\s\S]*?)(?:\n\n|$)", response
     )
     if diff_pattern:
         return diff_pattern.group(1).strip()
 
-    return response.strip()
+    return ""
 
 
 # ============================================================================
@@ -181,19 +292,57 @@ def _get_changed_files_from_patch(patch: str) -> list[str]:
 
 
 def _apply_patch(cwd: Path, patch: str) -> subprocess.CompletedProcess[str]:
-    """Apply a unified diff patch using `patch -p1` with fuzz tolerance.
+    """Apply a unified diff using the same fallback chain as the SWE-bench harness.
 
-    LLM-generated patches often have wrong context lines or line numbers.
-    `patch --fuzz=3` tolerates up to 3 mismatched context lines, which
-    is much more forgiving than `git apply`.
+    Tries multiple strategies in order of strictness:
+    1. git apply --verbose (strict)
+    2. git apply --verbose --reject (applies what it can)
+    3. patch --batch --fuzz=5 -p1 (maximum fuzz tolerance)
+
+    For strategy 3 (patch command), we write to a temp file since `patch -i`
+    requires a file path rather than stdin for reliable behavior.
     """
-    return subprocess.run(
-        ["patch", "-p1", "--fuzz=3", "--no-backup-if-mismatch", "--force"],
-        cwd=cwd,
-        input=patch,
-        text=True,
-        capture_output=True,
-        timeout=30,
+    # Write patch to temp file for the `patch` command fallback
+    patch_file = cwd / "_tmp_patch.diff"
+    patch_file.write_text(patch)
+
+    last_result = None
+    for cmd_template in GIT_APPLY_CMDS:
+        if cmd_template.endswith("-i"):
+            cmd = f"{cmd_template} {patch_file}"
+        else:
+            cmd = cmd_template
+
+        try:
+            if "git apply" in cmd:
+                last_result = subprocess.run(
+                    cmd.split(),
+                    cwd=cwd,
+                    input=patch,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            else:
+                # patch command uses -i flag with file
+                last_result = subprocess.run(
+                    f"{cmd_template} {patch_file}",
+                    shell=True,
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+        except subprocess.TimeoutExpired:
+            continue
+
+        if last_result.returncode == 0:
+            patch_file.unlink(missing_ok=True)
+            return last_result
+
+    patch_file.unlink(missing_ok=True)
+    return last_result or subprocess.CompletedProcess(
+        args="", returncode=1, stdout="", stderr="all apply strategies failed"
     )
 
 
@@ -533,7 +682,10 @@ def run_calibration(args: argparse.Namespace) -> None:
             log.error("  Failed to setup repo: %s", e)
             continue
 
-        # Generate patches
+        # Get gold patch for oracle file retrieval (we use file paths only, not content)
+        gold_patch = instance.get("patch", "")
+
+        # Generate patches with oracle retrieval
         patches = generate_patches(
             llm=llm,
             problem_statement=problem_statement,
@@ -541,6 +693,8 @@ def run_calibration(args: argparse.Namespace) -> None:
             hints=hints,
             n_patches=args.patches_per_instance,
             temperature=args.temperature,
+            repo_path=repo_path,
+            gold_patch=gold_patch,
         )
 
         # Evaluate each patch

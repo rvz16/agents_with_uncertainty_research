@@ -321,15 +321,70 @@ If the calibration is reasonable, we expect:
 
 ---
 
-## 11. File structure
+## 11. Evaluation infrastructure
+
+### SWE-bench official harness
+
+Repo: https://github.com/SWE-bench/SWE-bench
+
+```bash
+pip install -e git+https://github.com/SWE-bench/SWE-bench.git
+```
+
+Key capabilities we use:
+- **Docker-based evaluation**: reproducible test execution in isolated containers
+- **Patch application with fallbacks**: `git apply` → `git apply --reject` → `patch --fuzz=5`
+- **Grading**: FAIL_TO_PASS + PASS_TO_PASS test classification
+- **Parallel execution**: `ThreadPoolExecutor` with configurable workers
+- **Cloud support**: Modal for scalable evaluation
+
+Prediction format (what our calibration pipeline produces):
+```json
+{"instance_id": "django__django-11099", "model_name_or_path": "claude-sonnet-4", "model_patch": "diff ..."}
+```
+
+Run evaluation:
+```bash
+python -m swebench.harness.run_evaluation \
+    --dataset_name princeton-nlp/SWE-bench_Lite \
+    --predictions_path calibration/data/predictions.jsonl \
+    --max_workers 4 --run_id calibration_v1
+```
+
+### SWE-Bench Pro evaluation
+
+Repo: https://github.com/scaleapi/SWE-bench_Pro-os
+
+```bash
+pip install -r requirements.txt  # from SWE-bench_Pro-os
+```
+
+Key differences from SWE-bench:
+- **Pre-built Docker images** on Docker Hub (`jefzda/sweap-images`)
+- **Per-instance test parsers** in `run_scripts/{instance_id}/parser.py`
+- **Multi-language**: Python, JavaScript, TypeScript, Go
+- **Dataset**: `ScaleAI/SWE-bench_Pro` on HuggingFace
+
+Run evaluation:
+```bash
+python swe_bench_pro_eval.py \
+    --raw_sample_path swe_bench_pro_full.csv \
+    --patch_path calibration/data/predictions_pro.json \
+    --output_dir results/pro --scripts_dir run_scripts \
+    --dockerhub_username jefzda --use_local_docker
+```
+
+---
+
+## 12. File structure
 
 ```
 experiments/orchestration_hypothesis_testing/
 ├── EXPERIMENT_PLAN.md          ← this file
 ├── calibration/
-│   ├── generate_calibration_data.py
-│   ├── compute_likelihoods.py
-│   └── data/                   ← likelihood tables, transition kernels
+│   ├── generate_calibration_data.py   ← patch generation + critic evaluation
+│   ├── compute_likelihoods.py         ← P(z|Y) estimation from raw data
+│   └── data/                          ← likelihood tables, raw results (gitignored)
 ├── controller/
 │   ├── bayesian_codegen_controller.py
 │   └── test_controller.py
