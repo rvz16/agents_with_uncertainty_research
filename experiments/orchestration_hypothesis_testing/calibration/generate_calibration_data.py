@@ -163,7 +163,7 @@ def _make_diff(original: str, modified: str, file_path: str) -> str:
     """Compute unified diff between original and modified file content.
 
     Ensures the diff ends with a newline (required by `patch` command)
-    and adds '\ No newline at end of file' markers when needed.
+    and adds 'No newline at end of file' markers when needed.
     """
     import difflib
 
@@ -383,188 +383,127 @@ def _get_patched_content(repo_path: Path, patch: str, file_path: str) -> Optiona
     return None
 
 
-def run_critic_l0_syntax(patch: str, repo_path: Optional[Path] = None) -> CriticResult:
-    """L0: Check if patched Python files have valid syntax via ast.parse()."""
-    changed_files = _get_changed_files_from_patch(patch)
-    py_files = [f for f in changed_files if f.endswith(".py")]
-
-    if not py_files:
-        return CriticResult(passed=True, detail="no python files changed")
-
-    if repo_path is None:
-        # Without repo, try to syntax-check any inline code in the patch
-        # Extract added lines and check them as a rough proxy
-        return CriticResult(passed=True, detail="no repo available, skipped")
-
-    errors: list[str] = []
-    for fpath in py_files:
-        content = _get_patched_content(repo_path, patch, fpath)
-        if content is None:
-            continue
-        try:
-            ast.parse(content, filename=fpath)
-        except SyntaxError as e:
-            errors.append(f"{fpath}:{e.lineno}: {e.msg}")
-
-    if errors:
-        return CriticResult(passed=False, detail="; ".join(errors[:3]))
-    return CriticResult(passed=True, detail="")
+def _reset_repo(repo_path: Path) -> None:
+    """Reset repo to clean state (undo applied patches)."""
+    subprocess.run(
+        ["git", "checkout", "-f", "."],
+        cwd=repo_path, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "clean", "-fd"],
+        cwd=repo_path, capture_output=True,
+    )
 
 
-def run_critic_l1_lint(patch: str, repo_path: Optional[Path] = None) -> CriticResult:
-    """L1: Run ruff on changed Python files."""
-    changed_files = _get_changed_files_from_patch(patch)
-    py_files = [f for f in changed_files if f.endswith(".py")]
-
-    if not py_files:
-        return CriticResult(passed=True, detail="no python files changed")
-
-    if repo_path is None:
-        return CriticResult(passed=True, detail="no repo available, skipped")
-
-    # Apply patch to temp dir and run ruff
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_repo = Path(tmpdir) / "repo"
-        shutil.copytree(repo_path, tmp_repo, symlinks=True)
-
-        # Apply patch (use patch with fuzz for LLM-generated diffs)
-        result = _apply_patch(tmp_repo, patch)
-        if result.returncode != 0:
-            return CriticResult(passed=False, detail=f"patch apply failed: {result.stderr[:200]}")
-
-        # Run ruff on changed files only
-        abs_files = [str(tmp_repo / f) for f in py_files if (tmp_repo / f).exists()]
-        if not abs_files:
-            return CriticResult(passed=True, detail="changed files not found after apply")
-
-        try:
-            result = subprocess.run(
-                ["ruff", "check", "--select=E,F"] + abs_files,
-                cwd=tmp_repo,
-                capture_output=True,
-                text=True,
-                timeout=LINT_TIMEOUT,
-            )
-        except FileNotFoundError:
-            return CriticResult(passed=True, detail="ruff not installed, skipped")
-        except subprocess.TimeoutExpired:
-            return CriticResult(passed=False, detail="ruff timeout")
-
-        if result.returncode == 0:
-            return CriticResult(passed=True, detail="")
-
-        # Extract first few errors
-        errors = result.stdout.strip().split("\n")[:5]
-        return CriticResult(passed=False, detail="; ".join(errors))
-
-
-def run_critic_l2_fast_test(
+def evaluate_patch(
     patch: str,
     repo_path: Path,
     test_patch: str,
-) -> CriticResult:
-    """L2: Run only the test file(s) referenced in the SWE-bench test_patch."""
-    # Extract test file paths from test_patch
+) -> tuple[CriticResult, CriticResult, CriticResult, int]:
+    """Run all critics and verifier on a single patch IN-PLACE on the repo.
+
+    Instead of copying the entire repo for each critic (slow for large repos
+    like django with 150K+ files), we apply the patch in-place and reset
+    with git checkout between evaluations.
+
+    Returns: (l0_syntax, l1_lint, l2_fast_test, ground_truth)
+    """
+    changed_files = _get_changed_files_from_patch(patch)
+    py_files = [f for f in changed_files if f.endswith(".py")]
     test_files = _get_changed_files_from_patch(test_patch)
     test_files = [f for f in test_files if "test" in f.lower()]
 
-    if not test_files:
-        return CriticResult(passed=False, detail="no test files found in test_patch")
+    # --- L0: Syntax check (doesn't need patch applied to repo) ---
+    l0 = CriticResult(passed=True, detail="")
+    if py_files:
+        errors: list[str] = []
+        for fpath in py_files:
+            content = _get_patched_content(repo_path, patch, fpath)
+            if content is None:
+                continue
+            try:
+                ast.parse(content, filename=fpath)
+            except SyntaxError as e:
+                errors.append(f"{fpath}:{e.lineno}: {e.msg}")
+        if errors:
+            l0 = CriticResult(passed=False, detail="; ".join(errors[:3]))
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_repo = Path(tmpdir) / "repo"
-        shutil.copytree(repo_path, tmp_repo, symlinks=True)
+    # --- Apply patch to repo in-place ---
+    apply_result = _apply_patch(repo_path, patch)
+    patch_applied = apply_result.returncode == 0
 
-        # Apply the generated patch (use patch with fuzz for LLM-generated diffs)
-        result = _apply_patch(tmp_repo, patch)
-        if result.returncode != 0:
-            return CriticResult(passed=False, detail=f"patch apply failed: {result.stderr[:200]}")
+    if not patch_applied:
+        _reset_repo(repo_path)
+        fail = CriticResult(passed=False, detail=f"patch apply failed: {apply_result.stderr[:200]}")
+        return l0, fail, fail, 0
 
-        # Also apply the test patch (SWE-bench provides test changes separately)
-        # Test patches are well-formed, but use same approach for consistency
-        result = _apply_patch(tmp_repo, test_patch)
-        if result.returncode != 0:
-            return CriticResult(
-                passed=False,
-                detail=f"test patch apply failed: {result.stderr[:200]}",
-            )
+    # --- L1: Lint on changed files ---
+    l1 = CriticResult(passed=True, detail="")
+    if py_files:
+        abs_files = [str(repo_path / f) for f in py_files if (repo_path / f).exists()]
+        if abs_files:
+            try:
+                result = subprocess.run(
+                    ["ruff", "check", "--select=E,F"] + abs_files,
+                    cwd=repo_path,
+                    capture_output=True, text=True,
+                    timeout=LINT_TIMEOUT,
+                )
+                if result.returncode != 0:
+                    errors = result.stdout.strip().split("\n")[:5]
+                    l1 = CriticResult(passed=False, detail="; ".join(errors))
+            except FileNotFoundError:
+                l1 = CriticResult(passed=True, detail="ruff not installed, skipped")
+            except subprocess.TimeoutExpired:
+                l1 = CriticResult(passed=False, detail="ruff timeout")
 
-        # Run only the specific test files
-        test_cmd = ["python", "-m", "pytest", "-x", "--tb=short"] + test_files
-        try:
-            result = subprocess.run(
-                test_cmd,
-                cwd=tmp_repo,
-                capture_output=True,
-                text=True,
-                timeout=FAST_TEST_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
-            return CriticResult(passed=False, detail="fast test timeout")
+    # --- L2: Fast test (apply test_patch too, run specific test files) ---
+    l2 = CriticResult(passed=False, detail="no test files")
+    if test_files:
+        test_apply = _apply_patch(repo_path, test_patch)
+        if test_apply.returncode != 0:
+            l2 = CriticResult(passed=False, detail=f"test patch apply failed: {test_apply.stderr[:200]}")
+        else:
+            test_cmd = ["python", "-m", "pytest", "-x", "--tb=short"] + test_files
+            try:
+                result = subprocess.run(
+                    test_cmd, cwd=repo_path,
+                    capture_output=True, text=True,
+                    timeout=FAST_TEST_TIMEOUT,
+                )
+                if result.returncode == 0:
+                    l2 = CriticResult(passed=True, detail="")
+                else:
+                    l2 = CriticResult(
+                        passed=False,
+                        detail=f"exit={result.returncode}; {result.stdout[-200:]}",
+                    )
+            except subprocess.TimeoutExpired:
+                l2 = CriticResult(passed=False, detail="fast test timeout")
 
-        if result.returncode == 0:
-            return CriticResult(passed=True, detail="")
+    # Reset before verifier (need clean state to re-apply)
+    _reset_repo(repo_path)
 
-        # Extract failure summary
-        stderr_tail = result.stderr[-300:] if result.stderr else ""
-        stdout_tail = result.stdout[-300:] if result.stdout else ""
-        return CriticResult(
-            passed=False,
-            detail=f"exit={result.returncode}; {stdout_tail}",
-        )
+    # --- Verifier: ground truth ---
+    ground_truth = 0
+    apply_result = _apply_patch(repo_path, patch)
+    if apply_result.returncode == 0:
+        test_apply = _apply_patch(repo_path, test_patch)
+        if test_apply.returncode == 0 and test_files:
+            test_cmd = ["python", "-m", "pytest", "-x", "--tb=short"] + test_files
+            try:
+                result = subprocess.run(
+                    test_cmd, cwd=repo_path,
+                    capture_output=True, text=True,
+                    timeout=TEST_TIMEOUT,
+                )
+                ground_truth = 1 if result.returncode == 0 else 0
+            except subprocess.TimeoutExpired:
+                ground_truth = 0
 
-
-# ============================================================================
-# Verifier (ground truth)
-# ============================================================================
-
-def run_verifier(
-    patch: str,
-    repo_path: Path,
-    test_patch: str,
-) -> int:
-    """Run full test suite to determine ground truth Y in {0, 1}.
-
-    Applies both the generated patch and the test patch, then runs pytest.
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_repo = Path(tmpdir) / "repo"
-        shutil.copytree(repo_path, tmp_repo, symlinks=True)
-
-        # Apply the generated patch (use patch with fuzz for LLM-generated diffs)
-        result = _apply_patch(tmp_repo, patch)
-        if result.returncode != 0:
-            log.debug("  Verifier: patch apply failed")
-            return 0
-
-        # Apply the test patch
-        result = _apply_patch(tmp_repo, test_patch)
-        if result.returncode != 0:
-            log.debug("  Verifier: test patch apply failed")
-            return 0
-
-        # Run full test suite
-        test_files = _get_changed_files_from_patch(test_patch)
-        test_files = [f for f in test_files if "test" in f.lower()]
-
-        if not test_files:
-            log.debug("  Verifier: no test files found")
-            return 0
-
-        test_cmd = ["python", "-m", "pytest", "-x", "--tb=short"] + test_files
-        try:
-            result = subprocess.run(
-                test_cmd,
-                cwd=tmp_repo,
-                capture_output=True,
-                text=True,
-                timeout=TEST_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
-            log.debug("  Verifier: timeout")
-            return 0
-
-        return 1 if result.returncode == 0 else 0
+    # Final reset
+    _reset_repo(repo_path)
+    return l0, l1, l2, ground_truth
 
 
 # ============================================================================
@@ -742,23 +681,12 @@ def run_calibration(args: argparse.Namespace) -> None:
                 total_records += 1
                 continue
 
-            log.info("  Patch %d: running critics...", patch_id)
+            log.info("  Patch %d: running critics + verifier...", patch_id)
 
-            # L0: Syntax check
-            l0 = run_critic_l0_syntax(patch, repo_path)
+            l0, l1, l2, ground_truth = evaluate_patch(patch, repo_path, test_patch)
             log.info("    L0 syntax: %s", "PASS" if l0.passed else f"FAIL ({l0.detail[:60]})")
-
-            # L1: Lint
-            l1 = run_critic_l1_lint(patch, repo_path)
             log.info("    L1 lint:   %s", "PASS" if l1.passed else f"FAIL ({l1.detail[:60]})")
-
-            # L2: Fast test
-            l2 = run_critic_l2_fast_test(patch, repo_path, test_patch)
             log.info("    L2 test:   %s", "PASS" if l2.passed else f"FAIL ({l2.detail[:60]})")
-
-            # Verifier: ground truth
-            log.info("    Running verifier (full test suite)...")
-            ground_truth = run_verifier(patch, repo_path, test_patch)
             log.info("    Ground truth: Y=%d", ground_truth)
 
             total_records += 1
