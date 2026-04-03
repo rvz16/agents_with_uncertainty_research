@@ -204,6 +204,13 @@ def _parse_file_blocks(response: str) -> dict[str, str]:
     return blocks
 
 
+@dataclass(frozen=True)
+class GeneratedPatch:
+    """A generated patch with both diff and direct file modifications."""
+    diff: str
+    modified_files: dict[str, str]  # fpath -> complete modified content
+
+
 def generate_patches(
     llm: OpenRouterClient,
     problem_statement: str,
@@ -213,13 +220,13 @@ def generate_patches(
     temperature: float,
     repo_path: Optional[Path] = None,
     gold_patch: str = "",
-) -> list[str]:
+) -> list[GeneratedPatch]:
     """Generate N diverse patches for a SWE-bench instance.
 
     Uses oracle retrieval: reads the files that the gold patch modifies
     and includes their content in the prompt. The model outputs complete
-    modified files, and we compute the diff programmatically — this
-    guarantees the patch always applies cleanly.
+    modified files. We store both the raw modified files (for direct
+    application) and the computed diff (for the calibration record).
     """
     hints_section = f"## Hints\n{hints}" if hints else ""
 
@@ -236,19 +243,41 @@ def generate_patches(
         file_contents=file_contents,
     )
 
-    patches: list[str] = []
+    patches: list[GeneratedPatch] = []
     for i in range(n_patches):
         try:
             response = llm.complete(prompt)
-            patch = _response_to_patch(response, oracle_files)
-            if patch:
-                patches.append(patch)
+            blocks = _parse_file_blocks(response)
+
+            if blocks:
+                # Compute diff for the record (informational)
+                diffs: list[str] = []
+                resolved_files: dict[str, str] = {}
+                for fpath, modified_content in blocks.items():
+                    # Resolve path against oracle files
+                    original = oracle_files.get(fpath, "")
+                    if not original:
+                        for opath, ocontent in oracle_files.items():
+                            if opath.endswith(fpath) or fpath.endswith(opath):
+                                original = ocontent
+                                fpath = opath
+                                break
+                    resolved_files[fpath] = modified_content
+                    diff = _make_diff(original, modified_content, fpath)
+                    if diff:
+                        diffs.append(diff)
+
+                patches.append(GeneratedPatch(
+                    diff="\n".join(diffs),
+                    modified_files=resolved_files,
+                ))
             else:
-                log.warning("  Patch %d: no valid file blocks in response", i)
-                patches.append("")
+                # Fallback: try raw diff extraction
+                diff = _response_to_patch(response, oracle_files)
+                patches.append(GeneratedPatch(diff=diff, modified_files={}))
         except Exception as e:
             log.warning("  Patch %d generation failed: %s", i, e)
-            patches.append("")
+            patches.append(GeneratedPatch(diff="", modified_files={}))
 
     return patches
 
@@ -395,30 +424,49 @@ def _reset_repo(repo_path: Path) -> None:
     )
 
 
+def _apply_modified_files(repo_path: Path, modified_files: dict[str, str]) -> bool:
+    """Apply modifications by directly writing file contents to the repo.
+
+    This bypasses diff/patch entirely — the model outputs complete file
+    content, and we just overwrite the files. Guaranteed to "apply".
+    """
+    for fpath, content in modified_files.items():
+        target = repo_path / fpath
+        if not target.parent.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    return True
+
+
 def evaluate_patch(
     patch: str,
     repo_path: Path,
     test_patch: str,
+    modified_files: Optional[dict[str, str]] = None,
 ) -> tuple[CriticResult, CriticResult, CriticResult, int]:
     """Run all critics and verifier on a single patch IN-PLACE on the repo.
 
-    Instead of copying the entire repo for each critic (slow for large repos
-    like django with 150K+ files), we apply the patch in-place and reset
-    with git checkout between evaluations.
+    If modified_files is provided (from oracle retrieval), applies changes
+    by directly writing files (always succeeds). Falls back to diff-based
+    application if modified_files is not available.
 
     Returns: (l0_syntax, l1_lint, l2_fast_test, ground_truth)
     """
-    changed_files = _get_changed_files_from_patch(patch)
-    py_files = [f for f in changed_files if f.endswith(".py")]
     test_files = _get_changed_files_from_patch(test_patch)
     test_files = [f for f in test_files if "test" in f.lower()]
 
-    # --- L0: Syntax check (doesn't need patch applied to repo) ---
+    # Determine changed Python files
+    if modified_files:
+        py_files = [f for f in modified_files if f.endswith(".py")]
+    else:
+        py_files = [f for f in _get_changed_files_from_patch(patch) if f.endswith(".py")]
+
+    # --- L0: Syntax check (check content before applying) ---
     l0 = CriticResult(passed=True, detail="")
     if py_files:
         errors: list[str] = []
         for fpath in py_files:
-            content = _get_patched_content(repo_path, patch, fpath)
+            content = modified_files.get(fpath) if modified_files else _get_patched_content(repo_path, patch, fpath)
             if content is None:
                 continue
             try:
@@ -428,9 +476,13 @@ def evaluate_patch(
         if errors:
             l0 = CriticResult(passed=False, detail="; ".join(errors[:3]))
 
-    # --- Apply patch to repo in-place ---
-    apply_result = _apply_patch(repo_path, patch)
-    patch_applied = apply_result.returncode == 0
+    # --- Apply changes to repo in-place ---
+    if modified_files:
+        _apply_modified_files(repo_path, modified_files)
+        patch_applied = True
+    else:
+        apply_result = _apply_patch(repo_path, patch)
+        patch_applied = apply_result.returncode == 0
 
     if not patch_applied:
         _reset_repo(repo_path)
@@ -652,13 +704,14 @@ def run_calibration(args: argparse.Namespace) -> None:
         )
 
         # Evaluate each patch
-        for patch_id, patch in enumerate(patches):
+        for patch_id, gen_patch in enumerate(patches):
             key = f"{instance_id}_{patch_id}"
             if key in completed:
                 log.info("  Patch %d: skipping (already done)", patch_id)
                 continue
 
-            if not patch:
+            patch = gen_patch.diff
+            if not patch and not gen_patch.modified_files:
                 log.warning("  Patch %d: empty, recording as all-fail", patch_id)
                 record = PatchCalibrationRecord(
                     instance_id=instance_id,
@@ -683,7 +736,10 @@ def run_calibration(args: argparse.Namespace) -> None:
 
             log.info("  Patch %d: running critics + verifier...", patch_id)
 
-            l0, l1, l2, ground_truth = evaluate_patch(patch, repo_path, test_patch)
+            l0, l1, l2, ground_truth = evaluate_patch(
+                patch, repo_path, test_patch,
+                modified_files=gen_patch.modified_files or None,
+            )
             log.info("    L0 syntax: %s", "PASS" if l0.passed else f"FAIL ({l0.detail[:60]})")
             log.info("    L1 lint:   %s", "PASS" if l1.passed else f"FAIL ({l1.detail[:60]})")
             log.info("    L2 test:   %s", "PASS" if l2.passed else f"FAIL ({l2.detail[:60]})")
