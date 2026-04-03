@@ -160,8 +160,19 @@ def _format_file_contents(files: dict[str, str]) -> str:
 
 
 def _make_diff(original: str, modified: str, file_path: str) -> str:
-    """Compute unified diff between original and modified file content."""
+    """Compute unified diff between original and modified file content.
+
+    Ensures the diff ends with a newline (required by `patch` command)
+    and adds '\ No newline at end of file' markers when needed.
+    """
     import difflib
+
+    # Ensure both strings end with newline for clean diffs
+    if original and not original.endswith("\n"):
+        original += "\n"
+    if modified and not modified.endswith("\n"):
+        modified += "\n"
+
     orig_lines = original.splitlines(keepends=True)
     mod_lines = modified.splitlines(keepends=True)
     diff = difflib.unified_diff(
@@ -169,7 +180,11 @@ def _make_diff(original: str, modified: str, file_path: str) -> str:
         fromfile=f"a/{file_path}",
         tofile=f"b/{file_path}",
     )
-    return "".join(diff)
+    result = "".join(diff)
+    # Ensure trailing newline (patch command requires it)
+    if result and not result.endswith("\n"):
+        result += "\n"
+    return result
 
 
 def _parse_file_blocks(response: str) -> dict[str, str]:
