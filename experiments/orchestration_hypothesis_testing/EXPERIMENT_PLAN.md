@@ -34,11 +34,11 @@ But the paper's **code generation framing** (generator/critic/verifier) maps to 
 
 ---
 
-## 3. Target task: SWE-bench Verified (primary) + LiveCodeBench (secondary)
+## 3. Target task: SWE-Bench Pro (primary) + SWE-bench Lite/Verified + LiveCodeBench (secondary)
 
 ### 3.1 Why SWE-bench
 
-SWE-bench Verified (500 instances, human-validated) is the strongest fit because:
+SWE-bench Verified (500 instances, human-validated) and SWE-Bench Pro (731 public instances, contamination-resistant) are the strongest fit because:
 
 1. **Verification is genuinely expensive.** Running the full test suite requires: clone repo → install dependencies → apply patch → execute tests. This takes 30–120s per instance and often fails due to environment issues. Cost $C_\text{ver}$ is real.
 
@@ -48,7 +48,22 @@ SWE-bench Verified (500 instances, human-validated) is the strongest fit because
 
 4. **The existing codebase already has SWE-bench infrastructure** (`different_agents/v4/langgraph_sage_agent_v4_swe.py`, `different_agents/evaluations/run_swebench_eval.py`).
 
-### 3.2 Why LiveCodeBench (secondary)
+### 3.2 Why SWE-Bench Pro (primary evaluation benchmark)
+
+SWE-Bench Pro (Deng et al., 2025) is a harder, contamination-resistant benchmark:
+
+1. **1,865 problems** from 41 actively maintained repos (731 public, 858 held-out, 276 commercial). Multi-language: Python, JavaScript, TypeScript, Go.
+2. **Long-horizon tasks**: patches span mean 4.1 files and 107.4 lines of code (vs 4.5 median LOC in SWE-bench Lite). This makes verification genuinely expensive (Docker environments, full dependency resolution).
+3. **Contamination-resistant**: GPL-licensed repos + commercial codebases from startups. Not in LLM training data.
+4. **Human-augmented**: each task has problem statement + requirements + interface spec, reducing false negatives in test evaluation.
+5. **Best models score <45%** (Claude Sonnet 4.5: 43.6%, GPT-5: 41.8%) — plenty of room for orchestration improvements.
+6. **Rich failure taxonomy** (Table 4): wrong solution (35.9%), syntax error (31.3%), incorrect file (4.9%), tool-use errors (68% of non-submitted). These failure modes map directly to our critic levels.
+
+**Calibration strategy**: calibrate on SWE-bench Lite first (cheaper, more Y=1 signal), then validate and optionally re-calibrate on SWE-Bench Pro.
+
+Data: `ScaleAI/SWE-bench_Pro` on HuggingFace. Code: https://github.com/scaleapi/SWE-bench_Pro-os
+
+### 3.4 Why LiveCodeBench (secondary)
 
 LiveCodeBench (competitive programming, post-training-cutoff problems) provides a cleaner cost structure:
 
@@ -57,7 +72,7 @@ LiveCodeBench (competitive programming, post-training-cutoff problems) provides 
 - The P(example tests pass | all tests pass) and P(example tests pass | some hidden test fails) can be estimated empirically — this gives the likelihood model $P(z \mid Y)$.
 - Problems are self-contained (no repo context), so environment setup noise is eliminated.
 
-### 3.3 Why NOT HumanEval/MBPP
+### 3.5 Why NOT HumanEval/MBPP
 
 Too simple. Verification is cheap (few test cases, no environment complexity). The cost gap $C_\text{ver} \gg C_\text{crit}$ barely exists. The Bayesian controller's advantage would be negligible — a single generate-and-test loop already achieves high pass rates.
 
@@ -193,16 +208,37 @@ The comparison that matters most: **SAGE v4 vs. Bayesian controller**, because b
 
 ## 8. Implementation plan
 
-### Phase 1: Calibration dataset (Week 1–2)
+### Phase 1a: Calibration on SWE-bench Lite (Week 1–2)
 
-1. Select 200 SWE-bench instances (non-Verified, for calibration).
-2. For each instance, generate 5 patches using the LLM.
-3. Run all critic levels (L0–L4) on each patch.
-4. Run the full test suite to get ground truth.
-5. Store results in a structured dataset: `(instance_id, patch_id, critic_level, critic_result, ground_truth)`.
-6. Estimate likelihood tables $P(z^{(k)} \mid Y)$ and transition kernel $\mathcal{T}$.
+Calibrate on SWE-bench Lite first: simpler tasks (median 4.5 LOC patches), higher
+chance of generating correct patches → better class balance for confusion matrix estimation.
 
-**Output**: `calibration/likelihood_tables.json`, `calibration/transition_kernel.json`
+1. For each of 300 SWE-bench Lite instances, generate 3 patches using an LLM.
+2. Run tiered critics (L0–L2) on each patch:
+   - L0: syntax check (`ast.parse`)
+   - L1: lint (`ruff check --select=E,F`)
+   - L2: fast test (run only the test file from `test_patch`)
+3. Run the full test suite (verifier) to get ground truth $Y \in \{0, 1\}$.
+4. Store results incrementally as JSONL: `calibration/data/raw_results.jsonl`.
+5. Estimate likelihood tables $P(z^{(k)} \mid Y)$ and transition kernel $\mathcal{T}$.
+
+**Scripts**: `calibration/generate_calibration_data.py`, `calibration/compute_likelihoods.py`
+**Output**: `calibration/data/likelihood_tables.json`
+
+### Phase 1b: Validate calibration on SWE-Bench Pro (Week 2)
+
+SWE-Bench Pro (Deng et al., 2025) provides harder, contamination-resistant instances
+from 41 repos (Python, JS, TS, Go). 731 public instances, multi-file patches (mean 107 LOC),
+Docker-based environments. The cost gap $C_\text{ver} \gg C_\text{crit}$ is more
+pronounced here, which is where the Bayesian controller's advantage should be largest.
+
+1. Run the same calibration pipeline on SWE-Bench Pro public set (731 instances).
+2. Check whether likelihood tables transfer from Lite → Pro (cross-difficulty generalization).
+3. If they don't transfer well, calibrate separate tables for Pro.
+4. This also serves as the primary **evaluation benchmark** for Phase 3.
+
+**Data**: `ScaleAI/SWE-bench_Pro` on HuggingFace
+**Ref**: https://arxiv.org/abs/2509.16941
 
 ### Phase 2: Bayesian controller implementation (Week 2–3)
 
@@ -221,15 +257,16 @@ The comparison that matters most: **SAGE v4 vs. Bayesian controller**, because b
 
 **Output**: `sage_agent/core/codegen_controller.py`, updated `different_agents/v4/langgraph_sage_agent_v4_swe_bayesian.py`
 
-### Phase 3: Experiments on SWE-bench Verified (Week 3–4)
+### Phase 3: Experiments on SWE-Bench Pro + SWE-bench Verified (Week 3–4)
 
-1. Run all baselines on SWE-bench Verified (500 instances).
+1. Run all baselines on SWE-Bench Pro public set (731 instances) and SWE-bench Verified (500 instances).
 2. Run Bayesian controller with calibrated parameters.
 3. Ablations:
    - Remove critic (only generator + verifier) → measures value of cheap diagnostics.
    - Remove generator (only critic + verifier) → measures value of iterative refinement.
-   - Single critic level only (L1 only, L3 only) → measures value of tiered critics.
+   - Single critic level only (L1 only, L2 only) → measures value of tiered critics.
    - Myopic (horizon-1) controller vs. full DP → measures value of lookahead.
+   - Cross-benchmark likelihood transfer: Lite-calibrated tables on Pro instances.
 4. Sensitivity analysis on likelihood misspecification: perturb $P(z \mid Y)$ by ±10%, ±20%.
 
 ### Phase 4: LiveCodeBench validation (Week 4–5)
