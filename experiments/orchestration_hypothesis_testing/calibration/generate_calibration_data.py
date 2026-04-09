@@ -68,6 +68,11 @@ TEST_TIMEOUT = 300  # seconds for full test suite
 FAST_TEST_TIMEOUT = 60  # seconds for single test file
 LINT_TIMEOUT = 30
 
+# Python binary for test execution (may need older Python for SWE-bench repos)
+# Use conda env if available, otherwise system python
+CONDA_PY39 = Path.home() / "miniconda3/envs/swebench_py39/bin/python"
+TEST_PYTHON = str(CONDA_PY39) if CONDA_PY39.exists() else "python"
+
 # Patch application strategies (from SWE-bench harness:
 # https://github.com/SWE-bench/SWE-bench/blob/main/swebench/harness/run_evaluation.py)
 GIT_APPLY_CMDS = [
@@ -443,12 +448,18 @@ def evaluate_patch(
     repo_path: Path,
     test_patch: str,
     modified_files: Optional[dict[str, str]] = None,
+    swebench_eval: bool = False,
+    instance_id: str = "",
+    model_name: str = "",
 ) -> tuple[CriticResult, CriticResult, CriticResult, int]:
     """Run all critics and verifier on a single patch IN-PLACE on the repo.
 
     If modified_files is provided (from oracle retrieval), applies changes
     by directly writing files (always succeeds). Falls back to diff-based
     application if modified_files is not available.
+
+    If swebench_eval is True, uses the SWE-bench Docker harness for ground
+    truth evaluation instead of running tests directly (handles deps/env).
 
     Returns: (l0_syntax, l1_lint, l2_fast_test, ground_truth)
     """
@@ -516,7 +527,7 @@ def evaluate_patch(
         if test_apply.returncode != 0:
             l2 = CriticResult(passed=False, detail=f"test patch apply failed: {test_apply.stderr[:200]}")
         else:
-            test_cmd = ["python", "-m", "pytest", "-x", "--tb=short"] + test_files
+            test_cmd = [TEST_PYTHON, "-m", "pytest", "-x", "--tb=short"] + test_files
             try:
                 result = subprocess.run(
                     test_cmd, cwd=repo_path,
@@ -538,11 +549,23 @@ def evaluate_patch(
 
     # --- Verifier: ground truth ---
     ground_truth = 0
-    apply_result = _apply_patch(repo_path, patch)
-    if apply_result.returncode == 0:
+
+    if swebench_eval and instance_id and patch:
+        # Use SWE-bench Docker harness for reliable ground truth
+        ground_truth = _swebench_docker_eval(instance_id, patch, model_name)
+    else:
+        # Fallback: direct test execution (use modified_files for reliable apply)
+        if modified_files:
+            _apply_modified_files(repo_path, modified_files)
+        else:
+            apply_result = _apply_patch(repo_path, patch)
+            if apply_result.returncode != 0:
+                _reset_repo(repo_path)
+                return l0, l1, l2, 0
+
         test_apply = _apply_patch(repo_path, test_patch)
         if test_apply.returncode == 0 and test_files:
-            test_cmd = ["python", "-m", "pytest", "-x", "--tb=short"] + test_files
+            test_cmd = [TEST_PYTHON, "-m", "pytest", "-x", "--tb=short"] + test_files
             try:
                 result = subprocess.run(
                     test_cmd, cwd=repo_path,
@@ -558,9 +581,122 @@ def evaluate_patch(
     return l0, l1, l2, ground_truth
 
 
+def _swebench_docker_eval(instance_id: str, patch: str, model_name: str) -> int:
+    """Evaluate a patch using SWE-bench Docker harness for reliable ground truth.
+
+    Creates a temporary predictions file and runs swebench evaluation
+    in a Docker container. Returns 1 if patch passes, 0 otherwise.
+    """
+    import tempfile
+
+    pred = {
+        "instance_id": instance_id,
+        "model_name_or_path": model_name or "calibration",
+        "model_patch": patch,
+    }
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, prefix="swebench_pred_"
+    ) as f:
+        f.write(json.dumps(pred) + "\n")
+        pred_path = f.name
+
+    try:
+        result = subprocess.run(
+            [
+                "python", "-m", "swebench.harness.run_evaluation",
+                "--dataset_name", "princeton-nlp/SWE-bench_Lite",
+                "--predictions_path", pred_path,
+                "--max_workers", "1",
+                "--run_id", f"cal_{instance_id.replace('/', '_')}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 min max per instance
+        )
+
+        # Check the evaluation report for pass/fail
+        if result.returncode == 0:
+            # SWE-bench writes results to a report file
+            # Parse stdout for resolved status
+            if "RESOLVED" in result.stdout or '"resolved": true' in result.stdout.lower():
+                return 1
+            # Also check for the instance in resolved list
+            if instance_id in result.stdout and "resolved" in result.stdout.lower():
+                return 1
+    except subprocess.TimeoutExpired:
+        log.warning("SWE-bench eval timed out for %s", instance_id)
+    except Exception as e:
+        log.warning("SWE-bench eval failed for %s: %s", instance_id, e)
+    finally:
+        Path(pred_path).unlink(missing_ok=True)
+
+    return 0
+
+
 # ============================================================================
 # Repo management
 # ============================================================================
+
+def _install_repo_deps(repo: str, repo_path: Path) -> None:
+    """Install minimal dependencies needed to run tests for a given repo.
+
+    Uses the conda swebench_py39 env's pip to install into that env.
+    Only installs once per repo clone (creates a .deps_installed marker).
+    """
+    # Track installed repos globally (deps go into py39 env, not the repo)
+    if not hasattr(_install_repo_deps, '_installed'):
+        _install_repo_deps._installed = set()
+    if repo in _install_repo_deps._installed:
+        return
+
+    pip = str(Path.home() / "miniconda3/envs/swebench_py39/bin/pip")
+    if not Path(pip).exists():
+        pip = "pip"
+
+    # Repo-specific dependency installation
+    deps_map: dict[str, list[str]] = {
+        "sympy/sympy": ["mpmath"],
+        "psf/requests": ["pytest-httpbin", "pytest-mock", "trustme"],
+        "pallets/flask": ["pytest", "werkzeug", "jinja2", "markupsafe", "itsdangerous", "click", "blinker"],
+        "pytest-dev/pytest": [],  # pytest can test itself
+        "scikit-learn/scikit-learn": ["numpy", "scipy", "cython", "joblib", "threadpoolctl"],
+        "matplotlib/matplotlib": ["numpy", "pyparsing", "cycler", "kiwisolver", "pillow"],
+        "pydata/xarray": ["numpy", "pandas"],
+        "mwaskom/seaborn": ["numpy", "pandas", "matplotlib"],
+        "sphinx-doc/sphinx": ["docutils", "jinja2", "pygments", "snowballstemmer", "babel",
+                               "alabaster", "imagesize", "packaging", "requests"],
+        "pylint-dev/pylint": ["astroid", "isort", "mccabe", "tomlkit"],
+    }
+
+    deps = deps_map.get(repo, [])
+    if deps:
+        log.info("  Installing deps for %s: %s", repo, deps)
+        subprocess.run(
+            [pip, "install", "-q"] + deps,
+            capture_output=True,
+            timeout=120,
+        )
+
+    # Skip pip install -e for repos that work from source (sympy, etc.)
+    skip_install = {"sympy/sympy", "django/django"}
+    if repo not in skip_install:
+        setup_py = repo_path / "setup.py"
+        pyproject = repo_path / "pyproject.toml"
+        if setup_py.exists() or pyproject.exists():
+            log.info("  Installing %s in dev mode...", repo)
+            result = subprocess.run(
+                [pip, "install", "-e", ".", "--no-deps", "-q"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if result.returncode != 0:
+                log.warning("  Dev install failed (non-critical): %s", result.stderr[:200])
+
+    _install_repo_deps._installed.add(repo)
+
 
 def setup_repo(repo: str, base_commit: str, workdir: Path) -> Path:
     """Clone repository and checkout base commit. Reuses existing clones."""
@@ -575,10 +711,11 @@ def setup_repo(repo: str, base_commit: str, workdir: Path) -> Path:
             capture_output=True,
         )
         subprocess.run(
-            ["git", "clean", "-fdx"],
+            ["git", "clean", "-fd"],
             cwd=repo_path,
             capture_output=True,
         )
+        _install_repo_deps(repo, repo_path)
         return repo_path
 
     log.info("Cloning %s...", repo)
@@ -595,6 +732,7 @@ def setup_repo(repo: str, base_commit: str, workdir: Path) -> Path:
         check=True,
     )
 
+    _install_repo_deps(repo, repo_path)
     return repo_path
 
 
@@ -649,6 +787,12 @@ def run_calibration(args: argparse.Namespace) -> None:
     dataset_name = dataset_map[args.dataset]
     log.info("Loading %s...", dataset_name)
     dataset = load_dataset(dataset_name, split="test")
+
+    # Filter by repos if specified
+    if args.repos:
+        indices = [i for i, d in enumerate(dataset) if d["repo"] in args.repos]
+        dataset = dataset.select(indices)
+        log.info("Filtered to repos %s: %d instances", args.repos, len(dataset))
 
     if args.limit > 0:
         dataset = dataset.select(range(min(args.limit, len(dataset))))
@@ -739,6 +883,9 @@ def run_calibration(args: argparse.Namespace) -> None:
             l0, l1, l2, ground_truth = evaluate_patch(
                 patch, repo_path, test_patch,
                 modified_files=gen_patch.modified_files or None,
+                swebench_eval=args.swebench_eval,
+                instance_id=instance_id,
+                model_name=args.model,
             )
             log.info("    L0 syntax: %s", "PASS" if l0.passed else f"FAIL ({l0.detail[:60]})")
             log.info("    L1 lint:   %s", "PASS" if l1.passed else f"FAIL ({l1.detail[:60]})")
@@ -832,6 +979,17 @@ def main() -> None:
         "--verbose",
         action="store_true",
         help="Print LLM prompts and responses.",
+    )
+    parser.add_argument(
+        "--swebench-eval",
+        action="store_true",
+        help="Use SWE-bench Docker harness for ground truth evaluation.",
+    )
+    parser.add_argument(
+        "--repos",
+        nargs="+",
+        default=None,
+        help="Filter to specific repos (e.g., sympy/sympy psf/requests).",
     )
 
     args = parser.parse_args()
