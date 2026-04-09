@@ -106,7 +106,7 @@ class PatchCalibrationRecord:
 # Patch generation (oracle retrieval + complete file output)
 # ============================================================================
 
-MAX_FILE_LINES = 500  # Truncate very large files to keep prompt manageable
+MAX_FILE_LINES = 3000  # Allow large files — Claude Sonnet 4 handles 200K context
 
 PATCH_PROMPT_TEMPLATE = """\
 You are an expert software engineer fixing a bug in the {repo} repository.
@@ -121,15 +121,19 @@ You are an expert software engineer fixing a bug in the {repo} repository.
 {file_contents}
 
 ## Task
-Fix the issue by modifying the file(s) above. For each file you change, output the
-COMPLETE modified file content wrapped in a block like this:
+Fix the issue by modifying the file(s) above. Output your changes as a SEARCH/REPLACE
+block for each change:
 
-<<<FILE path/to/file.py
-(entire file content with your fix applied)
-FILE>>>
+<<<CHANGE path/to/file.py
+SEARCH
+(exact lines from the original file that you want to replace)
+REPLACE
+(the new lines that should replace the search block)
+CHANGE>>>
 
-Output ONLY the modified file blocks. Do not include files you did not change.
-Focus on the minimal change needed. Do not add unrelated changes.
+You can output multiple CHANGE blocks if needed. The SEARCH text must match the
+original file exactly (including indentation). Keep changes minimal and focused.
+Do NOT include unchanged files. Do NOT output entire files.
 """
 
 
@@ -202,11 +206,64 @@ def _parse_file_blocks(response: str) -> dict[str, str]:
     for match in pattern.finditer(response):
         fpath = match.group(1).strip()
         content = match.group(2)
-        # Strip trailing whitespace but keep the structure
         if content.endswith("\n"):
             content = content[:-1]
         blocks[fpath] = content
     return blocks
+
+
+def _parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
+    """Parse <<<CHANGE path ... CHANGE>>> blocks with SEARCH/REPLACE.
+
+    Returns list of (file_path, search_text, replace_text).
+    """
+    changes: list[tuple[str, str, str]] = []
+    pattern = re.compile(
+        r"<<<CHANGE\s+(.+?)\s*\n([\s\S]*?)CHANGE>>>",
+        re.MULTILINE,
+    )
+    for match in pattern.finditer(response):
+        fpath = match.group(1).strip()
+        body = match.group(2)
+
+        # Split on SEARCH and REPLACE markers
+        parts = re.split(r"^SEARCH\s*$", body, maxsplit=1, flags=re.MULTILINE)
+        if len(parts) < 2:
+            continue
+        rest = parts[1]
+
+        parts2 = re.split(r"^REPLACE\s*$", rest, maxsplit=1, flags=re.MULTILINE)
+        if len(parts2) < 2:
+            continue
+
+        search_text = parts2[0].strip("\n")
+        replace_text = parts2[1].strip("\n")
+        changes.append((fpath, search_text, replace_text))
+
+    return changes
+
+
+def _apply_changes_to_content(
+    original: str,
+    changes: list[tuple[str, str]],
+) -> str:
+    """Apply search/replace changes to file content."""
+    result = original
+    for search, replace in changes:
+        if search in result:
+            result = result.replace(search, replace, 1)
+        else:
+            # Try with relaxed whitespace matching
+            search_stripped = "\n".join(l.rstrip() for l in search.split("\n"))
+            result_stripped = "\n".join(l.rstrip() for l in result.split("\n"))
+            if search_stripped in result_stripped:
+                # Find the position in stripped version, apply to original
+                result = result.replace(
+                    search.rstrip(),
+                    replace.rstrip(),
+                    1,
+                )
+    return result
 
 
 @dataclass(frozen=True)
@@ -252,14 +309,51 @@ def generate_patches(
     for i in range(n_patches):
         try:
             response = llm.complete(prompt)
-            blocks = _parse_file_blocks(response)
 
-            if blocks:
-                # Compute diff for the record (informational)
-                diffs: list[str] = []
+            # Try CHANGE blocks first (search/replace format)
+            change_blocks = _parse_change_blocks(response)
+            if change_blocks:
+                # Group changes by file
+                file_changes: dict[str, list[tuple[str, str]]] = {}
+                for fpath, search, replace in change_blocks:
+                    # Resolve path
+                    resolved = fpath
+                    if fpath not in oracle_files:
+                        for opath in oracle_files:
+                            if opath.endswith(fpath) or fpath.endswith(opath):
+                                resolved = opath
+                                break
+                    if resolved not in file_changes:
+                        file_changes[resolved] = []
+                    file_changes[resolved].append((search, replace))
+
+                # Apply changes to get modified files
                 resolved_files: dict[str, str] = {}
+                diffs: list[str] = []
+                for fpath, changes in file_changes.items():
+                    original = oracle_files.get(fpath, "")
+                    if not original:
+                        continue
+                    modified = _apply_changes_to_content(original, changes)
+                    if modified != original:
+                        resolved_files[fpath] = modified
+                        diff = _make_diff(original, modified, fpath)
+                        if diff:
+                            diffs.append(diff)
+
+                if resolved_files:
+                    patches.append(GeneratedPatch(
+                        diff="\n".join(diffs),
+                        modified_files=resolved_files,
+                    ))
+                    continue
+
+            # Fallback: try FILE blocks (complete file format)
+            blocks = _parse_file_blocks(response)
+            if blocks:
+                diffs = []
+                resolved_files = {}
                 for fpath, modified_content in blocks.items():
-                    # Resolve path against oracle files
                     original = oracle_files.get(fpath, "")
                     if not original:
                         for opath, ocontent in oracle_files.items():
@@ -277,7 +371,7 @@ def generate_patches(
                     modified_files=resolved_files,
                 ))
             else:
-                # Fallback: try raw diff extraction
+                # Last fallback: try raw diff extraction
                 diff = _response_to_patch(response, oracle_files)
                 patches.append(GeneratedPatch(diff=diff, modified_files={}))
         except Exception as e:
