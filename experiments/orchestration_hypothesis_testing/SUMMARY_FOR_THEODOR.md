@@ -44,8 +44,8 @@ All code sits under
   test suite to get ground truth `Y`, and stores everything as JSONL.
   - SWE-bench Lite (sympy subset, 69 instances × 3 patches):
     `calibration/data/raw_results_v3.jsonl`.
-  - LiveCodeBench (119 LeetCode hard+medium instances × 3 patches):
-    `calibration/data/lcb_results_v2.jsonl`.
+  - LiveCodeBench, abbreviated LCB below (119 LeetCode hard+medium
+    instances × 3 patches): `calibration/data/lcb_results_v2.jsonl`.
 - **Critics implemented**
   - `L0_syntax` — Python `ast.parse`.
   - `L1_lint` — Ruff with a minimal ruleset.
