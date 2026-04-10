@@ -11,9 +11,11 @@ import sys
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLES_DIR = os.path.join(ROOT, "examples")
+PURE_SAGE_DIR = os.path.join(ROOT, "different_agents", "pure_sage")
+SHARED_DIR = os.path.join(ROOT, "different_agents", "shared")
 sys.path.insert(0, ROOT)
-sys.path.insert(0, EXAMPLES_DIR)
+sys.path.insert(0, PURE_SAGE_DIR)
+sys.path.insert(0, SHARED_DIR)
 
 from sage_agent import (
     ParameterDomain,

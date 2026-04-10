@@ -1,0 +1,17 @@
+--- a/routing.py
++++ b/routing.py
+@@ -40,7 +40,7 @@
+ 
+ def filter_by_source(records, source, exact=False):
+     if exact:
+-        return [r for r in records if source in r["src"]]
++        return [r for r in records if r["src"] == source]  # Change: `in` to `==`
+     return [r for r in records if source in r["src"]]
+ 
+ def count_by_level(records):
+@@ -79,4 +79,4 @@
+ 
+ def top_sources(records, n=5):
+     counts = count_by_source(records)
+-    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
++    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
