@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CALIBRATION_DATA = (
     Path(__file__).resolve().parents[1]
-    / "calibration" / "data" / "raw_results.jsonl"
+    / "calibration" / "data" / "raw_results_v2.jsonl"
 )
 DEFAULT_LIKELIHOOD_TABLES = (
     Path(__file__).resolve().parents[1]
@@ -140,11 +140,12 @@ def run_bayesian_policy(
             patch_idx = min(patch_idx + 1, len(patches) - 1)
             b = controller.update_belief_after_generation(b)
 
-        elif action in (Action.CRITIC_L0, Action.CRITIC_L1, Action.CRITIC_L2):
+        elif action in (Action.CRITIC_L0, Action.CRITIC_L1, Action.CRITIC_L2, Action.CRITIC_L3):
             level_map = {
                 Action.CRITIC_L0: ("L0_syntax", costs.c_crit_l0),
                 Action.CRITIC_L1: ("L1_lint", costs.c_crit_l1),
                 Action.CRITIC_L2: ("L2_fast_test", costs.c_crit_l2),
+                Action.CRITIC_L3: ("L3_llm_review", costs.c_crit_l3),
             }
             level, cost = level_map[action]
             total_cost += cost
@@ -330,12 +331,58 @@ def print_results(
     }
 
 
+def _rebuild_controller_without_levels(
+    tables_path: str,
+    exclude_levels: list[str],
+    costs: CostModel,
+    horizon: int,
+) -> BayesianController:
+    """Load likelihood tables, drop specified critic levels, rebuild controller.
+
+    Used to test the partial-information regime (e.g., drop L2 so no critic is
+    near-perfect).
+    """
+    with open(tables_path) as f:
+        data = json.load(f)
+
+    filtered = {
+        level: lk
+        for level, lk in data["critic_likelihoods"].items()
+        if level not in exclude_levels
+    }
+    # Write to a temp file and reload
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False
+    ) as f:
+        json.dump(
+            {
+                "critic_likelihoods": filtered,
+                "generator_transition": data["generator_transition"],
+            },
+            f,
+        )
+        tmp_path = f.name
+
+    ctrl = BayesianController.from_likelihood_tables(
+        tmp_path, costs=costs, horizon=horizon
+    )
+    Path(tmp_path).unlink(missing_ok=True)
+    return ctrl
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Simulate orchestration policies.")
     parser.add_argument("--calibration-data", default=str(DEFAULT_CALIBRATION_DATA))
     parser.add_argument("--likelihood-tables", default=str(DEFAULT_LIKELIHOOD_TABLES))
     parser.add_argument("--horizon", type=int, default=10)
     parser.add_argument("--output", default=None, help="Save results JSON to this path")
+    parser.add_argument(
+        "--exclude-l2",
+        action="store_true",
+        help="Run in partial-info regime: Bayesian controller has no L2 access.",
+    )
     args = parser.parse_args()
 
     # Load data
@@ -354,11 +401,20 @@ def main() -> None:
     costs = CostModel()
 
     # Load Bayesian controller
-    controller = BayesianController.from_likelihood_tables(
-        args.likelihood_tables,
-        costs=costs,
-        horizon=args.horizon,
-    )
+    if args.exclude_l2:
+        log.info("PARTIAL-INFO MODE: Bayesian controller without L2 fast test")
+        controller = _rebuild_controller_without_levels(
+            args.likelihood_tables,
+            exclude_levels=["L2_fast_test"],
+            costs=costs,
+            horizon=args.horizon,
+        )
+    else:
+        controller = BayesianController.from_likelihood_tables(
+            args.likelihood_tables,
+            costs=costs,
+            horizon=args.horizon,
+        )
     controller.print_policy()
 
     # Run all policies
@@ -366,6 +422,14 @@ def main() -> None:
     fixed_results = []
     threshold_l1_results = []
     threshold_l2_results = []
+    threshold_l3_results = []
+
+    # Check if L3 is available in the data
+    has_l3 = any(
+        "L3_llm_review" in p["critic_results"]
+        for patches in episodes.values()
+        for p in patches
+    )
 
     for instance_id, patches in episodes.items():
         bayesian_results.append(
@@ -380,17 +444,26 @@ def main() -> None:
         threshold_l2_results.append(
             run_threshold_policy(patches, costs, "L2_fast_test")
         )
+        if has_l3:
+            threshold_l3_results.append(
+                run_threshold_policy(patches, costs, "L3_llm_review")
+            )
 
     # Print comparison
     print("\n" + "#" * 70)
     print("ORCHESTRATION POLICY COMPARISON")
+    if args.exclude_l2:
+        print("(PARTIAL-INFO REGIME: Bayesian controller uses L0/L1/L3 only)")
     print("#" * 70)
 
     all_summaries = []
-    all_summaries.append(print_results("Bayesian Controller", bayesian_results, costs))
+    bayesian_name = "Bayesian (no L2)" if args.exclude_l2 else "Bayesian Controller"
+    all_summaries.append(print_results(bayesian_name, bayesian_results, costs))
     all_summaries.append(print_results("Fixed Pipeline (lint+verify)", fixed_results, costs))
     all_summaries.append(print_results("Threshold (L1 lint)", threshold_l1_results, costs))
     all_summaries.append(print_results("Threshold (L2 fast test)", threshold_l2_results, costs))
+    if has_l3:
+        all_summaries.append(print_results("Threshold (L3 LLM review)", threshold_l3_results, costs))
 
     # Summary comparison table
     print("\n" + "=" * 80)
