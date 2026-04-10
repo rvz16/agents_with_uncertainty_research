@@ -78,7 +78,8 @@ def load_episodes(data_path: Path) -> dict[str, list[dict]]:
 
     episodes: dict[str, list[dict]] = defaultdict(list)
     for r in records:
-        episodes[r["instance_id"]].append(r)
+        key = r.get("instance_id") or r.get("question_id") or "?"
+        episodes[key].append(r)
 
     # Sort patches within each instance by step or patch_id
     for patches in episodes.values():
@@ -164,7 +165,7 @@ def run_bayesian_policy(
             current_patch = patches[min(patch_idx, len(patches) - 1)]
             resolved = current_patch["ground_truth"] == 1
             return EpisodeResult(
-                instance_id=patches[0]["instance_id"],
+                instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
                 resolved=resolved,
                 total_cost=total_cost,
                 n_gen_calls=n_gen,
@@ -195,7 +196,7 @@ def run_bayesian_policy(
             b = controller.update_belief(b, level, passed)
 
     return EpisodeResult(
-        instance_id=patches[0]["instance_id"],
+        instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
         resolved=False,
         total_cost=total_cost,
         n_gen_calls=n_gen,
@@ -237,7 +238,7 @@ def run_fixed_pipeline(
             trajectory.append("verify")
             if patch["ground_truth"] == 1:
                 return EpisodeResult(
-                    instance_id=patches[0]["instance_id"],
+                    instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
                     resolved=True,
                     total_cost=total_cost,
                     n_gen_calls=n_gen,
@@ -254,7 +255,7 @@ def run_fixed_pipeline(
     trajectory.append("verify_final")
 
     return EpisodeResult(
-        instance_id=patches[0]["instance_id"],
+        instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
         resolved=last_patch["ground_truth"] == 1,
         total_cost=total_cost,
         n_gen_calls=n_gen,
@@ -297,7 +298,7 @@ def run_threshold_policy(
             trajectory.append("verify")
             if patch["ground_truth"] == 1:
                 return EpisodeResult(
-                    instance_id=patches[0]["instance_id"],
+                    instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
                     resolved=True,
                     total_cost=total_cost,
                     n_gen_calls=n_gen,
@@ -308,7 +309,7 @@ def run_threshold_policy(
                 )
 
     return EpisodeResult(
-        instance_id=patches[0]["instance_id"],
+        instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
         resolved=False,
         total_cost=total_cost,
         n_gen_calls=n_gen,

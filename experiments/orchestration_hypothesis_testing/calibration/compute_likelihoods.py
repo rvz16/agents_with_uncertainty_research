@@ -134,14 +134,15 @@ def compute_generator_transition(
     not actual refinements. The real transition kernel will be calibrated
     in Phase 2 with actual iterative refinement data.
     """
-    # Group patches by instance
+    # Group patches by instance (handle both SWE-bench and LCB schemas)
     by_instance: dict[str, list[dict]] = defaultdict(list)
     for record in records:
-        by_instance[record["instance_id"]].append(record)
+        key = record.get("instance_id") or record.get("question_id") or "?"
+        by_instance[key].append(record)
 
     # Sort by patch_id within each instance
     for patches in by_instance.values():
-        patches.sort(key=lambda r: r["patch_id"])
+        patches.sort(key=lambda r: r.get("patch_id", r.get("step", 0)))
 
     # Count transitions between consecutive patches
     fix_count = 0  # 0 -> 1
