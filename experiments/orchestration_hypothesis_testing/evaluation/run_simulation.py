@@ -98,6 +98,13 @@ def run_bayesian_policy(
 
     The controller selects actions based on belief state.
     Critic outcomes come from the calibration data.
+
+    IMPORTANT: critics are deterministic on a given patch (running lint twice
+    gives the same answer). We enforce this by tracking which critics have
+    already been used on the current patch_idx. If the controller picks a
+    critic it has already used on this patch, we force it to either generate
+    (to get a new patch) or verify (to terminate). This prevents the fallacy
+    of treating repeated critic calls as independent samples.
     """
     b = prior
     total_cost = 0.0
@@ -105,7 +112,24 @@ def run_bayesian_policy(
     n_critic = 0
     n_verify = 0
     trajectory = []
-    patch_idx = 0  # Current patch index
+    patch_idx = 0
+    used_critics: set[str] = set()  # Critics already run on current patch
+
+    def _level_from_action(a: Action) -> str | None:
+        return {
+            Action.CRITIC_L0: "L0_syntax",
+            Action.CRITIC_L1: "L1_lint",
+            Action.CRITIC_L2: "L2_fast_test",
+            Action.CRITIC_L3: "L3_llm_review",
+        }.get(a)
+
+    def _cost_for_action(a: Action) -> float:
+        return {
+            Action.CRITIC_L0: costs.c_crit_l0,
+            Action.CRITIC_L1: costs.c_crit_l1,
+            Action.CRITIC_L2: costs.c_crit_l2,
+            Action.CRITIC_L3: costs.c_crit_l3,
+        }.get(a, 0.0)
 
     for step in range(max_steps):
         action = controller.select_action(b, step)
@@ -114,11 +138,27 @@ def run_bayesian_policy(
             trajectory.append("give_up")
             break
 
+        # If the chosen critic has already been used on this patch, the
+        # observation would be deterministic. Fall back to the next-best
+        # available action.
+        if action in (Action.CRITIC_L0, Action.CRITIC_L1,
+                      Action.CRITIC_L2, Action.CRITIC_L3):
+            level = _level_from_action(action)
+            if level in used_critics:
+                # Pick the best remaining action: verify or generate
+                q_ver = b * costs.reward - costs.c_ver
+                q_gen = -costs.c_gen + (
+                    b * costs.reward * (1 - controller.transition.p_break)
+                    + (1 - b) * costs.reward * controller.transition.p_fix
+                    - costs.c_ver
+                )
+                action = Action.VERIFY if q_ver >= q_gen else Action.GENERATE
+                trajectory.append(f"repeat_{level}->{'ver' if action == Action.VERIFY else 'gen'}")
+
         if action == Action.VERIFY:
             total_cost += costs.c_ver
             n_verify += 1
             trajectory.append("verify")
-            # Check ground truth of current patch
             current_patch = patches[min(patch_idx, len(patches) - 1)]
             resolved = current_patch["ground_truth"] == 1
             return EpisodeResult(
@@ -136,28 +176,22 @@ def run_bayesian_policy(
             total_cost += costs.c_gen
             n_gen += 1
             trajectory.append("generate")
-            # Move to next patch
             patch_idx = min(patch_idx + 1, len(patches) - 1)
+            used_critics.clear()  # new patch, fresh critic budget
             b = controller.update_belief_after_generation(b)
 
-        elif action in (Action.CRITIC_L0, Action.CRITIC_L1, Action.CRITIC_L2, Action.CRITIC_L3):
-            level_map = {
-                Action.CRITIC_L0: ("L0_syntax", costs.c_crit_l0),
-                Action.CRITIC_L1: ("L1_lint", costs.c_crit_l1),
-                Action.CRITIC_L2: ("L2_fast_test", costs.c_crit_l2),
-                Action.CRITIC_L3: ("L3_llm_review", costs.c_crit_l3),
-            }
-            level, cost = level_map[action]
+        elif action in (Action.CRITIC_L0, Action.CRITIC_L1,
+                        Action.CRITIC_L2, Action.CRITIC_L3):
+            level = _level_from_action(action)
+            cost = _cost_for_action(action)
             total_cost += cost
             n_critic += 1
+            used_critics.add(level)
             trajectory.append(f"critic_{level}")
-
-            # Get actual critic outcome for current patch
             current_patch = patches[min(patch_idx, len(patches) - 1)]
             passed = current_patch["critic_results"][level]["passed"]
             b = controller.update_belief(b, level, passed)
 
-    # Ran out of steps — give up
     return EpisodeResult(
         instance_id=patches[0]["instance_id"],
         resolved=False,
