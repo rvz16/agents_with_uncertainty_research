@@ -40,6 +40,10 @@ def dummy_tables_path():
                 "p_pass_given_correct": 0.85,
                 "p_pass_given_incorrect": 0.15,
             },
+            "L3_llm_review": {
+                "p_pass_given_correct": 0.57,
+                "p_pass_given_incorrect": 0.21,
+            },
         },
         "generator_transition": {
             "p_fix_given_broken": 0.20,
@@ -68,14 +72,14 @@ class TestBayesUpdate:
     def test_pass_increases_belief(self, controller):
         """Observing pass should increase belief for informative critics."""
         b = 0.5
-        for level in ["L0_syntax", "L1_lint", "L2_fast_test"]:
+        for level in ["L0_syntax", "L1_lint", "L2_fast_test", "L3_llm_review"]:
             b_new = controller.update_belief(b, level, passed=True)
             assert b_new > b, f"Pass on {level} should increase belief"
 
     def test_fail_decreases_belief(self, controller):
         """Observing fail should decrease belief."""
         b = 0.5
-        for level in ["L0_syntax", "L1_lint", "L2_fast_test"]:
+        for level in ["L0_syntax", "L1_lint", "L2_fast_test", "L3_llm_review"]:
             b_new = controller.update_belief(b, level, passed=False)
             assert b_new < b, f"Fail on {level} should decrease belief"
 
