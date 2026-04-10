@@ -42,6 +42,7 @@ class Action(Enum):
     CRITIC_L1 = "critic_L1"
     CRITIC_L2 = "critic_L2"
     CRITIC_L3 = "critic_L3"
+    CRITIC_L4 = "critic_L4"
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class CostModel:
     c_crit_l1: float = 1.0   # Cost of lint
     c_crit_l2: float = 5.0   # Cost of fast test
     c_crit_l3: float = 2.0   # Cost of LLM review (cheap model, ~2s + $0.001)
+    c_crit_l4: float = 3.0   # Cost of mypy type check (~2-5s)
     reward: float = 200.0    # Reward for successful verification
 
 
@@ -224,12 +226,14 @@ class BayesianController:
             "L1_lint": self.costs.c_crit_l1,
             "L2_fast_test": self.costs.c_crit_l2,
             "L3_llm_review": self.costs.c_crit_l3,
+            "L4_mypy": self.costs.c_crit_l4,
         }
         critic_actions = {
             "L0_syntax": Action.CRITIC_L0,
             "L1_lint": Action.CRITIC_L1,
             "L2_fast_test": Action.CRITIC_L2,
             "L3_llm_review": Action.CRITIC_L3,
+            "L4_mypy": Action.CRITIC_L4,
         }
         for level in self.critics:
             if level in critic_actions:

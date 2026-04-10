@@ -31,10 +31,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DEFAULT_INPUT = Path(__file__).resolve().parent / "data" / "raw_results_v2.jsonl"
+DEFAULT_INPUT = Path(__file__).resolve().parent / "data" / "raw_results_v3.jsonl"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "data" / "likelihood_tables.json"
 
-CRITIC_LEVELS = ["L0_syntax", "L1_lint", "L2_fast_test", "L3_llm_review"]
+CRITIC_LEVELS = ["L0_syntax", "L1_lint", "L2_fast_test", "L3_llm_review", "L4_mypy"]
 
 
 @dataclass

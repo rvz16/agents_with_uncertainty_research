@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CALIBRATION_DATA = (
     Path(__file__).resolve().parents[1]
-    / "calibration" / "data" / "raw_results_v2.jsonl"
+    / "calibration" / "data" / "raw_results_v3.jsonl"
 )
 DEFAULT_LIKELIHOOD_TABLES = (
     Path(__file__).resolve().parents[1]
@@ -121,6 +121,7 @@ def run_bayesian_policy(
             Action.CRITIC_L1: "L1_lint",
             Action.CRITIC_L2: "L2_fast_test",
             Action.CRITIC_L3: "L3_llm_review",
+            Action.CRITIC_L4: "L4_mypy",
         }.get(a)
 
     def _cost_for_action(a: Action) -> float:
@@ -129,6 +130,7 @@ def run_bayesian_policy(
             Action.CRITIC_L1: costs.c_crit_l1,
             Action.CRITIC_L2: costs.c_crit_l2,
             Action.CRITIC_L3: costs.c_crit_l3,
+            Action.CRITIC_L4: costs.c_crit_l4,
         }.get(a, 0.0)
 
     for step in range(max_steps):
@@ -142,7 +144,7 @@ def run_bayesian_policy(
         # observation would be deterministic. Fall back to the next-best
         # available action.
         if action in (Action.CRITIC_L0, Action.CRITIC_L1,
-                      Action.CRITIC_L2, Action.CRITIC_L3):
+                      Action.CRITIC_L2, Action.CRITIC_L3, Action.CRITIC_L4):
             level = _level_from_action(action)
             if level in used_critics:
                 # Pick the best remaining action: verify or generate
@@ -181,7 +183,7 @@ def run_bayesian_policy(
             b = controller.update_belief_after_generation(b)
 
         elif action in (Action.CRITIC_L0, Action.CRITIC_L1,
-                        Action.CRITIC_L2, Action.CRITIC_L3):
+                        Action.CRITIC_L2, Action.CRITIC_L3, Action.CRITIC_L4):
             level = _level_from_action(action)
             cost = _cost_for_action(action)
             total_cost += cost
@@ -457,10 +459,15 @@ def main() -> None:
     threshold_l1_results = []
     threshold_l2_results = []
     threshold_l3_results = []
+    threshold_l4_results = []
 
-    # Check if L3 is available in the data
     has_l3 = any(
         "L3_llm_review" in p["critic_results"]
+        for patches in episodes.values()
+        for p in patches
+    )
+    has_l4 = any(
+        "L4_mypy" in p["critic_results"]
         for patches in episodes.values()
         for p in patches
     )
@@ -482,12 +489,16 @@ def main() -> None:
             threshold_l3_results.append(
                 run_threshold_policy(patches, costs, "L3_llm_review")
             )
+        if has_l4:
+            threshold_l4_results.append(
+                run_threshold_policy(patches, costs, "L4_mypy")
+            )
 
     # Print comparison
     print("\n" + "#" * 70)
     print("ORCHESTRATION POLICY COMPARISON")
     if args.exclude_l2:
-        print("(PARTIAL-INFO REGIME: Bayesian controller uses L0/L1/L3 only)")
+        print("(PARTIAL-INFO REGIME: Bayesian controller uses L0/L1/L3/L4 only)")
     print("#" * 70)
 
     all_summaries = []
@@ -498,6 +509,8 @@ def main() -> None:
     all_summaries.append(print_results("Threshold (L2 fast test)", threshold_l2_results, costs))
     if has_l3:
         all_summaries.append(print_results("Threshold (L3 LLM review)", threshold_l3_results, costs))
+    if has_l4:
+        all_summaries.append(print_results("Threshold (L4 mypy)", threshold_l4_results, costs))
 
     # Summary comparison table
     print("\n" + "=" * 80)
