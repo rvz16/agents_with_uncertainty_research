@@ -280,10 +280,16 @@ def run_one_instance(
     repo_path: Path,
     n_steps: int,
     model_name: str,
+    output_path: Optional[Path] = None,
+    early_stop: bool = False,
 ) -> list[dict]:
     """Run the full refinement trajectory for one instance.
 
-    Returns a list of records (one per refinement step).
+    If output_path is provided, writes each record immediately after the step
+    completes (for crash resilience and live monitoring).
+
+    If early_stop is True, stops as soon as a patch reaches Y=1. For
+    calibration we want early_stop=False so we can measure P(break|correct).
     """
     instance_id = instance["instance_id"]
     repo = instance["repo"]
@@ -336,6 +342,9 @@ def run_one_instance(
                 },
             }
             records.append(record)
+            if output_path:
+                with open(output_path, "a") as f:
+                    f.write(json.dumps(record) + "\n")
             # For next refinement step, treat empty as all-fail feedback
             current_patch = patch
             current_l0 = CriticResult(passed=False, detail="empty patch")
@@ -375,6 +384,9 @@ def run_one_instance(
             },
         }
         records.append(record)
+        if output_path:
+            with open(output_path, "a") as f:
+                f.write(json.dumps(record) + "\n")
 
         current_patch = patch
         current_l0 = l0
@@ -382,7 +394,7 @@ def run_one_instance(
         current_l2 = l2
 
         # Optional early stop: if verifier passes, no need to refine further
-        if y == 1:
+        if early_stop and y == 1:
             log.info("  Step %d: Y=1 reached, stopping refinement", step)
             break
 
@@ -422,6 +434,12 @@ def main() -> None:
         default=str(DEFAULT_OUTPUT_DIR / "iterative_results.jsonl"),
     )
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--early-stop",
+        action="store_true",
+        help="Stop refinement when Y=1 is reached (production-like, but loses "
+             "P(break|correct) data for calibration).",
+    )
     args = parser.parse_args()
 
     output_path = Path(args.output)
@@ -473,12 +491,10 @@ def main() -> None:
             continue
 
         records = run_one_instance(
-            llm, instance, repo_path, args.steps, args.model
+            llm, instance, repo_path, args.steps, args.model,
+            output_path=output_path,
+            early_stop=args.early_stop,
         )
-
-        with open(output_path, "a") as f:
-            for r in records:
-                f.write(json.dumps(r) + "\n")
 
         total_trajectories += 1
         if records and records[-1].get("ground_truth") == 1:

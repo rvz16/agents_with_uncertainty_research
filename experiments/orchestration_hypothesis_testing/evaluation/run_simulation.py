@@ -80,9 +80,9 @@ def load_episodes(data_path: Path) -> dict[str, list[dict]]:
     for r in records:
         episodes[r["instance_id"]].append(r)
 
-    # Sort patches within each instance
+    # Sort patches within each instance by step or patch_id
     for patches in episodes.values():
-        patches.sort(key=lambda r: r["patch_id"])
+        patches.sort(key=lambda r: r.get("step", r.get("patch_id", 0)))
 
     return dict(episodes)
 
