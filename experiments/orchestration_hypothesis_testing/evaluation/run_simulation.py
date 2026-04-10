@@ -36,6 +36,7 @@ from controller.bayesian_controller import (
     BayesianController,
     CostModel,
 )
+from controller.multi_critic_controller import MultiCriticBayesianController
 
 logging.basicConfig(
     level=logging.INFO,
@@ -207,17 +208,121 @@ def run_bayesian_policy(
     )
 
 
+def run_multi_critic_policy(
+    controller: MultiCriticBayesianController,
+    patches: list[dict],
+    costs: CostModel,
+    prior: float,
+    max_steps: int = 10,
+) -> EpisodeResult:
+    """Run the multi-critic Bayesian controller on one instance.
+
+    Unlike run_bayesian_policy, the multi-critic controller's state includes
+    the bitmask of critics already observed on the current patch. The solver
+    therefore knows that L3 is "used up" after one observation and plans to
+    run a different critic (e.g. L2) next instead of re-querying L3.
+
+    The mask is reset whenever the controller chooses GENERATE, because a new
+    patch has fresh (unseen) critics.
+    """
+    b = prior
+    total_cost = 0.0
+    n_gen = 0
+    n_critic = 0
+    n_verify = 0
+    trajectory: list[str] = []
+    patch_idx = 0
+    used_mask = 0
+    instance_id = (
+        patches[0].get("instance_id") or patches[0].get("question_id") or "?"
+    )
+
+    level_from_action = {
+        Action.CRITIC_L0: "L0_syntax",
+        Action.CRITIC_L1: "L1_lint",
+        Action.CRITIC_L2: "L2_fast_test",
+        Action.CRITIC_L3: "L3_llm_review",
+        Action.CRITIC_L4: "L4_mypy",
+    }
+    cost_for_action = {
+        Action.CRITIC_L0: costs.c_crit_l0,
+        Action.CRITIC_L1: costs.c_crit_l1,
+        Action.CRITIC_L2: costs.c_crit_l2,
+        Action.CRITIC_L3: costs.c_crit_l3,
+        Action.CRITIC_L4: costs.c_crit_l4,
+    }
+
+    for step in range(max_steps):
+        action = controller.select_action(b, used_mask, step)
+        if action is None:
+            trajectory.append("give_up")
+            break
+
+        if action == Action.VERIFY:
+            total_cost += costs.c_ver
+            n_verify += 1
+            trajectory.append("verify")
+            current_patch = patches[min(patch_idx, len(patches) - 1)]
+            return EpisodeResult(
+                instance_id=instance_id,
+                resolved=(current_patch["ground_truth"] == 1),
+                total_cost=total_cost,
+                n_gen_calls=n_gen,
+                n_critic_calls=n_critic,
+                n_verify_calls=n_verify,
+                trajectory=trajectory,
+                final_belief=b,
+            )
+
+        if action == Action.GENERATE:
+            total_cost += costs.c_gen
+            n_gen += 1
+            trajectory.append("generate")
+            patch_idx = min(patch_idx + 1, len(patches) - 1)
+            used_mask = 0
+            b = controller.update_belief_after_generation(b)
+            continue
+
+        # Critic action
+        level = level_from_action[action]
+        total_cost += cost_for_action[action]
+        n_critic += 1
+        trajectory.append(f"critic_{level}")
+        current_patch = patches[min(patch_idx, len(patches) - 1)]
+        passed = current_patch["critic_results"][level]["passed"]
+        b = controller.update_belief(b, level, passed)
+        used_mask |= 1 << controller.bit_for(level)
+
+    return EpisodeResult(
+        instance_id=instance_id,
+        resolved=False,
+        total_cost=total_cost,
+        n_gen_calls=n_gen,
+        n_critic_calls=n_critic,
+        n_verify_calls=n_verify,
+        trajectory=trajectory,
+        final_belief=b,
+    )
+
+
 def run_fixed_pipeline(
     patches: list[dict],
     costs: CostModel,
     max_attempts: int = 3,
 ) -> EpisodeResult:
-    """Fixed pipeline: for each patch, lint then verify if lint passes."""
+    """Fixed pipeline: for each patch, lint then verify if lint passes.
+
+    Verify is terminal, matching the POMDP formulation and `run_bayesian_policy`:
+    the first verify call commits to its outcome. No "last resort" retry.
+    """
     total_cost = 0.0
     n_gen = 0
     n_critic = 0
     n_verify = 0
     trajectory = []
+    instance_id = (
+        patches[0].get("instance_id") or patches[0].get("question_id") or "?"
+    )
 
     for idx, patch in enumerate(patches[:max_attempts]):
         if idx > 0:
@@ -232,31 +337,24 @@ def run_fixed_pipeline(
         trajectory.append("critic_L1_lint")
 
         if lint_pass:
-            # Verify
             total_cost += costs.c_ver
             n_verify += 1
             trajectory.append("verify")
-            if patch["ground_truth"] == 1:
-                return EpisodeResult(
-                    instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
-                    resolved=True,
-                    total_cost=total_cost,
-                    n_gen_calls=n_gen,
-                    n_critic_calls=n_critic,
-                    n_verify_calls=n_verify,
-                    trajectory=trajectory,
-                    final_belief=0.0,
-                )
+            return EpisodeResult(
+                instance_id=instance_id,
+                resolved=(patch["ground_truth"] == 1),
+                total_cost=total_cost,
+                n_gen_calls=n_gen,
+                n_critic_calls=n_critic,
+                n_verify_calls=n_verify,
+                trajectory=trajectory,
+                final_belief=0.0,
+            )
 
-    # Last resort: verify the last patch regardless
-    last_patch = patches[min(max_attempts - 1, len(patches) - 1)]
-    total_cost += costs.c_ver
-    n_verify += 1
-    trajectory.append("verify_final")
-
+    # No lint pass within budget -> commit nothing (unresolved).
     return EpisodeResult(
-        instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
-        resolved=last_patch["ground_truth"] == 1,
+        instance_id=instance_id,
+        resolved=False,
         total_cost=total_cost,
         n_gen_calls=n_gen,
         n_critic_calls=n_critic,
@@ -272,13 +370,28 @@ def run_threshold_policy(
     critic_level: str = "L1_lint",
     max_attempts: int = 3,
 ) -> EpisodeResult:
-    """Threshold policy: run critic, verify if pass, regenerate if fail."""
+    """Threshold policy: run critic, verify if pass, regenerate if fail.
+
+    Verify is terminal, matching `run_bayesian_policy`. The first critic-pass
+    commits to a verify call whose outcome ends the episode regardless of
+    whether it was Y=1 or Y=0. If no critic pass is seen within max_attempts,
+    the episode ends without a verify (unresolved).
+    """
     total_cost = 0.0
     n_gen = 0
     n_critic = 0
     n_verify = 0
     trajectory = []
-    critic_cost = {"L0_syntax": costs.c_crit_l0, "L1_lint": costs.c_crit_l1, "L2_fast_test": costs.c_crit_l2}
+    critic_cost = {
+        "L0_syntax": costs.c_crit_l0,
+        "L1_lint": costs.c_crit_l1,
+        "L2_fast_test": costs.c_crit_l2,
+        "L3_llm_review": costs.c_crit_l3,
+        "L4_mypy": costs.c_crit_l4,
+    }
+    instance_id = (
+        patches[0].get("instance_id") or patches[0].get("question_id") or "?"
+    )
 
     for idx, patch in enumerate(patches[:max_attempts]):
         if idx > 0:
@@ -286,7 +399,6 @@ def run_threshold_policy(
             n_gen += 1
             trajectory.append("generate")
 
-        # Run critic
         total_cost += critic_cost.get(critic_level, costs.c_crit_l1)
         n_critic += 1
         passed = patch["critic_results"][critic_level]["passed"]
@@ -296,20 +408,19 @@ def run_threshold_policy(
             total_cost += costs.c_ver
             n_verify += 1
             trajectory.append("verify")
-            if patch["ground_truth"] == 1:
-                return EpisodeResult(
-                    instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
-                    resolved=True,
-                    total_cost=total_cost,
-                    n_gen_calls=n_gen,
-                    n_critic_calls=n_critic,
-                    n_verify_calls=n_verify,
-                    trajectory=trajectory,
-                    final_belief=0.0,
-                )
+            return EpisodeResult(
+                instance_id=instance_id,
+                resolved=(patch["ground_truth"] == 1),
+                total_cost=total_cost,
+                n_gen_calls=n_gen,
+                n_critic_calls=n_critic,
+                n_verify_calls=n_verify,
+                trajectory=trajectory,
+                final_belief=0.0,
+            )
 
     return EpisodeResult(
-        instance_id=(patches[0].get("instance_id") or patches[0].get("question_id") or "?"),
+        instance_id=instance_id,
         resolved=False,
         total_cost=total_cost,
         n_gen_calls=n_gen,
@@ -373,6 +484,7 @@ def _rebuild_controller_without_levels(
     exclude_levels: list[str],
     costs: CostModel,
     horizon: int,
+    iid_kernel: bool = False,
 ) -> BayesianController:
     """Load likelihood tables, drop specified critic levels, rebuild controller.
 
@@ -390,20 +502,20 @@ def _rebuild_controller_without_levels(
     # Write to a temp file and reload
     import tempfile
 
+    payload = {
+        "critic_likelihoods": filtered,
+        "generator_transition": data["generator_transition"],
+    }
+    if "sample_counts" in data:
+        payload["sample_counts"] = data["sample_counts"]
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False
     ) as f:
-        json.dump(
-            {
-                "critic_likelihoods": filtered,
-                "generator_transition": data["generator_transition"],
-            },
-            f,
-        )
+        json.dump(payload, f)
         tmp_path = f.name
 
     ctrl = BayesianController.from_likelihood_tables(
-        tmp_path, costs=costs, horizon=horizon
+        tmp_path, costs=costs, horizon=horizon, iid_kernel=iid_kernel
     )
     Path(tmp_path).unlink(missing_ok=True)
     return ctrl
@@ -419,6 +531,17 @@ def main() -> None:
         "--exclude-l2",
         action="store_true",
         help="Run in partial-info regime: Bayesian controller has no L2 access.",
+    )
+    parser.add_argument(
+        "--iid-kernel",
+        action="store_true",
+        help=(
+            "Use the iid-sampling transition kernel "
+            "(p_fix=base_rate, p_break=1-base_rate) instead of the kernel "
+            "stored in the likelihood tables. Appropriate when the "
+            "calibration data is iid samples of a fixed generator rather "
+            "than a refinement chain."
+        ),
     )
     args = parser.parse_args()
 
@@ -438,6 +561,8 @@ def main() -> None:
     costs = CostModel()
 
     # Load Bayesian controller
+    if args.iid_kernel:
+        log.info("IID-KERNEL MODE: replacing stored kernel with base-rate iid kernel")
     if args.exclude_l2:
         log.info("PARTIAL-INFO MODE: Bayesian controller without L2 fast test")
         controller = _rebuild_controller_without_levels(
@@ -445,12 +570,14 @@ def main() -> None:
             exclude_levels=["L2_fast_test"],
             costs=costs,
             horizon=args.horizon,
+            iid_kernel=args.iid_kernel,
         )
     else:
         controller = BayesianController.from_likelihood_tables(
             args.likelihood_tables,
             costs=costs,
             horizon=args.horizon,
+            iid_kernel=args.iid_kernel,
         )
     controller.print_policy()
 

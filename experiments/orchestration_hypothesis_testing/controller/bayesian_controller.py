@@ -115,8 +115,20 @@ class BayesianController:
         costs: Optional[CostModel] = None,
         horizon: int = 10,
         grid_size: int = 1000,
+        iid_kernel: bool = False,
     ) -> "BayesianController":
-        """Load likelihood tables from compute_likelihoods.py output."""
+        """Load likelihood tables from compute_likelihoods.py output.
+
+        If ``iid_kernel`` is True, the transition kernel stored in the file is
+        ignored and replaced with the iid-sampling kernel computed from the
+        base rate: ``p_fix = base_rate`` and ``p_break = 1 - base_rate``. Use
+        this when the calibration data is an iid sample of the generator on a
+        fixed problem (so "generate" draws a fresh patch whose correctness is
+        independent of the previous one) rather than an actual refinement
+        chain. The stored kernel otherwise measures within-problem correlation
+        ("hard problems stay hard"), which understates the value of
+        regeneration in a multi-patch simulation.
+        """
         with open(path) as f:
             data = json.load(f)
 
@@ -127,10 +139,24 @@ class BayesianController:
                 p_pass_given_incorrect=lk["p_pass_given_incorrect"],
             )
 
-        transition = TransitionKernel(
-            p_fix=data["generator_transition"]["p_fix_given_broken"],
-            p_break=data["generator_transition"]["p_break_given_correct"],
-        )
+        if iid_kernel:
+            counts = data.get("sample_counts", {})
+            total = counts.get("total_patches", 0)
+            correct = counts.get("correct", 0)
+            if total <= 0:
+                raise ValueError(
+                    "iid_kernel=True requires sample_counts with total_patches>0"
+                )
+            base_rate = correct / total
+            transition = TransitionKernel(
+                p_fix=base_rate,
+                p_break=1.0 - base_rate,
+            )
+        else:
+            transition = TransitionKernel(
+                p_fix=data["generator_transition"]["p_fix_given_broken"],
+                p_break=data["generator_transition"]["p_break_given_correct"],
+            )
 
         return cls(
             critic_likelihoods=critics,
