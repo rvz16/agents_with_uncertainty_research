@@ -87,13 +87,18 @@ log = logging.getLogger("spot_check")
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "spot_check"
 
-# Generators under test. Each entry maps short name -> (model_id, base_url).
-# A None base_url means use OpenRouter; otherwise it's a vLLM-served local
-# OpenAI-compatible endpoint (no API key needed).
-GENERATORS: dict[str, tuple[str, str | None]] = {
-    "haiku45":   ("anthropic/claude-haiku-4.5", None),
-    "qwen25_7b": ("Qwen/Qwen2.5-7B-Instruct", "http://127.0.0.1:8001/v1"),
-    "qwen3_8b":  ("Qwen/Qwen3-8B",            "http://127.0.0.1:8002/v1"),
+# Generators under test. Each entry maps short name ->
+# (model_id, base_url, enable_thinking).
+#
+# - base_url None = use OpenRouter; otherwise a vLLM-served local OpenAI-
+#   compatible endpoint.
+# - enable_thinking is forwarded as `chat_template_kwargs` for Qwen3 family
+#   models. None means "leave the model's default", True/False forces it.
+GENERATORS: dict[str, tuple[str, str | None, bool | None]] = {
+    "haiku45":           ("anthropic/claude-haiku-4.5", None,                          None),
+    "qwen25_7b":         ("Qwen/Qwen2.5-7B-Instruct",   "http://127.0.0.1:8001/v1",   None),
+    "qwen3_8b":          ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   False),
+    "qwen3_8b_thinking": ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   True),
 }
 
 DEFAULT_N_INSTANCES = 20
@@ -102,7 +107,7 @@ DEFAULT_TEMPERATURE = 0.7
 DEFAULT_SEED = 42
 DEFAULT_MAX_WORKERS_GEN = 8     # parallel API calls
 DEFAULT_MAX_WORKERS_EVAL = 4    # parallel Docker containers
-LLM_TIMEOUT_S = 90
+LLM_TIMEOUT_S = 240             # thinking-mode generations can run several minutes
 # No real truncation: 10K lines covers all SWE-bench Lite files except the very
 # largest django files. Truncating earlier corrupts SEARCH matching because the
 # model edits code that isn't in its prompt. Models with small context windows
@@ -390,7 +395,11 @@ def make_client(base_url: str | None) -> OpenAI:
     return OpenAI(api_key="EMPTY", base_url=base_url)
 
 
-DEFAULT_MAX_TOKENS = 4000  # focused diffs are well under this; keeps cost low
+DEFAULT_MAX_TOKENS = 4000        # focused diffs are well under this
+# vLLM serves Qwen3-8B at max_model_len=32768. Big oracle prompts run
+# 15-22K tokens, leaving ~10-17K for output. 10K covers a 4-6K thinking
+# section + a 4K diff while leaving 22K of headroom for the prompt.
+THINKING_MAX_TOKENS = 10000
 
 
 def generate_one(
@@ -399,15 +408,24 @@ def generate_one(
     prompt: str,
     temperature: float,
     seed: int,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    enable_thinking: bool | None = None,
+    max_tokens: int | None = None,
 ) -> str:
+    """Single chat completion call.
+
+    enable_thinking: forwarded to Qwen3-family models via vLLM's
+        chat_template_kwargs. None lets the model use its default
+        (thinking ON for Qwen3); explicit True/False forces it.
+    """
+    if max_tokens is None:
+        max_tokens = THINKING_MAX_TOKENS if enable_thinking else DEFAULT_MAX_TOKENS
+
     extra: dict = {}
-    # Qwen3 enables thinking mode by default which inserts <think>...</think>
-    # blocks ahead of the actual reply. We're doing single-shot patch
-    # generation, not multi-turn reasoning, so disable it via the vLLM
-    # chat_template_kwargs extra body parameter.
-    if model.lower().startswith("qwen/qwen3"):
-        extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+    if model.lower().startswith("qwen/qwen3") and enable_thinking is not None:
+        extra["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": enable_thinking}
+        }
+
     resp = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -418,6 +436,22 @@ def generate_one(
         **extra,
     )
     return resp.choices[0].message.content or ""
+
+
+def strip_think_blocks(text: str) -> str:
+    """Strip <think>...</think> blocks before patch parsing.
+
+    Qwen3 thinking-mode responses look like:
+        <think>
+        ... reasoning ...
+        </think>
+        <<<CHANGE path
+        ...
+    The reasoning text frequently contains pseudo-CHANGE-like fragments
+    that confuse the patch parsers. Removing the thinking section first
+    lets the regular parser see only the final answer.
+    """
+    return re.sub(r"<think>[\s\S]*?</think>\s*", "", text)
 
 
 def parse_raw_diff(response: str) -> str:
@@ -488,6 +522,7 @@ def generate_for_generator(
     generator_key: str,
     generator_model: str,
     base_url: str | None,
+    enable_thinking: bool | None,
     instances: list[dict],
     n_patches: int,
     temperature: float,
@@ -553,11 +588,17 @@ def generate_for_generator(
         oracle_files = oracle_per_instance[inst["instance_id"]]
         prompt = make_prompt(inst, oracle_files)
         try:
-            response = generate_one(client, generator_model, prompt, temperature, seed)
+            response = generate_one(
+                client, generator_model, prompt, temperature, seed,
+                enable_thinking=enable_thinking,
+            )
+            # Strip thinking blocks first; they often contain pseudo-CHANGE
+            # fragments that confuse the parser.
+            response_for_parse = strip_think_blocks(response)
             diff = ""
             extraction_path = "none"
             # 1) preferred path: SEARCH/REPLACE blocks
-            blocks = parse_change_blocks(response)
+            blocks = parse_change_blocks(response_for_parse)
             if blocks:
                 modified = apply_change_blocks(oracle_files, blocks)
                 diff = build_diff(oracle_files, modified)
@@ -565,7 +606,7 @@ def generate_for_generator(
                     extraction_path = "change_blocks"
             # 2) fallback: full-file rewrites
             if not diff:
-                full_blocks = parse_full_file_blocks(response)
+                full_blocks = parse_full_file_blocks(response_for_parse)
                 if full_blocks:
                     diffs: list[str] = []
                     for fpath, modified_content in full_blocks.items():
@@ -584,7 +625,7 @@ def generate_for_generator(
                         extraction_path = "full_file_blocks"
             # 3) fallback: raw unified diff in the response
             if not diff:
-                raw = parse_raw_diff(response)
+                raw = parse_raw_diff(response_for_parse)
                 if raw:
                     diff = raw
                     extraction_path = "raw_diff"
@@ -755,11 +796,22 @@ def load_report(report_path: Path) -> dict:
 
 
 def parse_resolved(report: dict) -> set[str]:
-    """Extract the set of resolved (model_patch passed) instance_ids."""
-    raw = report.get("resolved_instances", report.get("resolved_ids", []))
-    if isinstance(raw, dict):
-        return set(raw.keys())
-    return set(raw)
+    """Extract the set of resolved (model_patch passed) instance_ids.
+
+    SWE-bench harness schema_version=2 reports use:
+      - `resolved_ids`: list[str] of instance IDs that passed
+      - `resolved_instances`: int count (NOT a list)
+    Older schemas put the IDs directly under `resolved_instances`.
+    """
+    for key in ("resolved_ids", "resolved_instances"):
+        raw = report.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, list):
+            return set(raw)
+        if isinstance(raw, dict):
+            return set(raw.keys())
+    return set()
 
 
 # ---------------------------------------------------------------------------
@@ -1002,15 +1054,19 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     selected_keys = [k.strip() for k in args.generators.split(",") if k.strip()]
-    selected: dict[str, tuple[str, str | None]] = {}
+    selected: dict[str, tuple[str, str | None, bool | None]] = {}
     for k in selected_keys:
         if k not in GENERATORS:
             raise SystemExit(f"unknown generator key: {k}")
         selected[k] = GENERATORS[k]
 
     log.info("output dir: %s", output_dir)
-    log.info("generators: %s", {k: f"{m} via {u or 'OpenRouter'}"
-                                 for k, (m, u) in selected.items()})
+    log.info("generators: %s", {
+        k: f"{m} via {u or 'OpenRouter'}" + (
+            f" (thinking={t})" if t is not None else ""
+        )
+        for k, (m, u, t) in selected.items()
+    })
     log.info("n_instances=%d n_patches=%d seed=%d", args.n_instances, args.n_patches, args.seed)
 
     instances = sample_instances(args.seed, args.n_instances)
@@ -1029,13 +1085,17 @@ def main() -> None:
 
     # ---------- Phase 1 ----------
     if not args.skip_generate:
-        for key, (model, base_url) in selected.items():
-            log.info("=== generating: %s (%s via %s) ===",
-                     key, model, base_url or "OpenRouter")
+        for key, (model, base_url, enable_thinking) in selected.items():
+            log.info(
+                "=== generating: %s (%s via %s%s) ===",
+                key, model, base_url or "OpenRouter",
+                f", thinking={enable_thinking}" if enable_thinking is not None else "",
+            )
             generate_for_generator(
                 generator_key=key,
                 generator_model=model,
                 base_url=base_url,
+                enable_thinking=enable_thinking,
                 instances=instances,
                 n_patches=args.n_patches,
                 temperature=args.temperature,
@@ -1070,7 +1130,7 @@ def main() -> None:
     # ---------- Phase 3 ----------
     summaries: list[GeneratorSummary] = []
     eval_dir = output_dir / "eval"
-    for key, (model, _base_url) in selected.items():
+    for key, (model, _base_url, _enable_thinking) in selected.items():
         predictions_path = output_dir / key / "predictions.jsonl"
         if not predictions_path.exists() or not eval_dir.exists():
             log.warning("[%s] missing data; skipping summary", key)
