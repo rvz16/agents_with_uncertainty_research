@@ -254,9 +254,13 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
     def _is_consumed(idx: int) -> bool:
         return any(s <= idx < e for s, e in consumed)
 
+    # Accept both `CHANGE path` and `<<<CHANGE path` as chunk starters
+    # (some models open with the canonical sigil but never close it).
     chunks = list(
-        re.finditer(r"^\s*(?:```[a-zA-Z0-9_+-]*\s*)?CHANGE\s+(\S+)\s*$",
-                    response, re.MULTILINE)
+        re.finditer(
+            r"^\s*(?:```[a-zA-Z0-9_+-]*\s*)?(?:<<<\s*)?CHANGE\s+(\S+)\s*$",
+            response, re.MULTILINE,
+        )
     )
     for i, m in enumerate(chunks):
         if _is_consumed(m.start()):
@@ -397,6 +401,13 @@ def generate_one(
     seed: int,
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> str:
+    extra: dict = {}
+    # Qwen3 enables thinking mode by default which inserts <think>...</think>
+    # blocks ahead of the actual reply. We're doing single-shot patch
+    # generation, not multi-turn reasoning, so disable it via the vLLM
+    # chat_template_kwargs extra body parameter.
+    if model.lower().startswith("qwen/qwen3"):
+        extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
     resp = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -404,6 +415,7 @@ def generate_one(
         seed=seed,
         max_tokens=max_tokens,
         timeout=LLM_TIMEOUT_S,
+        **extra,
     )
     return resp.choices[0].message.content or ""
 
