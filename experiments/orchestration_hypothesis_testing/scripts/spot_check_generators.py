@@ -311,11 +311,88 @@ def make_diff(original: str, modified: str, file_path: str) -> str:
     return text
 
 
+def _common_indent(lines: list[str]) -> str:
+    """Longest common leading-whitespace prefix across non-blank lines.
+
+    Blank/whitespace-only lines are ignored (their leading whitespace is
+    not a meaningful indent signal). Returns "" if no non-blank lines.
+    """
+    indents: list[str] = []
+    for line in lines:
+        if line.strip():
+            stripped_len = len(line) - len(line.lstrip())
+            indents.append(line[:stripped_len])
+    if not indents:
+        return ""
+    common = indents[0]
+    for ind in indents[1:]:
+        i = 0
+        while i < len(common) and i < len(ind) and common[i] == ind[i]:
+            i += 1
+        common = common[:i]
+        if not common:
+            break
+    return common
+
+
+def _try_indent_tolerant_replace(
+    original: str, search_text: str, replace_text: str
+) -> str | None:
+    """SEARCH/REPLACE with leading-whitespace (indentation) tolerance.
+
+    Models often emit a SEARCH block at a shallower indent than the file
+    actually has (e.g. 8 spaces vs 12). We dedent both SEARCH and each
+    candidate line-window in the file by their respective common indents
+    and compare line-by-line (with trailing whitespace stripped). On the
+    first match we re-indent REPLACE to the window's indent before
+    substituting, preserving the file's nesting level.
+
+    Returns the modified file text on success, else None.
+    """
+    file_lines = original.split("\n")
+    s_lines = search_text.split("\n")
+    if s_lines and s_lines[-1] == "":
+        s_lines = s_lines[:-1]
+    if not s_lines:
+        return None
+
+    s_indent = _common_indent(s_lines)
+
+    def _dedent(line: str, indent: str) -> str:
+        return line[len(indent):] if indent and line.startswith(indent) else line
+
+    s_norm = [_dedent(l, s_indent).rstrip() for l in s_lines]
+
+    n = len(s_lines)
+    for i in range(len(file_lines) - n + 1):
+        window = file_lines[i : i + n]
+        w_indent = _common_indent(window)
+        w_norm = [_dedent(l, w_indent).rstrip() for l in window]
+        if w_norm != s_norm:
+            continue
+        r_lines = replace_text.split("\n")
+        r_trailing_nl = bool(r_lines) and r_lines[-1] == ""
+        if r_trailing_nl:
+            r_lines = r_lines[:-1]
+        r_lines = [_dedent(l, s_indent) for l in r_lines]
+        r_lines = [(w_indent + l) if l.strip() else l for l in r_lines]
+        new_lines = file_lines[:i] + r_lines + file_lines[i + n:]
+        return "\n".join(new_lines)
+    return None
+
+
 def apply_change_blocks(
     oracle_files: dict[str, str],
     blocks: list[tuple[str, str, str]],
 ) -> dict[str, str]:
-    """Apply SEARCH/REPLACE blocks. Returns modified file contents."""
+    """Apply SEARCH/REPLACE blocks. Returns modified file contents.
+
+    Three matching tiers, in order:
+      1. Strict literal substring.
+      2. Trailing-whitespace tolerant (rstrip per line).
+      3. Indentation tolerant (dedent SEARCH and the candidate window to
+         their common indents, re-indent REPLACE to the window's indent).
+    """
     modified: dict[str, str] = {}
     for fpath, search_text, replace_text in blocks:
         # Resolve fpath against oracle keys (model may strip prefix)
@@ -328,7 +405,6 @@ def apply_change_blocks(
         original = modified.get(resolved, oracle_files.get(resolved, ""))
         if not original:
             continue
-        # Strict match first, then whitespace-tolerant fallback
         if search_text in original:
             modified[resolved] = original.replace(search_text, replace_text, 1)
             continue
@@ -338,6 +414,12 @@ def apply_change_blocks(
             modified[resolved] = original.replace(
                 search_text.rstrip(), replace_text.rstrip(), 1
             )
+            continue
+        indent_match = _try_indent_tolerant_replace(
+            original, search_text, replace_text
+        )
+        if indent_match is not None:
+            modified[resolved] = indent_match
     return modified
 
 
