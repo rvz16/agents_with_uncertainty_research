@@ -1,0 +1,17 @@
+--- a/routing.py
++++ b/routing.py
+@@ -60,7 +60,7 @@
+     for i, r in enumerate(records):
+         if r["level"] in ("ERROR", "CRITICAL"):
+             s = max(0, i - n_before)
+-            e = min(len(records), i + n_after)
++            e = min(len(records), i + n_after + 1)  # Fix: Add 1 to include the current record
+             windows.append(records[s:e])
+     return windows
+ 
+@@ -79,4 +79,4 @@
+ 
+ def top_sources(records, n=5):
+     counts = count_by_source(records)
+-    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
++    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]

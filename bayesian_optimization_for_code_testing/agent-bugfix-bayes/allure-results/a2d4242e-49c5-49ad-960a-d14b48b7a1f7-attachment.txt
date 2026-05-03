@@ -1,0 +1,17 @@
+--- a/routing.py
++++ b/routing.py
+@@ -26,7 +26,7 @@
+ 
+ def filter_by_level(records, min_level):
+     threshold = LEVELS.get(min_level.upper(), 0)
+-    return [r for r in records if LEVELS.get(r["level"], 0) > threshold]
++    return [r for r in records if LEVELS.get(r["level"], 0) >= threshold]  # Change from > to >=
+ 
+ def filter_by_time(records, start=None, end=None):
+     out = []
+@@ -79,4 +79,4 @@
+ 
+ def top_sources(records, n=5):
+     counts = count_by_source(records)
+-    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
++    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]

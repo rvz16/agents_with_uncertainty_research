@@ -1,0 +1,18 @@
+--- a/routing.py
++++ b/routing.py
+@@ -68,7 +68,8 @@
+     if not records:
+         return 0.0
+     errs = sum(1 for r in records if r["level"] in ("ERROR", "CRITICAL"))
+-    return errs / (len(records) - 1)
++    total_records = len(records) - (records[0]["lineno"] == 1)  # Fix: Subtract one if the first record has lineno 1
++    return errs / total_records
+ 
+ def latest_by_source(records):
+     latest = {}
+@@ -79,4 +80,4 @@
+ 
+ def top_sources(records, n=5):
+     counts = count_by_source(records)
+-    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
++    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]

@@ -1,0 +1,17 @@
+--- a/routing.py
++++ b/routing.py
+@@ -52,7 +52,7 @@
+ def count_by_source(records):
+     counts = {}
+     for r in records:
+-        counts[r["level"]] = counts.get(r["level"], 0) + 1
++        counts[r["src"]] = counts.get(r["src"], 0) + 1  # Change here: "r['level']" to "r['src']"
+     return counts
+ 
+ def error_windows(records, n_before=2, n_after=2):
+@@ -79,4 +79,4 @@
+ 
+ def top_sources(records, n=5):
+     counts = count_by_source(records)
+-    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
++    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]

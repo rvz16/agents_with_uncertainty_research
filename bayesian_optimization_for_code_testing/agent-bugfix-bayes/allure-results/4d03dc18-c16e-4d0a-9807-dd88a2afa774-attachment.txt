@@ -1,0 +1,15 @@
+--- a/routing.py
++++ b/routing.py
+@@ -73,10 +73,10 @@
+ def latest_by_source(records):
+     latest = {}
+     for r in records:
+-        if r["src"] not in latest or r["ts"] < latest[r["src"]]["ts"]:
++        if r["src"] not in latest or r["ts"] > latest[r["src"]]["ts"]:
+             latest[r["src"]] = r
+     return latest
+ 
+ def top_sources(records, n=5):
+     counts = count_by_source(records)
+-    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
++    return sorted(counts.items(), key=lambda x: x[1], reverse=True)[:n]
