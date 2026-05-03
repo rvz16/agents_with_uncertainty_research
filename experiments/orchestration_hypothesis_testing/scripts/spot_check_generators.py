@@ -87,11 +87,13 @@ log = logging.getLogger("spot_check")
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "spot_check"
 
-# Generators under test. Keys are short names used in filenames + summaries.
-GENERATORS: dict[str, str] = {
-    "haiku45":  "anthropic/claude-haiku-4.5",
-    "qwen25_7b": "qwen/qwen-2.5-7b-instruct",
-    "qwen3_8b":  "qwen/qwen3-8b",
+# Generators under test. Each entry maps short name -> (model_id, base_url).
+# A None base_url means use OpenRouter; otherwise it's a vLLM-served local
+# OpenAI-compatible endpoint (no API key needed).
+GENERATORS: dict[str, tuple[str, str | None]] = {
+    "haiku45":   ("anthropic/claude-haiku-4.5", None),
+    "qwen25_7b": ("Qwen/Qwen2.5-7B-Instruct", "http://127.0.0.1:8001/v1"),
+    "qwen3_8b":  ("Qwen/Qwen3-8B",            "http://127.0.0.1:8002/v1"),
 }
 
 DEFAULT_N_INSTANCES = 20
@@ -368,13 +370,20 @@ def fetch_oracle_files(repo: str, base_commit: str, file_paths: list[str]) -> di
     return out
 
 
-def make_openrouter_client() -> OpenAI:
-    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get(
-        "SAGE_OPENROUTER_API_KEY"
-    )
-    if not api_key:
-        raise SystemExit("OPENROUTER_API_KEY not set in environment or .env")
-    return OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+def make_client(base_url: str | None) -> OpenAI:
+    """Build an OpenAI-compatible client.
+
+    `base_url=None` -> OpenRouter (requires OPENROUTER_API_KEY).
+    Anything else  -> a local vLLM endpoint, no real auth needed.
+    """
+    if base_url is None:
+        api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get(
+            "SAGE_OPENROUTER_API_KEY"
+        )
+        if not api_key:
+            raise SystemExit("OPENROUTER_API_KEY not set in environment or .env")
+        return OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+    return OpenAI(api_key="EMPTY", base_url=base_url)
 
 
 DEFAULT_MAX_TOKENS = 4000  # focused diffs are well under this; keeps cost low
@@ -466,6 +475,7 @@ def make_prompt(instance: dict, oracle_files: dict[str, str]) -> str:
 def generate_for_generator(
     generator_key: str,
     generator_model: str,
+    base_url: str | None,
     instances: list[dict],
     n_patches: int,
     temperature: float,
@@ -495,7 +505,7 @@ def generate_for_generator(
             except (json.JSONDecodeError, KeyError):
                 continue
 
-    client = make_openrouter_client()
+    client = make_client(base_url)
 
     # Prepare oracle files once per instance (network fetch is expensive)
     log.info("[%s] fetching oracle files for %d instances", generator_key, len(instances))
@@ -914,14 +924,15 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     selected_keys = [k.strip() for k in args.generators.split(",") if k.strip()]
-    selected: dict[str, str] = {}
+    selected: dict[str, tuple[str, str | None]] = {}
     for k in selected_keys:
         if k not in GENERATORS:
             raise SystemExit(f"unknown generator key: {k}")
         selected[k] = GENERATORS[k]
 
     log.info("output dir: %s", output_dir)
-    log.info("generators: %s", selected)
+    log.info("generators: %s", {k: f"{m} via {u or 'OpenRouter'}"
+                                 for k, (m, u) in selected.items()})
     log.info("n_instances=%d n_patches=%d seed=%d", args.n_instances, args.n_patches, args.seed)
 
     instances = sample_instances(args.seed, args.n_instances)
@@ -940,11 +951,13 @@ def main() -> None:
 
     # ---------- Phase 1 ----------
     if not args.skip_generate:
-        for key, model in selected.items():
-            log.info("=== generating: %s (%s) ===", key, model)
+        for key, (model, base_url) in selected.items():
+            log.info("=== generating: %s (%s via %s) ===",
+                     key, model, base_url or "OpenRouter")
             generate_for_generator(
                 generator_key=key,
                 generator_model=model,
+                base_url=base_url,
                 instances=instances,
                 n_patches=args.n_patches,
                 temperature=args.temperature,
@@ -979,7 +992,7 @@ def main() -> None:
     # ---------- Phase 3 ----------
     summaries: list[GeneratorSummary] = []
     eval_dir = output_dir / "eval"
-    for key, model in selected.items():
+    for key, (model, _base_url) in selected.items():
         predictions_path = output_dir / key / "predictions.jsonl"
         if not predictions_path.exists() or not eval_dir.exists():
             log.warning("[%s] missing data; skipping summary", key)
