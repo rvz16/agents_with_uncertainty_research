@@ -22,7 +22,95 @@ from spot_check_generators import (  # noqa: E402
     _common_indent,
     _try_indent_tolerant_replace,
     apply_change_blocks,
+    parse_change_blocks,
 )
+
+
+# ---------- parse_change_blocks: opener variants ----------
+
+def test_parse_canonical_triple_bracket():
+    text = (
+        "<<<CHANGE foo/bar.py\n"
+        "SEARCH\n"
+        "old line\n"
+        "REPLACE\n"
+        "new line\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert out == [("foo/bar.py", "old line", "new line")]
+
+
+def test_parse_sonnet_single_bracket():
+    """Sonnet 4.5 emits `<CHANGE path>` (single bracket, > on same line)."""
+    text = (
+        "<CHANGE astropy/io/ascii/rst.py>\n"
+        "SEARCH\n"
+        "    def __init__(self):\n"
+        "        super().__init__(delimiter_pad=None, bookend=False)\n"
+        "REPLACE\n"
+        "    def __init__(self, header_rows=None, **kwargs):\n"
+        "        super().__init__(delimiter_pad=None, bookend=False, "
+        "header_rows=header_rows, **kwargs)\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 1
+    fpath, search, replace = out[0]
+    assert fpath == "astropy/io/ascii/rst.py"
+    assert "def __init__(self):" in search
+    assert "super().__init__(delimiter_pad=None, bookend=False)" in search
+    assert "def __init__(self, header_rows=None, **kwargs):" in replace
+
+
+def test_parse_multiple_sonnet_blocks_in_one_response():
+    """Sonnet sometimes emits a 'wait, let me reconsider' followed by another
+    block. The latter is the one we want; both should parse cleanly."""
+    text = (
+        "<CHANGE foo.py>\n"
+        "SEARCH\n"
+        "x = 1\n"
+        "REPLACE\n"
+        "x = 2\n"
+        "CHANGE>>>\n"
+        "\n"
+        "Wait, let me reconsider:\n"
+        "\n"
+        "<CHANGE foo.py>\n"
+        "SEARCH\n"
+        "x = 1\n"
+        "REPLACE\n"
+        "x = 99\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 2
+    assert out[0] == ("foo.py", "x = 1", "x = 2")
+    assert out[1] == ("foo.py", "x = 1", "x = 99")
+
+
+def test_parse_canonical_and_single_bracket_mixed():
+    text = (
+        "<<<CHANGE a.py\n"
+        "SEARCH\nold_a\nREPLACE\nnew_a\nCHANGE>>>\n"
+        "\n"
+        "<CHANGE b.py>\n"
+        "SEARCH\nold_b\nREPLACE\nnew_b\nCHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 2
+    assert ("a.py", "old_a", "new_a") in out
+    assert ("b.py", "old_b", "new_b") in out
+
+
+def test_parse_skips_when_no_search_or_replace():
+    text = (
+        "<CHANGE foo.py>\n"
+        "this is just commentary, no SEARCH/REPLACE\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert out == []
 
 
 # ---------- _common_indent ----------

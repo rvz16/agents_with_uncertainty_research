@@ -50,11 +50,37 @@ from typing import Iterable
 
 from datasets import load_dataset
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import (
+    OpenAI,
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 # Project root (the worktree we're running from)
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+
+# Local import: thread-safe cost ledger
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from cost_tracker import CostTracker, extract_usage, project_cost  # noqa: E402
+
+# Provider exceptions that should NOT be retried; we abort immediately.
+# A wrong API key won't fix itself by retrying 599 more times.
+FATAL_API_EXCEPTIONS = (AuthenticationError, PermissionDeniedError)
+# These are retryable but we still surface them; for our spot-check we just
+# treat them as the call failing — no retry loop.
+RECOVERABLE_API_EXCEPTIONS = (
+    RateLimitError,
+    APIConnectionError,
+    APITimeoutError,
+    BadRequestError,
+)
 
 # Load .env: try worktree root first, then walk up looking for a non-empty
 # .env. When running inside a git worktree the OPENROUTER_API_KEY typically
@@ -96,9 +122,27 @@ DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "spot_che
 #   models. None means "leave the model's default", True/False forces it.
 GENERATORS: dict[str, tuple[str, str | None, bool | None]] = {
     "haiku45":           ("anthropic/claude-haiku-4.5", None,                          None),
+    "sonnet45":          ("anthropic/claude-sonnet-4.5", None,                         None),
+    "qwen3_coder":       ("qwen/qwen3-coder",           None,                          None),
+    "gpt5_mini":         ("openai/gpt-5-mini",          None,                          None),
     "qwen25_7b":         ("Qwen/Qwen2.5-7B-Instruct",   "http://127.0.0.1:8001/v1",   None),
     "qwen3_8b":          ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   False),
     "qwen3_8b_thinking": ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   True),
+}
+
+# Per-model cost cap (USD) — used by --max-cost-usd-per-model when not given a
+# single uniform value. Sized at ~1.5× the linear-projection estimate from
+# Haiku's measured cost ($0.0197/gen × 150 gens = $2.95 for n=50, k=3) and
+# OpenRouter list prices for the others. Local vLLM models pay $0; their cap
+# is set high so it never triggers.
+DEFAULT_COST_CAPS_USD: dict[str, float] = {
+    "haiku45":     5.0,
+    "sonnet45":   12.0,
+    "qwen3_coder": 2.0,
+    "gpt5_mini":   2.0,
+    "qwen25_7b":  1000.0,
+    "qwen3_8b":   1000.0,
+    "qwen3_8b_thinking": 1000.0,
 }
 
 DEFAULT_N_INSTANCES = 20
@@ -159,6 +203,12 @@ class GenerationRecord:
     response_chars: int
     error: str = ""
     timestamp: str = ""
+    # Cost telemetry (filled when the provider returns usage metadata; local
+    # vLLM endpoints leave these at 0).
+    cost_usd: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    extraction_path: str = ""
 
 
 @dataclass
@@ -229,14 +279,19 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
     """
     out: list[tuple[str, str, str]] = []
 
-    # Strategy 1: canonical <<<CHANGE ... CHANGE>>>
+    # Strategy 1: canonical <<<CHANGE ... CHANGE>>>, plus the single-bracket
+    # variant Sonnet 4.5 emits (`<CHANGE path>` opener, same `CHANGE>>>` close).
     canonical = re.compile(
-        r"<<<CHANGE\s+(.+?)\s*\n([\s\S]*?)CHANGE>>>", re.MULTILINE
+        r"(?:<<<CHANGE\s+(?P<p1>\S+?)|<CHANGE\s+(?P<p2>\S+?)>)\s*\n"
+        r"(?P<body>[\s\S]*?)CHANGE>>>",
+        re.MULTILINE,
     )
     consumed: list[tuple[int, int]] = []
     for match in canonical.finditer(response):
-        fpath = match.group(1).strip()
-        body = match.group(2)
+        fpath = (match.group("p1") or match.group("p2") or "").strip()
+        if not fpath:
+            continue
+        body = match.group("body")
         parts = re.split(r"^\s*SEARCH\s*$", body, maxsplit=1, flags=re.MULTILINE)
         if len(parts) < 2:
             continue
@@ -256,19 +311,24 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
     # parse each chunk for a SEARCH/REPLACE pair. Skip ranges already
     # consumed by the canonical parser. The line may be inside a ``` fence
     # (Qwen2.5-7B does this), so we accept an optional leading ``` prefix.
-    def _is_consumed(idx: int) -> bool:
-        return any(s <= idx < e for s, e in consumed)
+    def _overlaps_consumed(start: int, end: int) -> bool:
+        # Interval overlap, not point containment: the chunk regex's
+        # `^\s*` can include the preceding newline, so its span may begin
+        # one byte before the canonical span starts.
+        return any(start < e and s < end for s, e in consumed)
 
-    # Accept both `CHANGE path` and `<<<CHANGE path` as chunk starters
-    # (some models open with the canonical sigil but never close it).
+    # Accept opener forms: bare `CHANGE path`, `<<<CHANGE path`, and
+    # `<CHANGE path>` (Sonnet 4.5). The `>?` allows the closing bracket of
+    # the single-bracket form; the path is captured lazily so that bracket
+    # is not consumed.
     chunks = list(
         re.finditer(
-            r"^\s*(?:```[a-zA-Z0-9_+-]*\s*)?(?:<<<\s*)?CHANGE\s+(\S+)\s*$",
+            r"^\s*(?:```[a-zA-Z0-9_+-]*\s*)?(?:<<<\s*|<\s*)?CHANGE\s+(\S+?)>?\s*$",
             response, re.MULTILINE,
         )
     )
     for i, m in enumerate(chunks):
-        if _is_consumed(m.start()):
+        if _overlaps_consumed(m.start(), m.end()):
             continue
         fpath = m.group(1).strip()
         body_start = m.end()
@@ -492,8 +552,12 @@ def generate_one(
     seed: int,
     enable_thinking: bool | None = None,
     max_tokens: int | None = None,
-) -> str:
+) -> tuple[str, float, int, int]:
     """Single chat completion call.
+
+    Returns (response_text, cost_usd, prompt_tokens, completion_tokens).
+    Cost is whatever the provider reported in `usage.cost` (OpenRouter
+    populates this; local vLLM does not). Tokens come from `usage.*`.
 
     enable_thinking: forwarded to Qwen3-family models via vLLM's
         chat_template_kwargs. None lets the model use its default
@@ -517,7 +581,9 @@ def generate_one(
         timeout=LLM_TIMEOUT_S,
         **extra,
     )
-    return resp.choices[0].message.content or ""
+    text = resp.choices[0].message.content or ""
+    cost, prompt_tok, completion_tok = extract_usage(resp)
+    return text, cost, prompt_tok, completion_tok
 
 
 def strip_think_blocks(text: str) -> str:
@@ -600,6 +666,44 @@ def make_prompt(instance: dict, oracle_files: dict[str, str]) -> str:
     )
 
 
+class FatalAuthError(SystemExit):
+    """Raised on the first 401/403 to abort the entire run cleanly."""
+
+
+def _extract_diff_from_response(
+    response: str,
+    oracle_files: dict[str, str],
+) -> tuple[str, str, int]:
+    """Run the three-tier extractor. Returns (diff, extraction_path, n_blocks)."""
+    response_for_parse = strip_think_blocks(response)
+    blocks = parse_change_blocks(response_for_parse)
+    n_blocks = len(blocks)
+    if blocks:
+        modified = apply_change_blocks(oracle_files, blocks)
+        diff = build_diff(oracle_files, modified)
+        if diff:
+            return diff, "change_blocks", n_blocks
+    full_blocks = parse_full_file_blocks(response_for_parse)
+    if full_blocks:
+        diffs: list[str] = []
+        for fpath, modified_content in full_blocks.items():
+            resolved = fpath if fpath in oracle_files else next(
+                (o for o in oracle_files if o.endswith(fpath) or fpath.endswith(o)),
+                fpath,
+            )
+            original = oracle_files.get(resolved, "")
+            if original:
+                d = make_diff(original, modified_content, resolved)
+                if d:
+                    diffs.append(d)
+        if diffs:
+            return "\n".join(diffs), "full_file_blocks", n_blocks
+    raw = parse_raw_diff(response_for_parse)
+    if raw:
+        return raw, "raw_diff", n_blocks
+    return "", "none", n_blocks
+
+
 def generate_for_generator(
     generator_key: str,
     generator_model: str,
@@ -611,10 +715,15 @@ def generate_for_generator(
     base_seed: int,
     output_dir: Path,
     max_workers: int,
+    cost_tracker: CostTracker | None = None,
 ) -> Path:
     """Generate all patches for one generator and write predictions JSONL.
 
     Returns path to predictions JSONL (one record per (instance, patch_id)).
+
+    cost_tracker, if provided, will be updated after each paid call. Workers
+    early-exit (returning a "skipped" record) once `cost_tracker.capped` is
+    true, so we don't burn money beyond the configured cap.
     """
     out_dir = output_dir / generator_key
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -627,7 +736,6 @@ def generate_for_generator(
         for line in predictions_path.read_text().splitlines():
             try:
                 rec = json.loads(line)
-                # model_name_or_path encodes the patch_id suffix
                 m = re.match(r".+__p(\d+)$", rec["model_name_or_path"])
                 if m:
                     completed.add((rec["instance_id"], int(m.group(1))))
@@ -636,7 +744,6 @@ def generate_for_generator(
 
     client = make_client(base_url)
 
-    # Prepare oracle files once per instance (network fetch is expensive)
     log.info("[%s] fetching oracle files for %d instances", generator_key, len(instances))
     oracle_per_instance: dict[str, dict[str, str]] = {}
     for inst in instances:
@@ -645,7 +752,6 @@ def generate_for_generator(
             inst["repo"], inst["base_commit"], gold_files
         )
 
-    # Build the work list
     tasks: list[tuple[dict, int, int]] = []
     for inst in instances:
         for pid in range(n_patches):
@@ -657,8 +763,12 @@ def generate_for_generator(
         "[%s] %d (instance, patch_id) pairs to generate (%d already done)",
         generator_key, len(tasks), len(completed),
     )
+    if cost_tracker is not None:
+        log.info(
+            "[%s] cost cap = $%.2f (remaining $%.2f)",
+            generator_key, cost_tracker.cap_usd, cost_tracker.remaining,
+        )
 
-    # Open files in append mode; use lock if needed
     import threading
     write_lock = threading.Lock()
 
@@ -667,73 +777,49 @@ def generate_for_generator(
 
     def _do_one(task: tuple[dict, int, int]) -> GenerationRecord:
         inst, pid, seed = task
-        oracle_files = oracle_per_instance[inst["instance_id"]]
-        prompt = make_prompt(inst, oracle_files)
-        try:
-            response = generate_one(
-                client, generator_model, prompt, temperature, seed,
-                enable_thinking=enable_thinking,
-            )
-            # Strip thinking blocks first; they often contain pseudo-CHANGE
-            # fragments that confuse the parser.
-            response_for_parse = strip_think_blocks(response)
-            diff = ""
-            extraction_path = "none"
-            # 1) preferred path: SEARCH/REPLACE blocks
-            blocks = parse_change_blocks(response_for_parse)
-            if blocks:
-                modified = apply_change_blocks(oracle_files, blocks)
-                diff = build_diff(oracle_files, modified)
-                if diff:
-                    extraction_path = "change_blocks"
-            # 2) fallback: full-file rewrites
-            if not diff:
-                full_blocks = parse_full_file_blocks(response_for_parse)
-                if full_blocks:
-                    diffs: list[str] = []
-                    for fpath, modified_content in full_blocks.items():
-                        # resolve fpath against oracle keys
-                        resolved = fpath if fpath in oracle_files else next(
-                            (o for o in oracle_files if o.endswith(fpath) or fpath.endswith(o)),
-                            fpath,
-                        )
-                        original = oracle_files.get(resolved, "")
-                        if original:
-                            d = make_diff(original, modified_content, resolved)
-                            if d:
-                                diffs.append(d)
-                    if diffs:
-                        diff = "\n".join(diffs)
-                        extraction_path = "full_file_blocks"
-            # 3) fallback: raw unified diff in the response
-            if not diff:
-                raw = parse_raw_diff(response_for_parse)
-                if raw:
-                    diff = raw
-                    extraction_path = "raw_diff"
 
-            err = "" if diff else (
-                f"empty diff (response chars={len(response)}, "
-                f"change_blocks={len(blocks)})"
-            )
-
-            # Persist raw response for debugging when extraction fails
-            if not diff:
-                rp = raw_responses_dir / f"{inst['instance_id']}_p{pid}.txt"
-                rp.write_text(response)
-
+        # Cost-cap pre-check: skip cleanly if already over budget.
+        if cost_tracker is not None and not cost_tracker.can_proceed():
+            cost_tracker.note_skipped(1)
             return GenerationRecord(
                 generator_key=generator_key,
                 generator_model=generator_model,
                 instance_id=inst["instance_id"],
                 repo=inst["repo"],
                 patch_id=pid,
-                diff=diff,
-                response_chars=len(response),
-                error=err if not diff else f"ok (via {extraction_path})",
+                diff="",
+                response_chars=0,
+                error=f"skipped: cost cap ${cost_tracker.cap_usd:.2f} reached",
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
-        except Exception as exc:  # broad on purpose: we want to log every failure
+
+        oracle_files = oracle_per_instance[inst["instance_id"]]
+        prompt = make_prompt(inst, oracle_files)
+        try:
+            response, cost_usd, p_tok, c_tok = generate_one(
+                client, generator_model, prompt, temperature, seed,
+                enable_thinking=enable_thinking,
+            )
+        except FATAL_API_EXCEPTIONS as exc:
+            # Mark tracker as capped so siblings stop, but raise so the
+            # outer loop also notices and bails out of the whole generator.
+            if cost_tracker is not None:
+                cost_tracker.note_skipped(1)
+            log.error("[%s] FATAL auth error: %s — aborting generator", generator_key, exc)
+            raise FatalAuthError(2) from exc
+        except RECOVERABLE_API_EXCEPTIONS as exc:
+            return GenerationRecord(
+                generator_key=generator_key,
+                generator_model=generator_model,
+                instance_id=inst["instance_id"],
+                repo=inst["repo"],
+                patch_id=pid,
+                diff="",
+                response_chars=0,
+                error=f"api_error: {type(exc).__name__}: {exc}",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception as exc:
             return GenerationRecord(
                 generator_key=generator_key,
                 generator_model=generator_model,
@@ -746,26 +832,86 @@ def generate_for_generator(
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
+        diff, extraction_path, n_blocks = _extract_diff_from_response(
+            response, oracle_files
+        )
+
+        # Record cost AFTER we know the outcome so the audit log has full context
+        if cost_tracker is not None and cost_usd > 0:
+            cost_tracker.record(
+                cost_usd=cost_usd,
+                prompt_tokens=p_tok,
+                completion_tokens=c_tok,
+                instance_id=inst["instance_id"],
+                patch_id=pid,
+                extra={
+                    "extraction_path": extraction_path,
+                    "diff_chars": len(diff),
+                },
+            )
+
+        err = "" if diff else (
+            f"empty diff (response chars={len(response)}, change_blocks={n_blocks})"
+        )
+
+        if not diff:
+            rp = raw_responses_dir / f"{inst['instance_id']}_p{pid}.txt"
+            rp.write_text(response)
+
+        return GenerationRecord(
+            generator_key=generator_key,
+            generator_model=generator_model,
+            instance_id=inst["instance_id"],
+            repo=inst["repo"],
+            patch_id=pid,
+            diff=diff,
+            response_chars=len(response),
+            error=err if not diff else f"ok (via {extraction_path})",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            cost_usd=cost_usd,
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            extraction_path=extraction_path,
+        )
+
+    aborted_due_to_auth = False
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        for fut in as_completed([ex.submit(_do_one, t) for t in tasks]):
-            rec = fut.result()
+        futures = [ex.submit(_do_one, t) for t in tasks]
+        for fut in as_completed(futures):
+            try:
+                rec = fut.result()
+            except FatalAuthError:
+                aborted_due_to_auth = True
+                # Cancel anything not yet started; in-flight calls will finish.
+                for f in futures:
+                    f.cancel()
+                break
+            cost_str = f" ${rec.cost_usd:.4f}" if rec.cost_usd else ""
             log.info(
-                "[%s] %s p%d -> diff=%d chars %s",
+                "[%s] %s p%d -> diff=%d chars%s (%s)",
                 generator_key, rec.instance_id, rec.patch_id, len(rec.diff),
-                f"({rec.error})" if rec.error else "",
+                cost_str, rec.error or "ok",
             )
             with write_lock:
                 with open(raw_records_path, "a") as f:
                     f.write(json.dumps(dataclasses.asdict(rec)) + "\n")
-                # SWE-bench harness predictions JSONL
                 pred = {
                     "instance_id": rec.instance_id,
-                    # encode patch_id in model name so harness treats them as distinct
                     "model_name_or_path": f"{generator_key}__p{rec.patch_id}",
                     "model_patch": rec.diff,
                 }
                 with open(predictions_path, "a") as f:
                     f.write(json.dumps(pred) + "\n")
+    if aborted_due_to_auth:
+        raise FatalAuthError(2)
+
+    if cost_tracker is not None:
+        snap = cost_tracker.snapshot()
+        log.info(
+            "[%s] DONE: $%.4f / $%.2f cap (%d calls, %d skipped)",
+            generator_key, snap["total_usd"], snap["cap_usd"],
+            snap["n_calls"], snap["n_skipped"],
+        )
 
     return predictions_path
 
@@ -860,6 +1006,12 @@ def run_swebench_eval(
     proc = subprocess.run(
         cmd, cwd=work_dir, env=env, capture_output=True, text=True,
     )
+    # Persist full stdout/stderr per run so we can root-cause harness/Docker
+    # issues without re-running. The in-process log only keeps a 2K tail.
+    eval_logs_dir = work_dir / "eval_logs"
+    eval_logs_dir.mkdir(parents=True, exist_ok=True)
+    (eval_logs_dir / f"{run_id}.stdout.log").write_text(proc.stdout)
+    (eval_logs_dir / f"{run_id}.stderr.log").write_text(proc.stderr)
     if proc.returncode != 0:
         log.warning("eval exit=%d", proc.returncode)
         log.warning("stderr tail:\n%s", proc.stderr[-2000:])
@@ -1118,6 +1270,138 @@ def split_predictions_by_pid(
 # Main
 # ---------------------------------------------------------------------------
 
+def _parse_per_model_caps(spec: str | None, defaults: dict[str, float]) -> dict[str, float]:
+    """Parse `--max-cost-usd-per-model` value.
+
+    Accepted forms:
+      - bare float ("5.0")            -> apply uniformly to every selected model
+      - csv "key=val,key=val,..."     -> per-model override; missing keys fall
+                                          back to DEFAULT_COST_CAPS_USD
+      - empty/None                    -> use DEFAULT_COST_CAPS_USD as-is
+    """
+    caps = dict(defaults)
+    if not spec:
+        return caps
+    spec = spec.strip()
+    if "=" not in spec:
+        try:
+            uniform = float(spec)
+        except ValueError as exc:
+            raise SystemExit(f"--max-cost-usd-per-model: cannot parse {spec!r}") from exc
+        for k in caps:
+            caps[k] = uniform
+        return caps
+    for part in spec.split(","):
+        if not part.strip():
+            continue
+        if "=" not in part:
+            raise SystemExit(f"--max-cost-usd-per-model: bad token {part!r}, want key=value")
+        k, v = part.split("=", 1)
+        try:
+            caps[k.strip()] = float(v.strip())
+        except ValueError as exc:
+            raise SystemExit(f"--max-cost-usd-per-model: bad value for {k!r}: {v!r}") from exc
+    return caps
+
+
+def _make_tracker(key: str, base_url: str | None, cap_usd: float, output_dir: Path) -> CostTracker:
+    """Build a per-model cost tracker (skipped for local vLLM since cost=0)."""
+    log_path = output_dir / key / "cost_log.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    return CostTracker(name=key, cap_usd=cap_usd, log_path=log_path)
+
+
+def _run_probe(
+    selected: dict[str, tuple[str, str | None, bool | None]],
+    instances: list[dict],
+    n_patches: int,
+    temperature: float,
+    base_seed: int,
+    output_dir: Path,
+    caps: dict[str, float],
+) -> dict[str, dict[str, float | int | bool]]:
+    """Generate exactly 1 patch on 1 instance per selected model.
+
+    Returns a per-model dict with measured probe cost + projected total cost
+    for `n_patches × len(instances)` calls. Uses the first instance from the
+    sample (deterministic given seed).
+    """
+    if not instances:
+        raise SystemExit("--probe-only: empty sample")
+    probe_inst = instances[0]
+    probe_inst_id = probe_inst["instance_id"]
+    n_total = len(instances) * n_patches
+    log.info(
+        "PROBE: 1 generation on %s for each model; projecting to %d total calls",
+        probe_inst_id, n_total,
+    )
+
+    out: dict[str, dict[str, float | int | bool]] = {}
+    for key, (model, base_url, enable_thinking) in selected.items():
+        cap = caps.get(key, 0.0)
+        tracker = _make_tracker(key, base_url, cap_usd=cap, output_dir=output_dir / "_probe")
+        log.info("=== probe: %s (%s) cap=$%.2f ===", key, model, cap)
+        try:
+            generate_for_generator(
+                generator_key=key,
+                generator_model=model,
+                base_url=base_url,
+                enable_thinking=enable_thinking,
+                instances=[probe_inst],
+                n_patches=1,
+                temperature=temperature,
+                base_seed=base_seed,
+                output_dir=output_dir / "_probe",
+                max_workers=1,
+                cost_tracker=tracker,
+            )
+        except FatalAuthError:
+            log.error("[%s] PROBE aborted on auth error; skipping projection", key)
+            out[key] = {
+                "probe_cost_usd": 0.0,
+                "projected_total_usd": float("nan"),
+                "cap_usd": cap,
+                "exceeds_cap": True,
+                "auth_error": True,
+            }
+            continue
+        snap = tracker.snapshot()
+        probe_cost = float(snap["total_usd"])
+        projected = project_cost(probe_cost, n_total_calls=n_total, probe_calls=1)
+        exceeds = projected > cap and cap < 1000.0  # local-vLLM caps are 1000
+        out[key] = {
+            "probe_cost_usd": probe_cost,
+            "projected_total_usd": projected,
+            "cap_usd": cap,
+            "exceeds_cap": exceeds,
+            "auth_error": False,
+        }
+    return out
+
+
+def _print_probe_table(probe: dict[str, dict[str, float | int | bool]], n_total: int) -> None:
+    print()
+    print("=" * 78)
+    print(f"PROBE PROJECTIONS (n_total_calls = {n_total})")
+    print("=" * 78)
+    print(f"{'model':<14} {'probe_cost':>12} {'projected':>12} {'cap':>10} {'verdict':>14}")
+    grand_projected = 0.0
+    for key, d in probe.items():
+        projected = float(d["projected_total_usd"])
+        cap = float(d["cap_usd"])
+        verdict = "AUTH-FAIL" if d.get("auth_error") else (
+            "EXCEEDS CAP" if d["exceeds_cap"] else "ok"
+        )
+        print(
+            f"{key:<14} ${d['probe_cost_usd']:>10.4f} ${projected:>10.2f} ${cap:>8.2f} {verdict:>14}"
+        )
+        if not d.get("auth_error"):
+            grand_projected += projected
+    print("-" * 78)
+    print(f"{'TOTAL':<14} {'':>12} ${grand_projected:>10.2f}")
+    print("=" * 78)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-instances", type=int, default=DEFAULT_N_INSTANCES)
@@ -1131,6 +1415,17 @@ def main() -> None:
                         help="Comma-separated generator keys to run")
     parser.add_argument("--skip-generate", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
+    parser.add_argument(
+        "--probe-only", action="store_true",
+        help="Run 1 generation per generator, project total cost, then exit. "
+             "No harness eval, no aggregation.",
+    )
+    parser.add_argument(
+        "--max-cost-usd-per-model", default=None,
+        help="Hard cost cap per generator (USD). Either a single float "
+             "(applies to all) or 'key=val,key=val,...' for per-model overrides. "
+             "Defaults are per DEFAULT_COST_CAPS_USD.",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -1142,6 +1437,8 @@ def main() -> None:
             raise SystemExit(f"unknown generator key: {k}")
         selected[k] = GENERATORS[k]
 
+    caps = _parse_per_model_caps(args.max_cost_usd_per_model, DEFAULT_COST_CAPS_USD)
+
     log.info("output dir: %s", output_dir)
     log.info("generators: %s", {
         k: f"{m} via {u or 'OpenRouter'}" + (
@@ -1149,6 +1446,7 @@ def main() -> None:
         )
         for k, (m, u, t) in selected.items()
     })
+    log.info("cost caps (USD): %s", {k: caps[k] for k in selected})
     log.info("n_instances=%d n_patches=%d seed=%d", args.n_instances, args.n_patches, args.seed)
 
     instances = sample_instances(args.seed, args.n_instances)
@@ -1157,7 +1455,6 @@ def main() -> None:
         len(instances),
         sorted({i["repo"] for i in instances}),
     )
-    # Persist the sample so it's reproducible
     (output_dir / "sample.json").write_text(
         json.dumps(
             [{"instance_id": i["instance_id"], "repo": i["repo"]} for i in instances],
@@ -1165,26 +1462,81 @@ def main() -> None:
         )
     )
 
+    # Persist a reproducibility snapshot so we can re-derive what was launched
+    # without depending on shell history. Captures CLI args, generator config,
+    # caps, and current git SHA.
+    try:
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        git_sha = "unknown"
+    run_config = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "git_sha": git_sha,
+        "cli_args": vars(args),
+        "generators": {
+            k: {"model": m, "base_url": u, "enable_thinking": t}
+            for k, (m, u, t) in selected.items()
+        },
+        "cost_caps_usd": {k: caps[k] for k in selected},
+        "n_total_calls_planned": len(instances) * args.n_patches * len(selected),
+        "prompt_template_sha256": __import__("hashlib").sha256(
+            PROMPT_TEMPLATE.encode("utf-8")
+        ).hexdigest(),
+    }
+    (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2))
+
+    # ---------- Probe-only short-circuit ----------
+    if args.probe_only:
+        probe = _run_probe(
+            selected=selected, instances=instances,
+            n_patches=args.n_patches, temperature=args.temperature,
+            base_seed=args.seed, output_dir=output_dir, caps=caps,
+        )
+        n_total = len(instances) * args.n_patches
+        _print_probe_table(probe, n_total)
+        (output_dir / "probe_report.json").write_text(
+            json.dumps({"n_total_calls": n_total, "models": probe}, indent=2)
+        )
+        log.info("probe-only mode: exiting without bulk generation or eval")
+        return
+
     # ---------- Phase 1 ----------
     if not args.skip_generate:
         for key, (model, base_url, enable_thinking) in selected.items():
             log.info(
-                "=== generating: %s (%s via %s%s) ===",
+                "=== generating: %s (%s via %s%s) cap=$%.2f ===",
                 key, model, base_url or "OpenRouter",
                 f", thinking={enable_thinking}" if enable_thinking is not None else "",
+                caps.get(key, 0.0),
             )
-            generate_for_generator(
-                generator_key=key,
-                generator_model=model,
-                base_url=base_url,
-                enable_thinking=enable_thinking,
-                instances=instances,
-                n_patches=args.n_patches,
-                temperature=args.temperature,
-                base_seed=args.seed,
-                output_dir=output_dir,
-                max_workers=args.max_workers_gen,
+            tracker = _make_tracker(
+                key=key, base_url=base_url,
+                cap_usd=caps.get(key, 0.0), output_dir=output_dir,
             )
+            try:
+                generate_for_generator(
+                    generator_key=key,
+                    generator_model=model,
+                    base_url=base_url,
+                    enable_thinking=enable_thinking,
+                    instances=instances,
+                    n_patches=args.n_patches,
+                    temperature=args.temperature,
+                    base_seed=args.seed,
+                    output_dir=output_dir,
+                    max_workers=args.max_workers_gen,
+                    cost_tracker=tracker,
+                )
+            except FatalAuthError:
+                log.error("[%s] generator aborted on auth error; halting all phase-1 work", key)
+                # Save what we have for this generator and stop the run.
+                snap = tracker.snapshot()
+                (output_dir / key / "cost_summary.json").write_text(json.dumps(snap, indent=2))
+                raise SystemExit(2)
+            snap = tracker.snapshot()
+            (output_dir / key / "cost_summary.json").write_text(json.dumps(snap, indent=2))
 
     # ---------- Phase 2 ----------
     if not args.skip_eval:
