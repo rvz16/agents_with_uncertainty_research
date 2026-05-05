@@ -305,8 +305,9 @@ def critic_L3_review(problem: str, code: str, client) -> tuple[bool, float]:
 # ---------- Generators ----------
 
 GENERATORS = {
-    "gpt5_mini":   ("openai/gpt-5-mini",   "OpenAI gpt-5-mini"),
-    "qwen3_coder": ("qwen/qwen3-coder",    "Qwen3 Coder"),
+    "gpt5_mini":   ("openai/gpt-5-mini",         "OpenAI gpt-5-mini"),
+    "qwen3_coder": ("qwen/qwen3-coder",          "Qwen3 Coder"),
+    "haiku45":     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5"),
 }
 
 
@@ -345,6 +346,10 @@ def cost_for_call(model_id: str, prompt_tokens: int, completion_tokens: int) -> 
         return (prompt_tokens / 1_000_000) * 0.5 + (completion_tokens / 1_000_000) * 4.0
     if "qwen3-coder" in model_id:
         return (prompt_tokens / 1_000_000) * 0.4 + (completion_tokens / 1_000_000) * 1.6
+    if "claude-haiku" in model_id:
+        return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
+    if "claude-sonnet" in model_id:
+        return (prompt_tokens / 1_000_000) * 3.0 + (completion_tokens / 1_000_000) * 15.0
     return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
 
 
