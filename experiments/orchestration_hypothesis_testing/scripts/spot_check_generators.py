@@ -432,6 +432,27 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
             _strip_fence(parts2[1]).strip("\n"),
         ))
 
+    # Strategy 4: pathless XML pairs that the model emits without any
+    # `<CHANGE path>` opener. Sonnet 4.5 does this — drops `<SEARCH>...</SEARCH>
+    # <REPLACE>...</REPLACE>` directly into the prose, expecting the reader
+    # to know which file from context. We emit these with `fpath=""` so
+    # ``apply_change_blocks`` can infer the path by searching oracle files
+    # for the SEARCH text.
+    pathless_xml = re.compile(
+        r"<SEARCH>\s*\n(?P<search>[\s\S]*?)\n?</SEARCH>\s*\n"
+        r"\s*<REPLACE>\s*\n(?P<replace>[\s\S]*?)\n?</REPLACE>",
+        re.MULTILINE,
+    )
+    for match in pathless_xml.finditer(response):
+        if _overlaps_consumed(match.start(), match.end()):
+            continue
+        out.append((
+            "",  # sentinel: apply_change_blocks will infer the path
+            _strip_fence(match.group("search")).strip("\n"),
+            _strip_fence(match.group("replace")).strip("\n"),
+        ))
+        consumed.append(match.span())
+
     return out
 
 
@@ -628,6 +649,44 @@ def _try_fuzzy_replace(
     return "\n".join(new_lines)
 
 
+def _infer_path_from_search(
+    search_text: str,
+    oracle_files: dict[str, str],
+) -> str:
+    """Find which oracle file uniquely contains the SEARCH text.
+
+    Used when the parser couldn't extract a path (Strategy 4 pathless XML
+    blocks) or when the model emitted a placeholder path with the real
+    path elsewhere. Tries the full matcher chain (strict, rstrip, indent,
+    fuzzy) so we don't miss matches due to whitespace drift.
+
+    Returns the matched path if exactly one oracle file contains the
+    SEARCH text, else "" (caller will skip the block).
+    """
+    if not search_text.strip():
+        return ""
+    matches: list[str] = []
+    for opath, content in oracle_files.items():
+        if not content:
+            continue
+        if search_text in content:
+            matches.append(opath)
+            continue
+        stripped_orig = "\n".join(l.rstrip() for l in content.split("\n"))
+        stripped_search = "\n".join(l.rstrip() for l in search_text.split("\n"))
+        if stripped_search in stripped_orig:
+            matches.append(opath)
+            continue
+        if _try_indent_tolerant_replace(content, search_text, "X") is not None:
+            matches.append(opath)
+            continue
+        if _try_fuzzy_replace(content, search_text, "X") is not None:
+            matches.append(opath)
+    # Only accept unambiguous single-file matches. If multiple oracle
+    # files contain the same SEARCH text we'd be guessing, so bail.
+    return matches[0] if len(matches) == 1 else ""
+
+
 def apply_change_blocks(
     oracle_files: dict[str, str],
     blocks: list[tuple[str, str, str]],
@@ -641,14 +700,25 @@ def apply_change_blocks(
          their common indents, re-indent REPLACE to the window's indent).
       4. Fuzzy SequenceMatcher with similarity threshold 0.92 (last resort,
          guards against hallucinated SEARCH text).
+
+    Also handles two path-resolution recoveries:
+      - fpath == ""        (Strategy 4 pathless XML pair): scan oracle
+        files for SEARCH match and use the unique hit.
+      - placeholder path   (e.g. "FILE_PATH_HERE"): same scan, useful
+        when the model emitted a placeholder path with the real path on
+        the next line (qwen3_coder mistake).
     """
     modified: dict[str, str] = {}
     for fpath, search_text, replace_text in blocks:
-        # Reject obvious placeholder paths immediately so the apply step's
-        # silent skip ("path/to/file.py" not in oracle_files) doesn't
-        # pretend we extracted a usable block.
-        if _PLACEHOLDER_PATH_RE.match(fpath):
-            continue
+        # Path inference: missing or placeholder paths get re-resolved by
+        # finding which oracle file uniquely contains the SEARCH text.
+        # Without this we'd silently drop these blocks (the most common
+        # remaining failure for sonnet45 + qwen3_coder).
+        if not fpath or _PLACEHOLDER_PATH_RE.match(fpath):
+            inferred = _infer_path_from_search(search_text, oracle_files)
+            if not inferred:
+                continue
+            fpath = inferred
         resolved = _resolve_oracle_path(fpath, oracle_files)
         original = modified.get(resolved, oracle_files.get(resolved, ""))
         if not original:

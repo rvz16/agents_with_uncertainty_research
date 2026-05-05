@@ -20,6 +20,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from spot_check_generators import (  # noqa: E402
     _common_indent,
+    _infer_path_from_search,
     _normalize_path_token,
     _resolve_oracle_path,
     _try_fuzzy_replace,
@@ -372,19 +373,41 @@ def test_resolve_path_basename_ambiguous_returns_some_match():
 
 # Placeholder rejection at apply step
 
-def test_apply_skips_placeholder_path():
+def test_apply_skips_placeholder_path_when_search_text_not_in_any_oracle():
+    """Placeholder paths get rejected when SEARCH text doesn't match any
+    oracle file (so we don't silently produce wrong patches)."""
+    oracle = {"real/file.py": "different content here\n"}
+    blocks = [("path/to/file.py", "old", "new")]  # SEARCH "old" not in oracle
+    modified = apply_change_blocks(oracle, blocks)
+    assert not modified
+
+
+def test_apply_skips_uppercase_placeholder_when_search_text_not_in_any_oracle():
+    oracle = {"real/file.py": "different content here\n"}
+    blocks = [("FILE_PATH_HERE", "totally absent", "new")]
+    modified = apply_change_blocks(oracle, blocks)
+    assert not modified
+
+
+def test_apply_recovers_placeholder_path_when_search_text_in_one_oracle():
+    """The new inference behavior: placeholder path is OK as long as the
+    SEARCH text uniquely identifies an oracle file."""
     oracle = {"real/file.py": "old\n"}
     blocks = [("path/to/file.py", "old", "new")]
     modified = apply_change_blocks(oracle, blocks)
-    assert "real/file.py" not in modified
-    assert "path/to/file.py" not in modified
+    assert "real/file.py" in modified
+    assert "new" in modified["real/file.py"]
 
 
-def test_apply_skips_uppercase_placeholder():
-    oracle = {"real/file.py": "old\n"}
-    blocks = [("FILE_PATH_HERE", "old", "new")]
+def test_apply_skips_placeholder_when_search_text_in_multiple_oracle_files():
+    """Refuse to guess if SEARCH appears in multiple oracle files."""
+    oracle = {
+        "a.py": "shared = True\n",
+        "b.py": "shared = True\n",
+    }
+    blocks = [("FILE_PATH_HERE", "shared = True", "shared = False")]
     modified = apply_change_blocks(oracle, blocks)
-    assert not modified
+    assert not modified  # ambiguous, refuse to guess
 
 
 # Fuzzy matcher (tier 4)
@@ -471,3 +494,114 @@ def test_parse_canonical_and_xml_mixed():
     assert "first.py" in paths
     assert "second.py" in paths
     assert len(out) == 2
+
+
+# ---------- Strategy 4: pathless XML pairs (sonnet45's remaining failures) ----------
+
+def test_parse_pathless_xml_pair_emits_empty_path():
+    """`<SEARCH>...</SEARCH><REPLACE>...</REPLACE>` with no `<CHANGE path>`
+    opener — emit with fpath="" so apply_change_blocks can infer."""
+    text = (
+        "Here is the fix:\n"
+        "<SEARCH>\n"
+        "old line\n"
+        "</SEARCH>\n"
+        "<REPLACE>\n"
+        "new line\n"
+        "</REPLACE>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 1
+    assert out[0] == ("", "old line", "new line")
+
+
+def test_parse_pathless_xml_skipped_when_inside_canonical_block():
+    """If pathless XML pair is INSIDE a canonical CHANGE block already
+    consumed by Strategy 1, it should not be double-extracted."""
+    text = (
+        "<<<CHANGE foo.py\n"
+        "SEARCH\n"
+        "<SEARCH>x</SEARCH>\n"
+        "REPLACE\n"
+        "<REPLACE>X</REPLACE>\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    # Only the canonical block — the pathless XML pair is content inside
+    # the SEARCH/REPLACE bodies, not a separate block.
+    paths = [b[0] for b in out]
+    assert "foo.py" in paths
+
+
+# ---------- _infer_path_from_search: oracle-file path inference ----------
+
+def test_infer_path_unique_match():
+    oracle = {
+        "a/foo.py": "def foo():\n    return 1\n",
+        "b/bar.py": "def bar():\n    return 2\n",
+    }
+    assert _infer_path_from_search("def foo():\n    return 1", oracle) == "a/foo.py"
+
+
+def test_infer_path_no_match_returns_empty():
+    oracle = {"a/foo.py": "def foo(): return 1\n"}
+    assert _infer_path_from_search("def baz(): return 99", oracle) == ""
+
+
+def test_infer_path_ambiguous_returns_empty():
+    """If two oracle files contain the same SEARCH text, refuse to guess."""
+    oracle = {
+        "a/foo.py": "common = 1\n",
+        "b/bar.py": "common = 1\n",
+    }
+    assert _infer_path_from_search("common = 1", oracle) == ""
+
+
+def test_apply_blocks_handles_pathless_block_via_inference():
+    """End-to-end: pathless block (fpath="") gets attributed to the
+    oracle file that contains the SEARCH text."""
+    oracle = {
+        "src/django/inspectdb.py": (
+            "def handle_inspection():\n"
+            "    yield ''\n"
+            "    yield 'class Foo'\n"
+            "    return\n"
+        ),
+        "src/other.py": "def other(): pass\n",
+    }
+    blocks = [(
+        "",  # pathless (Strategy 4 sentinel)
+        "    yield ''\n    yield 'class Foo'",
+        "    yield ''\n    yield 'class Foo with related_name'",
+    )]
+    modified = apply_change_blocks(oracle, blocks)
+    assert "src/django/inspectdb.py" in modified
+    assert "related_name" in modified["src/django/inspectdb.py"]
+    assert "src/other.py" not in modified
+
+
+def test_apply_blocks_handles_placeholder_path_via_inference():
+    """qwen3_coder pattern: placeholder path on opener line, real path
+    pasted on the next line as part of body. After my parser change the
+    fpath comes through as the placeholder — apply step should recover
+    by searching for the SEARCH text."""
+    oracle = {
+        "django/db/models/fields/related.py": (
+            "errors.append(checks.Error('multi-FK ambiguous'))\n"
+        ),
+    }
+    blocks = [(
+        "FILE_PATH_HERE",  # placeholder copied literally from prompt
+        "errors.append(checks.Error('multi-FK ambiguous'))",
+        "errors.append(checks.Error('multi-FK ambiguous; use through_fields'))",
+    )]
+    modified = apply_change_blocks(oracle, blocks)
+    assert "django/db/models/fields/related.py" in modified
+    assert "through_fields" in modified["django/db/models/fields/related.py"]
+
+
+def test_apply_blocks_pathless_with_no_oracle_match_silently_skips():
+    oracle = {"foo.py": "real content\n"}
+    blocks = [("", "totally unrelated text", "x")]
+    modified = apply_change_blocks(oracle, blocks)
+    assert "foo.py" not in modified  # nothing modified, no spurious diff
