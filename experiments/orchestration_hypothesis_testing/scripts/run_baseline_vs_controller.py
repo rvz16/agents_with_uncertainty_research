@@ -41,6 +41,7 @@ import numpy as np
 class CostModel:
     c_gen: float = 5.0   # generation API call
     c_L0: float = 1.0    # cheap critic
+    c_L2: float = 2.0    # public-tests critic (LCB)
     c_L3: float = 5.0    # LLM review critic
     c_ver: float = 30.0  # full SWE-bench Docker eval
     reward: float = 100.0  # correct patch passes verifier
@@ -131,13 +132,17 @@ class BayesianController:
                     opts.append(-cm.c_gen + V_next[idx])
                 return max(opts)
             return -c_critic + p_pass * best_after(b_pass) + (1 - p_pass) * best_after(b_fail)
-        Q_L0 = Q_critic("L0_syntax", cm.c_L0)
-        Q_L3 = Q_critic("L3_llm_review", cm.c_L3)
-
         actions = {
             "verify": Q_verify, "give_up": Q_giveup, "generate": Q_generate,
-            "L0": Q_L0, "L3": Q_L3,
         }
+        # Critics are conditional on being in the likelihood tables
+        # (SWE-bench Lite has L0_syntax + L3_llm_review; LCB adds L2_public_tests)
+        if "L0_syntax" in self.likes:
+            actions["L0"] = Q_critic("L0_syntax", cm.c_L0)
+        if "L2_public_tests" in self.likes:
+            actions["L2"] = Q_critic("L2_public_tests", cm.c_L2)
+        if "L3_llm_review" in self.likes:
+            actions["L3"] = Q_critic("L3_llm_review", cm.c_L3)
         best_a = max(actions, key=lambda a: actions[a])
         return actions[best_a], best_a
 
@@ -192,6 +197,8 @@ def simulate_policy(traj: list[dict], policy_fn, cost: CostModel) -> dict:
                 state["given_up"] = True
         elif action == "L0":
             cum_cost += cost.c_L0
+        elif action == "L2":
+            cum_cost += cost.c_L2
         elif action == "L3":
             cum_cost += cost.c_L3
     return {"reward": reward, "cost": cum_cost,
@@ -277,6 +284,10 @@ def make_bayesian_policy(controller: BayesianController):
             obs_pass = bool(rec.get("L0_syntax"))
             state["belief"] = controller._bayes_update(b, "L0_syntax", obs_pass)
             return "L0"
+        if a == "L2":
+            obs_pass = bool(rec.get("L2_public_tests"))
+            state["belief"] = controller._bayes_update(b, "L2_public_tests", obs_pass)
+            return "L2"
         if a == "L3":
             obs_pass = bool(rec.get("L3_llm_review"))
             state["belief"] = controller._bayes_update(b, "L3_llm_review", obs_pass)

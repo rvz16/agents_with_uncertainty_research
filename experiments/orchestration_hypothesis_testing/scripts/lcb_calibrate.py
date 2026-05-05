@@ -136,16 +136,113 @@ def run_solution_stdin(code: str, stdin: str) -> tuple[bool, str]:
         os.unlink(script)
 
 
-def check_tests(code: str, tests: list[dict]) -> tuple[int, int]:
-    """Run all tests, return (n_passed, n_total)."""
+def _parse_lcb_test_input(input_str: str) -> list:
+    """Parse LCB functional test inputs.
+
+    LCB encodes args as one-per-line, each value JSON-encoded:
+      "1"        -> str "1"
+      "12"       -> str "12"
+      1          -> int 1
+      [1,2,3]    -> list [1,2,3]
+    Returns the args as Python objects.
+    """
+    args = []
+    for line in input_str.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            args.append(json.loads(line))
+        except json.JSONDecodeError:
+            args.append(line)  # fall back to raw string
+    return args
+
+
+def _parse_lcb_test_output(output_str: str):
+    """Parse expected output. JSON-decoded if possible."""
+    s = output_str.strip()
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return s
+
+
+def run_solution_functional(code: str, input_str: str, expected_output: str,
+                             starter_code: str) -> bool:
+    """Run a functional LeetCode-style test.
+
+    Wraps the model's `class Solution` with a runner that calls the method
+    declared in `starter_code` with parsed args, and compares the return
+    value to the expected output (JSON-decoded).
+    """
+    if not code or not starter_code:
+        return False
+    # Extract method name from starter_code: `def <name>(self, ...)`
+    m = re.search(r"def\s+(\w+)\s*\(\s*self", starter_code)
+    if not m:
+        return False
+    method_name = m.group(1)
+    try:
+        args = _parse_lcb_test_input(input_str)
+        expected = _parse_lcb_test_output(expected_output)
+    except Exception:
+        return False
+
+    # Build a small driver script that imports the model code, calls the method, prints JSON.
+    driver = f"""
+import sys, json
+{code}
+
+try:
+    sol = Solution()
+    args = json.loads(sys.argv[1])
+    result = sol.{method_name}(*args)
+    print(json.dumps(result))
+except Exception as e:
+    print(f"ERROR: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(driver)
+        script = f.name
+    try:
+        proc = subprocess.run(
+            [TEST_PYTHON, script, json.dumps(args)],
+            capture_output=True, text=True, timeout=TIMEOUT_S,
+        )
+        if proc.returncode != 0:
+            return False
+        try:
+            actual = json.loads(proc.stdout.strip())
+        except json.JSONDecodeError:
+            actual = proc.stdout.strip()
+        return actual == expected
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+    finally:
+        os.unlink(script)
+
+
+def check_tests(code: str, tests: list[dict], starter_code: str = "") -> tuple[int, int]:
+    """Run all tests. Detects functional vs stdin tests automatically.
+
+    Returns (n_passed, n_total). For functional tests, requires `starter_code`
+    to extract the method name.
+    """
     if not tests:
         return 0, 0
     n_pass = 0
     for t in tests:
-        stdin = t.get("input", "")
-        expected = t.get("output", "").strip()
-        ok, out = run_solution_stdin(code, stdin)
-        if ok and out.strip() == expected:
+        testtype = t.get("testtype", "stdin")
+        if testtype == "functional" and starter_code.strip():
+            ok = run_solution_functional(code, t.get("input", ""),
+                                         t.get("output", ""), starter_code)
+        else:
+            stdin = t.get("input", "")
+            expected = t.get("output", "").strip()
+            ok, out = run_solution_stdin(code, stdin)
+            ok = ok and out.strip() == expected
+        if ok:
             n_pass += 1
     return n_pass, len(tests)
 
@@ -217,15 +314,26 @@ def build_prompt(problem: dict) -> str:
     title = problem.get("question_title", "")
     statement = problem.get("question_content", "")
     starter = problem.get("starter_code", "") or ""
-    starter_block = ""
     if starter.strip():
-        starter_block = "Starter code:\n```python\n" + starter + "\n```\n\n"
+        # Functional (LeetCode-style) — model fills in the method
+        return (
+            f"# Problem: {title}\n\n"
+            f"{statement}\n\n"
+            f"Starter code (you MUST complete this exact class and method signature):\n"
+            f"```python\n{starter}\n```\n\n"
+            "Output ONLY a complete `class Solution:` definition in a single "
+            "```python``` code block. The class must contain the method exactly "
+            "as declared in the starter code. Do NOT add a `__main__` block or "
+            "stdin parsing — your code will be imported and the method called "
+            "directly with parsed arguments."
+        )
+    # Stdin-based (atcoder, codeforces) — model writes a script
     return (
         f"# Problem: {title}\n\n"
         f"{statement}\n\n"
-        f"{starter_block}"
-        "Write a complete Python solution. Output ONLY the code in a single ```python```\n"
-        "code block. Read input from stdin and print results to stdout."
+        "Write a complete Python solution that reads input from stdin and "
+        "writes results to stdout. Output ONLY the code in a single ```python``` "
+        "code block."
     )
 
 
@@ -249,75 +357,108 @@ def calibrate_one_generator(
     gen_dir = out_dir / gen_key
     gen_dir.mkdir(parents=True, exist_ok=True)
     cost = CostTracker(name=gen_key, cap_usd=max_cost_usd, log_path=gen_dir / "cost_log.jsonl")
-    records = []
     raw_path = gen_dir / "raw_responses"
     raw_path.mkdir(exist_ok=True)
-    for inst in problems:
-        if cost.capped:
-            log.warning("[%s] cost cap reached, stopping", gen_key)
-            break
-        public_tests = inst.get("public_test_cases") or []
-        if isinstance(public_tests, str):
-            try:
-                public_tests = json.loads(public_tests)
-            except Exception:
-                public_tests = []
-        private_tests = decode_private_tests(inst.get("private_test_cases", "") or "")
-        for pid in range(n_patches):
+    results_path = gen_dir / "critic_results.jsonl"
+
+    # --- resume support: skip (inst_id, pid) tuples already persisted ---
+    done: set[tuple[str, int]] = set()
+    records: list[dict] = []
+    if results_path.exists():
+        with open(results_path) as rf:
+            for line in rf:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                done.add((str(r["instance_id"]), int(r["patch_id"])))
+                records.append(r)
+        log.info("[%s] resuming with %d records already persisted", gen_key, len(records))
+
+    out_fp = open(results_path, "a", buffering=1)  # line-buffered append
+
+    try:
+        for inst in problems:
             if cost.capped:
+                log.warning("[%s] cost cap reached, stopping", gen_key)
                 break
-            inst_id = inst["question_id"]
-            try:
-                resp = client.chat.completions.create(
-                    model=model_id,
-                    messages=[{"role": "user", "content": build_prompt(inst)}],
-                    temperature=0.7, max_tokens=4000,
-                )
-                text = resp.choices[0].message.content or ""
-                usage = resp.usage
-                c = cost_for_call(model_id, usage.prompt_tokens, usage.completion_tokens)
-                cost.record(c, prompt_tokens=usage.prompt_tokens,
-                            completion_tokens=usage.completion_tokens,
-                            instance_id=inst_id, patch_id=pid)
-            except Exception as e:
-                log.warning("[%s] gen failed for %s: %s", gen_key, inst_id, e)
-                continue
-            (raw_path / f"{inst_id}_p{pid}.txt").write_text(text)
-            code = extract_code(text)
-            # L2: public tests
-            l2_pass, l2_total = check_tests(code, public_tests)
-            l2_ok = (l2_pass == l2_total) and l2_total > 0
-            # Y: private tests (capped for speed; 12 is enough to estimate Y reliably)
-            y_pass, y_total = check_tests(code, private_tests[:MAX_PRIVATE_TESTS])
-            Y = 1 if (y_pass == y_total) and y_total > 0 else 0
-            # L0/L1
-            l0 = critic_L0_syntax(code)
-            l1 = critic_L1_lint(code)
-            # L3 review (paid, only if budget allows)
-            l3 = None
-            if not cost.capped:
-                l3_pass, l3_cost = critic_L3_review(inst.get("question_content", "")[:3000], code, client)
-                cost.record(l3_cost, prompt_tokens=0, completion_tokens=0,
-                            instance_id=inst_id, patch_id=pid,
-                            extra={"kind": "L3_review"})
-                l3 = l3_pass
-            records.append({
-                "generator": gen_key,
-                "instance_id": inst_id,
-                "patch_id": pid,
-                "Y": Y,
-                "L0_syntax": l0,
-                "L1_lint": l1,
-                "L2_public_tests": l2_ok,
-                "L3_llm_review": l3,
-                "diff_chars": len(code),
-                "y_pass_rate": (y_pass / max(y_total, 1)),
-                "l2_pass_rate": (l2_pass / max(l2_total, 1)),
-            })
-            if len(records) % 10 == 0:
-                log.info("[%s] %d records, cost $%.4f", gen_key, len(records), cost.total_usd)
-    # Save
-    (gen_dir / "critic_results.jsonl").write_text("\n".join(json.dumps(r) for r in records) + "\n")
+            public_tests = inst.get("public_test_cases") or []
+            if isinstance(public_tests, str):
+                try:
+                    public_tests = json.loads(public_tests)
+                except Exception:
+                    public_tests = []
+            private_tests = decode_private_tests(inst.get("private_test_cases", "") or "")
+            for pid in range(n_patches):
+                if cost.capped:
+                    break
+                inst_id = inst["question_id"]
+                if (str(inst_id), pid) in done:
+                    continue
+                try:
+                    resp = client.chat.completions.create(
+                        model=model_id,
+                        messages=[{"role": "user", "content": build_prompt(inst)}],
+                        temperature=0.7, max_tokens=4000,
+                    )
+                    text = resp.choices[0].message.content or ""
+                    usage = resp.usage
+                    c = cost_for_call(model_id, usage.prompt_tokens, usage.completion_tokens)
+                    cost.record(c, prompt_tokens=usage.prompt_tokens,
+                                completion_tokens=usage.completion_tokens,
+                                instance_id=inst_id, patch_id=pid)
+                except Exception as e:
+                    log.warning("[%s] gen failed for %s: %s", gen_key, inst_id, e)
+                    continue
+                (raw_path / f"{inst_id}_p{pid}.txt").write_text(text)
+                code = extract_code(text)
+                starter = inst.get("starter_code", "") or ""
+                # Critic eval — wrap each so a single bad subprocess doesn't tank the run
+                try:
+                    l2_pass, l2_total = check_tests(code, public_tests, starter_code=starter)
+                    l2_ok = (l2_pass == l2_total) and l2_total > 0
+                    y_pass, y_total = check_tests(code, private_tests[:MAX_PRIVATE_TESTS], starter_code=starter)
+                    Y = 1 if (y_pass == y_total) and y_total > 0 else 0
+                    l0 = critic_L0_syntax(code)
+                    l1 = critic_L1_lint(code)
+                except Exception as e:
+                    log.warning("[%s] critic eval failed for %s_p%d: %s", gen_key, inst_id, pid, e)
+                    continue
+                l3 = None
+                if not cost.capped:
+                    try:
+                        l3_pass, l3_cost = critic_L3_review(inst.get("question_content", "")[:3000], code, client)
+                        cost.record(l3_cost, prompt_tokens=0, completion_tokens=0,
+                                    instance_id=inst_id, patch_id=pid,
+                                    extra={"kind": "L3_review"})
+                        l3 = l3_pass
+                    except Exception as e:
+                        log.warning("[%s] L3 failed for %s_p%d: %s", gen_key, inst_id, pid, e)
+                rec = {
+                    "generator": gen_key,
+                    "instance_id": inst_id,
+                    "patch_id": pid,
+                    "Y": Y,
+                    "L0_syntax": l0,
+                    "L1_lint": l1,
+                    "L2_public_tests": l2_ok,
+                    "L3_llm_review": l3,
+                    "diff_chars": len(code),
+                    "y_pass_rate": (y_pass / max(y_total, 1)),
+                    "l2_pass_rate": (l2_pass / max(l2_total, 1)),
+                }
+                records.append(rec)
+                out_fp.write(json.dumps(rec) + "\n")
+                out_fp.flush()
+                os.fsync(out_fp.fileno())
+                done.add((str(inst_id), pid))
+                if len(records) % 10 == 0:
+                    log.info("[%s] %d records, cost $%.4f", gen_key, len(records), cost.total_usd)
+    finally:
+        out_fp.close()
     summary = {
         "model": gen_key, "cap_usd": cost.cap_usd, "total_usd": cost.total_usd,
         "n_calls": cost.n_calls, "remaining_usd": cost.remaining,
