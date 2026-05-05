@@ -173,17 +173,31 @@ You are an expert software engineer fixing a bug in the {repo} repository.
 
 ## Task
 Fix the issue by modifying the file(s) above. Output your changes as a SEARCH/REPLACE
-block for each change:
+block for each change. The required format is:
 
-<<<CHANGE path/to/file.py
+<<<CHANGE FILE_PATH_HERE
 SEARCH
-(exact lines from the original file that you want to replace)
+EXACT_ORIGINAL_LINES_HERE
 REPLACE
-(the new lines that should replace the search block)
+NEW_LINES_HERE
 CHANGE>>>
 
-You can output multiple CHANGE blocks if needed. The SEARCH text must match the
-original file exactly (including indentation). Keep changes minimal and focused.
+CRITICAL FORMAT REQUIREMENTS:
+1. Replace `FILE_PATH_HERE` with the actual file path of the file you are editing —
+   one of the paths shown in the "Files that likely need changes" section above
+   (for example `astropy/io/ascii/rst.py`). Do NOT copy the literal text
+   `FILE_PATH_HERE`, and do NOT use a placeholder like `path/to/file.py`.
+2. Replace `EXACT_ORIGINAL_LINES_HERE` with lines copied **verbatim** from the
+   file shown above — same indentation, same whitespace, same line breaks.
+   Do NOT paraphrase or summarize the original code.
+3. Replace `NEW_LINES_HERE` with the corrected lines.
+4. Use exactly three angle brackets: `<<<CHANGE` to open and `CHANGE>>>` to close.
+   Do NOT use `<CHANGE ...>` with a single bracket. Do NOT use XML-style
+   `</SEARCH>` or `</REPLACE>` closing tags.
+5. The keywords `SEARCH`, `REPLACE`, and `CHANGE>>>` must each appear on their
+   own line, with no other text on those lines.
+
+You can output multiple CHANGE blocks if needed. Keep changes minimal and focused.
 Do NOT include unchanged files. Do NOT output entire files.
 """
 
@@ -253,6 +267,27 @@ def _strip_fence(text: str) -> str:
     return text
 
 
+_PLACEHOLDER_PATH_RE = re.compile(
+    r"^\s*(?:path/to/file|<filename>|YOUR_FILE|your_file_path|<path>|"
+    r"FILE_PATH_HERE|FILE_PATH|<file>|<file_path>)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_path_token(fpath: str) -> str:
+    """Strip noise the LLM sometimes wraps the path in.
+
+    Examples seen in the spot-check raw_responses:
+      `path="sympy/printing/latex.py"` -> `sympy/printing/latex.py`
+      `'astropy/io/ascii/rst.py'`      -> `astropy/io/ascii/rst.py`
+      `"django/forms/widgets.py"`     -> `django/forms/widgets.py`
+    """
+    p = fpath.strip()
+    p = re.sub(r'^(?:path|file|filepath|file_path)\s*=\s*', "", p, flags=re.IGNORECASE)
+    p = p.strip().lstrip('"\'').rstrip('"\'>')
+    return p
+
+
 def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
     """Parse SEARCH/REPLACE blocks, tolerant of multiple sloppy variants.
 
@@ -276,6 +311,17 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
       ```python
       ...
       ```
+
+    and the XML-style form Sonnet 4.5 sometimes emits:
+
+      <CHANGE path/to/file>
+      SEARCH
+      ...
+      </SEARCH>
+      <REPLACE>
+      ...
+      </REPLACE>
+      </CHANGE>
     """
     out: list[tuple[str, str, str]] = []
 
@@ -288,7 +334,7 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
     )
     consumed: list[tuple[int, int]] = []
     for match in canonical.finditer(response):
-        fpath = (match.group("p1") or match.group("p2") or "").strip()
+        fpath = _normalize_path_token(match.group("p1") or match.group("p2") or "")
         if not fpath:
             continue
         body = match.group("body")
@@ -306,16 +352,47 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
         ))
         consumed.append(match.span())
 
+    # Strategy 3: XML-style with explicit closing tags, no `CHANGE>>>`.
+    # Observed in Sonnet 4.5 outputs (~20% of its failed extractions):
+    #   <CHANGE path/to/file>
+    #   SEARCH
+    #   ...
+    #   </SEARCH>
+    #   <REPLACE>
+    #   ...
+    #   </REPLACE>
+    #   </CHANGE>
+    xml_style = re.compile(
+        r"<CHANGE\s+([^>\n]+?)>\s*\n"
+        r"\s*(?:<SEARCH>|SEARCH)\s*\n"
+        r"(?P<search>[\s\S]*?)\n?</SEARCH>\s*\n"
+        r"\s*(?:<REPLACE>|REPLACE)\s*\n"
+        r"(?P<replace>[\s\S]*?)\n?</REPLACE>\s*\n"
+        r"\s*</CHANGE>",
+        re.MULTILINE,
+    )
+
+    def _overlaps_consumed(start: int, end: int) -> bool:
+        return any(start < e and s < end for s, e in consumed)
+
+    for match in xml_style.finditer(response):
+        if _overlaps_consumed(match.start(), match.end()):
+            continue
+        fpath = _normalize_path_token(match.group(1))
+        if not fpath:
+            continue
+        out.append((
+            fpath,
+            _strip_fence(match.group("search")).strip("\n"),
+            _strip_fence(match.group("replace")).strip("\n"),
+        ))
+        consumed.append(match.span())
+
     # Strategy 2: loose `CHANGE path ... SEARCH ... REPLACE ...` blocks.
     # We split the response on lines that start a new `CHANGE <path>` and
     # parse each chunk for a SEARCH/REPLACE pair. Skip ranges already
     # consumed by the canonical parser. The line may be inside a ``` fence
     # (Qwen2.5-7B does this), so we accept an optional leading ``` prefix.
-    def _overlaps_consumed(start: int, end: int) -> bool:
-        # Interval overlap, not point containment: the chunk regex's
-        # `^\s*` can include the preceding newline, so its span may begin
-        # one byte before the canonical span starts.
-        return any(start < e and s < end for s, e in consumed)
 
     # Accept opener forms: bare `CHANGE path`, `<<<CHANGE path`, and
     # `<CHANGE path>` (Sonnet 4.5). The `>?` allows the closing bracket of
@@ -330,16 +407,23 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
     for i, m in enumerate(chunks):
         if _overlaps_consumed(m.start(), m.end()):
             continue
-        fpath = m.group(1).strip()
+        fpath = _normalize_path_token(m.group(1))
+        if not fpath:
+            continue
         body_start = m.end()
         body_end = chunks[i + 1].start() if i + 1 < len(chunks) else len(response)
         body = response[body_start:body_end]
         # Trim trailing closing-fence ``` if present
         body = re.sub(r"\n?```\s*$", "", body, flags=re.MULTILINE)
-        parts = re.split(r"^\s*SEARCH\s*$", body, maxsplit=1, flags=re.MULTILINE)
+        # XML-style search/replace closers can appear here too — strip them so
+        # the SEARCH/REPLACE keyword splits below still work.
+        body = re.sub(r"</SEARCH>\s*\n", "", body)
+        body = re.sub(r"</REPLACE>\s*\n", "", body)
+        body = re.sub(r"</CHANGE>\s*$", "", body, flags=re.MULTILINE)
+        parts = re.split(r"^\s*<?SEARCH>?\s*$", body, maxsplit=1, flags=re.MULTILINE)
         if len(parts) < 2:
             continue
-        parts2 = re.split(r"^\s*REPLACE\s*$", parts[1], maxsplit=1, flags=re.MULTILINE)
+        parts2 = re.split(r"^\s*<?REPLACE>?\s*$", parts[1], maxsplit=1, flags=re.MULTILINE)
         if len(parts2) < 2:
             continue
         out.append((
@@ -441,27 +525,131 @@ def _try_indent_tolerant_replace(
     return None
 
 
+def _resolve_oracle_path(fpath: str, oracle_files: dict[str, str]) -> str:
+    """Map a model-emitted path to an actual oracle key.
+
+    Tiers, in order:
+      1. Exact match.
+      2. Either path is a suffix of the other (handles repo-prefix stripping).
+      3. Basename uniquely identifies one oracle file.
+    Returns the original fpath unchanged if no resolution succeeds (the caller
+    will then bail out via ``if not original: continue``).
+    """
+    if fpath in oracle_files:
+        return fpath
+    # Tier 2: suffix match
+    for opath in oracle_files:
+        if opath.endswith(fpath) or fpath.endswith(opath):
+            return opath
+    # Tier 3: basename uniquely identifies a file
+    basename = fpath.rsplit("/", 1)[-1]
+    if basename and basename != fpath:
+        candidates = [p for p in oracle_files if p.rsplit("/", 1)[-1] == basename]
+        if len(candidates) == 1:
+            return candidates[0]
+    return fpath
+
+
+def _try_fuzzy_replace(
+    original: str,
+    search_text: str,
+    replace_text: str,
+    threshold: float = 0.92,
+) -> str | None:
+    """SEARCH/REPLACE with fuzzy line-window match (last-resort tier).
+
+    Slides a window of the SEARCH block's length across the file and scores
+    each window against SEARCH using ``difflib.SequenceMatcher.ratio()``.
+    Only accepts the best window if its similarity ratio is >= ``threshold``
+    (default 0.92). This guards against accepting hallucinated SEARCH blocks
+    (e.g. paraphrased docstrings) — those typically score well below 0.5.
+
+    On success, replaces the matched window with REPLACE, re-indenting it to
+    the window's leading indent (same convention as the indent-tolerant
+    matcher above). Returns the modified file text on success, else None.
+    """
+    from difflib import SequenceMatcher
+
+    file_lines = original.split("\n")
+    s_lines = search_text.split("\n")
+    if s_lines and s_lines[-1] == "":
+        s_lines = s_lines[:-1]
+    n = len(s_lines)
+    if n == 0 or n > len(file_lines):
+        return None
+
+    s_norm_str = "\n".join(l.rstrip() for l in s_lines)
+    best_score = 0.0
+    best_i = -1
+    # Bail out early: a quick heuristic — count overlap of the first SEARCH
+    # line with file lines; if no file line is close enough, skip the
+    # expensive O(n*m) sweep. This is a perf shortcut, not correctness.
+    s_first = s_lines[0].rstrip().lstrip()
+    has_anchor = bool(s_first) and any(
+        s_first in l or l.lstrip().startswith(s_first[: max(8, len(s_first) // 2)])
+        for l in file_lines
+    )
+    if not has_anchor:
+        return None
+
+    for i in range(len(file_lines) - n + 1):
+        window = file_lines[i : i + n]
+        w_norm_str = "\n".join(l.rstrip() for l in window)
+        # Fast pre-check: if the lengths differ by more than 50%, skip.
+        if len(w_norm_str) and abs(len(w_norm_str) - len(s_norm_str)) / max(
+            len(w_norm_str), len(s_norm_str)
+        ) > 0.5:
+            continue
+        ratio = SequenceMatcher(None, s_norm_str, w_norm_str).ratio()
+        if ratio > best_score:
+            best_score = ratio
+            best_i = i
+            if ratio >= 0.999:
+                break  # near-exact, no need to keep searching
+
+    if best_score < threshold or best_i < 0:
+        return None
+
+    # Replace the matched window with replace_text, re-indenting to the
+    # window's common indent.
+    s_indent = _common_indent(s_lines)
+    window = file_lines[best_i : best_i + n]
+    w_indent = _common_indent(window)
+    r_lines = replace_text.split("\n")
+    r_trailing_nl = bool(r_lines) and r_lines[-1] == ""
+    if r_trailing_nl:
+        r_lines = r_lines[:-1]
+    r_lines = [
+        (l[len(s_indent):] if s_indent and l.startswith(s_indent) else l)
+        for l in r_lines
+    ]
+    r_lines = [(w_indent + l) if l.strip() else l for l in r_lines]
+    new_lines = file_lines[:best_i] + r_lines + file_lines[best_i + n :]
+    return "\n".join(new_lines)
+
+
 def apply_change_blocks(
     oracle_files: dict[str, str],
     blocks: list[tuple[str, str, str]],
 ) -> dict[str, str]:
     """Apply SEARCH/REPLACE blocks. Returns modified file contents.
 
-    Three matching tiers, in order:
+    Four matching tiers, in order:
       1. Strict literal substring.
       2. Trailing-whitespace tolerant (rstrip per line).
       3. Indentation tolerant (dedent SEARCH and the candidate window to
          their common indents, re-indent REPLACE to the window's indent).
+      4. Fuzzy SequenceMatcher with similarity threshold 0.92 (last resort,
+         guards against hallucinated SEARCH text).
     """
     modified: dict[str, str] = {}
     for fpath, search_text, replace_text in blocks:
-        # Resolve fpath against oracle keys (model may strip prefix)
-        resolved = fpath
-        if fpath not in oracle_files:
-            for opath in oracle_files:
-                if opath.endswith(fpath) or fpath.endswith(opath):
-                    resolved = opath
-                    break
+        # Reject obvious placeholder paths immediately so the apply step's
+        # silent skip ("path/to/file.py" not in oracle_files) doesn't
+        # pretend we extracted a usable block.
+        if _PLACEHOLDER_PATH_RE.match(fpath):
+            continue
+        resolved = _resolve_oracle_path(fpath, oracle_files)
         original = modified.get(resolved, oracle_files.get(resolved, ""))
         if not original:
             continue
@@ -480,6 +668,10 @@ def apply_change_blocks(
         )
         if indent_match is not None:
             modified[resolved] = indent_match
+            continue
+        fuzzy_match = _try_fuzzy_replace(original, search_text, replace_text)
+        if fuzzy_match is not None:
+            modified[resolved] = fuzzy_match
     return modified
 
 

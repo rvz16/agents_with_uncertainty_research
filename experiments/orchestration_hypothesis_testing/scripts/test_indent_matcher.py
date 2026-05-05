@@ -20,6 +20,9 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from spot_check_generators import (  # noqa: E402
     _common_indent,
+    _normalize_path_token,
+    _resolve_oracle_path,
+    _try_fuzzy_replace,
     _try_indent_tolerant_replace,
     apply_change_blocks,
     parse_change_blocks,
@@ -254,3 +257,217 @@ def test_apply_change_blocks_returns_empty_when_no_match():
     blocks = [("m.py", "not present", "something")]
     modified = apply_change_blocks(oracle, blocks)
     assert "m.py" not in modified
+
+
+# ---------- new in this revision ----------
+# Strategy 3: XML-style tags (Sonnet 4.5 ~20% of failures)
+
+def test_parse_xml_style_change_block():
+    """Sonnet 4.5 sometimes emits XML-style closing tags instead of CHANGE>>>."""
+    text = (
+        "<CHANGE django/views/debug.py>\n"
+        "SEARCH\n"
+        "from django.urls import Resolver404, resolve\n"
+        "</SEARCH>\n"
+        "<REPLACE>\n"
+        "from django.http import Http404\n"
+        "from django.urls import Resolver404, resolve\n"
+        "</REPLACE>\n"
+        "</CHANGE>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 1
+    fpath, search, replace = out[0]
+    assert fpath == "django/views/debug.py"
+    assert search == "from django.urls import Resolver404, resolve"
+    assert "Http404" in replace
+
+
+def test_parse_xml_style_multiple_blocks_same_file():
+    """Two consecutive XML-style blocks in one response."""
+    text = (
+        "<CHANGE foo.py>\n"
+        "SEARCH\n"
+        "a\n"
+        "</SEARCH>\n"
+        "<REPLACE>\n"
+        "A\n"
+        "</REPLACE>\n"
+        "</CHANGE>\n"
+        "\n"
+        "<CHANGE foo.py>\n"
+        "SEARCH\n"
+        "b\n"
+        "</SEARCH>\n"
+        "<REPLACE>\n"
+        "B\n"
+        "</REPLACE>\n"
+        "</CHANGE>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 2
+    assert out[0] == ("foo.py", "a", "A")
+    assert out[1] == ("foo.py", "b", "B")
+
+
+def test_parse_canonical_takes_priority_over_xml():
+    """If a block has both CHANGE>>> and </CHANGE>, only Strategy 1 fires."""
+    text = (
+        "<<<CHANGE foo.py\n"
+        "SEARCH\n"
+        "old\n"
+        "REPLACE\n"
+        "new\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 1
+    assert out[0] == ("foo.py", "old", "new")
+
+
+# Path normalization
+
+def test_normalize_path_unwrap_quotes():
+    assert _normalize_path_token('"foo/bar.py"') == "foo/bar.py"
+    assert _normalize_path_token("'foo/bar.py'") == "foo/bar.py"
+
+
+def test_normalize_path_strip_leading_assignment():
+    assert _normalize_path_token('path="sympy/printing/latex.py"') == "sympy/printing/latex.py"
+    assert _normalize_path_token("file=foo.py") == "foo.py"
+
+
+def test_normalize_path_strip_trailing_angle_bracket():
+    """Lazy capture in <CHANGE foo.py> sometimes leaves a trailing >."""
+    assert _normalize_path_token("foo.py>") == "foo.py"
+
+
+# Path resolution: basename uniquely
+
+def test_resolve_path_exact():
+    oracle = {"a/b/c.py": "x"}
+    assert _resolve_oracle_path("a/b/c.py", oracle) == "a/b/c.py"
+
+
+def test_resolve_path_suffix():
+    oracle = {"src/django/forms/widgets.py": "x"}
+    assert _resolve_oracle_path("django/forms/widgets.py", oracle) == "src/django/forms/widgets.py"
+
+
+def test_resolve_path_basename_unique():
+    """Model emits bare basename; basename is unique among oracle keys."""
+    oracle = {"a/b/widgets.py": "x", "a/b/forms.py": "y"}
+    assert _resolve_oracle_path("widgets.py", oracle) == "a/b/widgets.py"
+
+
+def test_resolve_path_basename_ambiguous_returns_some_match():
+    """If two oracle files have the same basename, suffix match (Tier 2)
+    returns one of them — picking the wrong one will cause apply to bail
+    silently when SEARCH doesn't appear in that file's content. We accept
+    either as valid behavior (it's a fall-through, not a guarantee)."""
+    oracle = {"a/widgets.py": "x", "b/widgets.py": "y"}
+    resolved = _resolve_oracle_path("widgets.py", oracle)
+    assert resolved in ("a/widgets.py", "b/widgets.py")
+
+
+# Placeholder rejection at apply step
+
+def test_apply_skips_placeholder_path():
+    oracle = {"real/file.py": "old\n"}
+    blocks = [("path/to/file.py", "old", "new")]
+    modified = apply_change_blocks(oracle, blocks)
+    assert "real/file.py" not in modified
+    assert "path/to/file.py" not in modified
+
+
+def test_apply_skips_uppercase_placeholder():
+    oracle = {"real/file.py": "old\n"}
+    blocks = [("FILE_PATH_HERE", "old", "new")]
+    modified = apply_change_blocks(oracle, blocks)
+    assert not modified
+
+
+# Fuzzy matcher (tier 4)
+
+def test_fuzzy_replace_accepts_close_window():
+    """A SEARCH with one extra space per line should fuzzy-match."""
+    original = "def foo():\n    return 1\n    # tail comment\n"
+    search = "def foo():\n    return 1\n    # tail comment "  # one trailing space drift
+    replace = "def foo():\n    return 2\n    # tail comment"
+    out = _try_fuzzy_replace(original, search, replace, threshold=0.92)
+    assert out is not None
+    assert "return 2" in out
+
+
+def test_fuzzy_replace_rejects_hallucinated_text():
+    """A SEARCH that describes a different docstring should NOT fuzzy-match.
+    This guards against models like haiku45 inventing docstring content."""
+    original = (
+        'class RST(FixedWidth):\n'
+        '    """reStructuredText simple format table.\n'
+        '\n'
+        '    See: https://docutils.sourceforge.io\n'
+        '    """\n'
+    )
+    # Hallucinated paraphrase — different wording, different structure
+    fake_search = (
+        'class RST(FixedWidth):\n'
+        '    """\n'
+        '    Write a table in reStructuredText format.\n'
+        '\n'
+        '    This produces a table that conforms to the spec.\n'
+        '    """\n'
+    )
+    out = _try_fuzzy_replace(original, fake_search, "junk", threshold=0.92)
+    assert out is None  # too different, must reject
+
+
+def test_fuzzy_replace_returns_none_when_search_longer_than_file():
+    out = _try_fuzzy_replace("a\nb\n", "a\nb\nc\nd\ne\n", "x")
+    assert out is None
+
+
+def test_apply_change_blocks_uses_fuzzy_tier_after_indent_fails():
+    """End-to-end: fuzzy tier fires when strict / rstrip / indent all fail.
+    Search has minor punctuation drift (`# comment` vs `#comment`) — strict
+    and rstrip both fail because the literal text differs; indent-tolerant
+    fails because the dedented lines also differ; fuzzy ratio ~98% accepts.
+    """
+    oracle = {
+        "m.py": "def foo():\n    x = 1  # comment\n    return x\n"
+    }
+    blocks = [(
+        "m.py",
+        "def foo():\n    x = 1  #comment\n    return x",  # one-space drift
+        "def foo():\n    x = 99  # comment\n    return x",
+    )]
+    modified = apply_change_blocks(oracle, blocks)
+    assert "m.py" in modified
+    assert "x = 99" in modified["m.py"]
+
+
+# Cross-strategy: mix of canonical + XML-style in one response
+
+def test_parse_canonical_and_xml_mixed():
+    text = (
+        "<<<CHANGE first.py\n"
+        "SEARCH\n"
+        "x\n"
+        "REPLACE\n"
+        "X\n"
+        "CHANGE>>>\n"
+        "\n"
+        "<CHANGE second.py>\n"
+        "SEARCH\n"
+        "y\n"
+        "</SEARCH>\n"
+        "<REPLACE>\n"
+        "Y\n"
+        "</REPLACE>\n"
+        "</CHANGE>\n"
+    )
+    out = parse_change_blocks(text)
+    paths = [b[0] for b in out]
+    assert "first.py" in paths
+    assert "second.py" in paths
+    assert len(out) == 2
