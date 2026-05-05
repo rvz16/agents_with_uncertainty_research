@@ -605,3 +605,34 @@ def test_apply_blocks_pathless_with_no_oracle_match_silently_skips():
     blocks = [("", "totally unrelated text", "x")]
     modified = apply_change_blocks(oracle, blocks)
     assert "foo.py" not in modified  # nothing modified, no spurious diff
+
+
+def test_parse_canonical_block_missing_search_keyword():
+    """gpt5_mini in refinement-mode sometimes omits the SEARCH keyword line:
+
+        <<<CHANGE foo.py
+        def __init__(self):
+            super().__init__(...)
+        REPLACE
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+        CHANGE>>>
+
+    Treat content before REPLACE as SEARCH so the block still extracts.
+    """
+    text = (
+        "<<<CHANGE foo.py\n"
+        "def __init__(self):\n"
+        "    super().__init__(delimiter_pad=None)\n"
+        "REPLACE\n"
+        "def __init__(self, *args, **kwargs):\n"
+        "    super().__init__(*args, **kwargs)\n"
+        "CHANGE>>>\n"
+    )
+    out = parse_change_blocks(text)
+    assert len(out) == 1
+    fpath, search, replace = out[0]
+    assert fpath == "foo.py"
+    assert "def __init__(self):" in search
+    assert "delimiter_pad=None" in search
+    assert "*args, **kwargs" in replace

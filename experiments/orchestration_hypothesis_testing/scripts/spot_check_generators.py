@@ -340,6 +340,17 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
         body = match.group("body")
         parts = re.split(r"^\s*SEARCH\s*$", body, maxsplit=1, flags=re.MULTILINE)
         if len(parts) < 2:
+            # Fallback: model omitted SEARCH keyword (gpt5_mini does this in
+            # refinement). If REPLACE keyword is present, treat content before
+            # REPLACE as SEARCH.
+            replace_split = re.split(r"^\s*REPLACE\s*$", body, maxsplit=1, flags=re.MULTILINE)
+            if len(replace_split) < 2:
+                continue
+            search_text = _strip_fence(replace_split[0]).strip("\n")
+            replace_text = _strip_fence(replace_split[1]).strip("\n")
+            if search_text:
+                out.append((fpath, search_text, replace_text))
+                consumed.append(match.span())
             continue
         rest = parts[1]
         parts2 = re.split(r"^\s*REPLACE\s*$", rest, maxsplit=1, flags=re.MULTILINE)
