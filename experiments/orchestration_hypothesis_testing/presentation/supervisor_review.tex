@@ -1568,54 +1568,47 @@ P(\text{pass}\mid Y{=}0)$).\\
 \section{Results}
 \hypertarget{out:12}{}
 
-% ----------- Roadmap: what "our framework" means + win/break-even/loss summary -----------
-\begin{frame}{What ``our framework'' means + where it wins / breaks even / loses}
-\vspace{0.05cm}
-{\footnotesize
-\info{Two Bayesian methods reported separately:} \texttt{bayesian\_greedy} (no
-kernel) and \texttt{bayesian\_DP} (measured kernel). Numbers below are for
-\texttt{bayesian\_greedy} (the one used by \texttt{fig1\_headline}); DP wins
-by $+5$ to $+9$ on \warn{LCB-easy/gpt-5-mini, SWE-Verified/\{gpt5, sonnet\},
-SWE-Lite/haiku} (high-prior cells), tied elsewhere.}
-
-\vspace{0.05cm}
-\begin{columns}[T]
-\column{0.5\textwidth}
-\good{\textbf{Wins ($\Delta \geq +10$, 17 / 35):}}\\
-{\scriptsize
-\hspace*{1em}LCB-hard \{sonnet, gpt5, qwen3, haiku\} ($+12.6$ to $+20.3$)\\
-\hspace*{1em}LCB-medium \{sonnet, gpt5, qwen3, haiku\} ($+15.6$ to $+19.1$)\\
-\hspace*{1em}LCB-easy \{sonnet, qwen3, haiku\} ($+19.3$ to $+20.3$)\\
-\hspace*{1em}SWE-Lite \{sonnet $+17.6$, haiku $+16.8$\}}
-
+% ----------- Roadmap: where Bayesian wins / breaks even / loses (clean table) -----------
+\begin{frame}{Where Bayesian (vs always\_verify) wins, breaks even, loses}
 \vspace{0.15cm}
-\info{\textbf{Modest wins ($+1\!\leq\!\Delta\!<\!+10$, 9 / 35):}}\\
-{\scriptsize
-\hspace*{1em}LCB-hard / qwen2.5-32b ($+4.6$, CI crosses 0)\\
-\hspace*{1em}LCB-easy / gpt5-mini ($+5.5$; \warn{Reflexion wins $+38$ here})\\
-\hspace*{1em}SWE-Lite \{gpt5, qwen3, qwen32b\} ($+4.3$ to $+6.7$)\\
-\hspace*{1em}\emph{All} SWE-Verified ($+1.7$ to $+4.3$)}
 
-\column{0.5\textwidth}
-\warn{\textbf{Break-even ($|\Delta|<1$, 7 / 35):}}\\
-{\scriptsize
-\hspace*{1em}LCB-easy / qwen2.5-32b (saturated prior $0.97$)\\
-\hspace*{1em}MBPP+ \{sonnet, gpt5, qwen3, haiku\}\\
-\hspace*{1em}HumanEval+ \{sonnet, gpt5\}}
-
-\vspace{0.15cm}
-\bad{\textbf{Losses ($\Delta < -1$, 2 / 35):}}\\
-{\scriptsize
-\hspace*{1em}LCB-medium / qwen2.5-32b ($-5.9$, CI $[-7.7, -3.9]$)\\
-\hspace*{1em}MBPP+ / qwen2.5-32b ($-2.0$, CI $[-3.0, -0.8]$)}
+\textcolor{softGrey}{\footnotesize
+\texttt{bayesian\_greedy} $\Delta$ vs \texttt{always\_verify} per cell.
+\texttt{bayesian\_DP} adds $+5$--$+9$ on 4 high-prior cells (LCB-easy/gpt5,
+SWE-Verified/\{gpt5,sonnet\}, SWE-Lite/haiku); tied elsewhere.}
 
 \vspace{0.2cm}
-{\scriptsize \info{\textbf{Why losses cluster on Qwen2.5-32B:}}
-its \emph{prior} is pathologically high (LCB-easy: $0.97$ from
-3-identical-patches behaviour). Bayesian over-trusts that prior $\to$
-\texttt{generate} instead of \texttt{verify} $\to$ pays $c_\text{gen}$ without
-benefit. Reported in \S Honest negatives.}
-\end{columns}
+\begin{table}
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{>{\bfseries}lcp{8.4cm}}
+\toprule
+\rowcolor{paleBlue}
+\textbf{Outcome} & \textbf{n / 35} & \textbf{Cells} \\
+\midrule
+\rowcolor{paleGreen}
+\good{Win} ($\Delta\!\geq\!+10$) & \textbf{17}
+  & {\scriptsize all LCB-hard / -medium / -easy on closed-API gens;
+    SWE-Lite \{sonnet, haiku\}} \\
+\addlinespace[1pt]
+\info{Modest win} ($+1\!\leq\!\Delta\!<\!+10$) & \textbf{9}
+  & {\scriptsize LCB-hard / qwen32b ($+4.6$); LCB-easy / gpt5 ($+5.5$, but
+    Reflexion wins $+38$); SWE-Lite \{gpt5, qwen3, qwen32b\}; all SWE-Verified} \\
+\addlinespace[1pt]
+\warn{Break-even} ($|\Delta|\!<\!1$) & \textbf{7}
+  & {\scriptsize LCB-easy / qwen32b (prior $0.97$); MBPP+ closed-API ($\times 4$);
+    HumanEval+ \{sonnet, gpt5\}} \\
+\addlinespace[1pt]
+\rowcolor{paleRed}
+\bad{Loss} ($\Delta\!<\!-1$) & \textbf{2}
+  & {\scriptsize LCB-medium / qwen32b ($-5.9$); MBPP+ / qwen32b ($-2.0$)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.15cm}
+\textcolor{softGrey}{\scriptsize
+\info{Both losses on Qwen2.5-32B} --- its prior is pathologically high (3-identical-patches behaviour). See \S Honest negatives.}
 \end{frame}
 
 % ----------- Honest accounting: where threshold(L2) beats Bayesian -----------
@@ -1910,6 +1903,163 @@ greedy by $+5$ on haiku.
 $+13.8$, sonnet $+9.3$.
 bayes\_DP closer to threshold(L2) than greedy ($+10.7$ vs $+4.2$ on haiku).
 \bad{fixed\_pipeline catastrophic} ($-55$ to $-69$); Self-Refine $-16$ to $-30$.
+\end{block}
+\end{frame}
+
+% ============================================================================
+% Cost / likelihood sensitivity — robustness checks
+% ============================================================================
+
+\begin{frame}{Sensitivity 1/3: $c_\text{ver}$ sweep on LCB-hard --- 5 generators}
+\vspace{-0.4cm}
+\begin{center}
+\includegraphics[width=0.96\textwidth]{figures/fig_cver_sweep.png}
+\end{center}
+
+\vspace{-0.2cm}
+\textcolor{softGrey}{\scriptsize Sweep $c_\text{ver}\in\{10,15,20,30,40,60,100\}$
+keeping reward $R{=}100$ and likelihoods fixed; $n{=}29$ instances per
+generator. Each panel: utility curves for 8 policies. Next slide: regime
+interpretation.}
+\end{frame}
+
+\begin{frame}{Sensitivity 2/3: cost regimes \& implication for the headline}
+\vspace{0.1cm}
+\begin{block}{Default cost vector used in the headline figures}
+\small
+$R = 100, \quad c_\text{ver} = 1, \quad c_{L_0} = c_{L_2} = c_{L_3} = 0.05,
+\quad c_\text{gen} = 1$ \quad
+$\Rightarrow$ ratio $c_\text{ver}/R = 0.01$ (verification very cheap).
+\end{block}
+
+\vspace{0.1cm}
+\good{\textbf{Three cost-regimes visible on every generator:}}
+\begin{enumerate}\setlength\itemsep{1pt}
+\item \footnotesize $c_\text{ver}/R \lesssim 0.15$ $\to$
+  \texttt{always\_verify} / \texttt{threshold(L2)} wins. Verification cheap,
+  oracle on every patch beats anything fancier.
+\item \footnotesize $0.2 \lesssim c_\text{ver}/R \lesssim 0.5$ $\to$
+  \warn{Bayesian dominates}: its give-up-early ability pays for the critic chain.
+\item \footnotesize $c_\text{ver}/R \gtrsim 0.6$ $\to$ \bad{all policies
+  collapse to 0} (always give up). Verifying too expensive for any policy.
+\end{enumerate}
+
+\vspace{0.15cm}
+\info{\textbf{Implication for the paper:}}
+\begin{itemize}\setlength\itemsep{1pt}
+\item \footnotesize Headline regime ($c_\text{ver}/R = 0.01$) is regime~(i) ---
+  the \emph{least favourable} for Bayesian.
+\item \footnotesize Bayesian's win there comes from \emph{accuracy on hard
+  instances}, not cost-arbitrage.
+\item \footnotesize Deployers with expensive verifiers (LLM-judge, slow CI)
+  enter regime~(ii); advantage \emph{grows}.
+\item \footnotesize \warn{Action item:} report the $c_\text{ver}/R$ ratio
+  explicitly in the abstract.
+\end{itemize}
+\end{frame}
+
+% --- per-c_ver bar charts on a fixed REGIME-A cell (LCB-hard / gpt-5-mini) ---
+\begin{frame}{$c_\text{ver}$ snapshot --- Regime-A cell (LCB-hard / gpt-5-mini)}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_lcb_hard_gpt-5-mini_cver10.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_lcb_hard_gpt-5-mini_cver20.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_lcb_hard_gpt-5-mini_cver30.png} \\[-1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_lcb_hard_gpt-5-mini_cver60.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_lcb_hard_gpt-5-mini_cver100.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.15cm}
+\begin{block}{What changes as $c_\text{ver}$ grows (LCB-hard / gpt-5-mini, $R{=}100$)}
+\scriptsize
+$c_\text{ver}{=}10$: \warn{threshold(L2) wins} ($+21.2$); always\_verify close behind. \quad
+$c_\text{ver}{=}20$: \good{bayes\_greedy wins} ($+18.4$) --- crossover. \quad
+$c_\text{ver}{=}30$: \good{bayes\_greedy} ($+13.6$) clearly best; threshold(L2) drops to $+7.4$. \quad
+$c_\text{ver}{=}60,100$: \bad{collapse regime} --- only Bayesian survives at $0$; every other policy goes deeply negative.
+\info{Star} marks the per-cell winner.
+\end{block}
+\end{frame}
+
+% --- reward sweep on LCB-hard / gpt-5-mini ---
+\begin{frame}{Reward snapshot: same cell, 5 different reward magnitudes}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_R_bars_lcb_hard_gpt-5-mini_R25.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_R_bars_lcb_hard_gpt-5-mini_R50.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_R_bars_lcb_hard_gpt-5-mini_R100.png} \\[-1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_R_bars_lcb_hard_gpt-5-mini_R200.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_R_bars_lcb_hard_gpt-5-mini_R500.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.15cm}
+\begin{block}{What changes as reward $R$ grows (LCB-hard / gpt-5-mini, $c_\text{ver}{=}30$)}
+\scriptsize
+\bad{$R{=}25, 50$:} reward not worth the cost; everything negative;
+\good{Bayesian gives up at $0$} (the only winner). \quad
+\warn{$R{=}100$:} \good{bayes\_greedy wins} ($+13.6$); the regime where Bayesian's
+edge is largest. \quad
+\good{$R{=}200, 500$:} reward dominates costs; \warn{threshold(L2) overtakes}
+($+41.9$, $+145.3$) --- when verifying is essentially free relative to reward, just
+trust L2. Bayesian DP catches up but greedy lags.
+\info{Insight:} the $c_\text{ver}/R$ \emph{ratio} drives the regime --- doubling $R$
+is equivalent to halving costs.
+\end{block}
+\end{frame}
+
+% --- per-c_ver bar charts on a fixed REGIME-B cell (SWE-Verified / sonnet-4.5) ---
+\begin{frame}{$c_\text{ver}$ snapshot --- Regime-B cell (SWE-Verified / sonnet-4.5)}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_swe_verified_sonnet-4.5_cver10.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_swe_verified_sonnet-4.5_cver20.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_swe_verified_sonnet-4.5_cver30.png} \\[-1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_swe_verified_sonnet-4.5_cver60.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_cver_bars_swe_verified_sonnet-4.5_cver100.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.15cm}
+\begin{block}{What changes as $c_\text{ver}$ grows (SWE-Verified / sonnet-4.5, $R{=}100$)}
+\scriptsize
+\warn{threshold(L2) wins for $c_\text{ver} \leq 60$} (gap $+5$ to $+8$ over Bayesian) ---
+$L_2$ public-test critic is near-oracle on SWE so trusting it dominates.
+At \bad{$c_\text{ver}{=}100$}, threshold(L2) collapses to $-7.7$ (still verifies often, pays a
+fortune); \good{Bayesian gives up} and lands at $0$ --- $+7.7$ ahead.
+\info{This cell is why the headline ``Bayesian wins'' is \emph{regime-conditional}:}
+when L2 is near-oracle, just trust the tests.
+\end{block}
+\end{frame}
+
+\begin{frame}{Sensitivity 3/3: $\theta$-perturbation --- does miscalibration kill the win?}
+\vspace{-0.4cm}
+\begin{center}
+\includegraphics[width=0.94\textwidth]{figures/fig_theta_sensitivity.png}
+\end{center}
+
+\vspace{-0.2cm}
+\begin{block}{Take-aways}
+\scriptsize
+\info{Test:} for each $P(z\!\mid\!Y)$ entry in
+\texttt{likelihood\_tables.json}, perturb by $\pm 10\%$ / $\pm 20\%$, refit
+both Bayesian controllers, re-run all 8 policies on the same trajectories.
+\texttt{alt $\pm 20\%$} = entries perturbed in alternating directions
+(adversarial worst-case).
+
+\good{Result:} Bayesian $\Delta$ moves by at most $\sim 2$ utility points
+under $\pm 20\%$ perturbation. The \warn{20\%} bar
+crosses the clean bar's CI on every closed-API gen.
+
+\bad{qwen2.5-32b is the exception:} CIs are wider and one perturbation
+($+20\%$) drops $\Delta$ from $+4.6$ to $+2.4$. Consistent with the
+3-identical-patches behaviour reported in \S Honest negatives.
+
+\good{Conclusion:} headline result is robust to realistic likelihood
+miscalibration; we are not over-fitting on a knife-edge calibration.
 \end{block}
 \end{frame}
 
