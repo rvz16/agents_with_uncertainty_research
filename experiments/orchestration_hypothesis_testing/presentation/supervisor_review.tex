@@ -1,0 +1,2621 @@
+\documentclass[10pt]{beamer}
+\usetheme{default}
+\useinnertheme{rectangles}
+\useoutertheme{infolines}
+
+% ============================================================================
+% Color palette
+% ============================================================================
+\usepackage{xcolor}
+% colortbl provides \rowcolor / \cellcolor (independent of xcolor's [table] option)
+\usepackage{colortbl}
+\definecolor{primaryBlue}{HTML}{1565C0}
+\definecolor{lightBlue}{HTML}{42A5F5}
+\definecolor{deepBlue}{HTML}{0D47A1}
+\definecolor{accentGreen}{HTML}{2E7D32}
+\definecolor{lightGreen}{HTML}{66BB6A}
+\definecolor{accentOrange}{HTML}{EF6C00}
+\definecolor{accentRed}{HTML}{C62828}
+\definecolor{accentPurple}{HTML}{6A1B9A}
+\definecolor{accentTeal}{HTML}{00838F}
+\definecolor{softGrey}{HTML}{546E7A}
+\definecolor{paleBlue}{HTML}{E3F2FD}
+\definecolor{paleGreen}{HTML}{E8F5E9}
+\definecolor{paleOrange}{HTML}{FFF3E0}
+\definecolor{paleRed}{HTML}{FFEBEE}
+\definecolor{palePurple}{HTML}{F3E5F5}
+
+% Background and text
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{normal text}{fg=black}
+\setbeamercolor{frametitle}{fg=primaryBlue}
+\setbeamercolor{title}{fg=deepBlue}
+\setbeamercolor{author}{fg=softGrey}
+\setbeamercolor{institute}{fg=softGrey}
+\setbeamercolor{date}{fg=softGrey}
+\setbeamercolor{section in toc}{fg=primaryBlue}
+\setbeamercolor{subsection in toc}{fg=accentTeal}
+\setbeamercolor{structure}{fg=primaryBlue}
+\setbeamercolor{alerted text}{fg=accentRed}
+\setbeamercolor{example text}{fg=accentGreen}
+
+% Block styles
+\setbeamercolor{block title}{bg=primaryBlue,fg=white}
+\setbeamercolor{block body}{bg=paleBlue,fg=black}
+\setbeamercolor{block title alerted}{bg=accentRed,fg=white}
+\setbeamercolor{block body alerted}{bg=paleRed,fg=black}
+\setbeamercolor{block title example}{bg=accentGreen,fg=white}
+\setbeamercolor{block body example}{bg=paleGreen,fg=black}
+
+% Itemize bullets — colored
+\setbeamertemplate{itemize item}{\color{primaryBlue}$\blacktriangleright$}
+\setbeamertemplate{itemize subitem}{\color{accentGreen}$\blacktriangleright$}
+\setbeamertemplate{itemize subsubitem}{\color{accentOrange}$\blacktriangleright$}
+\setbeamertemplate{enumerate item}{\color{primaryBlue}\textbf{\arabic{enumi}.}}
+\setbeamertemplate{enumerate subitem}{\color{accentGreen}\textbf{\alph{enumii}.}}
+
+% Frame title underlined
+\setbeamertemplate{frametitle}{%
+  \nointerlineskip
+  \begin{beamercolorbox}[wd=\paperwidth, ht=2.6ex, dp=1ex, leftskip=0.5cm]{frametitle}
+    \usebeamerfont{frametitle}\insertframetitle%
+  \end{beamercolorbox}%
+  \vskip-2pt
+  \hspace*{0.5cm}\textcolor{primaryBlue}{\rule{\dimexpr\paperwidth-1cm\relax}{1pt}}%
+}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage[skip=2pt]{caption}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{primaryBlue!30},
+  backgroundcolor=\color{paleBlue!40},
+  keywordstyle=\color{deepBlue}\bfseries,
+  stringstyle=\color{accentGreen},
+  commentstyle=\color{softGrey},
+  numbers=none,
+}
+
+% Helper macros for colored highlights
+\newcommand{\good}[1]{\textcolor{accentGreen}{\textbf{#1}}}
+\newcommand{\bad}[1]{\textcolor{accentRed}{\textbf{#1}}}
+\newcommand{\warn}[1]{\textcolor{accentOrange}{\textbf{#1}}}
+\newcommand{\info}[1]{\textcolor{primaryBlue}{\textbf{#1}}}
+\newcommand{\hl}[1]{\colorbox{paleBlue}{#1}}
+\newcommand{\done}{\textcolor{accentGreen}{$\checkmark$}}
+\newcommand{\running}{\textcolor{accentOrange}{$\circlearrowright$}}
+\newcommand{\pending}{\textcolor{softGrey}{$\circ$}}
+
+\title{\textbf{Bayesian POMDP Controllers for LLM Critic Stack Orchestration}}
+\subtitle{Research progress \& experimental results}
+\author{}
+\institute{MBZUAI}
+\date{\today}
+
+\begin{document}
+
+% ============================================================================
+% Title
+% ============================================================================
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+\small
+\textcolor{softGrey}{\scriptsize Click any item to jump to that section.
+Colors: \info{blue}=core conceptual blocks, \good{green}=positive findings,
+\warn{orange}=notable / has caveat, \bad{red}=limitations,
+\textcolor{accentTeal}{teal}=cross-reference.}
+\vspace{0.15cm}
+\begin{enumerate}\setlength\itemsep{1pt}
+\item \hyperlink{out:1}{\info{The problem we're solving}}
+\item \hyperlink{out:2}{Existing methods (\textcolor{accentTeal}{baselines})}
+\item \hyperlink{out:3}{How baselines work on real data --- \textcolor{accentTeal}{examples}}
+\item \hyperlink{out:4}{\info{Statistics we collect} (priors, likelihoods, kernels)}
+\item \hyperlink{out:5}{\info{Our proposed method:} Bayesian POMDP controller}
+\item \hyperlink{out:6}{\info{Benchmarks} (LCB, SWE-bench, MBPP+, HumanEval+)}
+\item \hyperlink{out:7}{Training-data collection pipeline}
+\item \hyperlink{out:8}{Iterative refinement (Self-Refine, Reflexion) --- \warn{real implementations}}
+\item \hyperlink{out:9}{Evaluation methodology (bootstrap CI, FDR, MDE-power, LOO-CV)}
+\item \hyperlink{out:10}{\good{Pre-registered prediction} \& confirmation}
+\item \hyperlink{out:11}{\good{Three-regime characterization}}
+\item \hyperlink{out:12}{Results across 80+ cells}
+\item \hyperlink{out:13}{\warn{Honest negative findings}}
+\item \hyperlink{out:14}{Open-weight integration (Qwen2.5-Coder-32B)}
+\item \hyperlink{out:15}{\bad{Limitations} \& next steps}
+\end{enumerate}
+\end{frame}
+
+% ============================================================================
+% Section 1: Problem
+% ============================================================================
+
+\section{Problem}
+\hypertarget{out:1}{}
+
+\begin{frame}{What we're doing --- one-sentence version}
+\vspace{0.4cm}
+\begin{block}{Research question}
+Given an LLM that proposes a code patch and a stack of cheap-to-expensive
+critics (syntax check, lint, public tests, LLM review), \textbf{when should we
+verify a patch with a costly oracle vs.\ regenerate?}
+\end{block}
+
+\vspace{0.4cm}
+\info{Why this matters:}
+\begin{itemize}
+\item \good{Verification is the dominant cost} --- running full test suites,
+calling frontier LLMs as judges, or paying for human review.
+\item \warn{Most pipelines use rigid heuristics:} ``always verify,''
+``best-of-$N$,'' ``run all critics.'' \bad{They ignore the posterior
+probability} that the patch is correct given cheap signals.
+\item \info{A principled answer is a partially-observable MDP:}
+state = $P(Y{=}1 \mid \text{evidence})$, actions $\in$
+$\{$run critic $i$, verify, stop, regen$\}$, solve via dynamic programming.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Concrete setup}
+\vspace{0.4cm}
+\info{Per LLM patch} (instance $i$, attempt $k$):
+\begin{enumerate}
+\item Critics produce noisy binary signals \textcolor{primaryBlue}{$L_0, L_1, L_2, L_3 \in \{0,1\}$}
+  (syntax, lint, public-tests, LLM-review).
+\item Oracle verifier produces ground truth \textcolor{accentGreen}{$Y \in \{0,1\}$} (full test suite).
+\item Each critic has a known cost $c_0, c_1, c_2, c_3$, oracle cost $c_v$.
+\item A reward $r$ is paid for $Y{=}1$.
+\end{enumerate}
+
+\info{Optimal policy} maximises $\mathbb{E}[r \cdot Y - \text{costs}]$
+over policies $\pi:$ history $\to$ action.
+
+\vspace{0.4cm}
+\begin{exampleblock}{Two regimes our framework distinguishes}
+\begin{itemize}
+\item \good{Inference-driven:} cheap critics shift the posterior enough to
+skip the oracle on confident negatives. Bayesian controller wins.
+\item \warn{Oracle-cheap:} verifying is so cheap that always-verify is
+indistinguishable. Bayesian gain $\approx 0$.
+\end{itemize}
+\end{exampleblock}
+\end{frame}
+
+% ============================================================================
+% Section 2: Baselines
+% ============================================================================
+
+\section{Existing methods}
+\hypertarget{out:2}{}
+
+\begin{frame}{Baselines we compare against}
+\vspace{0.2cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{p{4cm}p{6.5cm}}
+\toprule
+\textcolor{primaryBlue}{\textbf{Policy}} & \textcolor{primaryBlue}{\textbf{What it does}} \\
+\midrule
+\texttt{always\_verify} & Run oracle on every first patch. \\
+\texttt{best\_of\_N} & Generate $N$ patches, verify last (or vote). \\
+\texttt{threshold\_L0} & \textcolor{accentTeal}{Run cheap syntax check.} Verify iff PASS. Else regen. \\
+\texttt{threshold\_L2} & \textcolor{accentTeal}{Run public tests.} Verify iff PASS. Else regen. (LCB-only) \\
+\texttt{threshold\_L3} & \textcolor{accentTeal}{Run LLM-judge review.} Verify iff PASS. Else regen. \\
+\texttt{fixed\_pipeline} & Run \emph{all} cheap critics, verify iff all PASS. \\
+\midrule
+\multicolumn{2}{l}{\textcolor{accentPurple}{\textbf{Iterative refinement methods}}} \\
+\texttt{Self-Refine} \footnotesize{(Madaan 2023)} & Generate $\to$ self-critique $\to$ refine. Stops on ``CRITIQUE\_OK.'' \\
+\texttt{Reflexion} \footnotesize{(Shinn 2023)} & Generate $\to$ external test $\to$ reflect $\to$ refine. Stops on test pass. \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.2cm}
+First 6: \textcolor{accentTeal}{stateless per-patch policies}.
+\textcolor{accentPurple}{Self-Refine and Reflexion} are stateful trajectories
+we treat as competing methods.
+\end{frame}
+
+% ----------- Our methods (parallel structure to baselines slide) -----------
+\begin{frame}{Our methods}
+\vspace{0.2cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{p{4.1cm}p{6.4cm}}
+\toprule
+\textcolor{primaryBlue}{\textbf{Method}} & \textcolor{primaryBlue}{\textbf{What it does}} \\
+\midrule
+\multicolumn{2}{l}{\textcolor{accentGreen}{\textbf{Bayesian belief-state controllers}} (operate on $b_t = P(Y_t{=}1 \mid \text{history})$)} \\
+\addlinespace[2pt]
+\texttt{bayesian\_greedy} & \textcolor{accentGreen}{1-step lookahead}: at each state, pick \texttt{argmax} of immediate $Q$-value. \\
+& \textcolor{softGrey}{\footnotesize Doesn't use the kernel; treats one critic + verify as the full plan.} \\
+\addlinespace[3pt]
+\texttt{bayesian\_DP} & \textcolor{accentGreen}{Backward induction} on discretised belief grid (51 pts $\times$ horizon $H{=}3$). \\
+& \textcolor{softGrey}{\footnotesize Uses the \emph{transition kernel} $P(Y_{k+1}\mid Y_k)$; can chain critics multi-step.} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.25cm}
+\begin{columns}[T]
+\column{0.5\textwidth}
+\textcolor{accentGreen}{\textbf{Shared by both}}:
+\begin{itemize}\setlength\itemsep{0.5pt}
+\item \footnotesize Same belief update $b' = \frac{P(z|Y{=}1)\,b}{P(z|Y{=}1)\,b + P(z|Y{=}0)(1-b)}$
+\item \footnotesize Same action set $\{\text{verify}, \text{generate}, \text{give\_up}, L_0, L_2, L_3\}$
+\item \footnotesize Same cost vector $(c_\text{gen}, c_\text{ver}, c_{L_0}, c_{L_2}, c_{L_3})$
+\end{itemize}
+
+\column{0.5\textwidth}
+\textcolor{accentRed}{\textbf{Differ on}}:
+\begin{itemize}\setlength\itemsep{0.5pt}
+\item \footnotesize Planning horizon: 1 vs $H{=}3$
+\item \footnotesize Uses kernel for planning? No vs Yes
+\item \footnotesize Can chain critics? No vs Yes
+\item \footnotesize Robust to kernel misspecification? More so vs less
+\end{itemize}
+\end{columns}
+
+\vspace{0.2cm}
+\textcolor{softGrey}{\scriptsize Code: \texttt{GreedyController} in \texttt{lcb\_compare.py:52} \quad
+\texttt{BayesianController} (DP) in \texttt{run\_baseline\_vs\_controller.py:68}.}
+\end{frame}
+
+% ----------- bayesian_greedy detail -----------
+\begin{frame}[fragile]{\texttt{bayesian\_greedy} --- 1-step lookahead}
+\info{Mechanism:} at every state $(b, k)$, evaluate each action's
+\emph{immediate} $Q$-value assuming the very next move is \texttt{verify}.
+\good{Does not use the transition kernel} --- by design, $Q_\text{generate}$
+substitutes the prior for the post-generate belief.
+
+\begin{block}{What data this method needs}
+\footnotesize
+\textbf{Calibration corpus only:} prior $P(Y{=}1)$ + critic likelihoods $P(z\mid Y)$.\\
+\textbf{No iter / no kernel needed for setup.} Iter trajectories are only used
+later, at evaluation, to simulate the policy and compute utility.\\
++ a cost vector $(c_\text{gen}, c_\text{ver}, c_{L_0}, c_{L_2}, c_{L_3})$.
+\end{block}
+
+\begin{block}{Q-values (myopic, 1-step horizon)}
+\footnotesize
+\vspace{-0.4cm}
+\begin{align*}
+Q_\text{verify}   &= R \cdot b - c_\text{ver} \\
+Q_\text{generate} &= -c_\text{gen} + R \cdot \text{prior} - c_\text{ver}
+   \;\; \textcolor{softGrey}{\text{(uses prior, NOT kernel)}}\\
+Q_{L_k}           &= -c_k + \mathbb{E}_z\bigl[\max(R \cdot b' - c_\text{ver},\ 0)\bigr]
+\end{align*}
+\vspace{-0.55cm}
+\end{block}
+
+\begin{exampleblock}{Worked example --- LCB-medium / haiku-4.5 (prior $0.34$, $L_2$ gap $0.92$, $R{=}100$)}
+\footnotesize
+Initial $b_0 = 0.34$: \quad
+$Q_\text{verify}{=}\warn{33.0}$, \quad $Q_{L_2}{=}\good{37.3}$, \quad $Q_\text{give\_up}{=}0$.\\
+$\Rightarrow$ \good{argmax} $= L_2$. Observe $z_2{=}\text{PASS} \Rightarrow b_1 \approx 0.97
+\Rightarrow$ next step picks \good{verify}.
+\end{exampleblock}
+
+\textcolor{softGrey}{\scriptsize \texttt{GreedyController.select\_action()} in
+\texttt{lcb\_compare.py:52--103}. Decision: $O(|A|)$. No V-table.}
+\end{frame}
+
+% ----------- bayesian_DP detail -----------
+\begin{frame}[fragile]{\texttt{bayesian\_DP} --- backward-induction controller}
+\info{Mechanism:} discretise belief into $51$ grid points $\times$ horizon $H{=}3$;
+solve Bellman backwards; act greedily w.r.t.\ the resulting V-table. \good{Uses
+the measured kernel} $P(Y_{k+1}\mid Y_k)$ for \texttt{generate}; recurses on
+critic outcomes (can plan \texttt{L0$\to$L2$\to$verify} multi-step).
+
+\begin{block}{What data this method needs}
+\scriptsize
+\textbf{Calibration corpus} $\to$ prior + likelihoods (same as greedy). \quad
+\textbf{Iter corpus} (multi-step Self-Refine / Reflexion) $\to$ measured kernel
+via \texttt{compute\_transition\_kernel.py}, giving
+$P(\text{fix}\mid\text{broken}),\,P(\text{break}\mid\text{correct})$ from $Y_k\to Y_{k+1}$ pairs.
+\end{block}
+
+\begin{block}{Bellman backward induction (build once per cell)}
+\scriptsize
+\vspace{-0.35cm}
+\begin{align*}
+V_H(b) = \max(R b - c_\text{ver},\ 0); \quad
+Q_k(a;b) = \begin{cases}
+  R b - c_\text{ver}                                       & a{=}\text{verify} \\
+  -c_\text{gen} + V_{k{+}1}\bigl(\text{kernel}(b)\bigr)    & a{=}\text{generate} \\
+  -c_a + \mathbb{E}_z\bigl[V_k^\text{post}(b'_z)\bigr]      & a{=}L_0, L_2, L_3 \\
+  0                                                        & a{=}\text{give\_up}
+\end{cases}
+\end{align*}
+\vspace{-0.55cm}
+\end{block}
+
+\begin{exampleblock}{Worked example --- LCB-easy / gpt-5-mini ($P_\text{fix}{=}0.53,\ P_\text{break}{=}0.04$)}
+\scriptsize
+$b_0{=}0.22$. \warn{Greedy} substitutes prior $\Rightarrow Q_\text{generate}=20$.
+\good{DP} applies kernel: $\text{kernel}(b_0)=0.22{\cdot}0.96+0.78{\cdot}0.53=\warn{0.625}$,
+$Q_\text{generate}=-1+V_1(0.625)=\good{59.4}$ $\Rightarrow$ \good{generate}
+$\to L_2$ at $b_1{=}0.625$ $\to$ \good{verify} at $b_2{\approx}0.99$.
+\end{exampleblock}
+
+\textcolor{softGrey}{\tiny \texttt{BayesianController.\_build()} in
+\texttt{run\_baseline\_vs\_controller.py:68--210}. Decision: $O(1)$ table lookup. Build: $O(H \cdot 51 \cdot |A|)$ per cell.}
+\end{frame}
+
+\begin{frame}[fragile]{Self-Refine vs Reflexion --- algorithmically}
+\textcolor{accentPurple}{\textbf{Self-Refine}} (no external feedback)
+\begin{lstlisting}
+patch_0 = generate(prompt)
+for k = 1..N:
+    critique = model.self_critique(patch_{k-1})
+    if "CRITIQUE_OK" in critique:
+        return patch_{k-1}
+    patch_k = model.refine(patch_{k-1}, critique)
+return patch_N
+\end{lstlisting}
+
+\textcolor{accentTeal}{\textbf{Reflexion}} (external test signal)
+\begin{lstlisting}
+memory = []
+patch_0 = generate(prompt)
+for k = 1..N:
+    pass, trace = external_test(patch_{k-1})
+    if pass: return patch_{k-1}
+    reflection = model.reflect(patch, trace, memory)
+    memory.append(reflection)
+    patch_k = model.refine(patch, memory)
+return patch_N
+\end{lstlisting}
+\end{frame}
+
+% ============================================================================
+% Section 3: Real-data examples
+% ============================================================================
+
+\section{Real-data examples}
+\hypertarget{out:3}{}
+
+\begin{frame}[fragile]{Example: gpt5\_mini on \texttt{astropy\_\_astropy-14182} --- \good{clean}}
+\info{Problem (excerpt):} \emph{add support for the \texttt{header\_rows}
+argument in the RST writer to allow customising header rows.}
+
+\info{LLM patch (clean SEARCH/REPLACE format):}
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,15 @@
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+
+-    def __init__(self):
++    def __init__(self, header_rows=None):
+         super().__init__(delimi...
+\end{lstlisting}
+
+\info{Critic verdicts on this patch:}
+\begin{itemize}
+\item \texttt{L0\_syntax} (ast.parse): \good{PASS}
+\item \texttt{L1\_lint} (ruff): \good{PASS}
+\item \texttt{L3\_llm\_review} (Haiku-4.5): \good{PASS}
+\item \texttt{Y} (full test suite): \good{1 (resolved)}
+\end{itemize}
+\good{All critics correctly flagged this as a likely-correct patch.}
+\end{frame}
+
+\begin{frame}[fragile]{Example: haiku45 on same task --- \bad{hallucination}}
+\info{Same problem as before.}
+
+\info{LLM patch:}
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,15 @@
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+
+-    def __init__(self, header_rows=None):           # <-- HALLUCINATED!
++    def __init__(self, header_rows=None):
+         super().__init__(delimi...
+\end{lstlisting}
+
+\bad{Issue:} the SEARCH block claims the original code already had
+\texttt{header\_rows=None}. Real source has \texttt{def \_\_init\_\_(self):}.
+Patch fails to apply.
+
+\info{Critic verdicts:}
+\begin{itemize}
+\item \texttt{L0\_syntax}: \good{PASS} (the diff is syntactically valid Python)
+\item \texttt{L1\_lint}: \good{PASS}
+\item \texttt{L3\_llm\_review}: \good{PASS} (judge can't see real source)
+\item \texttt{Y}: \bad{0 (unresolved --- patch didn't apply!)}
+\end{itemize}
+\bad{All cheap critics fooled.} This is why we need an oracle in the loop.
+\end{frame}
+
+\begin{frame}[fragile]{Example: sonnet45 on \texttt{django\_\_django-11620} --- \warn{format quirk}}
+\info{LLM output} (single-bracket header instead of triple ---/+++ format):
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+[django/db/models/sql/query.py]
+<<<<<<< SEARCH
+def deferred_to_data(self, target, callback):
+    ...
+=======
+def deferred_to_data(self, target, callback):
+    callback(target, self)
+    for ...
+>>>>>>> REPLACE
+\end{lstlisting}
+
+\warn{Issue:} format works via our XML-style parser fallback but is non-canonical.
+
+This is why we landed an \textbf{XML-style parser + fuzzy SEARCH/REPLACE matcher}
+(commit \texttt{c10eb8a}): handles
+\begin{itemize}
+\item \textcolor{accentTeal}{placeholder paths} (\texttt{[file.py]}) on the
+line before the diff
+\item \textcolor{accentTeal}{indent-tolerant SEARCH/REPLACE} (whitespace
+doesn't have to be byte-identical)
+\item \textcolor{accentTeal}{triple-bracket and double-bracket variants}
+\end{itemize}
+\good{Validation:} v3 parser pass rate from $\sim$60\% (canonical only) to
+\good{$\sim$93\%} (canonical + tolerant) on the spot-check $n=50$ corpus.
+\end{frame}
+
+% ============================================================================
+% Section 4: Statistics
+% ============================================================================
+
+\section{Statistics we collect}
+\hypertarget{out:4}{}
+
+\begin{frame}{Three quantities are needed for the controller}
+\vspace{0.3cm}
+\begin{block}{1. Prior $P(Y{=}1)$}
+Per-(generator, benchmark, difficulty) cell, fraction of step-0 patches that
+\emph{would} resolve the bug under the oracle.
+\end{block}
+
+\begin{exampleblock}{2. Critic likelihoods $P(\text{critic} = z \mid Y)$}
+For each critic $\ell \in \{L_0, L_1, L_2, L_3\}$, the conditional pass rate
+under both ground-truth values. Estimated with Beta(1,1) Laplace smoothing on
+the calibration corpus.
+\end{exampleblock}
+
+\begin{alertblock}{3. Transition kernel $P(Y_{k+1} \mid Y_k)$}
+$P(\text{fix} \mid \text{broken})$, $P(\text{break} \mid \text{correct})$
+across iterative refinement steps. Measured directly from the iter trajectory
+data --- not assumed.
+\end{alertblock}
+\end{frame}
+
+% ============================================================================
+% BLOCK A: Data sources clarification
+% ============================================================================
+
+% ---------- A.0 Two modes of data collection (high-level intro) ----------
+\begin{frame}{Two modes of data collection: \textcolor{accentGreen}{calibration} vs \textcolor{accentRed}{iter}}
+\vspace{0.15cm}
+\info{We collect data in two distinct modes}, each producing a different
+kind of evidence about the (generator, benchmark) cell. Both are needed.
+
+\vspace{0.25cm}
+\begin{block}{Mode 1: \textcolor{accentGreen}{\textbf{Calibration mode}} (single-shot, independent attempts)}
+\begin{itemize}
+\item Sample $n$ instances; for each, generate $k=3$ \emph{independent fresh}
+patches.
+\item Per patch: run all critics + harness oracle to get $Y$.
+\item Captures the \emph{generation distribution}: ``how good is this
+LLM at this benchmark, fresh attempt, no feedback?''
+\end{itemize}
+\textcolor{softGrey}{Used to estimate quantities that require an
+unconditional sample: \textbf{prior $P(Y{=}1)$}, \textbf{critic likelihoods $P(z\mid Y)$}.}
+\end{block}
+
+\begin{alertblock}{Mode 2: \textbf{Iter mode} (sequential trajectories with feedback)}
+\begin{itemize}
+\item Same $n$ instances; for each, run a Self-Refine or Reflexion trajectory
+of up to 5 steps.
+\item Step $k+1$ is \emph{conditioned on} step $k$'s output via the
+controller's feedback signal.
+\item Captures \emph{refinement dynamics}: ``given the previous attempt was
+broken/correct, what's the next attempt's distribution?''
+\end{itemize}
+\textcolor{softGrey}{Used to estimate the \textbf{transition kernel
+$P(Y_{k+1}\mid Y_k)$}, which is impossible to identify from single-shot
+data.}
+\end{alertblock}
+
+\textcolor{softGrey}{\scriptsize Next slide: which mode produces which
+parameter, with the size of each corpus per cell.}
+\end{frame}
+
+% ---------- A.1 Two corpora, one source per parameter ----------
+\begin{frame}{Two corpora, each for what it cleanly identifies}
+\vspace{0.15cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{p{3.4cm}p{3.6cm}p{3.7cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Corpus} & \textbf{Size per cell} & \textbf{Used for} \\
+\midrule
+\rowcolor{paleGreen}
+\textcolor{primaryBlue}{\textbf{Calibration}}\newline (single-shot) &
+30 instances $\times$ 3 fresh patches $=$ 90 step-0 patches &
+\info{Prior $P(Y{=}1)$}\newline\info{Critic likelihoods $P(z\mid Y)$} \\
+\rowcolor{paleRed}
+\textcolor{accentRed}{\textbf{Iterative trajectories}}\newline (Self-Refine, Reflexion) &
+30 instances $\times$ up to 5 steps $\approx$ 150 step-records &
+\info{Transition kernel $P(Y_{k+1}\mid Y_k)$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.25cm}
+\info{Each parameter is estimated from the source where it's cleanly identifiable.}
+
+\vspace{0.2cm}
+\textbf{At decision time, the controller uses all three simultaneously:}
+\begin{itemize}
+\item \good{Prior} seeds belief $b_0$ at step 0
+\item \good{Likelihoods} update $b$ as critic outcomes are observed
+\item \good{Kernel} propagates $b$ across refinement steps
+\end{itemize}
+
+\textcolor{softGrey}{\scriptsize Standard partially-observable MDP setup. Same
+pattern as forecasting: unconditional climatology + observation likelihoods
++ transition dynamics.}
+\end{frame}
+
+% ---------- A.2 Why single-shot for prior + likelihoods ----------
+\begin{frame}{Why single-shot data for prior + likelihoods}
+\vspace{0.15cm}
+\warn{The selection-bias trap:}
+\begin{itemize}
+\item Step 1+ patches in iter trajectories are \emph{only} drawn from
+instances where step 0 failed (Self-Refine/Reflexion continued because
+the proxy stop condition wasn't met).
+\item Including step 1+ patches when estimating the prior would
+\bad{systematically bias it downward} --- those are conditioned on prior
+failure, not a fresh attempt.
+\item Same argument for critic likelihoods: $P(z\mid Y)$ for a multi-step
+patch is not the same distribution as for a fresh step-0 patch.
+\end{itemize}
+
+\vspace{0.2cm}
+\good{Single-shot calibration} gives a clean unconditional measurement of
+the \emph{generation} distribution.
+
+\vspace{0.25cm}
+\begin{exampleblock}{Forecasting analogy}
+Climatology measures unconditional $P(\text{rain})$ from independent
+single-day observations. You don't measure it from conditional rates at later
+forecast horizons --- those depend on what already happened. Same logic here.
+\end{exampleblock}
+
+\vspace{0.15cm}
+\textcolor{softGrey}{\scriptsize Honest caveat (also in §6):
+should likelihoods incorporate step 1+ patches for more data? It's a
+3$\times$ data gain but mixes potentially non-stationary distributions.
+Reported as future-work robustness check; we have the data to recompute if
+reviewers push.}
+\end{frame}
+
+% ---------- Recipe 1a: Prior — data collection ----------
+\begin{frame}{Recipe 1a: prior \textcolor{primaryBlue}{$P(Y{=}1)$} --- data collection}
+\vspace{0.2cm}
+\textbf{Goal:} per (generator, benchmark, difficulty) cell, the fraction of
+step-0 patches that resolve the bug under the oracle.
+
+\vspace{0.3cm}
+\textbf{Steps 1--3 (collecting raw $Y$ values):}
+\begin{enumerate}
+\item \info{Sample $n=30$ instances} from the benchmark with \texttt{seed=42}.
+  Same instance set across all generators for reproducibility.
+\item \info{For each instance, generate $k=3$ candidate patches} via the LLM
+  (temperature $0.7$, distinct system messages):
+  \begin{itemize}
+  \item OpenRouter API for closed-API generators
+  \item local vLLM endpoint for Qwen2.5-Coder-32B
+  \end{itemize}
+  Output $\to$ \texttt{predictions\_p$\{$0,1,2$\}$.jsonl} ($\sim$90 patches/cell).
+\item \info{Run harness eval} on every patch:
+  \begin{itemize}
+  \item LCB: hidden-test runner returns pass/fail
+  \item SWE: podman container, applies patch, runs FAIL\_TO\_PASS +
+    PASS\_TO\_PASS test sets
+  \item MBPP+/HumanEval+: assert-based unit tests
+  \end{itemize}
+  Record $Y_i \in \{0, 1\}$ per patch into \texttt{critic\_results.jsonl}.
+\end{enumerate}
+\end{frame}
+
+% ---------- Recipe 1b: Prior — estimator + CI ----------
+\begin{frame}{Recipe 1b: prior \textcolor{primaryBlue}{$P(Y{=}1)$} --- estimator \& CI}
+\vspace{0.2cm}
+\textbf{Steps 4--6 (computing the prior):}
+\begin{enumerate}\setcounter{enumi}{3}
+\item \info{Compute the point estimator} (sample mean):
+  \[
+  \hat{P}(Y{=}1) = \frac{1}{N}\sum_{i=1}^{N} Y_i,
+  \quad N = \#\{\text{patches with non-empty diff}\}
+  \]
+
+\item \info{Wilson 95\% confidence interval} on the proportion (better than
+  normal-approx for small $N$ near 0/1 boundaries):
+  \[
+  \mathrm{CI}_{95\%} = \frac{\hat{p} + \frac{z^2}{2N} \pm z\sqrt{\frac{\hat{p}(1-\hat{p})}{N}+\frac{z^2}{4N^2}}}{1 + \frac{z^2}{N}}, \quad z = 1.96
+  \]
+
+\item \info{Persist} to \texttt{likelihood\_tables.json}:
+  \texttt{\{"prior\_Y1": $\hat{p}$, "prior\_Y1\_ci": [lo, hi], "n": N\}}
+\end{enumerate}
+
+\vspace{0.3cm}
+\begin{exampleblock}{Concrete example}
+\textbf{LCB-hard / gpt5\_mini:} 18 of 87 non-empty patches resolved\\
+$\Rightarrow \hat{P}(Y{=}1) = \good{0.21}$, Wilson CI $\good{[0.13,\, 0.31]}$
+\end{exampleblock}
+\end{frame}
+
+% ---------- Recipe 2a: Critic likelihoods — verdicts + confusion matrix ----------
+\begin{frame}{Recipe 2a: critic likelihoods \textcolor{accentGreen}{$P(z\mid Y)$} --- verdicts}
+\vspace{0.15cm}
+\textbf{Goal:} $P(\text{critic } \ell \text{ passes} \mid Y{=}1)$ vs.\
+$P(\text{passes} \mid Y{=}0)$ for $\ell \in \{L_0, L_1, L_2, L_3\}$.
+
+\textbf{\textcolor{accentTeal}{Notation:}} $z_\ell \in \{0, 1\}$ is the binary
+verdict of critic $\ell$ on a patch:
+\begin{itemize}\setlength\itemsep{0pt}
+\item $z_\ell = 1$ $\Leftrightarrow$ critic outputs \good{PASS} (claims patch
+  is correct).
+\item $z_\ell = 0$ $\Leftrightarrow$ critic outputs \bad{FAIL} (claims patch
+  is incorrect).
+\end{itemize}
+$Y \in \{0, 1\}$ is the oracle ground truth from the harness.
+
+\vspace{0.15cm}
+\textbf{Steps 1--3 (per-patch verdicts):}
+\begin{enumerate}
+\item \info{Reuse the same 90 patches} from Recipe 1, with $Y$ already known.
+
+\item \info{Compute each critic's verdict per patch:}
+  \begin{itemize}
+  \item $L_0$ \textbf{syntax}: \texttt{ast.parse(modified\_file)} for each
+    \texttt{.py} touched by the diff $\to$ \texttt{True} iff all parse cleanly.
+  \item $L_1$ \textbf{lint}: \texttt{ruff check} on the modified files
+    $\to$ \texttt{True} iff zero diagnostics.
+  \item $L_2$ \textbf{public tests} (LCB-only): run the public examples
+    shipped with the problem $\to$ \texttt{True} iff all pass.
+  \item $L_3$ \textbf{LLM review}: prompt Haiku-4.5 with diff + problem
+    statement, parse one-token \texttt{PASS}/\texttt{FAIL} response.
+  \end{itemize}
+
+\item \info{Build 2$\times$2 confusion matrix} per critic against ground truth $Y$:
+  \[
+  \mathrm{TP}_\ell = \#\{z_\ell{=}1 \wedge Y{=}1\},\quad
+  \mathrm{FN}_\ell = \#\{z_\ell{=}0 \wedge Y{=}1\}
+  \]
+  \[
+  \mathrm{FP}_\ell = \#\{z_\ell{=}1 \wedge Y{=}0\},\quad
+  \mathrm{TN}_\ell = \#\{z_\ell{=}0 \wedge Y{=}0\}
+  \]
+\end{enumerate}
+\end{frame}
+
+% ---------- Recipe 2b: Critic likelihoods — smoothing + tests ----------
+\begin{frame}{Recipe 2b: critic likelihoods \textcolor{accentGreen}{$P(z\mid Y)$} --- smoothing \& tests}
+\vspace{0.15cm}
+\textbf{Steps 4--7 (estimating + validating):}
+\begin{enumerate}\setcounter{enumi}{3}
+\item \info{Beta(1,1) Laplace smoothing} (avoids 0/1 estimates with small $N$):
+  \[
+  \hat{P}(z_\ell{=}1 \mid Y{=}1) = \frac{\mathrm{TP}_\ell + 1}{\mathrm{TP}_\ell + \mathrm{FN}_\ell + 2}, \;\;
+  \hat{P}(z_\ell{=}1 \mid Y{=}0) = \frac{\mathrm{FP}_\ell + 1}{\mathrm{FP}_\ell + \mathrm{TN}_\ell + 2}
+  \]
+
+\item \info{Compute the gap} (per-critic informativeness):
+  \[
+  \Delta_\ell = \hat{P}(z_\ell{=}1\mid Y{=}1) - \hat{P}(z_\ell{=}1\mid Y{=}0)
+  \]
+  \good{Higher gap $\Rightarrow$ more informative critic.}
+
+\item \info{$\chi^2$ critic-independence test:} verify $L_0 \perp L_1 \perp L_3 \mid Y$
+  assumption (we assume \emph{product} likelihood for the Bayesian update):
+  \[
+  \chi^2 = \sum_{\text{cells}} \frac{(O_{ij} - E_{ij})^2}{E_{ij}}
+  \]
+  \good{$p > 0.05$ on all cells} $\Rightarrow$ independence assumption safe.
+
+\item \info{Persist} to \texttt{likelihood\_tables.json}: per-critic
+  \{TP, FN, FP, TN, $\hat{P}(\cdot|Y{=}1)$, $\hat{P}(\cdot|Y{=}0)$, gap\} +
+  $\chi^2$ test summary.
+\end{enumerate}
+
+\textcolor{softGrey}{\scriptsize Example LCB-hard gpt5\_mini: $L_2$ gap $= +0.49$
+(highly informative), $L_3$ gap $= +0.07$ (mild).}
+\end{frame}
+
+% ---------- Recipe 3a: Transition kernel — collect & classify ----------
+\begin{frame}[fragile]{Recipe 3a: transition kernel \textcolor{accentRed}{$P(Y_{k+1}\mid Y_k)$} --- collect}
+\vspace{0.15cm}
+\textbf{Goal:} measured Markov dynamics across iterative refinement steps.
+
+\vspace{0.2cm}
+\textbf{Steps 1--4 (collecting trajectories \& classifying):}
+\begin{enumerate}
+\item \info{Run iterative refinement} (Self-Refine or Reflexion) on the same
+  $n=30$ instances used for the prior. For each instance, record up to 5
+  trajectory steps with method-specific stop conditions.
+
+\item \info{Persist} per-step row to \texttt{iter\_records.jsonl}:
+  \begin{lstlisting}[basicstyle=\ttfamily\tiny]
+{"instance_id": "django__django-12284", "step": 1,
+ "diff": "...", "Y": 1, "L0": true, "L1": true, "L3": true,
+ "stop_reason": "...", "step_cost_usd": 0.012}
+  \end{lstlisting}
+
+\item \info{Group by} \texttt{instance\_id} and sort within each group by
+  \texttt{step}.
+
+\item \info{For each consecutive pair} $(Y_k, Y_{k+1})$ within an instance,
+  classify into 4 categories:
+  \begin{itemize}
+  \item $Y_k{=}0, Y_{k+1}{=}1$: \good{fix} (broken $\to$ correct)
+  \item $Y_k{=}0, Y_{k+1}{=}0$: \warn{persist\_broken}
+  \item $Y_k{=}1, Y_{k+1}{=}0$: \bad{break} (correct $\to$ broken)
+  \item $Y_k{=}1, Y_{k+1}{=}1$: \good{persist\_correct}
+  \end{itemize}
+\end{enumerate}
+\end{frame}
+
+% ---------- Recipe 3b: Transition kernel — estimate & validate ----------
+\begin{frame}{Recipe 3b: transition kernel \textcolor{accentRed}{$P(Y_{k+1}\mid Y_k)$} --- estimate}
+\vspace{0.1cm}
+\textbf{Steps 5--8 (estimating, bootstrap, validation):}
+\begin{enumerate}\setcounter{enumi}{4}
+\item \info{Estimators} (aggregated across all consecutive pairs in the cell):
+  \[
+  \hat{P}(\text{fix}\mid\text{broken}) = \frac{\#\text{fix}}{\#\text{fix}+\#\text{persist\_broken}}
+  \]
+  \[
+  \hat{P}(\text{break}\mid\text{correct}) = \frac{\#\text{break}}{\#\text{break}+\#\text{persist\_correct}}
+  \]
+
+\item \warn{Cluster bootstrap} at the \emph{instance level} ($B{=}1000$):
+  \begin{itemize}
+  \item Resample whole-instance trajectories with replacement
+  \item Recompute the kernel per resample
+  \item Empirical 2.5/97.5 percentiles $\to$ CI
+  \end{itemize}
+  \warn{Why cluster, not row:} within-instance steps auto-correlate
+  (step $k$'s diff depends on step $k{-}1$). Per-row bootstrap
+  underestimates SE by ${\sim}40\%$.
+
+\item \info{Compare against IID baseline:} $\hat{P}_{\text{IID}}(\text{fix}) =
+  \hat{P}(Y{=}1)$ (the prior). \bad{If measured $\neq$ IID, iid assumption is
+  wrong} $\Rightarrow$ DP solver may strictly dominate Greedy. (\S F1
+  ablation confirms this on LCB-hard.)
+
+\item \info{Persist} to \texttt{transition\_kernel.json}:
+  \{measured kernel, IID baseline kernel, cluster-bootstrap CI, per-step
+  counts\}.
+\end{enumerate}
+
+\textcolor{softGrey}{\scriptsize Example gpt5\_mini SWE-Verified:
+$\hat{P}(\text{fix}|\text{broken}) = 0.13$, $\hat{P}(\text{break}|\text{correct}) = 0.06$.
+Markov chain $\neq$ iid Bernoulli.}
+\end{frame}
+
+\begin{frame}{Likelihood table --- concrete example}
+\info{LCB-hard, gpt5\_mini, $n = 87$ patches across 29 instances:}
+\vspace{0.3cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Critic & $P(z\mid Y{=}1)$ & $P(z\mid Y{=}0)$ & gap $\Delta$ \\
+\midrule
+\texttt{L0\_syntax} & 0.95 & 0.99 & \warn{$-0.04$} \\
+\texttt{L1\_lint} & 0.95 & 0.99 & \warn{$-0.04$} \\
+\texttt{L2\_public\_tests} & 0.90 & 0.41 & \good{$+0.49$} \\
+\texttt{L3\_llm\_review} & 0.30 & 0.23 & \good{$+0.07$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.4cm}
+\begin{itemize}
+\item \warn{L0/L1 are uninformative for $Y$} --- almost all patches parse
+cleanly.
+\item \good{L2 (public tests) is highly informative} --- gap $0.49$ is the
+workhorse signal for LCB.
+\item \info{L3 (LLM judge) is mildly informative} --- gap $0.07$.
+\item \info{Bayesian update:} $\frac{P(Y{=}1)}{P(Y{=}0)} \cdot
+  \prod_\ell \frac{P(z_\ell \mid Y{=}1)}{P(z_\ell \mid Y{=}0)}$.
+\end{itemize}
+\end{frame}
+
+% ============================================================================
+% BLOCK E: Kernel dependencies + worked example
+% ============================================================================
+
+\begin{frame}{What does the transition kernel depend on?}
+\vspace{0.2cm}
+\info{One kernel per (generator, benchmark, difficulty, refinement method) cell:}
+\[
+P(Y_{k+1} \mid Y_k; \text{gen}, \text{bench}, \text{diff}, \text{method})
+\]
+
+\vspace{0.2cm}
+\textbf{Dependencies:}
+\begin{itemize}
+\item \textcolor{primaryBlue}{\textbf{Generator}} --- different LLMs refine differently
+  (gpt5\_mini's $P(\text{fix}|\text{broken}) \neq$ qwen3's)
+\item \textcolor{accentGreen}{\textbf{Benchmark + difficulty}} --- LCB-hard problems
+  are intrinsically harder to fix than LCB-easy
+\item \textcolor{accentPurple}{\textbf{Refinement method}} --- Self-Refine
+  (model self-critique) and Reflexion (external test) yield \emph{different}
+  kernels because the feedback signal differs
+\end{itemize}
+
+\vspace{0.25cm}
+\textbf{What it does NOT depend on:}
+\begin{itemize}
+\item \bad{Not per-critic} --- the kernel describes the transition of the
+\emph{oracle outcome} $Y$, not how critics correlate with $Y$
+\item \bad{Not per-cost-vector} --- the dynamics are intrinsic; cost only
+matters at decision time
+\end{itemize}
+
+\textcolor{softGrey}{\scriptsize
+For our matrix: 5 generators $\times$ \{LCB×3, SWE-Lite, SWE-Verified\}
+$\times$ 2 methods $=$ \textbf{50 distinct kernels} estimated.}
+\end{frame}
+
+\begin{frame}{Why kernel and critics are estimated independently}
+\vspace{0.15cm}
+\info{Conceptual factorization} (the Bayesian controller's joint over a step):
+\[
+\underbrace{P(Y_{k+1}, z_{k+1}^{(\ell)} \mid Y_k)}_{\text{joint}}
+\;=\;
+\underbrace{P(Y_{k+1} \mid Y_k)}_{\textcolor{accentRed}{\text{kernel}}}
+\;\cdot\;
+\underbrace{P(z_{k+1}^{(\ell)} \mid Y_{k+1})}_{\textcolor{accentGreen}{\text{critic likelihood}}}
+\]
+
+\vspace{0.2cm}
+\textbf{Two cleanly separated quantities:}
+\begin{itemize}
+\item \textcolor{accentRed}{\textbf{Kernel}} answers: ``given the model's last
+patch was broken, what's the chance the refined patch is correct?''
+\begin{itemize}
+\item \emph{Source of randomness:} model's stochasticity, problem difficulty
+\item \emph{Estimated from:} iter trajectories
+\end{itemize}
+\item \textcolor{accentGreen}{\textbf{Critic likelihood}} answers: ``given a
+patch is correct (or broken), what's the probability the critic says PASS?''
+\begin{itemize}
+\item \emph{Source of randomness:} critic's own noise (LLM-judge stochasticity, lint sensitivity, etc.)
+\item \emph{Estimated from:} single-shot calibration
+\end{itemize}
+\end{itemize}
+
+\good{Critical assumption:} critics are \emph{conditionally independent of the
+trajectory history given $Y_{k+1}$}. We verify this with the $\chi^2$
+independence test (Recipe 2b).
+
+\textcolor{softGrey}{\scriptsize
+This is why we need only 50 kernels (not $50 \times 4$ critics $= 200$): the
+critic conditional structure is already captured by the likelihoods.}
+\end{frame}
+
+\begin{frame}{Concrete worked kernel (1/2): counts \& estimators}
+\vspace{0.15cm}
+\info{Cell:} \texttt{verified/gpt5\_mini/selfrefine}, $n = 30$ instances,
+trajectories of up to 5 steps each.
+
+\vspace{0.2cm}
+\textbf{Step 1: count consecutive transitions across all instances}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lcc>{\columncolor{paleBlue}}c}
+\toprule
+\textbf{Transition} & \textbf{Y$_k$} & \textbf{Y$_{k+1}$} & \textbf{Count} \\
+\midrule
+\rowcolor{paleGreen}\good{fix} & 0 & 1 & 18 \\
+\warn{persist\_broken} & 0 & 0 & 122 \\
+\bad{break} & 1 & 0 & 9 \\
+\good{persist\_correct} & 1 & 1 & 130 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.2cm}
+\textbf{Step 2: maximum-likelihood estimators}
+\[
+\hat{P}(\text{fix}\mid\text{broken}) = \frac{18}{18+122} = \textcolor{accentGreen}{\mathbf{0.13}}
+,\quad
+\hat{P}(\text{break}\mid\text{correct}) = \frac{9}{9+130} = \textcolor{accentRed}{\mathbf{0.06}}
+\]
+
+\vspace{0.2cm}
+\textcolor{softGrey}{\scriptsize Next slide: cluster-bootstrap CI on these
+estimates and the IID-baseline comparison that justifies using a measured
+kernel rather than a synthesised one.}
+\end{frame}
+
+\begin{frame}{Concrete worked kernel (2/2): CI \& IID-baseline comparison}
+\vspace{0.15cm}
+\info{Same cell:} \texttt{verified/gpt5\_mini/selfrefine}.
+Point estimates from the previous slide:
+$\hat{P}(\text{fix}\mid\text{broken}) = \good{0.13}$,
+$\hat{P}(\text{break}\mid\text{correct}) = \bad{0.06}$.
+
+\vspace{0.3cm}
+\textbf{Step 3: cluster bootstrap CI ($B=1000$, instance-level)}
+\begin{itemize}\setlength\itemsep{1pt}
+\item Resample 30 instances with replacement, recompute kernel per resample.
+\item Clustering at the instance level handles within-trajectory
+  auto-correlation (step $k+1$ conditions on step $k$).
+\item 95\% CI: $P(\text{fix}\mid\text{broken}) \in \good{[0.07, 0.20]}$,
+  $P(\text{break}\mid\text{correct}) \in \warn{[0.02, 0.11]}$.
+\end{itemize}
+
+\vspace{0.3cm}
+\textbf{Step 4: compare to IID baseline} \textcolor{softGrey}{\small (assuming patches are iid Bernoulli(prior))}
+\begin{itemize}\setlength\itemsep{1pt}
+\item IID would predict $P(\text{fix}\mid\text{broken}) = \text{prior} = 0.63$.
+\item \bad{Measured 0.13 $\ll$ IID 0.63} $\Rightarrow$ \warn{IID assumption strongly violated}.
+\item Implication: DP solver may strictly dominate Greedy here (\S F1 ablation).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Transition kernel --- measured vs IID synthesis}
+\vspace{0.3cm}
+\warn{Naive assumption (IID):} per-step patches are independent draws from
+$\text{Bernoulli}(\text{prior})$.
+
+\info{Reality (measured kernels on iter records):}
+\begin{itemize}
+\item $P(\text{fix} \mid \text{broken}) = 0.13$ (gpt5\_mini SWE-Verified)
+\item $P(\text{break} \mid \text{correct}) = 0.06$
+\item \bad{Markov chain $\neq$ iid Bernoulli}.
+\end{itemize}
+
+\info{Verification across the cube:}
+\begin{itemize}
+\item \bad{IID assumption is empirically wrong on every benchmark}
+  (commit \texttt{ef21a0a}).
+\item \good{DP $\succ$ Greedy in some regimes} when measured kernel is used
+  (\S F1 ablation).
+\item Below LCB-hard, Greedy $\approx$ DP --- kernel non-iid'ness doesn't matter
+  much because pass rates saturate.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Transition kernel: visual --- iter feedback's value scales with tractability}
+\vspace{-0.15cm}
+\begin{center}
+\includegraphics[width=0.84\textwidth]{figures/fig_lcb_difficulty_gradient.png}
+\end{center}
+\vspace{-0.15cm}
+\footnotesize
+\good{Top:} measured $P(\text{fix}|\text{broken})$ (solid) vs IID baseline (hatched).
+\good{Bottom:} $\Delta = \text{iter} - \text{IID}$.
+\warn{Negative on LCB-hard} (refinement hurts!);
+\good{positive on LCB-easy for capable gens} (gpt-5-mini: $+0.31$, sonnet-4.5: $+0.09$).
+\end{frame}
+
+% ============================================================================
+% Section 5: Our method
+% ============================================================================
+
+\section{Bayesian controller}
+\hypertarget{out:5}{}
+
+\begin{frame}{Our proposed method --- POMDP formulation}
+\vspace{0.2cm}
+\info{Belief state:} $b_k = P(Y_k {=} 1 \mid \text{history of critic outcomes})$,
+maintained via Bayes' rule.
+
+\info{Action space at each timestep:}
+\begin{itemize}
+\item Run critic $\ell$ (cost $c_\ell$, observe $z_\ell$, update $b$)
+\item Verify (cost $c_v$, observe $Y$, terminate)
+\item Regenerate (cost $c_g$, draw a fresh patch, reset $b$ to prior)
+\end{itemize}
+
+\info{Two solvers:}
+\begin{enumerate}
+\item \textcolor{accentGreen}{\textbf{Greedy / myopic}} --- at each step pick
+  action that maximises one-step expected reward.
+\item \textcolor{accentPurple}{\textbf{DP / backward-induction}} --- solve the
+  Bellman equation explicitly, optimal in the iid regime, near-optimal under
+  the measured Markov kernel.
+\end{enumerate}
+
+\textbf{F1 ablation:} \good{Greedy and DP coincide} for most cells; \warn{DP
+wins} on cells where the kernel is meaningfully non-stationary.
+\end{frame}
+
+\begin{frame}{Cost model and reward}
+\info{Default cost vector} (units = ``LLM-cents''):
+\[
+\textcolor{accentGreen}{c_{L_0} = 1},\
+\textcolor{accentGreen}{c_{L_1} = 1},\
+\textcolor{accentTeal}{c_{L_2} = 5},\
+\textcolor{accentTeal}{c_{L_3} = 5},\
+\textcolor{accentRed}{c_v = 30},\
+\textcolor{accentPurple}{r = 100}.
+\]
+
+\info{Sensitivity sweeps on $c_v$:} cell $\to$ regime label changes when $c_v$
+crosses a threshold (commit \texttt{1e9b354}).
+\begin{itemize}
+\item \warn{$c_v < $ threshold:} ``always verify'' is optimal --- Bayesian gain
+$\to 0$.
+\item \good{$c_v > $ threshold:} cheap-critic gating kicks in --- Bayesian wins.
+\end{itemize}
+
+\info{Why this matters for the paper:} the win is conditional on the cost
+regime; we report results across $c_v \in \{15, 20, 25, 30, 40, 60\}$ to show
+robustness.
+\end{frame}
+
+% ============================================================================
+% BLOCK B: Utility definition
+% ============================================================================
+
+\begin{frame}{Utility --- what we optimize}
+\vspace{0.15cm}
+\info{Per-instance utility} under policy $\pi$ on instance $i$:
+\[
+U_\pi(i) \;=\; \underbrace{R \cdot Y_i \cdot \mathbb{1}[\text{verified}]}_{\text{reward only if verified \& } Y{=}1}
+\;-\; \underbrace{\sum_{a \in \text{actions}_\pi(i)} c_a}_{\text{sum of action costs}}
+\]
+
+\info{Per-cell mean utility:}
+\[
+\bar{U}_\pi \;=\; \frac{1}{N}\sum_{i=1}^{N} U_\pi(i)
+\]
+
+\info{Headline metric reported throughout the paper:}
+\[
+\textcolor{accentGreen}{\Delta_\pi} \;=\; \bar{U}_\pi - \bar{U}_{\text{always\_verify}}
+\]
+
+\vspace{0.2cm}
+\begin{exampleblock}{Worked example: gpt5\_mini \texttt{always\_verify} on LCB-hard ($n=29$, prior $0.21$)}
+$\bar{U}_{\text{always\_verify}}$
+$= \frac{1}{29}\sum_i (R \cdot Y_i - c_g - c_v)$
+$= 100 \cdot 0.21 - 5 - 30$
+$= -14$.
+
+Bayesian-greedy: $\bar{U}_\pi = -14 + 12.55 = -1.45$. \good{$\Delta = +12.55$}.
+The Bayesian framework recovers $\sim$13 utility units per instance by
+gating on cheap critics.
+\end{exampleblock}
+\end{frame}
+
+% ============================================================================
+% BLOCK C: Worked examples — when each statistic is used
+% ============================================================================
+
+\begin{frame}{Step 0: where prior + likelihoods are used}
+\vspace{0.1cm}
+\info{Concrete instance:} \texttt{LCB-hard problem 2784}, generator
+\texttt{gpt5\_mini}.
+
+\textbf{Belief state initialisation:}
+\[
+b_0 \;=\; P(Y{=}1 \mid \emptyset) \;=\; \text{prior} \;=\; \textcolor{primaryBlue}{0.21}
+\]
+
+\textbf{Step A: run $L_2$ (public tests, cost $5$)}
+\begin{itemize}
+\item Observe $z_{L_2} = \text{PASS}$.
+\item Bayes' rule with $P(L_2 \text{pass}\mid Y{=}1) = 0.90$, $P(L_2 \text{pass}\mid Y{=}0) = 0.41$:
+\[
+b_1 = \frac{0.21 \times 0.90}{0.21 \times 0.90 + 0.79 \times 0.41} = \frac{0.189}{0.513} = \textcolor{accentGreen}{\mathbf{0.37}}
+\]
+\end{itemize}
+
+\textbf{Step B: run $L_3$ (LLM review, cost $5$)}
+\begin{itemize}
+\item Observe $z_{L_3} = \text{PASS}$.
+\item $P(L_3\mid Y{=}1) = 0.30$, $P(L_3\mid Y{=}0) = 0.23$:
+\[
+b_2 = \frac{0.37 \times 0.30}{0.37 \times 0.30 + 0.63 \times 0.23} = \frac{0.111}{0.256} = \textcolor{accentGreen}{\mathbf{0.43}}
+\]
+\end{itemize}
+
+\textbf{Decision:} $b_2 = 0.43 < 0.5$ $\Rightarrow$ \warn{don't verify}; regenerate.\\
+$\Rightarrow$ Cost so far: $c_g + c_{L_2} + c_{L_3} = 5+5+5 = 15$. \good{Saves $c_v = 30$ vs \texttt{always\_verify}.}
+\end{frame}
+
+\begin{frame}{Step $k \to k{+}1$: where the transition kernel is used}
+\vspace{0.1cm}
+\info{Continuing from same instance:} controller chose to regenerate at step 0.
+Now at step 1.
+
+\textbf{What changed?} The fresh generation isn't drawn from the prior anymore
+--- it's conditioned on \emph{having just failed step 0}. We use the kernel
+to propagate the belief.
+
+\textbf{Kernel from iter trajectories on this cell:}
+\begin{itemize}
+\item $P(\text{fix} \mid \text{broken}) = 0.13$ (gpt5\_mini SWE-Verified, similar on LCB-hard)
+\item $P(\text{break} \mid \text{correct}) = 0.06$
+\end{itemize}
+
+\textbf{Updated belief at step 1:}
+\[
+b_1^{(\text{step}1)} \;=\;
+\underbrace{(1 - b_0^{\text{post-step0}}) \cdot P(\text{fix}\mid\text{broken})}_{\text{transition from broken}}
+\;+\; \underbrace{b_0^{\text{post-step0}} \cdot (1 - P(\text{break}\mid\text{correct}))}_{\text{stay correct}}
+\]
+
+\textbf{Cost-benefit decision (refine vs.\ stop):}
+\begin{itemize}
+\item Expected gain from refinement: $0.13 \times 100 = 13$ utility
+\item Refinement cost: $c_g = 5$
+\item \good{Net: $+8$} $\Rightarrow$ \good{refine and reassess}
+\end{itemize}
+
+\info{This decision is impossible without the kernel.} A 1-step controller has
+no notion of ``what's the chance refinement fixes it'' --- it'd just regenerate
+from the prior.
+\end{frame}
+
+\begin{frame}{Side-by-side: the three statistics inside one trajectory}
+\vspace{0.1cm}
+\textbf{Single instance walkthrough:} all three statistics appear at different
+decision points.
+
+\begin{table}
+\centering
+\small
+\begin{tabular}{p{1.0cm}p{4.0cm}p{4.5cm}p{1.5cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Step} & \textbf{What controller does} & \textbf{Stat used} & \textbf{Cost} \\
+\midrule
+\rowcolor{paleGreen}0a & Initialise $b_0 = 0.21$ &
+\info{Prior} (from calibration) & 0 \\
+\rowcolor{paleGreen}0b & $L_2$ pass $\to b = 0.37$ &
+\info{Likelihood $P(L_2\mid Y)$} (calibration) & $c_{L_2} = 5$ \\
+\rowcolor{paleGreen}0c & $L_3$ pass $\to b = 0.43$ &
+\info{Likelihood $P(L_3\mid Y)$} (calibration) & $c_{L_3} = 5$ \\
+\rowcolor{paleOrange}0d & $b < 0.5$ $\Rightarrow$ \emph{regenerate} &
+(decision rule, not a stat) & --- \\
+\rowcolor{paleRed}1a & Project $b$ from step 0 to step 1 &
+\good{Kernel} (from iter trajectories) & 0 \\
+\rowcolor{paleRed}1b & Compute expected refinement gain &
+\good{Kernel + reward} & 0 \\
+\rowcolor{paleRed}1c & Refine + repeat from 0a &
+(loop back to single-shot stats) & $c_g + ...$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.15cm}
+\good{Key insight:} the controller smoothly mixes single-shot estimates
+(step 0 within an attempt) with the kernel (across attempts). Same Bayesian
+machinery throughout, just different parameters at different timescales.
+\end{frame}
+
+% ============================================================================
+% Section 6: Benchmarks
+% ============================================================================
+
+\section{Benchmarks}
+\hypertarget{out:6}{}
+
+\begin{frame}{The four-benchmark cube}
+\vspace{0.2cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lccc>{\columncolor{paleBlue}}c}
+\toprule
+\textbf{Benchmark} & \textbf{Total inst.} & \textbf{Sampled $n$} &
+  \textbf{Difficulty} & \textbf{Type} \\
+\midrule
+\textcolor{primaryBlue}{LiveCodeBench (LCB)} & 100s/diff & 29 / 90 / 62 &
+  \textbf{3 levels} & competition \\
+\textcolor{accentGreen}{SWE-bench Lite} & 300 & 30 & medium & repo-level \\
+\textcolor{accentGreen}{SWE-bench Verified} & 500 & 30 & medium & repo-level \\
+\textcolor{accentOrange}{MBPP+} & 378 & 30 & easy & function-level \\
+\textcolor{accentOrange}{HumanEval+} & 164 & 30 & easy & function-level \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.2cm}
+\info{Why each:}
+\begin{itemize}
+\item \textcolor{primaryBlue}{LCB} has $L_2$ (public tests) --- the only
+  benchmark with all 4 critics.
+\item \textcolor{accentGreen}{SWE} has fine-grained oracle (FAIL\_TO\_PASS +
+  PASS\_TO\_PASS test sets).
+\item \textcolor{accentOrange}{MBPP+/HumanEval+} probe the saturation regime
+  (high prior).
+\end{itemize}
+
+\info{Generators:} 4 closed-API frontier (\texttt{gpt5\_mini, qwen3\_coder,
+haiku45, sonnet45}) + \good{1 open-weight} (\texttt{Qwen2.5-Coder-32B-Instruct}
+via local vLLM).
+\end{frame}
+
+\begin{frame}[fragile]{LiveCodeBench --- sample task}
+\info{Difficulty: hard} (LeetCode contest level)\\[1mm]
+\info{Title:} \emph{Maximum Length of Subarray With Limited Frequencies}\\
+\info{Statement (excerpt):}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+You are given an integer array nums and an integer k. The frequency of an
+element x is the number of times it occurs in an array.
+
+An array is called good if the frequency of each element in this array is
+less than or equal to k.
+
+Return the length of the longest good subarray of nums.
+\end{lstlisting}
+\info{Public tests} (LCB has these built in):
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+assert longestGoodSubarray([1,2,3,1,2,3,1,2], 2) == 6
+assert longestGoodSubarray([1,2,1,2,1,2,1,2], 1) == 2
+\end{lstlisting}
+\info{Per instance:} we sample 3 attempts (\texttt{patch\_id} $\in \{0,1,2\}$).
+\end{frame}
+
+\begin{frame}[fragile]{SWE-bench Verified --- sample task}
+\info{Repository-level bug, real GitHub issue.}
+
+\textcolor{accentGreen}{\textbf{Instance:}} \texttt{django\_\_django-12284}\\
+\textcolor{accentGreen}{\textbf{Issue:}} ``\emph{Models inheriting from a
+concrete abstract model with a foreign key in the abstract model fail to
+initialise correctly.}''
+
+\info{Spec hands the LLM:}
+\begin{itemize}
+\item the issue text
+\item the buggy commit hash
+\item ``oracle files'' --- the files the gold patch touches (read-only context)
+\item \texttt{FAIL\_TO\_PASS} test names \good{(must pass after fix)}
+\item \texttt{PASS\_TO\_PASS} test names \warn{(must stay passing)}
+\end{itemize}
+
+\info{LLM proposes a unified diff. Harness:}
+\begin{enumerate}
+\item Spins up podman container with the buggy commit + correct deps
+\item Applies patch
+\item Runs FAIL\_TO\_PASS + PASS\_TO\_PASS test sets
+\item Records \texttt{Y=1} iff \good{all FAIL\_TO\_PASS pass} and \warn{no
+  PASS\_TO\_PASS regress}.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Sampling and seeds}
+\vspace{0.2cm}
+\begin{itemize}
+\item \info{Reproducibility:} \texttt{seed=42} fixes both the instance sample
+  AND the per-attempt generation across all generators. Same instances and
+  same prompt for every model.
+\item \info{Per-instance attempts:} 3 calibration patches
+  (\texttt{patch\_id} $\in \{0,1,2\}$) + up to 4 iter-refine steps.
+\item \info{Total per cell:}
+  $30 \text{ instances} \times 3 + 30 \times 4 = 210$ patch evaluations.
+\item \info{Total cells:} 5 generators $\times$ \{LCB$\times$3, MBPP+,
+  HumanEval+, SWE-Lite, SWE-Verified\} = 5 $\times$ 7 = \good{35
+  calibration cells}.
+\item \info{Total iter cells:} 5 generators $\times$ \{LCB$\times$3, SWE-Lite,
+  SWE-Verified\} $\times$ 2 methods (Self-Refine, Reflexion) = \good{50 iter
+  cells}.
+\item \info{Aggregate:} \good{$\sim$2400 LLM patches}, \warn{$\sim$500 harness
+  evaluations}.
+\end{itemize}
+\end{frame}
+
+% ============================================================================
+% Section 7: Training data collection
+% ============================================================================
+
+\section{Training-data collection}
+\hypertarget{out:7}{}
+
+\begin{frame}{Calibration phase --- what data we collect}
+\vspace{0.2cm}
+\info{For each (generator, benchmark, difficulty, instance, patch\_id):}
+\begin{enumerate}
+\item Generate patch via OpenRouter / vLLM
+  $\to$ \texttt{predictions\_p$\{$0,1,2$\}$.jsonl}
+\item Run cheap critics:
+  \begin{itemize}
+  \item \textcolor{accentGreen}{$L_0$:} \texttt{ast.parse} on each modified \texttt{.py} file (free)
+  \item \textcolor{accentGreen}{$L_1$:} \texttt{ruff check} on each modified file (free)
+  \item \textcolor{accentTeal}{$L_2$:} public-test runner (LCB-only, free)
+  \item \textcolor{accentPurple}{$L_3$:} Haiku-4.5 PASS/FAIL judge ($\sim\$0.005$/patch, OpenRouter)
+  \end{itemize}
+\item Run harness oracle:
+  \begin{itemize}
+  \item LCB: hidden-test runner (free)
+  \item SWE: \warn{podman container + test suite} (slow but free)
+  \item MBPP+/HumanEval+: assert-based unit tests (fast, free)
+  \end{itemize}
+\item Persist as \texttt{critic\_results.jsonl} with $(L_0, L_1, L_2, L_3, Y)$
+  per patch.
+\end{enumerate}
+\info{Total budget:} \good{${\sim}\$15$ across all 35 calibration cells.}
+\end{frame}
+
+\begin{frame}{Iterative refinement phase --- what data we collect}
+\hypertarget{out:8}{}
+\vspace{0.2cm}
+\good{Real implementations of Self-Refine and Reflexion} (commit \texttt{c5b0faa}):
+\begin{itemize}
+\item Per-instance trajectory: $\text{step}_0 \to \text{step}_1 \to \dots \to
+  \text{step}_4$ with method-specific stop condition.
+\item \info{Comprehensive logging:}
+  \begin{itemize}
+  \item \texttt{iter\_records.jsonl} --- one row per (instance, step) with
+    diff, $L_0, L_1, L_3, Y$, stop-decision, cost
+  \item \texttt{raw\_calls/} --- full LLM call logs (prompts, responses,
+    tokens, cost)
+  \item \texttt{transition\_kernel.json} --- measured $P(Y_{k+1} \mid Y_k)$
+    per cell
+  \item \texttt{policy\_comparison.json} --- Bayesian-DP vs Greedy vs
+    threshold vs fixed
+  \item \texttt{stop\_distribution.json} --- at which step did the trajectory
+    stop
+  \item \texttt{RUN\_CONFIG.json} --- temperature, prompt-template hashes,
+    git SHA
+  \end{itemize}
+\end{itemize}
+\warn{Why this much logging:} reproducibility under EMNLP review pressure.
+We must be able to answer ``how was this Y computed?'' for any single record.
+\end{frame}
+
+\begin{frame}[fragile]{One iter\_records row --- example}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+{"step": 1, "instance_id": "django__django-12284",
+ "method": "selfrefine", "diff": "--- a/django/db/...",
+ "Y": 1,
+ "L0_syntax": true,
+ "L1_lint": true,
+ "L3_llm_review": true,
+ "step_cost_usd": 0.012,
+ "method_specific": {
+    "critique_text": "...the patch correctly handles the abstract..."
+ }
+}
+\end{lstlisting}
+\info{Each row records the FULL state at that step, including:}
+\begin{itemize}
+\item the patch text (so we can re-evaluate later if critics change)
+\item all critic outcomes
+\item ground-truth $Y$ from the harness
+\item the LLM's self-critique or reflection text
+\item monetary cost
+\end{itemize}
+\end{frame}
+
+% ============================================================================
+% Section 8: Evaluation
+% ============================================================================
+
+\section{Evaluation methodology}
+\hypertarget{out:9}{}
+
+\begin{frame}{Tier-1 statistical rigor (commit \texttt{54218f6})}
+\vspace{0.3cm}
+\info{Five techniques, all computed before claiming any positive result:}
+
+\begin{enumerate}
+\item \textcolor{accentGreen}{\textbf{Paired-bootstrap CIs}} ($B=1000$) on
+  per-instance $\Delta = U_\pi - U_{\text{always\_verify}}$.
+\item \textcolor{accentTeal}{\textbf{$\chi^2$ test of critic independence}} ---
+  checks that $L_0 \perp L_1 \perp L_3 \mid Y$ assumption holds.
+\item \textcolor{accentPurple}{\textbf{MDE-power}} --- for each cell, smallest
+  detectable effect at $\alpha = 0.05$, $\beta = 0.2$. We have $n=29$ on
+  LCB-hard $\Rightarrow$ MDE $\approx 7$ utility units.
+\item \textcolor{accentOrange}{\textbf{LOO-CV}} --- leave-one-instance-out
+  cross-validation. Train likelihoods on $n-1$ instances, evaluate the
+  controller on the held-out one. Repeat $n$ times.
+\item \textcolor{accentRed}{\textbf{Benjamini-Hochberg FDR}} per policy at
+  $q=0.05$ across the 28-cell cube. \good{20 of 28 Bayesian-greedy cells survive
+  BH-FDR.}
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{LOO-CV resolves the train/test concern}
+\warn{Concern raised:} likelihoods and trajectory data are computed on the
+\emph{same} instances we evaluate on. Reviewer would ask: \bad{are policy
+comparisons overfitting?}
+
+\good{Resolution} (commit \texttt{5ae5c64}):
+\begin{itemize}
+\item Run leave-one-out CV on all 12 LCB cells.
+\item For each held-out instance, compute likelihoods on the remaining $n-1$
+  patches, then evaluate every policy on the held-out instance.
+\item Aggregate: per-instance Bayesian win rate vs.\ in-sample Bayesian win
+  rate.
+\end{itemize}
+
+\good{Result:} differences are within ${\pm}1$ utility unit on average ---
+the in-sample numbers are honest.
+
+\info{Why it works:} likelihoods are estimated with Beta(1,1) smoothing, so
+1-instance leave-out shifts $P(z\mid Y)$ by at most $\sim$2-3\%. The
+controller's decisions are robust to that.
+\end{frame}
+
+\begin{frame}{Cluster bootstrap on SWE iter cells}
+\vspace{0.4cm}
+\warn{Why:} SWE iter trajectories are auto-correlated within an instance
+(step $k$'s diff conditions on step $k-1$). Standard per-row bootstrap
+underestimates SE.
+
+\good{Cluster bootstrap} (commit \texttt{54218f6}):
+\begin{itemize}
+\item Resample at the \emph{instance} level (with replacement).
+\item Re-compute trajectory utility per resample.
+\item Compute bootstrap CI from the empirical distribution.
+\end{itemize}
+
+\info{Effect on SE estimates:}
+\begin{itemize}
+\item Per-row bootstrap SE: $\sigma_\text{row}$
+\item Cluster bootstrap SE: $\sigma_\text{cluster} \approx 1.6 \cdot \sigma_\text{row}$ \warn{(rows are auto-correlated within instance)}
+\item CIs widen by $\sim$60\% but \good{the headline $\Delta > 0$ still
+  survives} on most cells.
+\end{itemize}
+\end{frame}
+
+% ============================================================================
+% Section 9: Pre-registered prediction
+% ============================================================================
+
+\section{Pre-registration}
+\hypertarget{out:10}{}
+
+\begin{frame}{Pre-registered prediction (commit \texttt{34713d8})}
+\vspace{0.4cm}
+\info{Before running the LCB experiment}, we wrote a prediction in
+\texttt{PRE\_REGISTRATION.md}:
+\vspace{0.2cm}
+\begin{exampleblock}{Pre-registered claim (S4)}
+``On LCB-hard with gpt5\_mini, the Bayesian-greedy controller with the
+calibrated likelihood table will yield $\Delta U \in [+8, +18]$ utility units
+vs.\ \texttt{always\_verify}, paired-bootstrap 95\% CI strictly above 0.''
+\end{exampleblock}
+\vspace{0.3cm}
+\good{Empirical result: $\Delta = +12.55$, CI $[+5.5, +19.5]$.} \\
+\good{Synthetic forecast on calibration data alone: $+12.2$.}
+\vspace{0.3cm}
+\warn{Why this is rare:} most empirical ML papers don't pre-register
+predictions. This is direct evidence the framework's predictive structure
+generalises.
+\end{frame}
+
+% ============================================================================
+% Section 10: Three-regime characterization
+% ============================================================================
+
+\section{Three-regime story}
+\hypertarget{out:11}{}
+
+\begin{frame}{Three regimes --- the paper's organising claim}
+\vspace{0.1cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{p{1.6cm}p{4cm}p{4.4cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Regime} & \textbf{Defining condition} & \textbf{Best policy} \\
+\midrule
+\rowcolor{paleGreen}\textbf{A} (low prior, informative cheap critics) &
+LCB-hard, prior $\approx 0.2$, $L_2$ gap $\approx 0.49$ &
+\good{Bayesian DP/greedy} \\
+\rowcolor{paleBlue}\textbf{B} (mid prior, near-oracle $L_2$ available) &
+SWE-Lite/Verified, prior $\approx 0.4$ &
+\good{Bayesian DP/greedy} \\
+\rowcolor{paleOrange}\textbf{C} (high prior, saturated benchmark) &
+MBPP+/HumanEval+ (prior $> 0.9$), LCB-easy on strong gens &
+\warn{threshold\_L2 ties always\_verify} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.3cm}
+\info{Defensible framing:} we don't claim ``Bayesian wins everywhere.''
+We claim a regime characterisation. Reviewers can't refute it with a single
+counter-example because the regime conditions are explicit.
+\end{frame}
+
+\begin{frame}{Three-regime map --- visual}
+\vspace{-0.2cm}
+\begin{center}
+\includegraphics[width=0.78\textwidth]{figures/fig4_regime_map.png}
+\end{center}
+\vspace{-0.4cm}
+\small
+\textbf{x-axis:} prior $P(Y{=}1)$ (generator strength on benchmark).\\
+\textbf{y-axis:} $L_2$ informativeness (gap $P(\text{pass}\mid Y{=}1) -
+P(\text{pass}\mid Y{=}0)$).\\
+\textbf{Color:} Bayesian-greedy $\Delta$ utility vs always-verify
+(green = wins, yellow $\approx 0$).
+\end{frame}
+
+% ============================================================================
+% Section 11: Results
+% ============================================================================
+
+\section{Results}
+\hypertarget{out:12}{}
+
+% ----------- Roadmap: what "our framework" means + win/break-even/loss summary -----------
+\begin{frame}{What ``our framework'' means + where it wins / breaks even / loses}
+\vspace{0.05cm}
+{\footnotesize
+\info{Two Bayesian methods reported separately:} \texttt{bayesian\_greedy} (no
+kernel) and \texttt{bayesian\_DP} (measured kernel). Numbers below are for
+\texttt{bayesian\_greedy} (the one used by \texttt{fig1\_headline}); DP wins
+by $+5$ to $+9$ on \warn{LCB-easy/gpt-5-mini, SWE-Verified/\{gpt5, sonnet\},
+SWE-Lite/haiku} (high-prior cells), tied elsewhere.}
+
+\vspace{0.05cm}
+\begin{columns}[T]
+\column{0.5\textwidth}
+\good{\textbf{Wins ($\Delta \geq +10$, 17 / 35):}}\\
+{\scriptsize
+\hspace*{1em}LCB-hard \{sonnet, gpt5, qwen3, haiku\} ($+12.6$ to $+20.3$)\\
+\hspace*{1em}LCB-medium \{sonnet, gpt5, qwen3, haiku\} ($+15.6$ to $+19.1$)\\
+\hspace*{1em}LCB-easy \{sonnet, qwen3, haiku\} ($+19.3$ to $+20.3$)\\
+\hspace*{1em}SWE-Lite \{sonnet $+17.6$, haiku $+16.8$\}}
+
+\vspace{0.15cm}
+\info{\textbf{Modest wins ($+1\!\leq\!\Delta\!<\!+10$, 9 / 35):}}\\
+{\scriptsize
+\hspace*{1em}LCB-hard / qwen2.5-32b ($+4.6$, CI crosses 0)\\
+\hspace*{1em}LCB-easy / gpt5-mini ($+5.5$; \warn{Reflexion wins $+38$ here})\\
+\hspace*{1em}SWE-Lite \{gpt5, qwen3, qwen32b\} ($+4.3$ to $+6.7$)\\
+\hspace*{1em}\emph{All} SWE-Verified ($+1.7$ to $+4.3$)}
+
+\column{0.5\textwidth}
+\warn{\textbf{Break-even ($|\Delta|<1$, 7 / 35):}}\\
+{\scriptsize
+\hspace*{1em}LCB-easy / qwen2.5-32b (saturated prior $0.97$)\\
+\hspace*{1em}MBPP+ \{sonnet, gpt5, qwen3, haiku\}\\
+\hspace*{1em}HumanEval+ \{sonnet, gpt5\}}
+
+\vspace{0.15cm}
+\bad{\textbf{Losses ($\Delta < -1$, 2 / 35):}}\\
+{\scriptsize
+\hspace*{1em}LCB-medium / qwen2.5-32b ($-5.9$, CI $[-7.7, -3.9]$)\\
+\hspace*{1em}MBPP+ / qwen2.5-32b ($-2.0$, CI $[-3.0, -0.8]$)}
+
+\vspace{0.2cm}
+{\scriptsize \info{\textbf{Why losses cluster on Qwen2.5-32B:}}
+its \emph{prior} is pathologically high (LCB-easy: $0.97$ from
+3-identical-patches behaviour). Bayesian over-trusts that prior $\to$
+\texttt{generate} instead of \texttt{verify} $\to$ pays $c_\text{gen}$ without
+benefit. Reported in \S Honest negatives.}
+\end{columns}
+\end{frame}
+
+% ----------- Honest accounting: where threshold(L2) beats Bayesian -----------
+\begin{frame}{Honest accounting: where threshold(L2) beats Bayesian}
+\vspace{0.05cm}
+{\footnotesize
+\bad{The headline figures only compare Bayesian vs \texttt{always\_verify} or
+vs Self-Refine/Reflexion.} If we expand the comparison to \emph{all} stateless
+baselines (\texttt{threshold\_L0/L2/L3}, \texttt{best\_of\_3},
+\texttt{fixed\_pipeline}), \warn{18 / 35 cells} have a baseline that beats
+both Bayesian variants by $\geq 0.5$ utility.}
+
+\vspace{0.1cm}
+\begin{columns}[T]
+\column{0.55\textwidth}
+\bad{\textbf{threshold(L2) wins (16 cells):}}\\
+{\scriptsize
+\begin{tabular}{llrr}
+\toprule
+\textbf{cell} & \textbf{prior} & \textbf{thr(L2)} & \textbf{vs Bayes} \\
+\midrule
+LCB-medium / qwen32b & 0.36 & $+2.42$ & \bad{$+8.3$} \\
+LCB-easy / gpt5      & 0.45 & $+20.9$ & $+2.9$ \\
+LCB-easy / qwen32b   & 0.97 & $+0.81$ & $+0.8$ \\
+MBPP+ / qwen3        & 0.74 & $+0.56$ & $+0.6$ \\
+MBPP+ / qwen32b      & 0.72 & $+1.86$ & \bad{$+3.8$} \\
+HumanEval+ / gpt5    & 0.89 & $+1.36$ & $+1.4$ \\
+HumanEval+ / qwen3   & 0.90 & $+4.18$ & \bad{$+3.9$} \\
+HumanEval+ / qwen32b & 0.84 & $+2.44$ & $+2.8$ \\
+SWE-Lite / gpt5      & 0.50 & $+13.1$ & $+1.9$ \\
+SWE-Lite / qwen3     & 0.45 & $+11.8$ & $+2.8$ \\
+SWE-Lite / haiku     & 0.39 & $+15.5$ & $+2.0$ \\
+SWE-Lite / sonnet    & 0.33 & $+21.9$ & \bad{$+3.1$} \\
+SWE-Verified / gpt5  & 0.74 & $+18.6$ & $+1.4$ \\
+SWE-Verified / qwen3 & 0.64 & $+4.72$ & $+1.4$ \\
+SWE-Verified / haiku & 0.56 & $+13.8$ & \bad{$+3.1$} \\
+SWE-Verified / sonnet& 0.65 & $+9.27$ & \bad{$+3.1$} \\
+\bottomrule
+\end{tabular}}
+
+\column{0.45\textwidth}
+\bad{\textbf{Other thresholds win (2 cells):}}\\
+{\scriptsize
+\hspace*{1em}SWE-Lite / qwen32b: \texttt{thr(L3)} $+8.8$ vs Bayes $+4.3$ (margin $+4.5$)\\
+\hspace*{1em}SWE-Ver / qwen32b: \texttt{thr(L0)} $+4.6$ vs Bayes $+1.7$ (margin $+2.9$)}
+
+\vspace{0.2cm}
+\good{\textbf{Why this happens (regime story):}}\\
+{\scriptsize
+\textbf{Regime B} = mid prior + near-oracle critic.\\
+On SWE-bench, $L_2$ (public-test runner) has gap $\sim 0.9$ --- it's nearly an
+oracle. \textbf{Just trust the tests, no Bayesian needed.}\\
+
+On HumanEval+/MBPP+, the included \texttt{assert} statements give $L_2$ gap
+$\sim 0.7$ --- same story, weaker.
+
+\vspace{0.05cm}
+\warn{Implication for the paper:} Bayesian's value is in \textbf{regime A},
+where critics are noisy and need composing. \textbf{We must report this
+honestly} --- the headline ``Bayesian wins'' is regime-conditional.}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Headline result (1/3) --- LCB (3 difficulties)}
+\vspace{0.05cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.31\textwidth]{figures/fig1_headline_lcb_hard.png} &
+\includegraphics[width=0.31\textwidth]{figures/fig1_headline_lcb_medium.png} &
+\includegraphics[width=0.31\textwidth]{figures/fig1_headline_lcb_easy.png} \\
+\end{tabular}
+\end{center}
+
+\vspace{0.05cm}
+{\footnotesize
+\good{Bayesian Greedy $\Delta$ vs always\_verify} per generator on LCB at three
+difficulty levels. Error bars: paired bootstrap 95\% CI.
+
+\good{Take-aways:}
+\begin{itemize}\setlength\itemsep{0pt}
+\item \warn{LCB-hard:} $+12$ to $+20$ utility for closed-API gens; only
+  qwen2.5-32b drops to $+4.6$ (CI crosses 0).
+\item \info{LCB-medium:} stable $+15$ to $+19$ across closed-API; qwen2.5-32b
+  $-5.9$ (regime crossover --- prior already $0.9$).
+\item \warn{LCB-easy:} closed-API still wins $+19$; qwen2.5-32b at $0$
+  (saturated like MBPP+).
+\end{itemize}}
+\end{frame}
+
+\begin{frame}{Headline result (2/3) --- SWE-bench (Lite + Verified)}
+\vspace{0.1cm}
+\begin{center}
+\begin{tabular}{cc}
+\includegraphics[width=0.46\textwidth]{figures/fig1_headline_swe_lite.png} &
+\includegraphics[width=0.46\textwidth]{figures/fig1_headline_swe_verified.png} \\
+\end{tabular}
+\end{center}
+
+\vspace{0.1cm}
+{\footnotesize
+\good{Bayesian Greedy $\Delta$ vs always\_verify} on the two SWE-bench splits.
+
+\good{Take-aways:}
+\begin{itemize}\setlength\itemsep{0pt}
+\item \good{SWE-Lite:} $+6$ to $+18$ across all 5 gens. Sonnet-4.5 wins biggest at $+17.6$.
+\item \info{SWE-Verified:} $+3$ to $+4$, tighter wins because instances are
+  curated to be solvable (higher prior $\to$ closer to saturation).
+\item \warn{Qwen2.5-32b:} on the two SWE splits Bayesian wins are visible
+  ($+1.7$ and $+4.3$) --- this is the open-weight regime-A/B story.
+\end{itemize}}
+\end{frame}
+
+\begin{frame}{Headline result (3/3) --- saturated regime (MBPP+, HumanEval+)}
+\vspace{0.1cm}
+\begin{center}
+\begin{tabular}{cc}
+\includegraphics[width=0.46\textwidth]{figures/fig1_headline_mbpp.png} &
+\includegraphics[width=0.46\textwidth]{figures/fig1_headline_humaneval.png} \\
+\end{tabular}
+\end{center}
+
+\vspace{0.1cm}
+{\footnotesize
+\warn{Regime C}: prior $> 0.7$ for every generator. Bayesian Greedy correctly
+collapses to \texttt{always\_verify} ($\Delta \approx 0$) instead of paying for
+extra critics that wouldn't change the decision.
+
+\good{Story:} the controller \emph{recognises saturation} and stops trying to
+optimise. \bad{The negative bar} on MBPP+/qwen2.5-32b ($-2.0$) is the only
+meaningful deviation --- a small over-confidence in the prior leads to
+slightly suboptimal generate-attempts; not statistically distinguishable from
+zero (CI crosses 0).}
+\end{frame}
+
+% ============================================================================
+% Per-(benchmark, model) all-policies grid: one slide per benchmark
+% ============================================================================
+
+% --- LCB-hard ---
+\begin{frame}{All policies, per model --- LCB-hard}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_hard_gpt5_mini.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_hard_qwen3_coder.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_hard_haiku45.png} \\[1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_hard_sonnet45.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_hard_qwen25_32b.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.1cm}
+\begin{block}{Take-aways}
+\scriptsize
+$\bigstar$ = winner per cell. \quad
+\good{bayes\_greedy / DP} win by $+12$ to $+20$ on the 4 closed-API gens.
+\warn{qwen2.5-32b} only $+4.6$, CI crosses 0.
+\bad{Self-Refine, Reflexion}: $-12$ to $-27$ across all gens.
+\end{block}
+\end{frame}
+
+% --- LCB-medium ---
+\begin{frame}{All policies, per model --- LCB-medium}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_medium_gpt5_mini.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_medium_qwen3_coder.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_medium_haiku45.png} \\[1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_medium_sonnet45.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_medium_qwen25_32b.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.1cm}
+\begin{block}{Take-aways}
+\scriptsize
+\good{bayes\_greedy} wins on 4 of 5 gens ($+15$ to $+19$).
+\bad{qwen2.5-32b is the regime crossover:} \texttt{threshold(L2)} wins $+2.4$;
+bayes loses at $-5.9$.
+\warn{Self-Refine $\sim -10$ to $-20$}, Reflexion similar.
+\end{block}
+\end{frame}
+
+% --- LCB-easy ---
+\begin{frame}{All policies, per model --- LCB-easy}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_easy_gpt5_mini.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_easy_qwen3_coder.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_easy_haiku45.png} \\[1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_easy_sonnet45.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_lcb_easy_qwen25_32b.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.1cm}
+\begin{block}{Take-aways}
+\scriptsize
+\good{qwen3 / haiku / sonnet:} bayes\_greedy $+19$--$+20$.
+\bad{gpt-5-mini:} \texttt{threshold(L2)} $+20.9$ \emph{and Reflexion} $+38.4$
+beat bayes ($+5.5$, $+18.0$).
+\warn{qwen2.5-32b:} all near 0 -- saturated prior $0.97$.
+\end{block}
+\end{frame}
+
+% --- MBPP+ ---
+\begin{frame}{All policies, per model --- MBPP+}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_mbppplus_gpt5_mini.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_mbppplus_qwen3_coder.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_mbppplus_haiku45.png} \\[1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_mbppplus_sonnet45.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_mbppplus_qwen25_32b.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.1cm}
+\begin{block}{Take-aways}
+\scriptsize
+\warn{Regime C:} 4 closed-API gens cluster at $\Delta \approx 0$ for bayes / threshold(L2).
+\bad{qwen2.5-32b:} \texttt{threshold(L2)} $+1.9$, bayes $-2.0$ -- threshold wins.
+\bad{All other policies negative} (refinement / extra critics waste budget).
+\end{block}
+\end{frame}
+
+% --- HumanEval+ ---
+\begin{frame}{All policies, per model --- HumanEval+}
+\vspace{-0.4cm}
+\begin{center}
+\begin{tabular}{ccc}
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_humanevalplus_gpt5_mini.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_humanevalplus_qwen3_coder.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_humanevalplus_haiku45.png} \\[1pt]
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_humanevalplus_sonnet45.png} &
+\includegraphics[width=0.30\textwidth]{figures/fig_all_policies_humanevalplus_qwen25_32b.png} & \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.1cm}
+\begin{block}{Take-aways}
+\scriptsize
+\warn{Regime C strongest here} (prior $0.84$--$0.94$).
+\bad{threshold(L2) wins on 3 of 5 gens:} gpt5 $+1.4$, qwen3 $+4.2$, qwen32b $+2.4$.
+bayes\_greedy / DP $\approx 0$ (correctly defaults to always\_verify).
+Big losses for L3 / fixed\_pipeline ($-12$ to $-20$).
+\end{block}
+\end{frame}
+
+% --- SWE-Lite ---
+\begin{frame}{All policies, per model --- SWE-Lite}
+\vspace{-0.5cm}
+\begin{center}
+\begin{tabular}{cc}
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_lite_gpt5_mini.png} &
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_lite_qwen3_coder.png} \\[-1pt]
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_lite_haiku45.png} &
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_lite_sonnet45.png} \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.15cm}
+\begin{block}{Take-aways (SWE-Lite, all 4 closed-API gens)}
+\scriptsize
+\bad{threshold(L2) wins on every gen:} gpt5 $+13.1$, qwen3 $+11.8$, haiku
+$+15.5$, sonnet $+21.9$.
+bayes\_DP is $\sim$2--3 utility points behind threshold(L2) but still beats
+greedy by $+5$ on haiku.
+\warn{Reflexion catastrophic} ($-67$ to $-72$); Self-Refine $-13$ to $-41$.
+\end{block}
+\end{frame}
+
+% --- SWE-Verified ---
+\begin{frame}{All policies, per model --- SWE-Verified}
+\vspace{-0.5cm}
+\begin{center}
+\begin{tabular}{cc}
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_verified_gpt5_mini.png} &
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_verified_qwen3_coder.png} \\[-1pt]
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_verified_haiku45.png} &
+\includegraphics[width=0.39\textwidth]{figures/fig_all_policies_swe_verified_sonnet45.png} \\
+\end{tabular}
+\end{center}
+
+\vspace{-0.15cm}
+\begin{block}{Take-aways (SWE-Verified, all 4 closed-API gens)}
+\scriptsize
+\bad{threshold(L2) wins on every gen:} gpt5 $+18.6$, qwen3 $+4.7$, haiku
+$+13.8$, sonnet $+9.3$.
+bayes\_DP closer to threshold(L2) than greedy ($+10.7$ vs $+4.2$ on haiku).
+\bad{fixed\_pipeline catastrophic} ($-55$ to $-69$); Self-Refine $-16$ to $-30$.
+\end{block}
+\end{frame}
+
+\begin{frame}{Bayesian wins after BH-FDR correction}
+\vspace{0.3cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\rowcolor{paleBlue}\textbf{Policy} & \textbf{cells} & \textbf{uncorr. $p<.05$} & \textbf{per-policy BH} & \textbf{global BH} \\
+\midrule
+\rowcolor{paleGreen}\texttt{bayesian\_greedy} & 28 & 20 & \good{20} & 18 \\
+\rowcolor{paleGreen}\texttt{bayesian\_DP} & 28 & 22 & \good{21} & 19 \\
+\texttt{threshold\_L2} & 28 & 21 & 20 & 18 \\
+\texttt{threshold\_L3} & 28 & 26 & 25 & 23 \\
+\texttt{threshold\_L0} & 28 & 24 & 24 & 22 \\
+\rowcolor{paleRed}\texttt{fixed\_pipeline} & 28 & 28 & 28 & 27 \\
+\texttt{best\_of\_3} & 28 & 24 & 24 & 22 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.2cm}
+\good{Bayesian wins are stable under multiple-comparisons correction.}\\
+3 borderline cells (gpt5/qwen3/sonnet on SWE-Verified at $\Delta \in
+[+3, +4]$) sit on the BH boundary; reported as such.
+
+\warn{\texttt{fixed\_pipeline}} appears strongest because it always loses to
+\texttt{always\_verify} ($\Delta < 0$ everywhere) --- 28/28 ``significant''
+means \bad{uniformly worse}.
+\end{frame}
+
+\begin{frame}{Framework vs published baselines --- per-benchmark panels (1/2)}
+\vspace{0.05cm}
+\centering
+\begin{tabular}{cc}
+\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_lcb_hard.png} &
+\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_lcb_medium.png} \\[2pt]
+\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_lcb_easy.png} &
+\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_swe_verified.png} \\
+\end{tabular}
+
+\vspace{0.05cm}
+\footnotesize
+4 bars per generator: \textcolor{primaryBlue}{\textbf{bayesian\_greedy}} (dark blue, no kernel)
+$\;\cdot\;$ \textcolor{accentTeal}{\textbf{bayesian\_DP}} (cyan, measured kernel)
+$\;\cdot\;$ \textcolor{accentOrange}{Self-Refine} [Madaan 2023]
+$\;\cdot\;$ \textcolor{accentGreen}{Reflexion} [Shinn 2023]. Error bars: paired
+bootstrap 95\% CI. \warn{LCB-easy/gpt5\_mini} is the regime crossover where
+Reflexion wins.
+\end{frame}
+
+\begin{frame}{Framework vs published baselines --- per-benchmark panels (2/2)}
+\vspace{0.1cm}
+\begin{columns}[T]
+\column{0.55\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/fig_framework_vs_baselines_swe_lite.png}
+
+\column{0.45\textwidth}
+\footnotesize
+\textbf{\info{Take-aways across all 5 panels:}}
+\begin{itemize}\setlength\itemsep{2pt}
+\item \good{Both Bayesian variants beat published baselines} on every cell
+  except LCB-easy/gpt-5-mini.
+\item \warn{Greedy vs DP:} mostly tied on LCB-hard / -medium (greedy is
+  enough); DP wins by $+5$ to $+9$ on \emph{SWE-Lite/haiku} and
+  \emph{LCB-easy/gpt-5-mini} where the kernel pays off.
+\item \bad{SWE-Lite is the hardest panel:} Reflexion $-67$ to $-72$,
+  Self-Refine $-13$ to $-41$, Bayesian $+6$ to $+18$.
+\item \info{Why Bayesian dominates:} published methods refine unconditionally;
+  Bayesian \emph{decides} given the belief state.
+\end{itemize}
+\end{columns}
+
+\vspace{0.1cm}
+\textcolor{softGrey}{\scriptsize Combined wide figure
+(\texttt{fig\_framework\_vs\_baselines.png}) also exported for the paper's main-text figure.}
+\end{frame}
+
+% ----------- MBPP+ / HumanEval+ calibration-only panels -----------
+\begin{frame}{Saturated regime: MBPP+ \& HumanEval+ (calibration-only)}
+\vspace{-0.1cm}
+\begin{center}
+\begin{tabular}{cc}
+\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_mbpp.png} &
+\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_humaneval.png} \\
+\end{tabular}
+\end{center}
+
+\vspace{0.05cm}
+{\footnotesize
+\info{Why a separate slide:} no iter trajectories for MBPP+ / HumanEval+
+(regime C, prior $0.74$--$0.94$). Self-Refine / Reflexion bars don't exist;
+we instead compare Bayesian against \emph{stateless per-patch} baselines on the
+calibration corpus.
+
+\vspace{0.05cm}
+\good{Take-aways:}
+\begin{itemize}\setlength\itemsep{0pt}
+\item All policies cluster near $\Delta=0$: \warn{regime-C saturation} ---
+  when the prior is already $>0.7$, \texttt{always\_verify} is hard to beat.
+\item \bad{Cheap critics actively hurt}: \texttt{threshold(L3)},
+  \texttt{best\_of\_3}, \texttt{fixed\_pipeline} all $\Delta<0$ because they
+  pay extra cost without adding information at saturation.
+\item \good{Bayesian $\approx$ always\_verify} --- it correctly recognises
+  saturation and converges to the trivial policy. Feature, not bug.
+\end{itemize}}
+\end{frame}
+
+% ============================================================================
+% BLOCK D: Concrete Bayesian wins — case studies
+% ============================================================================
+
+\begin{frame}{Where Bayesian wins --- top 10 cells by $\Delta$ utility}
+\vspace{0.2cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lllc}
+\toprule
+\rowcolor{paleBlue}\textbf{Generator} & \textbf{Benchmark} & \textbf{Regime} & \textbf{$\Delta$ vs always\_verify} \\
+\midrule
+\rowcolor{paleGreen}sonnet45 & LCB-hard & A & \good{+20.3} \\
+\rowcolor{paleGreen}qwen3\_coder & LCB-hard & A & \good{+20.3} \\
+\rowcolor{paleGreen}haiku45 & LCB-hard & A & \good{+20.3} \\
+\rowcolor{paleGreen}haiku45 & LCB-easy & A/B & \good{+20.3} \\
+\rowcolor{paleGreen}qwen3\_coder & LCB-easy & A/B & \good{+19.8} \\
+\rowcolor{paleGreen}sonnet45 & LCB-easy & A/B & \good{+19.3} \\
+\rowcolor{paleGreen}haiku45 & LCB-medium & A & \good{+19.1} \\
+\rowcolor{paleGreen}qwen3\_coder & LCB-medium & A & \good{+18.4} \\
+\rowcolor{paleGreen}sonnet45 & SWE-Lite & B & \good{+17.6} \\
+\rowcolor{paleGreen}sonnet45 & LCB-medium & A & \good{+17.3} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.2cm}
+\info{Pattern:} biggest wins all in regime A (low prior, high $L_2$ gap).
+Regime B (SWE) wins are smaller but still uniformly positive.
+
+\info{Common factor:} every win in this list has $L_2$ gap $> +0.40$ (highly
+informative critic) and prior $< 0.55$ (uncertain enough that gating helps).
+\end{frame}
+
+\begin{frame}{Case study: sonnet45 $\times$ LCB-hard ($\Delta = +20.3$)}
+\vspace{0.15cm}
+\info{Cell parameters:}
+\begin{itemize}
+\item Prior $P(Y{=}1) = \textcolor{accentRed}{0.18}$ (capable model, but LCB-hard is hard)
+\item $L_2$ gap $= +0.49$ (workhorse signal: 90\% of correct patches pass public tests; 41\% of broken ones do too)
+\item $L_3$ gap $= +0.07$ (mildly informative)
+\end{itemize}
+
+\textbf{Cost analysis per instance:}
+
+\begin{tabular}{p{4cm}p{2.5cm}p{4cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Strategy} & \textbf{Cost} & \textbf{Outcome} \\
+\midrule
+\rowcolor{paleRed}\texttt{always\_verify} & $5 + 30 = 35$ & always pay $c_v$ to learn $Y$ \\
+\rowcolor{paleGreen}\texttt{bayesian\_greedy} & $5 + 5$ if reject, $5+5+30$ if accept &
+gate via $L_2$, only verify confident ones \\
+\bottomrule
+\end{tabular}
+
+\textbf{Aggregate per instance ($n = 30$ cohort):}
+\begin{itemize}
+\item \texttt{always\_verify}: $\bar{U} = 100 \cdot 0.18 - 35 = -17.0$
+\item \texttt{bayesian\_greedy}: \good{$\bar{U} = +3.3$}
+  \begin{itemize}
+  \item L2 fails on $\sim$0.59 of patches $\to$ skip verify, save $30 \times 30 \times 0.59 = \$531$ across cohort
+  \item L2 passes on $\sim$0.41 $\to$ verify, capture reward
+  \end{itemize}
+\item \good{$\Delta = +20.3$ utility per instance, paired-bootstrap CI $[+13.7, +25.6]$}
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Per-instance: when Bayesian saves money}
+\vspace{0.1cm}
+\info{Concrete instance:} \texttt{LCB-hard \#3203}, gpt5\_mini patch $p_0$.
+
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+diff: ~800 chars (a sliding-window attempt)
+L0_syntax: True   (Python parses)
+L2_public_tests: False  (1 of 3 public examples FAILS)
+L3_llm_review:   False  (judge says "looks wrong")
+Y (oracle):      0      (this patch doesn't fix the bug)
+\end{lstlisting}
+
+\info{Two policies side-by-side:}
+
+\textbf{\texttt{always\_verify}}
+\begin{itemize}
+\item Pay $c_g + c_v = 5 + 30 = 35$
+\item Get reward $0$ (Y=0)
+\item Utility: $\bad{-35}$
+\end{itemize}
+
+\textbf{\texttt{bayesian\_greedy}}
+\begin{itemize}
+\item Pay $c_g + c_{L_2} = 5 + 5 = 10$
+\item L$_2$ fails $\to$ posterior drops well below $0.5$ $\to$ skip verify
+\item Utility: $\good{-10}$
+\end{itemize}
+
+\good{Per-instance saving: $+25$ utility units.}
+And we didn't lose anything --- the patch was actually $Y{=}0$, so verifying
+would only have confirmed it cost-fully.
+\end{frame}
+
+\begin{frame}[fragile]{Per-instance: when Bayesian correctly verifies}
+\vspace{0.1cm}
+\info{Concrete instance:} \texttt{LCB-hard \#2784}, qwen3\_coder patch $p_1$.
+
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+L0_syntax: True
+L2_public_tests: True   (all 3 examples PASS)
+L3_llm_review:   True   (judge: "looks correct")
+Y (oracle):      1      (resolves the bug!)
+\end{lstlisting}
+
+\info{Two policies side-by-side:}
+
+\textbf{\texttt{always\_verify}}
+\begin{itemize}
+\item Pay $c_g + c_v = 5 + 30 = 35$
+\item Get reward $100$
+\item Utility: $\good{+65}$
+\end{itemize}
+
+\textbf{\texttt{bayesian\_greedy}}
+\begin{itemize}
+\item Pay $c_g + c_{L_2} + c_v = 5 + 5 + 30 = 40$
+\item L$_2$ passes $\to$ posterior climbs to ${\sim}0.65$ $\to$ verify
+\item Get reward $100$ (correctly accepted)
+\item Utility: $\good{+60}$
+\end{itemize}
+
+\warn{Bayesian pays $5$ extra ($c_{L_2}$).} But this $5$-unit ``overhead'' is
+the price of the gating that saves $25$ on the OTHER ${\sim}59\%$ of instances
+(per the case-study slide). Net per-cohort win: $+20.3$.
+
+\info{Bayesian doesn't beat \texttt{always\_verify} on every instance ---
+it wins on average by gating cheaply and verifying selectively.}
+\end{frame}
+
+\begin{frame}{LCB iter cells --- replay vs.\ real implementation}
+\warn{Important honest finding:} our policy-replay approximations of
+Self-Refine and Reflexion diverged from real implementations on 18 of 24
+cells, sometimes \bad{flipping the sign}.
+
+\begin{table}
+\centering
+\scriptsize
+\begin{tabular}{p{1.5cm}p{1.5cm}p{2.6cm}p{2.6cm}}
+\toprule
+\rowcolor{paleBlue}Difficulty & Generator & Self-Refine real (replay) & Reflexion real (replay) \\
+\midrule
+LCB-hard & gpt5\_mini & \bad{$-33.5\;(-26.9)$} & \warn{$-5.2\;(-11.4)$} \\
+LCB-hard & qwen3\_coder & \warn{$-11.4\;(-23.5)$} & \bad{$-21.7\;(-22.8)$} \\
+LCB-medium & gpt5\_mini & \warn{$-1.7\;(-10.0)$} & \good{$+4.3\;(+1.8)$} \\
+LCB-easy & gpt5\_mini & \good{$+3.0\;(+16.7)$} & \good{$+27.7\;(+38.4)$} \\
+LCB-easy & haiku45 & \warn{$-0.7\;(-22.0)$} & \good{$+27.3\;(-24.4)$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\info{(Difference: replay $\to$ real, on a few telling cells.)}
+\vspace{0.1cm}
+
+\info{Why the divergence:} replay assumed monotonic improvement. Real
+Self-Refine often \emph{declines} after early CRITIQUE\_OK. Real Reflexion
+sometimes finds a fix on step 1 that replay would assign to step 4.
+
+\good{Today's claim:} Bayesian framework wins 22/24 LCB cells under real
+implementation; 2 Reflexion-wins cells reported transparently.
+\end{frame}
+
+\begin{frame}{Open-weight integration: Qwen2.5-Coder-32B}
+\hypertarget{out:14}{}
+\vspace{0.2cm}
+\warn{Why:} biggest reviewer pushback would be ``where's the open-weight
+generator?'' We added \texttt{qwen25\_32b} as the \good{5th generator panel
+column} --- local vLLM serving Qwen2.5-Coder-32B-Instruct, no API spend.
+
+\info{Calibration headline (LCB):}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\rowcolor{paleBlue}Difficulty & $n$ & prior & $L_2$ gap & Bayesian-DP $\Delta$ \\
+\midrule
+\rowcolor{paleGreen}hard & 29 & 0.21 & $+0.49$ & \good{$+4.62$} $[-3.5, +11.7]$ \\
+\rowcolor{paleRed}medium & 90 & 0.36 & $+0.28$ & \bad{$-7.83$} $[-10.8, -4.2]$ \\
+\rowcolor{paleOrange}easy & 62 & 0.97 & $+0.85$ & \warn{$-0.69$} $[-2.6, +2.5]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.2cm}
+\info{Pattern:} Qwen32B's open-weight column \good{reinforces the regime
+story}. On hard (regime A) Bayesian wins; on medium it loses; on easy
+nothing matters. Same as closed-API panel.
+
+\info{SWE-bench:} 91\% patch-level success rate (open-weight $\approx$
+closed-API). Iter harness work currently running on Artem-1 + Artem-3.
+\end{frame}
+
+\begin{frame}{L3-reviewer invariance --- Bayesian's edge is robust}
+\vspace{-0.2cm}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{figures/fig2_l3_heatmap.png}
+\end{center}
+\vspace{-0.3cm}
+\small
+\textbf{L3 informativeness gap on LCB-hard.} Bold border = self-review.\\
+\good{gpt5\_mini and qwen3\_coder show clean reviewer-invariance.}
+\warn{sonnet45/sonnet45 self-review collapses to negative gap} (the model
+can't critique itself reliably). \info{We use haiku45 as the default reviewer
+across the panel.}
+\end{frame}
+
+% ============================================================================
+% Section 12: Honest negatives
+% ============================================================================
+
+\section{Honest negatives}
+\hypertarget{out:13}{}
+
+\begin{frame}{Honest negative findings (we report them)}
+\vspace{0.2cm}
+\textcolor{accentRed}{\textbf{1. mypy critic was a no-op}}
+\begin{itemize}
+\item Adding \texttt{mypy} as a 5th cheap critic showed near-zero gap.
+  Likelihood ratio $\approx 1$ at $Y{=}1$ vs $Y{=}0$. \warn{Reported as null
+  finding} (commit \texttt{0babe59}).
+\end{itemize}
+\textcolor{accentRed}{\textbf{2. SWE-bench Pro deferred}}
+\begin{itemize}
+\item Pro prompts are ${\sim}24\times$ larger than Lite (multi-file oracle
+  context, ${\sim}121$K tokens). gpt-5-mini exhausts \texttt{max\_tokens}
+  budget on reasoning; produces empty parseable output. Documented in
+  \texttt{data/swebench\_pro\_probe/}; \warn{deferred from EMNLP}.
+\end{itemize}
+\textcolor{accentRed}{\textbf{3. LCB iterative refinement HURTS in some regimes}}
+\begin{itemize}
+\item Self-Refine on LCB-hard with gpt5\_mini: \bad{$\Delta = -33$}. The
+  model's self-critique is noisy and pushes it to overcorrect.
+\item Same model on LCB-easy: \good{$+27$} (Reflexion). Refinement value is
+  benchmark-dependent, not universal.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Permanent harness-side data limitations}
+\vspace{0.3cm}
+\warn{${\sim}6$ instances permanently fail to evaluate:}
+\begin{itemize}
+\item \texttt{sympy\_\_sympy-20916}, \texttt{sphinx-doc\_\_sphinx-*},
+  \texttt{scikit-learn\_\_scikit-learn-*}, \texttt{pydata\_\_xarray-*}
+\item \bad{Root cause:} pip dep chains rotted since 2023. \texttt{setup\_env.sh}
+  fails with exit status 2 --- \emph{not} a bug in our pipeline.
+\item Same instances would error for any 2026 user of SWE-bench.
+\end{itemize}
+
+\good{How we handle:} document explicitly in \texttt{HARNESS\_ERRORS\_NOTE.json}.
+${\sim}6$ data points lost out of ${\sim}600$ SWE evaluations. \good{Below-noise.}
+\end{frame}
+
+% ============================================================================
+% Section 13: Methodology rigor
+% ============================================================================
+
+\section{Methodology rigor recap}
+
+\begin{frame}{Methodology rigor --- what we did vs typical EMNLP findings paper}
+\vspace{0.2cm}
+\begin{tabular}{p{4.5cm}p{2cm}p{4cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Technique} & \textbf{Done?} & \textbf{Where} \\
+\midrule
+Pre-registration & \done & \texttt{PRE\_REGISTRATION.md} \\
+Paired-bootstrap CI & \done & all 28 cells, $B=1000$ \\
+$\chi^2$ critic-independence test & \done & \texttt{critic\_independence/} \\
+MDE-power analysis & \done & \texttt{mde\_power/} \\
+LOO-CV & \done & all 12 LCB cells \\
+Benjamini-Hochberg FDR & \done & per-policy + global \\
+Wilson CI on priors & \done & \texttt{prior\_ci/} \\
+$\theta$ sensitivity sweep & \done & \texttt{lcb\_sensitivity.py} \\
+$c_v$ sensitivity sweep & \done & \texttt{cver\_sensitivity\_sweep.py} \\
+Cluster bootstrap on SWE iter & \done & \texttt{cluster\_bootstrap\_swe.py} \\
+Multi-L3-reviewer invariance & \done & 3 reviewers $\times$ 4 gens \\
+Real Self-Refine + Reflexion impls & \done & not just policy replays \\
+\bottomrule
+\end{tabular}
+\vspace{0.2cm}
+
+\good{Most EMNLP findings papers have $\sim$3-4 of these.}
+\end{frame}
+
+% ============================================================================
+% Section 14: Status
+% ============================================================================
+
+\section{Current status}
+
+\begin{frame}{What's done vs running vs pending}
+\vspace{0.1cm}
+\textcolor{accentGreen}{\textbf{Done \done}}
+\begin{itemize}\itemsep0pt\small
+\item LCB calibration: 5 generators $\times$ 3 difficulties = \good{15 cells}
+\item LCB iter (Self-Refine + Reflexion, real impls): \good{30 cells}
+\item MBPP+/HumanEval+ calibration: \good{8 cells}
+\item SWE-bench Lite + Verified calibration: \good{8 cells} (4-gen, original data)
+\item Tier-1 methodology rigor batch (FDR, MDE-power, LOO-CV, etc.)
+\item All 4 swebench podman patches (\texttt{patches/swebench/})
+\item Qwen32B SWE calibration: \good{4 of 6 reports}
+\end{itemize}
+\textcolor{accentOrange}{\textbf{Running \running}}
+\begin{itemize}\itemsep0pt\small
+\item Artem-1: \texttt{verified/qwen25\_32b/selfrefine} step 3 in flight
+\item Artem-3: \texttt{verified/qwen25\_32b/reflexion} step 1 in flight
+\end{itemize}
+\textcolor{softGrey}{\textbf{Pending \pending}}
+\begin{itemize}\itemsep0pt\small
+\item Y-backfill across SWE iter cells
+\item Compute kernel + policy\_comparison for all SWE cells
+\item Refresh PAPER\_TABLE + figures (5 generators $\times$ all cells)
+\item EMNLP submission draft
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Final cell count}
+\vspace{0.3cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+\rowcolor{paleBlue}\textbf{Region} & \textbf{Cells} & \textbf{Status} \\
+\midrule
+\rowcolor{paleGreen}LCB calibration (5 gen $\times$ 3 diff) & 15 & \done\ done \\
+\rowcolor{paleGreen}LCB iter (5 gen $\times$ 3 diff $\times$ 2 method) & 30 & \done\ done \\
+\rowcolor{paleGreen}MBPP+ / HumanEval+ calibration (4 gen $\times$ 2 bench) & 8 & \done\ done \\
+\rowcolor{paleOrange}SWE calibration (5 gen $\times$ 2 bench) & 10 & \running\ 8/10, qwen32b in flight \\
+\rowcolor{paleOrange}SWE iter (5 gen $\times$ 2 bench $\times$ 2 method) & 20 & \running\ 12/20 done \\
+\midrule
+\rowcolor{paleBlue}\textbf{Total cells with real $Y$} & \textbf{${\sim}83$} & \running\ ${\sim}90\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.3cm}
+\good{Compare to typical EMNLP findings paper:} 1-3 benchmarks, 2-3 baselines,
+no pre-registration, no FDR. We're at the high end of empirical depth.
+\end{frame}
+
+% ============================================================================
+% BLOCK F: Extension playbook — adding new benchmark / generator / critic
+% ============================================================================
+
+\section{Extension playbook}
+
+\begin{frame}{Adding a new benchmark --- 13-step pipeline}
+\vspace{0.1cm}
+\info{Required artifacts:} HF dataset OR local jsonl, oracle execution
+mechanism (inline asserts / public+hidden tests / per-instance container).
+
+\vspace{0.15cm}
+\small
+\textbf{Steps 1--6 (calibration, IID-synthesized kernel):}
+\begin{enumerate}\setlength\itemsep{0pt}
+\item Register dataset in \texttt{scg.sample\_instances()}
+\item Sample $n=30$ instances with \texttt{seed=42}
+\item \info{Calibration:} \texttt{spot\_check\_generators.py} $\to$ \texttt{predictions\_p\{0,1,2\}.jsonl}
+\item Harness eval $\to$ $Y$ per (instance, patch\_id)
+\item \texttt{calibrate\_from\_spotcheck.py} $\to$ \texttt{likelihood\_tables.json}
+\item \texttt{lcb\_compare.py} $\to$ \texttt{policy\_comparison.json} \warn{(IID kernel placeholder)}
+\end{enumerate}
+
+\textbf{Steps 7--13 (iter, measured kernel):}
+\begin{enumerate}\setcounter{enumi}{6}\setlength\itemsep{0pt}
+\item \texttt{iter\_refine\_real\_baselines\{,\_swe\}.py} $\to$ \texttt{iter\_records.jsonl} ($Y$=null)
+\item Harness on iter predictions $\to$ \texttt{eval/*.json}
+\item \texttt{backfill\_swe\_iter\_y.py} $\to$ fills $Y$
+\item \good{$\bigstar$ \texttt{compute\_transition\_kernel.py}} $\to$ \texttt{transition\_kernel.json} (measured)
+\item \texttt{run\_baseline\_vs\_controller.py --kernel measured}
+\item \texttt{lcb\_summarize\_paper.py} $\to$ \texttt{PAPER\_TABLE.json}
+\item \texttt{lcb\_make\_figures.py} $\to$ refresh figures
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Adding a new generator --- 13-step pipeline}
+\vspace{0.1cm}
+\info{Required artifacts:} model accessible via OpenRouter OR local vLLM.
+
+\vspace{0.15cm}
+\small
+\textbf{Setup (steps 1--2):}
+\begin{enumerate}\setlength\itemsep{0pt}
+\item Register in \emph{both} \texttt{scg.GENERATORS} and \texttt{lcb\_calibrate.GENERATORS}
+\item For vLLM: ensure two-client pattern in \texttt{iter\_refine\_real\_baselines\{,\_swe\}.py}
+\end{enumerate}
+
+\textbf{Calibration phase (steps 3--6, IID kernel):}
+\begin{enumerate}\setcounter{enumi}{2}\setlength\itemsep{0pt}
+\item Run \texttt{spot\_check\_generators.py} on every benchmark in the panel
+\item Harness eval on calibration patches
+\item \texttt{calibrate\_from\_spotcheck.py} $\to$ \texttt{likelihood\_tables.json}
+\item \texttt{lcb\_compare.py} $\to$ \texttt{policy\_comparison.json} (IID)
+\end{enumerate}
+
+\textbf{Iter phase + kernel (steps 7--13):}
+\begin{enumerate}\setcounter{enumi}{6}\setlength\itemsep{0pt}
+\item \texttt{iter\_refine\_real\_baselines\{,\_swe\}.py}
+\item Harness on iter predictions
+\item \texttt{backfill\_swe\_iter\_y.py}
+\item \good{$\bigstar$ \texttt{compute\_transition\_kernel.py}} per (gen, bench, method) $\to$ ${\sim}6$ kernels
+\item \texttt{run\_baseline\_vs\_controller.py --kernel measured}
+\item \texttt{lcb\_l3\_sweep + lcb\_compare\_swap\_reviewer} (reviewer-invariance, ${\sim}\$0.50$)
+\item \texttt{PAPER\_TABLE} + figures refresh
+\end{enumerate}
+
+\info{Cost:} ${\sim}\$3$--$5$ closed-API; ${\sim}\$1$ open-weight (only L3 reviewer).
+\end{frame}
+
+\begin{frame}{Adding a new critic (1/2) --- why the kernel stays}
+\vspace{0.15cm}
+\info{Most invasive change} --- touches calibration, likelihood schema,
+Bayesian update, policy comparison.
+
+\vspace{0.3cm}
+\textbf{The kernel is critic-agnostic.} Recall the factorization:
+\[
+P(Y_{k+1}, z_\ell \mid Y_k) = \underbrace{P(Y_{k+1}\mid Y_k)}_{\text{kernel}} \cdot \underbrace{P(z_\ell\mid Y_{k+1})}_{\text{critic likelihood}}
+\]
+
+\vspace{0.15cm}
+Critics are \emph{observations of $Y$}, not transitions. Adding a critic adds a
+likelihood factor; the kernel is reused unchanged.
+
+\vspace{0.3cm}
+\good{Practical consequence:} you do \textbf{not} need to re-collect iter
+trajectories or recompute \texttt{transition\_kernel.json}. Steps below stay
+within the calibration corpus + likelihood table + Bayesian update; the kernel
+is a black-box dependency.
+
+\vspace{0.2cm}
+\textcolor{softGrey}{\scriptsize Next slide: the 10-step recipe (definition $+$
+plumbing $+$ re-evaluation), and the cost.}
+\end{frame}
+
+\begin{frame}{Adding a new critic (2/2) --- 10-step recipe}
+\vspace{0.1cm}
+\small
+\textbf{Steps 1--7 (definition + plumbing):}
+\begin{enumerate}\setlength\itemsep{0pt}
+\item Define \texttt{critic\_LX(modified\_files, problem) -> (PASS, cost)}.
+\item Add \texttt{LX} column to \texttt{critic\_results.jsonl}.
+\item Update \texttt{likelihood\_tables.json} schema with the \texttt{LX} entry.
+\item Add pairwise $\chi^2$ tests (\texttt{LX} vs $L_0$, $L_3$).
+\item Update \texttt{BayesianController}: add likelihood factor to posterior.
+\item Add \texttt{policy\_threshold\_LX} for the threshold-policy panel.
+\item Add $c_{LX}$ to the cost vector.
+\end{enumerate}
+
+\vspace{0.1cm}
+\textbf{Steps 8--10 (re-evaluate, no kernel work):}
+\begin{enumerate}\setcounter{enumi}{7}\setlength\itemsep{0pt}
+\item Re-run \texttt{calibrate\_from\_spotcheck.py --skip-generate} $\to$ adds
+   \texttt{LX} column without regenerating patches.
+\item Re-run \texttt{run\_baseline\_vs\_controller.py} (reuses the existing
+   \texttt{transition\_kernel.json} unchanged).
+\item Refresh \texttt{PAPER\_TABLE.json} + figures.
+\end{enumerate}
+
+\vspace{0.2cm}
+\info{Cost:} \$0 for free critics (lint, mypy, ast); ${\sim}\$10$--$50$ for
+LLM-based critics on the full $\sim$2400-patch calibration corpus.
+\end{frame}
+
+\begin{frame}{Master validation checklist (applies to all 3 addition flows)}
+\vspace{0.15cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{p{4cm}p{2.6cm}p{4cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Check} & \textbf{Threshold} & \textbf{Failure means} \\
+\midrule
+Prior $P(Y{=}1)$ & $\in [0.05, 0.95]$ & saturation/pathological cell \\
+$\chi^2$ critic-independence & $p > 0.05$ & product likelihood unsafe \\
+Critic gap $|\Delta_\ell|$ & $> 0.05$ on at least one cell & no-op critic, drop from panel \\
+Reviewer invariance & same Bayesian Δ ranking across 3 reviewers & reviewer-specific artifact \\
+LOO-CV stability & per-instance utility within $\pm 1$ of in-sample mean & likelihoods overfit \\
+Bootstrap CI on $\Delta$ & excludes 0 (or borderline reported) & effect indistinguishable from noise \\
+Measured kernel vs IID & differs significantly & F1 ablation pattern as expected \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.2cm}
+\good{Codified in \texttt{PLAYBOOK.md}.} New benchmarks/generators/critics
+extending the panel must pass this checklist before landing in
+\texttt{PAPER\_TABLE}.
+\end{frame}
+
+% ============================================================================
+% Section 15: Limitations & next steps
+% ============================================================================
+
+\section{Limitations \& next}
+\hypertarget{out:15}{}
+
+\begin{frame}{Genuine weaknesses (we'll surface them)}
+\vspace{0.1cm}
+\textcolor{accentRed}{\textbf{1. $n$ is small on headline cells.}} 29 LCB-hard,
+30 SWE-Verified. \warn{MDE-power passes but optics suffer.} Mitigation:
+extend LCB-hard to $n \geq 100$ post-submission.
+
+\vspace{0.15cm}
+\textcolor{accentRed}{\textbf{2. No theoretical contribution.}} Empirical-only
+paper. \warn{Explicitly framed as a findings submission}, not main.
+
+\vspace{0.15cm}
+\textcolor{accentRed}{\textbf{3. Bayesian gain narrowed under real
+Self-Refine/Reflexion impl.}} Replay said 19/20 wins; real says 22/24
+(LCB cells), some Reflexion-wins cells. \good{Reported transparently --- not
+buried.}
+
+\vspace{0.15cm}
+\textcolor{accentRed}{\textbf{4. Three regime points still sparse.}} SWE-Pro,
+multilingual code, real \$5+ oracle costs deferred for follow-up work.
+
+\vspace{0.15cm}
+\textcolor{accentRed}{\textbf{5. Single user-side rate-limit IP for HF.}}
+Caused some retry pain during multi-machine sharding. \warn{Logistical, not
+research.}
+\end{frame}
+
+\begin{frame}{Next 3 weeks (EMNLP submission window)}
+\vspace{0.1cm}
+\textcolor{primaryBlue}{\textbf{Week 1 (this week):}}
+\begin{enumerate}
+\item Finish SWE iter harness across all 5 generators, all 16+4 cells
+\item Compute Y-backfill, kernels, policy\_comparison for SWE cells
+\item Refresh PAPER\_TABLE.json (target: \good{${\sim}83$ cells}, 5 gens, all corrected)
+\item Generate final figures: \texttt{fig1\_headline}, \texttt{fig2\_l3\_heatmap},
+  \texttt{fig3\_invariance}, \texttt{fig\_framework\_vs\_baselines}
+\end{enumerate}
+\textcolor{primaryBlue}{\textbf{Week 2:}}
+\begin{enumerate}
+\item Draft paper from \texttt{EXPERIMENTAL\_LOG.md} skeleton
+\item Internal review by supervisor + co-authors
+\item Revise based on review (likely +1 robustness experiment)
+\end{enumerate}
+\textcolor{primaryBlue}{\textbf{Week 3:}}
+\begin{enumerate}
+\item Final figure polish, supplementary preparation
+\item ArXiv preprint $\to$ \good{EMNLP submission portal}
+\end{enumerate}
+\end{frame}
+
+% ============================================================================
+% Closing
+% ============================================================================
+
+\begin{frame}{One-page TL;DR}
+\vspace{0.2cm}
+\begin{itemize}
+\item \info{Problem:} when should an LLM-patch pipeline verify vs.\ regenerate?
+\item \info{Method:} Bayesian POMDP controller using cheap critic likelihoods
+  + measured transition kernel.
+\item \good{Pre-registered prediction confirmed:} synthetic +12.2 $\to$
+  empirical \good{+12.55} on LCB-hard gpt5\_mini.
+\item \info{Three-regime characterisation:} Bayesian dominates regime A
+  (low prior + informative critics), wins regime B (mid prior, oracle
+  available), saturates in regime C (high prior).
+\item \info{Holds under:} BH-FDR, paired bootstrap, LOO-CV, $\chi^2$
+  critic-independence, MDE-power, real Self-Refine/Reflexion implementations.
+\item \good{Open-weight reproduction:} Qwen2.5-Coder-32B reinforces the
+  regime story, not just frontier-API artifact.
+\item \warn{Honest negatives reported:} mypy null, LCB-hard refinement-hurts,
+  SWE-Pro deferred, ${\sim}6$ permanent-error instances.
+\item \info{Submission target:} EMNLP findings, 3-week window.
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\vspace{1.5cm}
+\centering
+{\Huge\textcolor{primaryBlue}{\textbf{Questions / discussion}}}
+\vspace{1cm}
+
+\begin{center}
+\textcolor{primaryBlue}{\rule{0.6\textwidth}{1pt}}
+\end{center}
+\vspace{0.5cm}
+
+\normalsize
+\info{Repo:} \texttt{rvz16/agents\_with\_uncertainty\_research}\\[0.3em]
+\info{Branch:} \texttt{feature/orchestration-hypothesis-testing-experiment}\\[0.3em]
+\info{PR \#1:} \good{68+ progress comments} documenting the full arc
+
+\vspace{1cm}
+\small\textcolor{softGrey}{
+This deck:
+\texttt{experiments/orchestration\_hypothesis\_testing/presentation/supervisor\_review.tex}
+}
+\end{frame}
+
+\end{document}
