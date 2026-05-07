@@ -1387,7 +1387,7 @@ initialise correctly.}''
     git SHA
   \end{itemize}
 \end{itemize}
-\warn{Why this much logging:} reproducibility under EMNLP review pressure.
+\warn{Why this much logging:} reproducibility under reviewer pressure.
 We must be able to answer ``how was this Y computed?'' for any single record.
 \end{frame}
 
@@ -1568,179 +1568,84 @@ P(\text{pass}\mid Y{=}0)$).\\
 \section{Results}
 \hypertarget{out:12}{}
 
-% ----------- Roadmap: where Bayesian wins / breaks even / loses (clean table) -----------
-\begin{frame}{Where Bayesian (vs always\_verify) wins, breaks even, loses}
+% ----------- Per-cell winner: matrix view (visual) -----------
+\begin{frame}{Per-cell winner --- benchmark $\times$ generator matrix}
+\vspace{-0.15cm}
+\textcolor{softGrey}{\scriptsize
+\info{Cost vector held fixed at:} $R{=}100,\ c_\text{ver}{=}1,\
+c_{L_0}{=}c_{L_2}{=}c_{L_3}{=}0.05$. Per-cell winner shifts at other
+cost ratios (see sensitivity slides).}
+
+\vspace{-0.1cm}
+\begin{center}
+\includegraphics[height=0.78\textheight]{figures/fig_winner_matrix.png}
+\end{center}
+
+\vspace{-0.15cm}
+\textcolor{softGrey}{\scriptsize
+Each cell: winning policy (bold) + its $\Delta$ vs \texttt{always\_verify}.
+\good{Green} = regime A (Bayesian wins);
+\warn{orange} = regime B (threshold(L2) wins);
+\textbf{grey} = regime C ties.}
+\end{frame}
+
+% ----------- Per-cell winner: counts + regime framing -----------
+\begin{frame}{Per-cell winner --- counts \& regime framing}
 \vspace{0.15cm}
-
-\textcolor{softGrey}{\footnotesize
-\texttt{bayesian\_greedy} $\Delta$ vs \texttt{always\_verify} per cell.
-\texttt{bayesian\_DP} adds $+5$--$+9$ on 4 high-prior cells (LCB-easy/gpt5,
-SWE-Verified/\{gpt5,sonnet\}, SWE-Lite/haiku); tied elsewhere.}
-
-\vspace{0.2cm}
 \begin{table}
 \centering
-\renewcommand{\arraystretch}{1.25}
-\begin{tabular}{>{\bfseries}lcp{8.4cm}}
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{>{\bfseries}lcp{6.8cm}}
 \toprule
 \rowcolor{paleBlue}
-\textbf{Outcome} & \textbf{n / 35} & \textbf{Cells} \\
+\textbf{Winner} & \textbf{n / 35} & \textbf{Regime / typical cells} \\
 \midrule
 \rowcolor{paleGreen}
-\good{Win} ($\Delta\!\geq\!+10$) & \textbf{17}
-  & {\scriptsize all LCB-hard / -medium / -easy on closed-API gens;
-    SWE-Lite \{sonnet, haiku\}} \\
+\good{\texttt{bayesian\_greedy}} & \textbf{10}
+  & {\footnotesize Regime A --- LCB-hard / -medium / -easy on closed-API gens.} \\
 \addlinespace[1pt]
-\info{Modest win} ($+1\!\leq\!\Delta\!<\!+10$) & \textbf{9}
-  & {\scriptsize LCB-hard / qwen32b ($+4.6$); LCB-easy / gpt5 ($+5.5$, but
-    Reflexion wins $+38$); SWE-Lite \{gpt5, qwen3, qwen32b\}; all SWE-Verified} \\
+\rowcolor{paleGreen}
+\good{\texttt{bayesian\_DP}} & \textbf{2}
+  & {\footnotesize Regime A (within $\varepsilon$ of greedy): LCB-hard / haiku, qwen32b.} \\
+\addlinespace[2pt]
+\warn{\texttt{threshold(L2)}} & \textbf{17}
+  & {\footnotesize Regime B --- all SWE-Lite \& SWE-Verified closed-API; many MBPP+/HumanEval+.} \\
 \addlinespace[1pt]
-\warn{Break-even} ($|\Delta|\!<\!1$) & \textbf{7}
-  & {\scriptsize LCB-easy / qwen32b (prior $0.97$); MBPP+ closed-API ($\times 4$);
-    HumanEval+ \{sonnet, gpt5\}} \\
+\textbf{\texttt{always\_verify}} & \textbf{4}
+  & {\footnotesize Regime C ties: MBPP+ \{gpt5, sonnet\}; HumanEval+ \{haiku, sonnet\}.} \\
 \addlinespace[1pt]
-\rowcolor{paleRed}
-\bad{Loss} ($\Delta\!<\!-1$) & \textbf{2}
-  & {\scriptsize LCB-medium / qwen32b ($-5.9$); MBPP+ / qwen32b ($-2.0$)} \\
+\textbf{\texttt{threshold(L0/L3)}} & \textbf{2}
+  & {\footnotesize Open-weight SWE quirks: SWE-Lite/qwen32b (\texttt{L3}); SWE-Ver/qwen32b (\texttt{L0}).} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\vspace{0.15cm}
-\textcolor{softGrey}{\scriptsize
-\info{Both losses on Qwen2.5-32B} --- its prior is pathologically high (3-identical-patches behaviour). See \S Honest negatives.}
-\end{frame}
-
-% ----------- Honest accounting: where threshold(L2) beats Bayesian -----------
-\begin{frame}{Honest accounting: where threshold(L2) beats Bayesian}
-\vspace{0.05cm}
-{\footnotesize
-\bad{The headline figures only compare Bayesian vs \texttt{always\_verify} or
-vs Self-Refine/Reflexion.} If we expand the comparison to \emph{all} stateless
-baselines (\texttt{threshold\_L0/L2/L3}, \texttt{best\_of\_3},
-\texttt{fixed\_pipeline}), \warn{18 / 35 cells} have a baseline that beats
-both Bayesian variants by $\geq 0.5$ utility.}
-
-\vspace{0.1cm}
-\begin{columns}[T]
-\column{0.55\textwidth}
-\bad{\textbf{threshold(L2) wins (16 cells):}}\\
-{\scriptsize
-\begin{tabular}{llrr}
-\toprule
-\textbf{cell} & \textbf{prior} & \textbf{thr(L2)} & \textbf{vs Bayes} \\
-\midrule
-LCB-medium / qwen32b & 0.36 & $+2.42$ & \bad{$+8.3$} \\
-LCB-easy / gpt5      & 0.45 & $+20.9$ & $+2.9$ \\
-LCB-easy / qwen32b   & 0.97 & $+0.81$ & $+0.8$ \\
-MBPP+ / qwen3        & 0.74 & $+0.56$ & $+0.6$ \\
-MBPP+ / qwen32b      & 0.72 & $+1.86$ & \bad{$+3.8$} \\
-HumanEval+ / gpt5    & 0.89 & $+1.36$ & $+1.4$ \\
-HumanEval+ / qwen3   & 0.90 & $+4.18$ & \bad{$+3.9$} \\
-HumanEval+ / qwen32b & 0.84 & $+2.44$ & $+2.8$ \\
-SWE-Lite / gpt5      & 0.50 & $+13.1$ & $+1.9$ \\
-SWE-Lite / qwen3     & 0.45 & $+11.8$ & $+2.8$ \\
-SWE-Lite / haiku     & 0.39 & $+15.5$ & $+2.0$ \\
-SWE-Lite / sonnet    & 0.33 & $+21.9$ & \bad{$+3.1$} \\
-SWE-Verified / gpt5  & 0.74 & $+18.6$ & $+1.4$ \\
-SWE-Verified / qwen3 & 0.64 & $+4.72$ & $+1.4$ \\
-SWE-Verified / haiku & 0.56 & $+13.8$ & \bad{$+3.1$} \\
-SWE-Verified / sonnet& 0.65 & $+9.27$ & \bad{$+3.1$} \\
-\bottomrule
-\end{tabular}}
-
-\column{0.45\textwidth}
-\bad{\textbf{Other thresholds win (2 cells):}}\\
-{\scriptsize
-\hspace*{1em}SWE-Lite / qwen32b: \texttt{thr(L3)} $+8.8$ vs Bayes $+4.3$ (margin $+4.5$)\\
-\hspace*{1em}SWE-Ver / qwen32b: \texttt{thr(L0)} $+4.6$ vs Bayes $+1.7$ (margin $+2.9$)}
-
 \vspace{0.2cm}
-\good{\textbf{Why this happens (regime story):}}\\
-{\scriptsize
-\textbf{Regime B} = mid prior + near-oracle critic.\\
-On SWE-bench, $L_2$ (public-test runner) has gap $\sim 0.9$ --- it's nearly an
-oracle. \textbf{Just trust the tests, no Bayesian needed.}\\
+{\footnotesize
+\good{\textbf{Honest framing:}}
+\textbf{Bayesian (greedy + DP) wins 12/35} cells --- regime A, where critics
+are noisy and need composing. \textbf{\texttt{threshold(L2)} wins 17/35} ---
+regime B, where the public-test critic has gap $> 0.7$ (just trust the tests).
+\textbf{\texttt{always\_verify} wins/ties 4/35} regime-C saturated cells.
 
-On HumanEval+/MBPP+, the included \texttt{assert} statements give $L_2$ gap
-$\sim 0.7$ --- same story, weaker.
-
-\vspace{0.05cm}
-\warn{Implication for the paper:} Bayesian's value is in \textbf{regime A},
-where critics are noisy and need composing. \textbf{We must report this
-honestly} --- the headline ``Bayesian wins'' is regime-conditional.}
-\end{columns}
+\warn{Paper claim should be regime-conditional:} ``Bayesian dominates regime A''
+\emph{not} ``Bayesian wins''.}
 \end{frame}
 
-\begin{frame}{Headline result (1/3) --- LCB (3 difficulties)}
-\vspace{0.05cm}
+% ----------- Per-cell winner: 4x4 grid varying (R, c_ver) -----------
+\begin{frame}{Per-cell winner --- 4×4 grid varying $R$ (rows) and $c_\text{ver}$ (cols)}
+\vspace{-0.3cm}
 \begin{center}
-\begin{tabular}{ccc}
-\includegraphics[width=0.31\textwidth]{figures/fig1_headline_lcb_hard.png} &
-\includegraphics[width=0.31\textwidth]{figures/fig1_headline_lcb_medium.png} &
-\includegraphics[width=0.31\textwidth]{figures/fig1_headline_lcb_easy.png} \\
-\end{tabular}
+\includegraphics[height=0.86\textheight]{figures/fig_winner_grid_R_cver.png}
 \end{center}
 
-\vspace{0.05cm}
-{\footnotesize
-\good{Bayesian Greedy $\Delta$ vs always\_verify} per generator on LCB at three
-difficulty levels. Error bars: paired bootstrap 95\% CI.
-
-\good{Take-aways:}
-\begin{itemize}\setlength\itemsep{0pt}
-\item \warn{LCB-hard:} $+12$ to $+20$ utility for closed-API gens; only
-  qwen2.5-32b drops to $+4.6$ (CI crosses 0).
-\item \info{LCB-medium:} stable $+15$ to $+19$ across closed-API; qwen2.5-32b
-  $-5.9$ (regime crossover --- prior already $0.9$).
-\item \warn{LCB-easy:} closed-API still wins $+19$; qwen2.5-32b at $0$
-  (saturated like MBPP+).
-\end{itemize}}
-\end{frame}
-
-\begin{frame}{Headline result (2/3) --- SWE-bench (Lite + Verified)}
-\vspace{0.1cm}
-\begin{center}
-\begin{tabular}{cc}
-\includegraphics[width=0.46\textwidth]{figures/fig1_headline_swe_lite.png} &
-\includegraphics[width=0.46\textwidth]{figures/fig1_headline_swe_verified.png} \\
-\end{tabular}
-\end{center}
-
-\vspace{0.1cm}
-{\footnotesize
-\good{Bayesian Greedy $\Delta$ vs always\_verify} on the two SWE-bench splits.
-
-\good{Take-aways:}
-\begin{itemize}\setlength\itemsep{0pt}
-\item \good{SWE-Lite:} $+6$ to $+18$ across all 5 gens. Sonnet-4.5 wins biggest at $+17.6$.
-\item \info{SWE-Verified:} $+3$ to $+4$, tighter wins because instances are
-  curated to be solvable (higher prior $\to$ closer to saturation).
-\item \warn{Qwen2.5-32b:} on the two SWE splits Bayesian wins are visible
-  ($+1.7$ and $+4.3$) --- this is the open-weight regime-A/B story.
-\end{itemize}}
-\end{frame}
-
-\begin{frame}{Headline result (3/3) --- saturated regime (MBPP+, HumanEval+)}
-\vspace{0.1cm}
-\begin{center}
-\begin{tabular}{cc}
-\includegraphics[width=0.46\textwidth]{figures/fig1_headline_mbpp.png} &
-\includegraphics[width=0.46\textwidth]{figures/fig1_headline_humaneval.png} \\
-\end{tabular}
-\end{center}
-
-\vspace{0.1cm}
-{\footnotesize
-\warn{Regime C}: prior $> 0.7$ for every generator. Bayesian Greedy correctly
-collapses to \texttt{always\_verify} ($\Delta \approx 0$) instead of paying for
-extra critics that wouldn't change the decision.
-
-\good{Story:} the controller \emph{recognises saturation} and stops trying to
-optimise. \bad{The negative bar} on MBPP+/qwen2.5-32b ($-2.0$) is the only
-meaningful deviation --- a small over-confidence in the prior leads to
-slightly suboptimal generate-attempts; not statistically distinguishable from
-zero (CI crosses 0).}
+\vspace{-0.2cm}
+\textcolor{softGrey}{\scriptsize
+Each panel = one $(R, c_\text{ver})$ combination. Inside each panel, 7 benchmarks
+(rows) $\times$ 5 generators (cols) coloured by winning policy. Reads: low $R$ /
+high $c_\text{ver}$ (top-right of grid) $\to$ \good{Bayesian gives up} (light green);
+high $R$ / low $c_\text{ver}$ (bottom-left of grid) $\to$ \textbf{always\_verify} or
+\warn{threshold(L2)}. Slide 49 = the single panel at $R{=}100,\ c_\text{ver}{=}1$.}
 \end{frame}
 
 % ============================================================================
@@ -2092,83 +1997,11 @@ miscalibration; we are not over-fitting on a knife-edge calibration.
 means \bad{uniformly worse}.
 \end{frame}
 
-\begin{frame}{Framework vs published baselines --- per-benchmark panels (1/2)}
-\vspace{0.05cm}
-\centering
-\begin{tabular}{cc}
-\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_lcb_hard.png} &
-\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_lcb_medium.png} \\[2pt]
-\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_lcb_easy.png} &
-\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_swe_verified.png} \\
-\end{tabular}
-
-\vspace{0.05cm}
-\footnotesize
-4 bars per generator: \textcolor{primaryBlue}{\textbf{bayesian\_greedy}} (dark blue, no kernel)
-$\;\cdot\;$ \textcolor{accentTeal}{\textbf{bayesian\_DP}} (cyan, measured kernel)
-$\;\cdot\;$ \textcolor{accentOrange}{Self-Refine} [Madaan 2023]
-$\;\cdot\;$ \textcolor{accentGreen}{Reflexion} [Shinn 2023]. Error bars: paired
-bootstrap 95\% CI. \warn{LCB-easy/gpt5\_mini} is the regime crossover where
-Reflexion wins.
-\end{frame}
-
-\begin{frame}{Framework vs published baselines --- per-benchmark panels (2/2)}
-\vspace{0.1cm}
-\begin{columns}[T]
-\column{0.55\textwidth}
-\centering
-\includegraphics[width=\textwidth]{figures/fig_framework_vs_baselines_swe_lite.png}
-
-\column{0.45\textwidth}
-\footnotesize
-\textbf{\info{Take-aways across all 5 panels:}}
-\begin{itemize}\setlength\itemsep{2pt}
-\item \good{Both Bayesian variants beat published baselines} on every cell
-  except LCB-easy/gpt-5-mini.
-\item \warn{Greedy vs DP:} mostly tied on LCB-hard / -medium (greedy is
-  enough); DP wins by $+5$ to $+9$ on \emph{SWE-Lite/haiku} and
-  \emph{LCB-easy/gpt-5-mini} where the kernel pays off.
-\item \bad{SWE-Lite is the hardest panel:} Reflexion $-67$ to $-72$,
-  Self-Refine $-13$ to $-41$, Bayesian $+6$ to $+18$.
-\item \info{Why Bayesian dominates:} published methods refine unconditionally;
-  Bayesian \emph{decides} given the belief state.
-\end{itemize}
-\end{columns}
-
-\vspace{0.1cm}
-\textcolor{softGrey}{\scriptsize Combined wide figure
-(\texttt{fig\_framework\_vs\_baselines.png}) also exported for the paper's main-text figure.}
-\end{frame}
-
-% ----------- MBPP+ / HumanEval+ calibration-only panels -----------
-\begin{frame}{Saturated regime: MBPP+ \& HumanEval+ (calibration-only)}
-\vspace{-0.1cm}
-\begin{center}
-\begin{tabular}{cc}
-\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_mbpp.png} &
-\includegraphics[width=0.46\textwidth]{figures/fig_framework_vs_baselines_humaneval.png} \\
-\end{tabular}
-\end{center}
-
-\vspace{0.05cm}
-{\footnotesize
-\info{Why a separate slide:} no iter trajectories for MBPP+ / HumanEval+
-(regime C, prior $0.74$--$0.94$). Self-Refine / Reflexion bars don't exist;
-we instead compare Bayesian against \emph{stateless per-patch} baselines on the
-calibration corpus.
-
-\vspace{0.05cm}
-\good{Take-aways:}
-\begin{itemize}\setlength\itemsep{0pt}
-\item All policies cluster near $\Delta=0$: \warn{regime-C saturation} ---
-  when the prior is already $>0.7$, \texttt{always\_verify} is hard to beat.
-\item \bad{Cheap critics actively hurt}: \texttt{threshold(L3)},
-  \texttt{best\_of\_3}, \texttt{fixed\_pipeline} all $\Delta<0$ because they
-  pay extra cost without adding information at saturation.
-\item \good{Bayesian $\approx$ always\_verify} --- it correctly recognises
-  saturation and converges to the trivial policy. Feature, not bug.
-\end{itemize}}
-\end{frame}
+% (Framework-vs-published-baselines per-bench panels (1/2 + 2/2) and the
+%  separate Saturated-regime calibration-only slide removed: redundant with
+%  the per-(benchmark, model) all-policies grids above which include
+%  Self-Refine / Reflexion bars where the iter data exists, plus all
+%  threshold and stateless baselines.)
 
 % ============================================================================
 % BLOCK D: Concrete Bayesian wins — case studies
@@ -2363,8 +2196,11 @@ column} --- local vLLM serving Qwen2.5-Coder-32B-Instruct, no API spend.
 story}. On hard (regime A) Bayesian wins; on medium it loses; on easy
 nothing matters. Same as closed-API panel.
 
-\info{SWE-bench:} 91\% patch-level success rate (open-weight $\approx$
-closed-API). Iter harness work currently running on Artem-1 + Artem-3.
+\info{SWE-bench (calibration done):}
+SWE-Lite: $n{=}82$, prior $0.21$, $L_3$ gap $0.44$ $\Rightarrow$ \warn{thr(L3) wins
+$+8.79$} (regime-B-ish on the open-weight panel).
+SWE-Verified: $n{=}77$, prior $0.30$, $L_3$ gap $0.55$ $\Rightarrow$
+\warn{thr(L0) wins $+4.56$}. Per-cell winners visible in the matrix slide.
 \end{frame}
 
 \begin{frame}{L3-reviewer invariance --- Bayesian's edge is robust}
@@ -2401,7 +2237,7 @@ across the panel.}
 \item Pro prompts are ${\sim}24\times$ larger than Lite (multi-file oracle
   context, ${\sim}121$K tokens). gpt-5-mini exhausts \texttt{max\_tokens}
   budget on reasoning; produces empty parseable output. Documented in
-  \texttt{data/swebench\_pro\_probe/}; \warn{deferred from EMNLP}.
+  \texttt{data/swebench\_pro\_probe/}; \warn{deferred to follow-up}.
 \end{itemize}
 \textcolor{accentRed}{\textbf{3. LCB iterative refinement HURTS in some regimes}}
 \begin{itemize}
@@ -2433,7 +2269,7 @@ ${\sim}6$ data points lost out of ${\sim}600$ SWE evaluations. \good{Below-noise
 
 \section{Methodology rigor recap}
 
-\begin{frame}{Methodology rigor --- what we did vs typical EMNLP findings paper}
+\begin{frame}{Methodology rigor --- what we did vs typical findings paper}
 \vspace{0.2cm}
 \begin{tabular}{p{4.5cm}p{2cm}p{4cm}}
 \toprule
@@ -2455,7 +2291,7 @@ Real Self-Refine + Reflexion impls & \done & not just policy replays \\
 \end{tabular}
 \vspace{0.2cm}
 
-\good{Most EMNLP findings papers have $\sim$3-4 of these.}
+\good{Most findings-style papers in this area have $\sim$3-4 of these.}
 \end{frame}
 
 % ============================================================================
@@ -2486,7 +2322,7 @@ Real Self-Refine + Reflexion impls & \done & not just policy replays \\
 \item Y-backfill across SWE iter cells
 \item Compute kernel + policy\_comparison for all SWE cells
 \item Refresh PAPER\_TABLE + figures (5 generators $\times$ all cells)
-\item EMNLP submission draft
+\item Paper submission draft
 \end{itemize}
 \end{frame}
 
@@ -2510,7 +2346,7 @@ Real Self-Refine + Reflexion impls & \done & not just policy replays \\
 \end{tabular}
 \end{table}
 \vspace{0.3cm}
-\good{Compare to typical EMNLP findings paper:} 1-3 benchmarks, 2-3 baselines,
+\good{Compare to typical findings-style paper in this area:} 1-3 benchmarks, 2-3 baselines,
 no pre-registration, no FDR. We're at the high end of empirical depth.
 \end{frame}
 
@@ -2697,28 +2533,32 @@ Caused some retry pain during multi-machine sharding. \warn{Logistical, not
 research.}
 \end{frame}
 
-\begin{frame}{Next 3 weeks (EMNLP submission window)}
-\vspace{0.1cm}
-\textcolor{primaryBlue}{\textbf{Week 1 (this week):}}
-\begin{enumerate}
-\item Finish SWE iter harness across all 5 generators, all 16+4 cells
-\item Compute Y-backfill, kernels, policy\_comparison for SWE cells
-\item Refresh PAPER\_TABLE.json (target: \good{${\sim}83$ cells}, 5 gens, all corrected)
-\item Generate final figures: \texttt{fig1\_headline}, \texttt{fig2\_l3\_heatmap},
-  \texttt{fig3\_invariance}, \texttt{fig\_framework\_vs\_baselines}
-\end{enumerate}
-\textcolor{primaryBlue}{\textbf{Week 2:}}
-\begin{enumerate}
-\item Draft paper from \texttt{EXPERIMENTAL\_LOG.md} skeleton
-\item Internal review by supervisor + co-authors
-\item Revise based on review (likely +1 robustness experiment)
-\end{enumerate}
-\textcolor{primaryBlue}{\textbf{Week 3:}}
-\begin{enumerate}
-\item Final figure polish, supplementary preparation
-\item ArXiv preprint $\to$ \good{EMNLP submission portal}
-\end{enumerate}
-\end{frame}
+% (Slide hidden: "Next 3 weeks (paper submission window)" — out of date timeline.
+%  The original frame is preserved below in a comment in case we want to
+%  resurrect it.)
+%
+% \begin{frame}{Next 3 weeks (paper submission window)}
+% \vspace{0.1cm}
+% \textcolor{primaryBlue}{\textbf{Week 1 (this week):}}
+% \begin{enumerate}
+% \item Finish SWE iter harness across all 5 generators, all 16+4 cells
+% \item Compute Y-backfill, kernels, policy\_comparison for SWE cells
+% \item Refresh PAPER\_TABLE.json (target: \good{${\sim}83$ cells}, 5 gens, all corrected)
+% \item Generate final figures: \texttt{fig1\_headline}, \texttt{fig2\_l3\_heatmap},
+%   \texttt{fig3\_invariance}, \texttt{fig\_framework\_vs\_baselines}
+% \end{enumerate}
+% \textcolor{primaryBlue}{\textbf{Week 2:}}
+% \begin{enumerate}
+% \item Draft paper from \texttt{EXPERIMENTAL\_LOG.md} skeleton
+% \item Internal review by supervisor + co-authors
+% \item Revise based on review (likely +1 robustness experiment)
+% \end{enumerate}
+% \textcolor{primaryBlue}{\textbf{Week 3:}}
+% \begin{enumerate}
+% \item Final figure polish, supplementary preparation
+% \item ArXiv preprint $\to$ \good{conference submission portal}
+% \end{enumerate}
+% \end{frame}
 
 % ============================================================================
 % Closing
@@ -2741,7 +2581,7 @@ research.}
   regime story, not just frontier-API artifact.
 \item \warn{Honest negatives reported:} mypy null, LCB-hard refinement-hurts,
   SWE-Pro deferred, ${\sim}6$ permanent-error instances.
-\item \info{Submission target:} EMNLP findings, 3-week window.
+\item \info{Submission target:} 3-week window.
 \end{itemize}
 \end{frame}
 
