@@ -75,10 +75,14 @@ class BayesAgentResult:
 
 # P(critic_pass | Y=1) and P(critic_pass | Y=0) for each test subset
 CRITIC_LIKELIHOODS = {
-    "parsing_check":     {"p_pass_y1": 0.95, "p_pass_y0": 0.85},
-    "filtering_check":   {"p_pass_y1": 0.95, "p_pass_y0": 0.50},
-    "aggregation_check": {"p_pass_y1": 0.95, "p_pass_y0": 0.55},
-    "context_check":     {"p_pass_y1": 0.95, "p_pass_y0": 0.60},
+    "parsing_check":       {"p_pass_y1": 0.95, "p_pass_y0": 0.85},
+    "filtering_check":     {"p_pass_y1": 0.95, "p_pass_y0": 0.50},
+    "aggregation_check":   {"p_pass_y1": 0.95, "p_pass_y0": 0.55},
+    "context_check":       {"p_pass_y1": 0.95, "p_pass_y0": 0.60},
+    "score_check":         {"p_pass_y1": 0.95, "p_pass_y0": 0.55},
+    "dedup_search_check":  {"p_pass_y1": 0.95, "p_pass_y0": 0.65},
+    "time_merge_check":    {"p_pass_y1": 0.95, "p_pass_y0": 0.60},
+    "lineno_format_check": {"p_pass_y1": 0.95, "p_pass_y0": 0.50},
 }
 
 # P(Y'=1 | Y=0, arm) for each generator arm — conservative estimates
@@ -94,12 +98,27 @@ GENERATOR_TRANSITIONS = {
 ARM_SEQUENCE = ["g1_direct_fix", "g2_localized_fix", "g3_test_guided_fix"]
 
 # Ordered critic sequence: most informative first
-CRITIC_SEQUENCE = ["filtering_check", "aggregation_check", "context_check", "parsing_check"]
+CRITIC_SEQUENCE = [
+    "filtering_check", "aggregation_check", "context_check", "parsing_check",
+    "score_check", "lineno_format_check", "time_merge_check", "dedup_search_check",
+]
 
 
-def bayes_update(belief: float, critic: str, passed: bool) -> float:
-    """Update belief P(Y=1) after observing a critic result."""
-    lk = CRITIC_LIKELIHOODS[critic]
+def bayes_update(
+    belief: float,
+    critic: str,
+    passed: bool,
+    likelihoods: dict | None = None,
+) -> float:
+    """Update belief P(Y=1) after observing a critic result.
+
+    Args:
+        likelihoods: optional override table {critic_name: {p_pass_y1, p_pass_y0}}.
+            When None, uses the module-level CRITIC_LIKELIHOODS (hand-tuned).
+            Pass in a calibrated table to use empirical-Bayes estimates.
+    """
+    lk_table = likelihoods if likelihoods is not None else CRITIC_LIKELIHOODS
+    lk = lk_table[critic]
     if passed:
         p_z_y1 = lk["p_pass_y1"]
         p_z_y0 = lk["p_pass_y0"]
@@ -170,10 +189,16 @@ class DPPlanner:
         costs: AgentCostConfig,
         max_generators: int = 3,
         max_verifications: int = 2,
+        critic_likelihoods: dict | None = None,
     ):
         self.costs = costs
         self.max_generators = max_generators
         self.max_verifications = max_verifications
+        self.critic_likelihoods = (
+            critic_likelihoods if critic_likelihoods is not None
+            else CRITIC_LIKELIHOODS
+        )
+        self._critic_names = list(self.critic_likelihoods.keys())
         self._cache: dict[DPState, tuple[float, str]] = {}
 
     def solve(self) -> None:
@@ -231,15 +256,17 @@ class DPPlanner:
                     best_action = f"generate:{arm}"
 
         # --- ACTION: critic(subset) ---
-        for critic_name in _CRITIC_NAMES:
+        for critic_name in self._critic_names:
             if critic_name in state.crit_used:
                 continue  # already used this critic
-            lk = CRITIC_LIKELIHOODS[critic_name]
+            lk = self.critic_likelihoods[critic_name]
             # P(pass) = P(pass|Y=1)*b + P(pass|Y=0)*(1-b)
             p_pass = lk["p_pass_y1"] * b + lk["p_pass_y0"] * (1 - b)
 
-            b_if_pass = bayes_update(b, critic_name, passed=True)
-            b_if_fail = bayes_update(b, critic_name, passed=False)
+            b_if_pass = bayes_update(b, critic_name, passed=True,
+                                     likelihoods=self.critic_likelihoods)
+            b_if_fail = bayes_update(b, critic_name, passed=False,
+                                     likelihoods=self.critic_likelihoods)
 
             next_crit_used = state.crit_used | frozenset([critic_name])
 
@@ -307,6 +334,8 @@ def run_bayes_agent(
     max_verifications: int = 2,
     prior: float = 0.1,
     use_dp: bool = True,
+    critic_likelihoods: dict | None = None,
+    policy_name: str | None = None,
 ) -> BayesAgentResult:
     """Run the Bayesian POMDP agent.
 
@@ -314,6 +343,11 @@ def run_bayes_agent(
     the optimal action at each step — matches the article's formulation.
 
     When use_dp=False: uses the greedy one-step lookahead (legacy).
+
+    Args:
+        critic_likelihoods: optional override for CRITIC_LIKELIHOODS, e.g.
+            empirical-Bayes calibrated table. When None, uses the hand-tuned defaults.
+        policy_name: label attached to the result (default: "bayes_pomdp" for DP).
     """
     if llm_config is None:
         llm_config = LLMConfig()
@@ -322,7 +356,9 @@ def run_bayes_agent(
 
     if use_dp:
         return _run_dp_loop(bug_id, llm_config, cost_config,
-                            max_generators, max_verifications, prior)
+                            max_generators, max_verifications, prior,
+                            critic_likelihoods=critic_likelihoods,
+                            policy_name=policy_name)
     else:
         return _run_greedy_loop(bug_id, llm_config, cost_config,
                                 max_generators, prior)
@@ -335,16 +371,22 @@ def _run_dp_loop(
     max_generators: int,
     max_verifications: int,
     prior: float,
+    critic_likelihoods: dict | None = None,
+    policy_name: str | None = None,
 ) -> BayesAgentResult:
     """DP-optimal agent: Bellman recursion chooses every action."""
+    lk_table = critic_likelihoods if critic_likelihoods is not None else CRITIC_LIKELIHOODS
     buggy_source = BUGGY_SOURCES_REAL[bug_id]
     result = BayesAgentResult(bug_id=bug_id)
+    if policy_name:
+        result.policy_name = policy_name
     belief = prior
     result.belief_timeline.append(belief)
     start_time = time.perf_counter()
 
     # Pre-compute optimal policy
-    planner = DPPlanner(cost_config, max_generators, max_verifications)
+    planner = DPPlanner(cost_config, max_generators, max_verifications,
+                        critic_likelihoods=lk_table)
     planner.solve()
     console.print(
         f"  [dim]DP solved: {planner.cache_size} states, "
@@ -457,7 +499,8 @@ def _run_dp_loop(
                 result.total_cost += cost_config.c_critic_test
                 crit_used = crit_used | frozenset([critic_name])
 
-                belief = bayes_update(belief, critic_name, passed)
+                belief = bayes_update(belief, critic_name, passed,
+                                      likelihoods=lk_table)
 
                 status = "[green]pass[/green]" if passed else "[red]fail[/red]"
                 console.print(

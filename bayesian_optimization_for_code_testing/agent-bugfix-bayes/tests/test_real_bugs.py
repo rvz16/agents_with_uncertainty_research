@@ -66,7 +66,7 @@ class TestCleanSource:
     def test_clean_passes_all(self):
         passed, failed, _ = _run_tests_on_source(LOG_PARSER_CLEAN)
         assert failed == 0
-        assert passed == 17
+        assert passed == 36
 
     def test_clean_source_has_all_functions(self):
         for fn in ["parse_line", "parse_log", "filter_by_level", "filter_by_time",
@@ -77,7 +77,7 @@ class TestCleanSource:
     def test_clean_source_compact(self):
         """Source should be compact enough for 7B models to reproduce."""
         lines = LOG_PARSER_CLEAN.strip().splitlines()
-        assert len(lines) <= 100, f"Source too long: {len(lines)} lines"
+        assert len(lines) <= 200, f"Source too long: {len(lines)} lines"
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +108,8 @@ class TestBugDefinitions:
         difficulties = {BUG_METADATA[b]["difficulty"] for b in BUG_METADATA}
         assert difficulties == {"easy", "medium", "hard"}
 
-    def test_twenty_bugs_defined(self):
-        assert len(BUGGY_SOURCES_REAL) == 20
+    def test_fifty_bugs_defined(self):
+        assert len(BUGGY_SOURCES_REAL) == 50
 
     def test_bug_is_single_line_change(self):
         """Each bug should differ from clean source in exactly 1 line."""
@@ -128,8 +128,8 @@ class TestBugDefinitions:
 class TestCriticSubsets:
     """Verify critic test subsets are well-defined."""
 
-    def test_four_critic_groups(self):
-        assert len(REAL_CRITIC_TESTS) == 4
+    def test_eight_critic_groups(self):
+        assert len(REAL_CRITIC_TESTS) == 8
 
     def test_all_critic_tests_exist_in_suite(self):
         """All critic test names should appear in the test content."""
@@ -147,7 +147,10 @@ class TestCriticSubsets:
         assert len(all_tests) == len(set(all_tests)), "Critic groups overlap"
 
     def test_critics_cover_all_categories(self):
-        expected = {"parsing_check", "filtering_check", "aggregation_check", "context_check"}
+        expected = {
+            "parsing_check", "filtering_check", "aggregation_check", "context_check",
+            "score_check", "dedup_search_check", "time_merge_check", "lineno_format_check",
+        }
         assert set(REAL_CRITIC_TESTS.keys()) == expected
 
 

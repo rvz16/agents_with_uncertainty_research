@@ -35,6 +35,7 @@ COSTS = AgentCostConfig()
 # Bayes update tests
 # ---------------------------------------------------------------------------
 
+
 class TestBayesUpdate:
     """Tests for posterior belief updates via Bayes rule."""
 
@@ -227,7 +228,7 @@ class TestDPPlanner:
 
     def test_dp_state_space_bounded(self, planner):
         """Cache should be reasonable size (not combinatorial explosion)."""
-        assert planner.cache_size < 100_000
+        assert planner.cache_size < 500_000  # 8 critics -> larger state space
 
     def test_dp_high_belief_recommends_verify(self, planner):
         """At high belief with verifications left, should verify."""

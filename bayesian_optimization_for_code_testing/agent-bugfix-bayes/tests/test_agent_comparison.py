@@ -32,25 +32,26 @@ from abbo.realworld.agents.simple_agent import (
 from abbo.realworld.agents.bayes_agent import run_bayes_agent
 
 # --- LLM backend selection ---
-# --- LLM backend selection ---
-VLLM_BASE = "http://10.100.11.191:8000"
-VLLM_MODEL = "Qwen/Qwen3.5-35B-A3B"
+# Primary: Innopolis hosted gpt-oss-120b via OpenAI-compatible endpoint.
+# Fallback: local Ollama with qwen2.5:7b.
+INNOPOLIS_BASE = "https://openai.global.ai.innopolis.university"
+INNOPOLIS_MODEL = "gpt-oss-120b"
 
-if is_ollama_available():
-    LLM = LLMConfig(model="qwen2.5:7b", temperature=0.3)
-    _backend_ok = True
-    _backend_name = "Ollama (qwen2.5:7b)"
-elif is_openai_endpoint_available(VLLM_BASE):
+if is_openai_endpoint_available(INNOPOLIS_BASE):
     LLM = LLMConfig(
         provider="openai",
-        model=VLLM_MODEL,
-        base_url=VLLM_BASE,
+        model=INNOPOLIS_MODEL,
+        base_url=INNOPOLIS_BASE,
         temperature=0.3,
-        max_tokens=2048,
+        max_tokens=8192,
         timeout=600,
     )
     _backend_ok = True
-    _backend_name = f"vLLM ({VLLM_MODEL})"
+    _backend_name = f"Innopolis ({INNOPOLIS_MODEL})"
+elif is_ollama_available():
+    LLM = LLMConfig(model="qwen2.5:7b", temperature=0.3)
+    _backend_ok = True
+    _backend_name = "Ollama (qwen2.5:7b)"
 else:
     LLM = LLMConfig()
     _backend_ok = False
@@ -58,7 +59,7 @@ else:
 
 pytestmark = pytest.mark.skipif(
     not _backend_ok,
-    reason=f"No LLM backend available — start Ollama or check vLLM at {VLLM_BASE}",
+    reason=f"No LLM backend available — check {INNOPOLIS_BASE} or start Ollama",
 )
 
 COSTS = AgentCostConfig()
