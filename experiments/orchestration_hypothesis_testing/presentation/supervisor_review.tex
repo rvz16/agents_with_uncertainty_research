@@ -1228,39 +1228,65 @@ machinery throughout, just different parameters at different timescales.
 \section{Benchmarks}
 \hypertarget{out:6}{}
 
-\begin{frame}{The four-benchmark cube}
-\vspace{0.2cm}
+\begin{frame}{The five-benchmark cube}
+\vspace{0.15cm}
 \begin{table}
 \centering
-\small
-\begin{tabular}{lccc>{\columncolor{paleBlue}}c}
+\footnotesize
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Benchmark} & \textbf{Total inst.} & \textbf{Sampled $n$} &
-  \textbf{Difficulty} & \textbf{Type} \\
+\rowcolor{paleBlue}
+\textbf{Benchmark} & \textbf{Pool} & \textbf{$n$ inst.} &
+  \textbf{Coverage} & \textbf{$k$} \\
 \midrule
-\textcolor{primaryBlue}{LiveCodeBench (LCB)} & 100s/diff & 29 / 90 / 62 &
-  \textbf{3 levels} & competition \\
-\textcolor{accentGreen}{SWE-bench Lite} & 300 & 30 & medium & repo-level \\
-\textcolor{accentGreen}{SWE-bench Verified} & 500 & 30 & medium & repo-level \\
-\textcolor{accentOrange}{MBPP+} & 378 & 30 & easy & function-level \\
-\textcolor{accentOrange}{HumanEval+} & 164 & 30 & easy & function-level \\
+\textcolor{primaryBlue}{LCB-hard}              & 102 & 102 & \good{100\%} & 3 \\
+\textcolor{primaryBlue}{LCB-medium}            & 207 & 207 & \good{100\%} & 3 \\
+\textcolor{primaryBlue}{LCB-easy}              & 135 & 135 & \good{100\%} & 3 \\
+\textcolor{accentGreen}{SWE-bench Lite}        & 300 & $\sim$29--47 & 17\%  & 3 \\
+\textcolor{accentGreen}{SWE-bench Verified}    & 500 & $\sim$27--30 & 6\%   & 3 \\
+\textcolor{accentOrange}{MBPP+}                & 378 & 100          & 26\% & 3 \\
+\textcolor{accentOrange}{HumanEval+}           & 164 & 100          & 61\% & 3 \\
 \bottomrule
 \end{tabular}
 \end{table}
-\vspace{0.2cm}
-\info{Why each:}
-\begin{itemize}
-\item \textcolor{primaryBlue}{LCB} has $L_2$ (public tests) --- the only
-  benchmark with all 4 critics.
-\item \textcolor{accentGreen}{SWE} has fine-grained oracle (FAIL\_TO\_PASS +
-  PASS\_TO\_PASS test sets).
-\item \textcolor{accentOrange}{MBPP+/HumanEval+} probe the saturation regime
-  (high prior).
+
+\textcolor{softGrey}{\scriptsize
+\textbf{Per (gen, bench) cell:} $n$ instances $\times$ $k{=}3$ patches/instance
+$\Rightarrow$ \textbf{$\sim 90$--$620$ records}.
+\textbf{LCB pool:} union of all 6 LCB releases (test.jsonl + test2--test6),
+filtered to leetcode platform $\Rightarrow$ 444 leetcode problems total
+(102 hard + 207 medium + 135 easy). \textbf{We sample 100\% of the leetcode pool}.
+\textbf{Why SWE varies per generator:} repo-level diffs require multi-file edits;
+weaker / open-weight gens fail patch-parse more often. Same 50 (Lite) / 30
+(Verified) candidates per gen; what differs is how many produce a parseable patch.}
+\end{frame}
+
+\begin{frame}{The five-benchmark cube --- why each + generators}
+\vspace{0.3cm}
+\info{Why each benchmark:}
+\begin{itemize}\setlength\itemsep{4pt}
+\item \textcolor{primaryBlue}{\textbf{LCB} (LiveCodeBench)} has $L_2$ (public
+  tests) --- the only benchmark in our cube with all 4 critics
+  ($L_0$ syntax, $L_1$ lint, $L_2$ public tests, $L_3$ LLM review).
+  Type: \emph{competitive programming, leetcode-style, function-level}.
+\item \textcolor{accentGreen}{\textbf{SWE-bench (Lite + Verified)}} has a
+  fine-grained oracle (FAIL\_TO\_PASS + PASS\_TO\_PASS test sets).
+  Type: \emph{repo-level patches, multi-file diff format}.
+\item \textcolor{accentOrange}{\textbf{MBPP+ / HumanEval+}} probe the saturation
+  regime (priors $\geq 0.7$ on closed-API gens) --- they exist in the cube
+  precisely to verify Bayesian collapses to \texttt{always\_verify} when there's
+  nothing to choose. Type: \emph{function-level, inline asserts}.
 \end{itemize}
 
-\info{Generators:} 4 closed-API frontier (\texttt{gpt5\_mini, qwen3\_coder,
-haiku45, sonnet45}) + \good{1 open-weight} (\texttt{Qwen2.5-Coder-32B-Instruct}
-via local vLLM).
+\vspace{0.3cm}
+\info{Generators (5 total):}
+\begin{itemize}\setlength\itemsep{2pt}
+\item \textbf{4 closed-API frontier} (via OpenRouter): \texttt{gpt5\_mini},
+  \texttt{qwen3\_coder}, \texttt{haiku45}, \texttt{sonnet45}.
+\item \good{\textbf{1 open-weight, locally hosted}}:
+  \texttt{Qwen2.5-Coder-32B-Instruct} via vLLM at \texttt{:8003} on Runpod-1
+  (no API spend, replicable).
+\end{itemize}
 \end{frame}
 
 \begin{frame}[fragile]{LiveCodeBench --- sample task}
@@ -2486,7 +2512,7 @@ LLM-based critics on the full $\sim$2400-patch calibration corpus.
 Prior $P(Y{=}1)$ & $\in [0.05, 0.95]$ & saturation/pathological cell \\
 $\chi^2$ critic-independence & $p > 0.05$ & product likelihood unsafe \\
 Critic gap $|\Delta_\ell|$ & $> 0.05$ on at least one cell & no-op critic, drop from panel \\
-Reviewer invariance & same Bayesian Δ ranking across 3 reviewers & reviewer-specific artifact \\
+Reviewer invariance & same Bayesian $\Delta$ ranking across 3 reviewers & reviewer-specific artifact \\
 LOO-CV stability & per-instance utility within $\pm 1$ of in-sample mean & likelihoods overfit \\
 Bootstrap CI on $\Delta$ & excludes 0 (or borderline reported) & effect indistinguishable from noise \\
 Measured kernel vs IID & differs significantly & F1 ablation pattern as expected \\
