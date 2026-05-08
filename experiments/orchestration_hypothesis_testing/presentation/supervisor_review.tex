@@ -1011,17 +1011,20 @@ $\text{Bernoulli}(\text{prior})$.
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Transition kernel: visual --- iter feedback's value scales with tractability}
+\begin{frame}{Transition kernel: visual --- iter feedback at full LCB sample}
 \vspace{-0.15cm}
 \begin{center}
 \includegraphics[width=0.84\textwidth]{figures/fig_lcb_difficulty_gradient.png}
 \end{center}
 \vspace{-0.15cm}
 \footnotesize
-\good{Top:} measured $P(\text{fix}|\text{broken})$ (solid) vs IID baseline (hatched).
-\good{Bottom:} $\Delta = \text{iter} - \text{IID}$.
-\warn{Negative on LCB-hard} (refinement hurts!);
-\good{positive on LCB-easy for capable gens} (gpt-5-mini: $+0.31$, sonnet-4.5: $+0.09$).
+\good{Top:} measured $P(\text{fix}|\text{broken})$ (solid bar) vs IID
+baseline (hatched, computed from $(instance, patch_id)$ pairs in
+calibration). \good{Bottom:} $\Delta = \text{iter} - \text{IID}$.
+\warn{Honest finding at full LCB sample (n=102/207/135):} iter $\le$
+IID baseline for nearly all closed-API cells. Only \texttt{qwen32b}/LCB-hard
+shows positive $\Delta$ ($+0.007$). The earlier ``iter helps capable
+gens on easy'' story was a small-sample artefact.
 \end{frame}
 
 % ============================================================================
@@ -1546,23 +1549,123 @@ generalises.
 \section{Three-regime story}
 \hypertarget{out:11}{}
 
+\begin{frame}{Notation hint --- read once, applies to all result slides}
+\vspace{-0.1cm}
+\scriptsize
+
+\begin{columns}[T,onlytextwidth]
+
+\begin{column}{0.49\textwidth}
+
+\info{Outcomes \& cells}
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item $Y \in \{0,1\}$ --- ground-truth correctness of a generated patch
+($Y{=}1$ passes the full hidden test suite; $Y{=}0$ broken).
+\item $z \in \{\text{pass},\text{fail}\}$ --- a critic's verdict on a patch
+(cheap proxy for $Y$).
+\item \emph{Cell} = (generator, benchmark) pair. We have
+$5\text{ gens} \times 7\text{ benches} = 35$ cells.
+\end{itemize}
+
+\vspace{4pt}
+\info{Critic stack (in order of cost)}
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item $L_0$ --- syntax / lint / static parse (cheapest).
+\item $L_2$ --- public test execution / fast partial tests.
+\item $L_3$ --- LLM-judge review of the patch.
+\item $\mathrm{verify}$ --- full hidden test suite (gold-standard label
+for $Y$; expensive).
+\end{itemize}
+{\tiny\itshape (No $L_1$ in our system: we skip from $L_0$ to $L_2$ to
+reflect the natural cost gap between syntactic checks and test
+execution.)}
+
+\vspace{4pt}
+\info{Probabilities \& informativeness}
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item \emph{prior} $= P(Y{=}1)$ --- generator's first-shot success rate
+on this cell, measured from the calibration corpus.
+\item $P(\mathrm{pass}\mid Y{=}1)$ --- critic recall (true-positive rate).
+\item $P(\mathrm{pass}\mid Y{=}0)$ --- critic false-positive rate.
+\item $L_2$ \emph{gap} (informativeness)
+$= P(\mathrm{pass}\mid Y{=}1) - P(\mathrm{pass}\mid Y{=}0)$. \\
+0 = noise; 1 = oracle.
+\end{itemize}
+
+\end{column}
+
+\begin{column}{0.49\textwidth}
+
+\info{Cost model \& utility}
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item Default cost vector: $c_\mathrm{gen}{=}5$, $c_{L_0}{=}1$,
+$c_{L_2}{=}2$, $c_{L_3}{=}5$, $c_\mathrm{ver}{=}30$, reward $R{=}100$.
+\item Key ratios: $c_\mathrm{ver}/c_{L_2}{=}15$,
+$R/c_\mathrm{ver}{\approx}3.3$.
+\item \emph{Utility} per query:
+$U = R\cdot \mathbf{1}[\text{final patch correct}] - \sum (\text{action
+costs paid})$.
+\item $\Delta_{\mathrm{vs\ always\_verify}} = U(\text{policy}) -
+U(\texttt{always\_verify})$, mean over instances; reported per cell.
+\end{itemize}
+
+\vspace{6pt}
+\info{Policies compared}
+\begin{itemize}\setlength{\itemsep}{1.5pt}
+\item \texttt{bayesian\_greedy} --- 1-step lookahead: at each step, pick
+the action that maximises immediate expected utility under the current
+belief $P(Y{=}1\mid\text{evidence so far})$.
+\item \texttt{bayesian\_DP} --- full Bellman recursion over (belief,
+budget) state. Multi-step optimal under the model; near-identical
+$\Delta$ to greedy in all our cells.
+\item \texttt{threshold\_L0 / L2 / L3} --- run that one critic; verify
+only if it says ``fail''; otherwise accept.
+\item \texttt{best\_of\_3} --- generate 3 patches, verify each, return
+the best.
+\item \texttt{fixed\_pipeline} --- hard-coded sequence
+$L_0 \to L_2 \to \mathrm{verify}$.
+\item \texttt{always\_verify} --- skip critics, always pay
+$c_\mathrm{ver}$.
+\end{itemize}
+
+\end{column}
+\end{columns}
+\end{frame}
+
 \begin{frame}{Three regimes --- the paper's organising claim}
-\vspace{0.1cm}
+\vspace{0.05cm}
+{\footnotesize\itshape
+\textbf{Notation:} \emph{prior} $= P(Y{=}1)$, the probability the
+generator's first single-shot patch is correct (measured per cell from
+the calibration corpus). \quad $L_2$ \emph{gap} $= P(\mathrm{pass}\mid
+Y{=}1) - P(\mathrm{pass}\mid Y{=}0)$, the informativeness of the
+mid-tier critic.\\[2pt]
+\textbf{Bayesian variant reported:} \texttt{bayesian\_greedy} (1-step
+lookahead). \texttt{bayesian\_DP} (full Bellman recursion) gives
+near-identical $\Delta$ in all three regimes --- both are listed as
+``Best policy'' below.\\[2pt]
+\textbf{Cost vector for the policy comparison:}
+$c_\mathrm{gen}{=}5$, $c_{L_0}{=}1$, $c_{L_2}{=}2$, $c_{L_3}{=}5$,
+$c_\mathrm{ver}{=}30$, $R{=}100$. Key ratios: $c_\mathrm{ver}/c_{L_2}
+{=}15$, $R/c_\mathrm{ver}{\approx}3.3$. Sensitivity to these choices is
+on the $4{\times}4$ $(R, c_\mathrm{ver})$ grid slide.}
+\vspace{0.05cm}
 \begin{table}
 \centering
 \small
-\begin{tabular}{p{1.6cm}p{4cm}p{4.4cm}}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{1.3cm}>{\raggedright\arraybackslash}p{3.4cm}>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}p{2.4cm}}
 \toprule
-\rowcolor{paleBlue}\textbf{Regime} & \textbf{Defining condition} & \textbf{Best policy} \\
+\rowcolor{paleBlue}\textbf{Regime} & \textbf{Description} & \textbf{Defining condition} & \textbf{Best policy} \\
 \midrule
-\rowcolor{paleGreen}\textbf{A} (low prior, informative cheap critics) &
+\rowcolor{paleGreen}\textbf{A} & low prior, informative cheap critics &
 LCB-hard, prior $\approx 0.2$, $L_2$ gap $\approx 0.49$ &
-\good{Bayesian DP/greedy} \\
-\rowcolor{paleBlue}\textbf{B} (mid prior, near-oracle $L_2$ available) &
-SWE-Lite/Verified, prior $\approx 0.4$ &
-\good{Bayesian DP/greedy} \\
-\rowcolor{paleOrange}\textbf{C} (high prior, saturated benchmark) &
-MBPP+/HumanEval+ (prior $> 0.9$), LCB-easy on strong gens &
+\good{Bayesian DP / greedy} \\
+\rowcolor{paleBlue}\textbf{B} & mid prior, near-oracle $L_2$ available &
+SWE-Lite / Verified, prior $\approx 0.4$ &
+\good{Bayesian DP / greedy} \\
+\rowcolor{paleOrange}\textbf{C} & high prior, saturated benchmark &
+MBPP+ / HumanEval+ (prior $> 0.9$), LCB-easy on strong gens &
 \warn{threshold\_L2 ties always\_verify} \\
 \bottomrule
 \end{tabular}
@@ -1576,15 +1679,19 @@ counter-example because the regime conditions are explicit.
 \begin{frame}{Three-regime map --- visual}
 \vspace{-0.2cm}
 \begin{center}
-\includegraphics[width=0.78\textwidth]{figures/fig4_regime_map.png}
+\includegraphics[width=0.74\textwidth]{figures/fig4_regime_map.png}
 \end{center}
-\vspace{-0.4cm}
-\small
-\textbf{x-axis:} prior $P(Y{=}1)$ (generator strength on benchmark).\\
-\textbf{y-axis:} $L_2$ informativeness (gap $P(\text{pass}\mid Y{=}1) -
-P(\text{pass}\mid Y{=}0)$).\\
-\textbf{Color:} Bayesian-greedy $\Delta$ utility vs always-verify
-(green = wins, yellow $\approx 0$).
+\vspace{-0.3cm}
+\footnotesize
+\textbf{x-axis:} prior $P(Y{=}1)$ (generator strength on benchmark).\quad
+\textbf{y-axis:} $L_2$ gap $P(\text{pass}\mid Y{=}1) -
+P(\text{pass}\mid Y{=}0)$.\\
+\textbf{Color:} Bayesian-greedy $\Delta$ utility vs always-verify at the
+default cost vector
+($c_\mathrm{gen}{=}5$, $c_{L_0}{=}1$, $c_{L_2}{=}2$, $c_{L_3}{=}5$,
+$c_\mathrm{ver}{=}30$, $R{=}100$); green = Bayesian wins, yellow
+$\approx 0$ tie. Robustness to cost ratio: see the $4{\times}4$
+$(R, c_\mathrm{ver})$ grid two slides later.
 \end{frame}
 
 % ============================================================================
@@ -1598,9 +1705,11 @@ P(\text{pass}\mid Y{=}0)$).\\
 \begin{frame}{Per-cell winner --- benchmark $\times$ generator matrix}
 \vspace{-0.15cm}
 \textcolor{softGrey}{\scriptsize
-\info{Cost vector held fixed at:} $R{=}100,\ c_\text{ver}{=}1,\
-c_{L_0}{=}c_{L_2}{=}c_{L_3}{=}0.05$. Per-cell winner shifts at other
-cost ratios (see sensitivity slides).}
+\info{Cost vector held fixed at default deployment regime:}
+$R{=}100,\ c_\text{ver}{=}30,\ c_{L_0}{=}1,\ c_{L_2}{=}2,\ c_{L_3}{=}5,\
+c_\text{gen}{=}5$. Ratios: $c_\text{ver}/c_{L_2}{=}15$,
+$R/c_\text{ver}{\approx}3.3$. Per-cell winner shifts at other ratios
+(see 4×4 grid two slides later).}
 
 \vspace{-0.1cm}
 \begin{center}
@@ -1660,18 +1769,23 @@ regime B, where the public-test critic has gap $> 0.7$ (just trust the tests).
 
 % ----------- Per-cell winner: 4x4 grid varying (R, c_ver) -----------
 \begin{frame}{Per-cell winner --- 4×4 grid varying $R$ (rows) and $c_\text{ver}$ (cols)}
-\vspace{-0.3cm}
+\vspace{-0.1cm}
+{\textcolor{softGrey}{\scriptsize
+\info{Critic costs held fixed at default per-critic values:}
+$c_{L_0}{=}1,\ c_{L_2}{=}2,\ c_{L_3}{=}5,\ c_\text{gen}{=}5$. Only $R$
+and $c_\text{ver}$ vary; the (R=100, $c_\text{ver}$=30) panel reproduces
+slide 51 cell-by-cell.}}
+\vspace{-0.25cm}
 \begin{center}
-\includegraphics[height=0.86\textheight]{figures/fig_winner_grid_R_cver.png}
+\includegraphics[height=0.74\textheight]{figures/fig_winner_grid_R_cver.png}
 \end{center}
 
 \vspace{-0.2cm}
-\textcolor{softGrey}{\scriptsize
-Each panel = one $(R, c_\text{ver})$ combination. Inside each panel, 7 benchmarks
-(rows) $\times$ 5 generators (cols) coloured by winning policy. Reads: low $R$ /
-high $c_\text{ver}$ (top-right of grid) $\to$ \good{Bayesian gives up} (light green);
-high $R$ / low $c_\text{ver}$ (bottom-left of grid) $\to$ \textbf{always\_verify} or
-\warn{threshold(L2)}. Slide 49 = the single panel at $R{=}100,\ c_\text{ver}{=}1$.}
+\textcolor{softGrey}{\tiny
+Each panel = one $(R, c_\text{ver})$. Across 560 (panel $\times$ cell)
+outcomes at default critic costs: \texttt{always\_v} 33\%,
+\texttt{bayesian\_DP} 30\%, \texttt{thr(L2)} 29\%, \texttt{bayes\_g} 8\%,
+\texttt{thr(L0)} 1\%, \texttt{thr(L3)} 0\%.}
 \end{frame}
 
 % ============================================================================
@@ -2034,13 +2148,20 @@ means \bad{uniformly worse}.
 % ============================================================================
 
 \begin{frame}{Where Bayesian wins --- top 10 cells by $\Delta$ utility}
-\vspace{0.2cm}
+\vspace{0.02cm}
+{\scriptsize\itshape
+$\Delta = U(\texttt{bayesian\_greedy}) - U(\texttt{always\_verify})$
+per query. \texttt{bayesian\_DP} gives near-identical $\Delta$. Cost
+vector: $c_\mathrm{gen}{=}5$, $c_{L_0}{=}1$, $c_{L_2}{=}2$, $c_{L_3}{=}5$,
+$c_\mathrm{ver}{=}30$, $R{=}100$ ($c_\mathrm{ver}/c_{L_2}{=}15$,
+$R/c_\mathrm{ver}{\approx}3.3$); robustness on the $4{\times}4$ grid slide.}
+\vspace{0.05cm}
 \begin{table}
 \centering
 \small
 \begin{tabular}{lllc}
 \toprule
-\rowcolor{paleBlue}\textbf{Generator} & \textbf{Benchmark} & \textbf{Regime} & \textbf{$\Delta$ vs always\_verify} \\
+\rowcolor{paleBlue}\textbf{Generator} & \textbf{Benchmark} & \textbf{Regime} & \textbf{$\Delta$ (\texttt{bayes\_greedy} $-$ \texttt{always\_verify})} \\
 \midrule
 \rowcolor{paleGreen}sonnet45 & LCB-hard & A & \good{+20.3} \\
 \rowcolor{paleGreen}qwen3\_coder & LCB-hard & A & \good{+20.3} \\

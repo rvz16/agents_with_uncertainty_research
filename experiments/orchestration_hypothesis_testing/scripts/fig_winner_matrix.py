@@ -30,15 +30,15 @@ GEN_DISPLAY = {
 }
 BENCH_ORDER = ["lcb_hard", "lcb_medium", "lcb_easy",
                "mbpp", "humaneval",
-               "swebench_lite", "swebench_verified"]
+               "swe_lite", "swe_verified"]
 BENCH_DISPLAY = {
     "lcb_hard":          "LCB-hard",
     "lcb_medium":        "LCB-medium",
     "lcb_easy":          "LCB-easy",
     "mbpp":              "MBPP+",
     "humaneval":         "HumanEval+",
-    "swebench_lite":     "SWE-Lite",
-    "swebench_verified": "SWE-Verified",
+    "swe_lite":     "SWE-Lite",
+    "swe_verified": "SWE-Verified",
 }
 
 # Color per policy (winner) — cell background

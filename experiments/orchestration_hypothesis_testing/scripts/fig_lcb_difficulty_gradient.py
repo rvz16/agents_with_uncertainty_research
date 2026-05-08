@@ -196,8 +196,8 @@ def main() -> None:
         ax_b.axvspan(lo - 0.05, hi + 0.05, ymin=0, ymax=1, alpha=0.0)
 
     fig.suptitle(
-        "Iterative refinement value scales with problem tractability (LCB)\n"
-        "Capable generators (gpt-5-mini, sonnet-4.5) benefit dramatically as problems become tractable",
+        "Iterative refinement vs IID-baseline retries (LCB, full sample n=102/207/135)\n"
+        "iter ≤ IID baseline for nearly all closed-API cells; only qwen32b/LCB-hard shows positive Δ",
         fontsize=12.5, y=0.99
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])

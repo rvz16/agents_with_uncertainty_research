@@ -17,7 +17,10 @@ random.seed(42)
 
 EXP = Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/experiments/orchestration_hypothesis_testing")
 
-COST_GEN, COST_L0, COST_L3, COST_VER, REWARD = 5, 1, 5, 30, 100
+# Cost vector matched to slide 51 / slide 53 (4x4 grid panel R=100, c_ver=1)
+# so the qwen32b SWE entries are computed at the SAME operating point as the
+# closed-API SWE cells already in PAPER_TABLE.
+COST_GEN, COST_L0, COST_L3, COST_VER, REWARD = 5, 0.05, 0.05, 1, 100
 
 
 def policy_always_verify(rec):
@@ -130,7 +133,7 @@ def main():
     table = json.loads(paper_path.read_text())
 
     for bench in ["lite", "verified"]:
-        cell = f"swebench_{bench}"
+        cell = f"swe_{bench}"
         critic = EXP / f"data/swebench_{bench}_qwen32b/qwen25_32b/critic_results.jsonl"
         lik = EXP / f"data/swebench_{bench}_qwen32b/qwen25_32b/likelihood_tables.json"
         if not critic.exists() or not lik.exists():
@@ -146,8 +149,8 @@ def main():
               f"{result['policies']['bayesian_greedy']['ci95_hi']:+.2f}]")
 
     paper_path.write_text(json.dumps(table, indent=2))
-    print(f"\nfinal swebench_lite gens: {list(table['swebench_lite'].keys())}")
-    print(f"final swebench_verified gens: {list(table['swebench_verified'].keys())}")
+    print(f"\nfinal swebench_lite gens: {list(table['swe_lite'].keys())}")
+    print(f"final swebench_verified gens: {list(table['swe_verified'].keys())}")
 
 
 if __name__ == "__main__":
