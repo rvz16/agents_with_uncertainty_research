@@ -128,6 +128,7 @@ GENERATORS: dict[str, tuple[str, str | None, bool | None]] = {
     "qwen25_7b":         ("Qwen/Qwen2.5-7B-Instruct",   "http://127.0.0.1:8001/v1",   None),
     "qwen3_8b":          ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   False),
     "qwen3_8b_thinking": ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   True),
+    "qwen25_32b":        ("Qwen/Qwen2.5-Coder-32B-Instruct", "http://127.0.0.1:8003/v1",   None),
 }
 
 # Per-model cost cap (USD) — used by --max-cost-usd-per-model when not given a
@@ -141,6 +142,7 @@ DEFAULT_COST_CAPS_USD: dict[str, float] = {
     "qwen3_coder": 2.0,
     "gpt5_mini":   2.0,
     "qwen25_7b":  1000.0,
+    "qwen25_32b": 1000.0,
     "qwen3_8b":   1000.0,
     "qwen3_8b_thinking": 1000.0,
 }
@@ -340,6 +342,17 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
         body = match.group("body")
         parts = re.split(r"^\s*SEARCH\s*$", body, maxsplit=1, flags=re.MULTILINE)
         if len(parts) < 2:
+            # Fallback: model omitted SEARCH keyword (gpt5_mini does this in
+            # refinement). If REPLACE keyword is present, treat content before
+            # REPLACE as SEARCH.
+            replace_split = re.split(r"^\s*REPLACE\s*$", body, maxsplit=1, flags=re.MULTILINE)
+            if len(replace_split) < 2:
+                continue
+            search_text = _strip_fence(replace_split[0]).strip("\n")
+            replace_text = _strip_fence(replace_split[1]).strip("\n")
+            if search_text:
+                out.append((fpath, search_text, replace_text))
+                consumed.append(match.span())
             continue
         rest = parts[1]
         parts2 = re.split(r"^\s*REPLACE\s*$", rest, maxsplit=1, flags=re.MULTILINE)
@@ -431,6 +444,27 @@ def parse_change_blocks(response: str) -> list[tuple[str, str, str]]:
             _strip_fence(parts2[0]).strip("\n"),
             _strip_fence(parts2[1]).strip("\n"),
         ))
+
+    # Strategy 4: pathless XML pairs that the model emits without any
+    # `<CHANGE path>` opener. Sonnet 4.5 does this — drops `<SEARCH>...</SEARCH>
+    # <REPLACE>...</REPLACE>` directly into the prose, expecting the reader
+    # to know which file from context. We emit these with `fpath=""` so
+    # ``apply_change_blocks`` can infer the path by searching oracle files
+    # for the SEARCH text.
+    pathless_xml = re.compile(
+        r"<SEARCH>\s*\n(?P<search>[\s\S]*?)\n?</SEARCH>\s*\n"
+        r"\s*<REPLACE>\s*\n(?P<replace>[\s\S]*?)\n?</REPLACE>",
+        re.MULTILINE,
+    )
+    for match in pathless_xml.finditer(response):
+        if _overlaps_consumed(match.start(), match.end()):
+            continue
+        out.append((
+            "",  # sentinel: apply_change_blocks will infer the path
+            _strip_fence(match.group("search")).strip("\n"),
+            _strip_fence(match.group("replace")).strip("\n"),
+        ))
+        consumed.append(match.span())
 
     return out
 
@@ -628,6 +662,44 @@ def _try_fuzzy_replace(
     return "\n".join(new_lines)
 
 
+def _infer_path_from_search(
+    search_text: str,
+    oracle_files: dict[str, str],
+) -> str:
+    """Find which oracle file uniquely contains the SEARCH text.
+
+    Used when the parser couldn't extract a path (Strategy 4 pathless XML
+    blocks) or when the model emitted a placeholder path with the real
+    path elsewhere. Tries the full matcher chain (strict, rstrip, indent,
+    fuzzy) so we don't miss matches due to whitespace drift.
+
+    Returns the matched path if exactly one oracle file contains the
+    SEARCH text, else "" (caller will skip the block).
+    """
+    if not search_text.strip():
+        return ""
+    matches: list[str] = []
+    for opath, content in oracle_files.items():
+        if not content:
+            continue
+        if search_text in content:
+            matches.append(opath)
+            continue
+        stripped_orig = "\n".join(l.rstrip() for l in content.split("\n"))
+        stripped_search = "\n".join(l.rstrip() for l in search_text.split("\n"))
+        if stripped_search in stripped_orig:
+            matches.append(opath)
+            continue
+        if _try_indent_tolerant_replace(content, search_text, "X") is not None:
+            matches.append(opath)
+            continue
+        if _try_fuzzy_replace(content, search_text, "X") is not None:
+            matches.append(opath)
+    # Only accept unambiguous single-file matches. If multiple oracle
+    # files contain the same SEARCH text we'd be guessing, so bail.
+    return matches[0] if len(matches) == 1 else ""
+
+
 def apply_change_blocks(
     oracle_files: dict[str, str],
     blocks: list[tuple[str, str, str]],
@@ -641,14 +713,25 @@ def apply_change_blocks(
          their common indents, re-indent REPLACE to the window's indent).
       4. Fuzzy SequenceMatcher with similarity threshold 0.92 (last resort,
          guards against hallucinated SEARCH text).
+
+    Also handles two path-resolution recoveries:
+      - fpath == ""        (Strategy 4 pathless XML pair): scan oracle
+        files for SEARCH match and use the unique hit.
+      - placeholder path   (e.g. "FILE_PATH_HERE"): same scan, useful
+        when the model emitted a placeholder path with the real path on
+        the next line (qwen3_coder mistake).
     """
     modified: dict[str, str] = {}
     for fpath, search_text, replace_text in blocks:
-        # Reject obvious placeholder paths immediately so the apply step's
-        # silent skip ("path/to/file.py" not in oracle_files) doesn't
-        # pretend we extracted a usable block.
-        if _PLACEHOLDER_PATH_RE.match(fpath):
-            continue
+        # Path inference: missing or placeholder paths get re-resolved by
+        # finding which oracle file uniquely contains the SEARCH text.
+        # Without this we'd silently drop these blocks (the most common
+        # remaining failure for sonnet45 + qwen3_coder).
+        if not fpath or _PLACEHOLDER_PATH_RE.match(fpath):
+            inferred = _infer_path_from_search(search_text, oracle_files)
+            if not inferred:
+                continue
+            fpath = inferred
         resolved = _resolve_oracle_path(fpath, oracle_files)
         original = modified.get(resolved, oracle_files.get(resolved, ""))
         if not original:
@@ -834,9 +917,20 @@ def parse_full_file_blocks(response: str) -> dict[str, str]:
 # Phase 1: Generation
 # ---------------------------------------------------------------------------
 
-def sample_instances(seed: int, n: int) -> list[dict]:
-    ds = load_dataset("princeton-nlp/SWE-bench_Lite", split="test")
+def sample_instances(seed: int, n: int,
+                     dataset_name: str = "princeton-nlp/SWE-bench_Lite",
+                     language_filter: str | None = None) -> list[dict]:
+    """Sample n instances from a SWE-bench dataset.
+
+    language_filter: when set (e.g., 'python'), keep only instances where
+        repo_language matches. Required for SWE-bench Pro (multi-language).
+    """
+    ds = load_dataset(dataset_name, split="test")
     indices = list(range(len(ds)))
+    if language_filter:
+        wanted = language_filter.lower()
+        indices = [i for i in indices
+                   if (ds[i].get("repo_language") or "").lower() == wanted]
     rng = random.Random(seed)
     rng.shuffle(indices)
     chosen = indices[:n]
@@ -1162,6 +1256,7 @@ def run_swebench_eval(
     run_id: str,
     max_workers: int,
     work_dir: Path,
+    dataset_name: str = "princeton-nlp/SWE-bench_Lite",
 ) -> Path:
     """Invoke `python -m swebench.harness.run_evaluation` and return path to report.
 
@@ -1186,7 +1281,7 @@ def run_swebench_eval(
 
     cmd = [
         sys.executable, "-m", "swebench.harness.run_evaluation",
-        "--dataset_name", "princeton-nlp/SWE-bench_Lite",
+        "--dataset_name", dataset_name,
         "--predictions_path", str(predictions_path),
         "--max_workers", str(max_workers),
         "--run_id", run_id,
@@ -1601,6 +1696,14 @@ def main() -> None:
     parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--dataset", default="princeton-nlp/SWE-bench_Lite",
+                        help="HuggingFace dataset name. Default: SWE-bench Lite. "
+                             "Set to 'princeton-nlp/SWE-bench_Verified' for Verified, "
+                             "or 'ScaleAI/SWE-bench_Pro' for Pro.")
+    parser.add_argument("--language-filter", default=None,
+                        help="Filter instances by repo_language (e.g., 'python'). "
+                             "Required for SWE-bench Pro (multi-language). "
+                             "If unset, no filtering.")
     parser.add_argument("--max-workers-gen", type=int, default=DEFAULT_MAX_WORKERS_GEN)
     parser.add_argument("--max-workers-eval", type=int, default=DEFAULT_MAX_WORKERS_EVAL)
     parser.add_argument("--generators", default=",".join(GENERATORS),
@@ -1641,7 +1744,9 @@ def main() -> None:
     log.info("cost caps (USD): %s", {k: caps[k] for k in selected})
     log.info("n_instances=%d n_patches=%d seed=%d", args.n_instances, args.n_patches, args.seed)
 
-    instances = sample_instances(args.seed, args.n_instances)
+    instances = sample_instances(args.seed, args.n_instances,
+                                  dataset_name=args.dataset,
+                                  language_filter=args.language_filter)
     log.info(
         "sampled %d instances; repos=%s",
         len(instances),
@@ -1751,6 +1856,7 @@ def main() -> None:
                     run_id=run_id,
                     max_workers=args.max_workers_eval,
                     work_dir=eval_dir,
+                    dataset_name=args.dataset,
                 )
 
     # ---------- Phase 3 ----------

@@ -196,6 +196,161 @@ indistinguishable. Bayesian gain $\approx 0$.
 \end{exampleblock}
 \end{frame}
 
+% ----------- Action set: shared vocabulary for every method below -----------
+\begin{frame}{Action set (1/3): terminal \& generation actions}
+\info{Six possible actions per timestep} --- shared vocabulary used (in
+various subsets) by every method that follows: baselines, threshold
+policies, the fixed pipeline, and both Bayesian controllers.
+
+\vspace{0.2cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{>{\ttfamily}lp{7.0cm}c}
+\toprule
+\rowcolor{paleBlue}\textnormal{\textbf{Action}} & \textnormal{\textbf{Effect on state}} & \textnormal{\textbf{Cost}} \\
+\midrule
+verify   & Run the oracle test suite. Observe $Y \in \{0,1\}$,
+           \textbf{terminate} the episode. Reward $R \cdot Y$ collected iff
+           $Y{=}1$. & $c_\text{ver}$ \\
+\addlinespace[4pt]
+generate & Draw a fresh patch from the LLM. Belief transitions to next state
+           via the measured kernel $P(Y_{k+1}{\mid}Y_k)$ (or resets to prior
+           under the IID synthesis). & $c_\text{gen}$ \\
+\addlinespace[4pt]
+give\_up & Terminate without verifying. \textbf{No reward, no further cost}.
+           Optimal when every continuation action has negative expected
+           utility (low belief + expensive verifier regime). & $0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.3cm}
+\textcolor{softGrey}{\scriptsize \texttt{verify} and \texttt{give\_up} are
+terminal --- they end the episode. \texttt{generate} advances the trajectory
+but does not gather information. The three information-gathering critic
+actions ($L_0$, $L_2$, $L_3$) are on the next slide.}
+\end{frame}
+
+% ----------- Action set 2/3 -----------
+\begin{frame}{Action set (2/3): information-gathering critic actions}
+\info{Critic actions refine the belief $b$ without terminating.} Each critic
+outputs a binary verdict $z_k \in \{\text{pass},\text{fail}\}$; the
+controller applies Bayes' rule to update $b$ (formula on the next slide).
+
+\vspace{0.15cm}
+\begin{table}
+\centering
+\small
+\begin{tabular}{>{\ttfamily}lp{7.0cm}c}
+\toprule
+\rowcolor{paleBlue}\textnormal{\textbf{Action}} & \textnormal{\textbf{Effect on state}} & \textnormal{\textbf{Cost}} \\
+\midrule
+$L_0$    & Run \texttt{ast.parse} on each modified file. Observe
+           $z_0$; Bayes-update belief. & $c_{L_0}$ \\
+\addlinespace[4pt]
+$L_2$    & Run public test cases (LCB) / fast partial pytest (SWE-bench).
+           Observe $z_2$; Bayes-update belief. \warn{LCB-only:} on SWE-bench
+           the public tests \emph{are} the verifier, so $L_2$ collapses
+           into \texttt{verify}. & $c_{L_2}$ \\
+\addlinespace[4pt]
+$L_3$    & Prompt the LLM-judge reviewer (default haiku-4.5) with diff +
+           problem statement; parse one-token PASS/FAIL. Observe $z_3$;
+           Bayes-update. & $c_{L_3}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.25cm}
+\textcolor{softGrey}{\scriptsize Critics are stochastic: PASS$\not\Rightarrow$
+$Y{=}1$ and FAIL$\not\Rightarrow$ $Y{=}0$. The likelihoods
+$P(z_k{=}\text{pass}\mid Y)$ are measured per (generator, benchmark) cell
+during calibration; the Bayes update on the next slide turns each
+observation into a posterior on $Y$.}
+\end{frame}
+
+% ----------- Action set 3/3: Bayes update + usage notes -----------
+\begin{frame}{Action set (3/3): Bayes update + usage notes}
+\info{Belief update on any critic observation $z_k \in \{\text{pass},\text{fail}\}$:}
+\vspace{-0.1cm}
+\[
+b' \;=\; \frac{P(z_k\mid Y{=}1)\,b}{P(z_k\mid Y{=}1)\,b \;+\; P(z_k\mid Y{=}0)\,(1-b)}
+\]
+
+\begin{exampleblock}{Worked example (LCB-hard / gpt5\_mini)}
+\footnotesize
+Start at the prior $b_0 = 0.21$. Run $L_2$ with measured likelihoods
+$P(L_2{=}\text{pass}\mid Y{=}1) = 0.96$, $P(L_2{=}\text{pass}\mid Y{=}0) = 0.25$:
+\begin{itemize}\setlength\itemsep{1pt}
+\item Observe $L_2{=}\text{PASS}\ \Rightarrow\ b_1 = \frac{0.96\cdot 0.21}{0.96\cdot 0.21 + 0.25\cdot 0.79} = 0.51$ \quad \good{(verify becomes attractive)}
+\item Observe $L_2{=}\text{FAIL}\ \Rightarrow\ b_1 = \frac{0.04\cdot 0.21}{0.04\cdot 0.21 + 0.75\cdot 0.79} = 0.014$ \quad \warn{(strong evidence Y=0; skip verify, regen)}
+\end{itemize}
+\end{exampleblock}
+
+\vspace{0.05cm}
+\textbf{How each method type uses this action set:}
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textcolor{accentTeal}{\textbf{Stateless baselines}} pick a fixed
+subset --- e.g.\ \texttt{always\_verify} uses $\{$\texttt{verify}$\}$;
+\texttt{threshold\_L2} uses $\{L_2,$\texttt{verify}, regen$\}$;
+\texttt{fixed\_pipeline} uses $\{L_0, L_2, L_3,$\texttt{verify}$\}$.
+\item \textcolor{accentPurple}{\textbf{Bayesian controllers}} choose actions
+\emph{adaptively} based on belief, picking whichever maximises expected
+utility at each step.
+\end{itemize}
+
+\textcolor{softGrey}{\scriptsize $L_1$ (lint) is excluded from the action
+space because its \emph{informativeness gap} is $\approx 0$ on every generator
+measured --- see next slide for definition.}
+\end{frame}
+
+% ----------- Critic informativeness: the gap metric -----------
+\begin{frame}{Critic informativeness: the ``gap'' metric}
+\info{One-number summary of how useful a critic is.}
+For critic $L_k$ with binary verdict $z_k \in \{\text{pass},\text{fail}\}$
+and ground truth $Y \in \{0,1\}$:
+\vspace{-0.1cm}
+\[
+\textcolor{primaryBlue}{\text{gap}(L_k)} \;=\;
+\underbrace{P(z_k{=}\text{pass} \mid Y{=}1)}_{\text{true-positive rate}}
+\;-\;
+\underbrace{P(z_k{=}\text{pass} \mid Y{=}0)}_{\text{false-positive rate}}
+\]
+\vspace{-0.3cm}
+
+\begin{block}{How to read it}
+\footnotesize
+\begin{itemize}\setlength\itemsep{1pt}
+\item \good{gap $= +1$} --- perfect oracle: critic passes iff $Y{=}1$.
+\item \good{gap $\in [+0.5, +1)$} --- near-oracle: a single PASS pushes
+the posterior most of the way to 1.
+\item \warn{gap $\in (0, +0.5)$} --- informative but noisy: useful when
+chained with other evidence (the partial-information regime).
+\item \bad{gap $\approx 0$} --- uninformative: critic verdict barely
+moves the belief; running it wastes $c_{L_k}$.
+\item \bad{gap $< 0$} --- anti-correlated: critic systematically passes
+broken patches more than correct ones (we observe this for $L_3$ self-review
+on some generators).
+\end{itemize}
+\end{block}
+
+\begin{exampleblock}{Measured gaps in our cube (per critic, range across cells)}
+\footnotesize
+\begin{tabular}{lll}
+$L_0$ syntax        & $-0.06$ to $+0.41$ & generator-dependent\\
+$L_1$ lint          & $\approx 0$       & \bad{dropped from action space}\\
+$L_2$ public tests  & $+0.7$ to $+0.97$ & \good{workhorse} (LCB \& SWE)\\
+$L_3$ LLM-judge     & $+0.01$ to $+0.46$ & varies by reviewer family
+\end{tabular}
+\end{exampleblock}
+
+\textcolor{softGrey}{\scriptsize The gap is the simplest summary of the
+two conditional likelihoods $\{P(z\mid Y{=}0), P(z\mid Y{=}1)\}$. The
+Bayesian controller uses the full likelihoods, not just the gap; the gap
+is a convenient ranking metric for ``which critic is most informative on
+this cell.''}
+\end{frame}
+
 % ============================================================================
 % Section 2: Baselines
 % ============================================================================
@@ -231,6 +386,424 @@ First 6: \textcolor{accentTeal}{stateless per-patch policies}.
 we treat as competing methods.
 \end{frame}
 
+% ----------- Win/loss claims depend on the cost vector -----------
+\begin{frame}{\warn{Read before the method details:} win/loss conditions depend on cost vector}
+\info{Every ``when it wins / when it loses'' statement in the upcoming
+method slides is conditional on a specific cost vector.} Changing the cost
+ratios shifts the per-cell winner; the regime characterisation we report
+holds at the default deployment regime below.
+
+\begin{block}{Default cost vector (used in every ``wins / loses'' callout)}
+\centering
+$R = 100,\quad c_\text{ver} = 30,\quad c_{L_0} = 1,\quad c_{L_2} = 2,\quad c_{L_3} = 5,\quad c_\text{gen} = 5$\\[3pt]
+Key ratios: $\quad c_\text{ver}/c_{L_2} = 15 \quad \cdot \quad R/c_\text{ver} \approx 3.3$
+\end{block}
+
+\begin{exampleblock}{What shifts when the cost vector changes}
+\footnotesize
+\begin{itemize}\setlength\itemsep{0pt}
+\item \warn{Lower $c_\text{ver}$:} break-even prior for \texttt{always\_verify}
+drops; verifying every patch becomes optimal. Bayesian gating loses ground.
+\item \warn{Higher $c_\text{ver}$:} \texttt{give\_up} becomes valuable at low
+prior. Bayesian gains; threshold(L2) loses where $L_2$ posterior $< c_\text{ver}/R$.
+\item \warn{Higher $c_{L_3}$:} threshold(L3) and Bayesian (which queries $L_3$) lose; threshold(L2) gains.
+\item \warn{Higher $R$:} verifying always wins --- each captured $Y{=}1$ pays for many wasted verifies.
+\end{itemize}
+\end{exampleblock}
+
+\textcolor{softGrey}{\tiny We sweep the cost vector empirically in the
+robustness section: $c_\text{ver}$ sweep on LCB-hard (crossover $\approx 17$)
+and a $4{\times}4$ grid over $(R, c_\text{ver})$.}
+\end{frame}
+
+% ----------- Comparison metric: what is "Δ"? -----------
+\begin{frame}{What number do we compare? (1/2) --- the $\Delta$ utility formula}
+\info{Every ``$\Delta = +X.X$'' callout in the deck} is a \textbf{mean
+per-instance utility difference vs the \texttt{always\_verify} baseline},
+computed on the cell's evaluation cohort.
+
+\vspace{0.15cm}
+\begin{block}{Step 1 --- per-instance utility under policy $\pi$ on instance $i$}
+\vspace{-0.15cm}
+\[
+U_\pi(i) \;=\; \underbrace{R \cdot Y_i \cdot \mathbb{1}[\pi \text{ chose to verify}]}_{\text{reward iff verified \emph{and} } Y{=}1}
+\;-\; \underbrace{\sum_{a \in \text{actions}_\pi(i)} c_a}_{\text{sum of action costs}}
+\]
+\vspace{-0.4cm}
+\end{block}
+
+\begin{block}{Step 2 --- average across the cell's $N$ instances}
+\vspace{-0.1cm}
+\[
+\bar{U}_\pi \;=\; \frac{1}{N}\sum_{i=1}^{N} U_\pi(i)
+\qquad
+\textcolor{accentGreen}{\Delta_\pi \;=\; \bar{U}_\pi \;-\; \bar{U}_{\texttt{always\_verify}}}
+\]
+\vspace{-0.35cm}
+\end{block}
+
+\vspace{0.1cm}
+\textcolor{softGrey}{\footnotesize Why \texttt{always\_verify} is the
+reference: it is the policy any team would use \emph{without} our framework
+(``just run the test suite on every patch''). $\Delta > 0$ means the
+framework is strictly better than the default; $\Delta = 0$ means
+indistinguishable; $\Delta < 0$ means actively harmful. Next slide:
+a concrete worked example with the headline number.}
+\end{frame}
+
+% ----------- Comparison metric: worked example + bootstrap -----------
+\begin{frame}{What number do we compare? (2/2) --- worked example + uncertainty}
+\info{Concrete cell: LCB-hard / gpt5\_mini ($N{=}29$ instances).}
+
+\begin{block}{$\bar{U}_{\texttt{always\_verify}}$ on this cell}
+\footnotesize
+The policy spends $c_\text{gen} + c_\text{ver} = 5 + 30 = 35$ on every
+instance and captures reward $R = 100$ on the fraction $Y{=}1$
+(empirical prior $0.21$):\\[3pt]
+\centering
+$\bar{U}_{\texttt{always\_verify}} \;=\; 100 \cdot 0.21 \;-\; 5 \;-\; 30 \;=\; \mathbf{+1.03}$
+\end{block}
+
+\begin{block}{$\bar{U}_{\texttt{bayesian\_greedy}}$ on the same cohort}
+\footnotesize
+The Bayesian controller chains $L_2$, sometimes commits to verify, and
+sometimes gives up on low-belief patches. Aggregated empirically over the
+29 instances:\\[3pt]
+\centering
+$\bar{U}_{\texttt{bayesian\_greedy}} \;=\; \mathbf{+13.59}$
+\end{block}
+
+\begin{exampleblock}{Headline $\Delta$ + confidence interval}
+\good{$\Delta_{\texttt{bayesian\_greedy}} \;=\; +13.59 - 1.03 \;=\; \mathbf{+12.55}$ utility per instance}\\[2pt]
+\footnotesize
+95\% paired-bootstrap CI $[+7.03,\, +18.07]$ from $B{=}1000$ resamples over
+instances. \textbf{Paired} = at each resample we recompute both policies'
+$\bar{U}$ on the \emph{same} resampled set of instances $\Rightarrow$ the
+CI quantifies instance-level variance, not policy-vs-policy noise. CI
+strictly above $0$ $\Rightarrow$ significant win.
+\end{exampleblock}
+\end{frame}
+
+% ============================================================================
+% Baseline detail slides (one per stateless policy)
+% ============================================================================
+
+% ----------- always_verify detail -----------
+\begin{frame}[fragile]{\texttt{always\_verify} --- skip every critic}
+\info{Mechanism:} the do-nothing baseline. Ignore all cheap critics; pay the
+oracle on every patch. The reference policy every other baseline is measured
+against.
+
+\begin{block}{Algorithm}
+\begin{lstlisting}
+patch = generate(prompt)
+Y     = verify(patch)        # pay c_ver every time
+return reward * Y - c_gen - c_ver
+\end{lstlisting}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Next slide: cost analysis and regime where
+this baseline wins / loses.}
+\end{frame}
+
+% ----------- always_verify regime -----------
+\begin{frame}[fragile]{\texttt{always\_verify} --- cost \& regime}
+\begin{block}{Cost \& expected utility}
+\footnotesize
+Cost per query: $c_\text{gen} + c_\text{ver}$ (fixed; no decision branches). \\[2pt]
+Expected utility: $\mathbb{E}[U] = R \cdot \text{prior} - c_\text{gen} - c_\text{ver}$.\\[2pt]
+Break-even prior: $\text{prior}^{*} = (c_\text{gen}+c_\text{ver})/R$. With
+$R=100,\ c_\text{ver}=30,\ c_\text{gen}=5 \Rightarrow \text{prior}^{*} = 0.35$ ---
+above this, the policy has positive expected utility on its own.
+\end{block}
+
+\begin{exampleblock}{When it wins}
+\good{Regime C} --- prior $\gtrsim 0.7$ (MBPP+, HumanEval+ on closed-API
+generators). No cheap critic moves the belief enough to flip the verify
+decision, so verifying every patch upfront is optimal. The Bayesian
+controllers correctly \emph{converge to this policy} in Regime C.
+\end{exampleblock}
+
+\begin{alertblock}{When it loses}
+\bad{Regime A} --- prior $\sim 0.1$--$0.2$ (LCB-hard). Paying $c_\text{ver}$
+on every patch wastes $\sim 30$ utility per low-belief instance that an
+$L_2$ fail would have filtered. This is the canonical regime where
+Bayesian gating pays off.
+\end{alertblock}
+\end{frame}
+
+% ----------- best_of_N detail -----------
+\begin{frame}[fragile]{\texttt{best\_of\_N} --- generate $N$, verify, take the best}
+\info{Mechanism:} draw $N$ independent patches, verify each, return the one
+with $Y{=}1$ if any exists (otherwise the last). No cheap critics involved
+--- the oracle is the only signal. \emph{We use $N=3$.}
+
+\begin{block}{Algorithm}
+\begin{lstlisting}
+patches = [generate(prompt) for _ in range(N)]
+Ys      = [verify(p) for p in patches]   # pay N * c_ver
+best    = max(Ys)                        # 1 if any patch resolved
+return reward * best - N * c_gen - N * c_ver
+\end{lstlisting}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Next slide: cost analysis and why this
+policy is uncompetitive in our cube.}
+\end{frame}
+
+% ----------- best_of_N regime -----------
+\begin{frame}[fragile]{\texttt{best\_of\_N} --- cost \& regime}
+\begin{block}{Cost \& expected utility}
+\footnotesize
+Cost per query: $N \cdot (c_\text{gen} + c_\text{ver})$ --- \textbf{linear in
+$N$}, paid unconditionally.\\[3pt]
+Expected utility (assuming IID patches with prior $p$):
+\[
+\mathbb{E}[U] = R \cdot \bigl(1 - (1-p)^N\bigr) - N(c_\text{gen}+c_\text{ver})
+\]
+At $N{=}3$, $R{=}100$, $c_\text{ver}{=}30$, $c_\text{gen}{=}5$, the per-query
+cost is $\mathbf{105}$ --- the policy only breaks even at
+$\text{prior} \gtrsim 0.36$.
+\end{block}
+
+\begin{exampleblock}{When it wins}
+\good{Essentially never in our cube.} Linear cost in $N$ outpaces the
+diminishing $1-(1-\text{prior})^N$ reward gain. Even on regime C the
+single-shot policies match it at $1/N$ the cost.
+\end{exampleblock}
+
+\begin{alertblock}{When it loses}
+\bad{Catastrophic in Regime A} (low prior, expensive verifier): pays
+$N\!\times\!c_\text{ver}$ whether the first patch was correct or not, with
+no early-stop. Uncompetitive everywhere else as well; included as a
+strawman.
+\end{alertblock}
+\end{frame}
+
+% ----------- threshold_L0 detail -----------
+\begin{frame}[fragile]{\texttt{threshold\_L0} --- verify iff syntax check passes}
+\info{Mechanism:} run the cheapest critic ($L_0$: \texttt{ast.parse}) on
+the patch. Verify iff $L_0$ passes; otherwise regen / give up.
+
+\begin{block}{Algorithm}
+\begin{lstlisting}
+patch = generate(prompt)
+if L0(patch) == PASS:
+    Y = verify(patch); return reward * Y - c_gen - c_L0 - c_ver
+else:
+    return -c_gen - c_L0          # give up (or regen)
+\end{lstlisting}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Next slide: why this policy degenerates
+to \texttt{always\_verify} on capable generators.}
+\end{frame}
+
+% ----------- threshold_L0 regime -----------
+\begin{frame}[fragile]{\texttt{threshold\_L0} --- cost \& regime}
+\begin{block}{Cost \& expected utility}
+\footnotesize
+Conditional cost: $c_\text{gen} + c_{L_0} + \mathbb{1}[L_0{=}\text{PASS}] \cdot c_\text{ver}$.\\[3pt]
+The decision only changes when $L_0$ has \emph{non-trivial gap}. On capable
+generators where syntax is universally clean (gap $\approx 0$), $L_0$ passes
+on essentially every patch; the policy degenerates to \texttt{always\_verify}
+plus a free $c_{L_0}$ overhead per query.
+\end{block}
+
+\begin{exampleblock}{When it wins}
+\good{Only when} $L_0$ has measurable gap AND broken patches genuinely fail
+syntax often enough to filter them out. \\
+\textbf{Empirically: never the sole winner in our 35-cell cube.} The four
+closed-API generators have $L_0$ gap $\leq 0.08$; \texttt{qwen3\_coder} has
+a gap of $+0.33$ on SWE-Lite but other thresholds dominate it there.
+\end{exampleblock}
+
+\begin{alertblock}{When it loses}
+\bad{Strictly dominated by \texttt{always\_verify}} whenever $L_0$ gap is
+small --- pays $c_{L_0}$ for no information gain, then verifies anyway
+because $L_0$ almost always passes. Included for completeness as the
+cheapest threshold.
+\end{alertblock}
+\end{frame}
+
+% ----------- threshold_L2 detail -----------
+\begin{frame}[fragile]{\texttt{threshold\_L2} --- verify iff public-test critic passes}
+\info{Mechanism:} run the mid-tier executable critic ($L_2$: public tests
+on LCB, fast partial pytest on SWE-bench) and verify iff it passes.
+\good{Workhorse heuristic} in our cube --- the strongest single-critic
+threshold.
+
+\begin{block}{Algorithm}
+\begin{lstlisting}
+patch = generate(prompt)
+if L2(patch) == PASS:
+    Y = verify(patch); return reward * Y - c_gen - c_L2 - c_ver
+else:
+    return -c_gen - c_L2          # give up (or regen)
+\end{lstlisting}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Next slide: why this is the dominant
+threshold in Regime B (SWE-bench).}
+\end{frame}
+
+% ----------- threshold_L2 cost & wins -----------
+\begin{frame}[fragile]{\texttt{threshold\_L2} --- cost \& when it wins}
+\begin{block}{Cost \& expected utility}
+\footnotesize
+\[
+\mathbb{E}[U] = P(L_2{=}\text{pass}) \cdot \bigl[R \cdot P(Y{=}1\!\mid\! L_2{=}\text{pass})
+- c_\text{ver}\bigr] - c_\text{gen} - c_{L_2}
+\]
+The bracket is positive when the $L_2$ posterior $> c_\text{ver}/R$, i.e.\
+when the critic is \emph{near-oracle}. \\[3pt]
+Measured $L_2$ gap: SWE-bench Lite $\approx 0.93$, SWE-Verified $\approx
+0.86$ (near-oracle); LCB hard/medium/easy $0.7$--$0.97$ (workhorse).
+\end{block}
+
+\begin{exampleblock}{When it wins: 19 / 35 cells}
+\good{The largest single-policy winner in the cube.} Dominates Regime B:
+\textbf{all 4 SWE-bench Lite \& SWE-Verified closed-API cells}
+($\Delta$ $+4.7$ to $+21.9$) and most LCB-easy / MBPP+ / HumanEval+ cells
+where $L_2$ is informative. \\[3pt]
+Mechanism: \emph{catches lucky-realization fixes} on patches where the
+Bayesian framework rationally gives up in expectation (low posterior under
+true measured kernel) but the mechanical retry happens to succeed --- a
+high-variance gain that the rational policy avoids in expectation.
+\end{exampleblock}
+
+\textcolor{softGrey}{\scriptsize Next slide: where this baseline gives up
+the lead to the Bayesian framework or \texttt{always\_verify}.}
+\end{frame}
+
+% ----------- threshold_L2 when it loses -----------
+\begin{frame}[fragile]{\texttt{threshold\_L2} --- when it loses}
+\begin{alertblock}{Regime A: low prior, multi-informative critics (LCB-hard)}
+Even after $L_2{=}\text{pass}$ the prior is low enough ($\sim 0.1$--$0.2$)
+that the Bayesian framework can profitably consult $L_3$ before committing
+$c_\text{ver}$. The single-shot threshold has to commit on the $L_2$
+signal alone --- effectively under-using the multi-informative critic
+stack. \\[2pt]
+Empirical losses to \texttt{bayesian\_greedy} on LCB-hard:
+$-12$ to $-23$ utility per query across the 4 closed-API generators.
+\end{alertblock}
+
+\begin{alertblock}{Regime C: high prior, weak $L_2$ (MBPP+ / HumanEval+ saturated cells)}
+When the prior is high enough that \texttt{always\_verify} already has
+positive expected utility on its own, $L_2$ gating filters out genuinely
+correct patches that happen to fail one public test --- losing reward
+without saving enough verifier cost to compensate. \\[2pt]
+Bayesian Greedy on these cells correctly \emph{collapses to
+always\_verify} ($\Delta = 0$), avoiding the under-filter regret that
+\texttt{threshold\_L2} pays.
+\end{alertblock}
+
+\textcolor{softGrey}{\scriptsize Pattern: threshold\_L2 is optimal when
+$L_2$ is the \emph{only} informative critic and the prior is uncertain
+enough that gating helps; it loses when either condition flips.}
+\end{frame}
+
+% ----------- threshold_L3 detail -----------
+\begin{frame}[fragile]{\texttt{threshold\_L3} --- verify iff LLM-judge approves}
+\info{Mechanism:} prompt a separate LLM (default haiku-4.5) with the diff +
+problem statement, parse a one-token PASS/FAIL. Verify iff PASS; else regen.
+
+\begin{block}{Algorithm}
+\begin{lstlisting}
+patch = generate(prompt)
+verdict = llm_judge(patch, problem)        # one classification call
+if verdict == PASS:
+    Y = verify(patch); return reward * Y - c_gen - c_L3 - c_ver
+else:
+    return -c_gen - c_L3
+\end{lstlisting}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Next slide: why this is a high-variance,
+mostly-losing baseline.}
+\end{frame}
+
+% ----------- threshold_L3 regime -----------
+\begin{frame}[fragile]{\texttt{threshold\_L3} --- cost \& regime}
+\begin{block}{Cost \& expected utility}
+\footnotesize
+\[
+\mathbb{E}[U] = P(L_3{=}\text{pass}) \cdot \bigl[R \cdot P(Y{=}1\!\mid\! L_3{=}\text{pass})
+- c_\text{ver}\bigr] - c_\text{gen} - c_{L_3}
+\]
+$L_3$ is \textbf{the noisiest critic in our stack}: $P(\text{pass}\mid Y{=}0)$
+routinely sits at $0.3$--$0.5$ (compared with $L_2$ at $\leq 0.25$ on LCB).
+And critically, \warn{not reviewer-invariant}: the informativeness gap
+ranges from $+0.01$ (sonnet self-review) to $+0.46$ (gpt-4o-mini reviewing
+haiku) depending on reviewer family.
+\end{block}
+
+\begin{alertblock}{When it loses}
+\bad{Almost everywhere.} On LCB-hard with the haiku reviewer the policy
+lands at $\Delta \in [-6,-13]$ vs \texttt{always\_verify}; on MBPP+ utility
+swings $\pm 10$--$22$ across reviewer choices on the same patches.
+\end{alertblock}
+
+\begin{exampleblock}{Why it's still in the panel}
+\warn{High-variance baseline.} Same patches, same controllers, three
+different reviewers $\Rightarrow$ utility shifts by $\sim 22$ units.
+Demonstrates the Bayesian framework's \good{reviewer-invariance} as a
+robustness claim --- the Bayesian utility is flat across reviewers in
+36/36 cells because the controller picks $L_2$ first whenever its gap
+dominates.
+\end{exampleblock}
+\end{frame}
+
+% ----------- fixed_pipeline detail -----------
+\begin{frame}[fragile]{\texttt{fixed\_pipeline} --- run all critics, AND-gate the verify}
+\info{Mechanism:} run \emph{every} cheap critic, then verify only if all of
+them pass simultaneously. The maximally conservative threshold; intersection
+of all single-critic thresholds.
+
+\begin{block}{Algorithm}
+\begin{lstlisting}
+patch = generate(prompt)
+zs = [L0(patch), L2(patch), L3(patch)]          # pay all critic costs
+if all(z == PASS for z in zs):
+    Y = verify(patch)
+    return reward * Y - c_gen - c_L0 - c_L2 - c_L3 - c_ver
+else:
+    return -c_gen - c_L0 - c_L2 - c_L3
+\end{lstlisting}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Next slide: why AND-gating loses on
+\textbf{28/28} cells under BH-FDR correction.}
+\end{frame}
+
+% ----------- fixed_pipeline regime -----------
+\begin{frame}[fragile]{\texttt{fixed\_pipeline} --- cost \& regime}
+\begin{block}{Cost \& expected utility}
+\footnotesize
+Always pays $c_\text{gen} + \sum_\ell c_\ell$ (every critic, every patch);
+pays $c_\text{ver}$ only on the rare AND-pass event.\\[3pt]
+\bad{Failure mode:} each critic has a non-trivial $P(\text{fail}\mid Y{=}1)$
+(missed-correct rate). AND-gating \emph{multiplies} these, so the AND-pass
+rate on $Y{=}1$ patches is much smaller than any individual critic's
+true-positive rate. Net effect: drops correct patches while still paying
+the full critic-stack cost.
+\end{block}
+
+\begin{alertblock}{When it loses}
+\bad{Loses on 28/28 cells} where we report it --- uniformly worse than
+\texttt{always\_verify} even under BH-FDR correction. Worst single policy
+in the cube.
+\end{alertblock}
+
+\begin{exampleblock}{Why it's in the panel}
+\warn{The naive-conservative strawman.} Demonstrates that all-critic
+intersection is the wrong strategy when critics have non-zero
+false-negative rates on $Y{=}1$ patches. The Bayesian framework's
+\emph{selective} action choice strictly dominates by consulting only
+critics whose expected information gain exceeds their cost.
+\end{exampleblock}
+\end{frame}
+
 % ----------- Our methods (parallel structure to baselines slide) -----------
 \begin{frame}{Our methods}
 \vspace{0.2cm}
@@ -246,7 +819,7 @@ we treat as competing methods.
 \texttt{bayesian\_greedy} & \textcolor{accentGreen}{1-step lookahead}: at each state, pick \texttt{argmax} of immediate $Q$-value. \\
 & \textcolor{softGrey}{\footnotesize Doesn't use the kernel; treats one critic + verify as the full plan.} \\
 \addlinespace[3pt]
-\texttt{bayesian\_DP} & \textcolor{accentGreen}{Backward induction} on discretised belief grid (51 pts $\times$ horizon $H{=}3$). \\
+\texttt{bayesian\_DP} & \textcolor{accentGreen}{Backward induction} on a discretised belief grid (uniform 51-point grid on $b \in [0,1]$, step $0.02$ $\times$ horizon $H{=}3$). \\
 & \textcolor{softGrey}{\footnotesize Uses the \emph{transition kernel} $P(Y_{k+1}\mid Y_k)$; can chain critics multi-step.} \\
 \bottomrule
 \end{tabular}
@@ -316,12 +889,55 @@ $\Rightarrow$ \good{argmax} $= L_2$. Observe $z_2{=}\text{PASS} \Rightarrow b_1 
 \texttt{lcb\_compare.py:52--103}. Decision: $O(|A|)$. No V-table.}
 \end{frame}
 
+% ----------- Transition kernel recap (before bayesian_DP) -----------
+\begin{frame}{Transition kernel recap: what $P(\text{fix}\mid\text{broken})$, $P(\text{break}\mid\text{correct})$ mean}
+\info{The transition kernel describes how patch correctness $Y$ changes
+across one step of iterative refinement.} Concretely: the controller has
+patch $k$ with oracle outcome $Y_k$, asks the LLM for patch $k{+}1$ (with
+or without critic feedback), and we observe $Y_{k+1}$.
+
+\vspace{0.1cm}
+\begin{block}{The four possible transitions in a $(Y_k, Y_{k+1})$ pair}
+\centering
+\begin{tabular}{lccp{5.5cm}}
+\toprule
+\rowcolor{paleBlue}\textbf{Name} & $Y_k$ & $Y_{k+1}$ & \textbf{Interpretation} \\
+\midrule
+\rowcolor{paleGreen}\good{fix}            & 0 & 1 & broken patch $\to$ correct patch (refinement worked) \\
+\warn{persist\_broken}                    & 0 & 0 & still broken after refinement \\
+\bad{break}                                & 1 & 0 & correct patch $\to$ broken patch (refinement damaged it) \\
+\good{persist\_correct}                   & 1 & 1 & stayed correct \\
+\bottomrule
+\end{tabular}
+\end{block}
+
+\vspace{0.05cm}
+\begin{block}{The two kernel parameters \texttt{bayesian\_DP} uses}
+\footnotesize
+\vspace{-0.15cm}
+\begin{align*}
+P(\text{fix}\mid\text{broken})\;\; &=\; P(Y_{k+1}{=}1 \mid Y_k{=}0)\; =\; \tfrac{\#\text{fix}}{\#\text{fix}+\#\text{persist\_broken}}\\
+P(\text{break}\mid\text{correct})\; &=\; P(Y_{k+1}{=}0 \mid Y_k{=}1)\; =\; \tfrac{\#\text{break}}{\#\text{break}+\#\text{persist\_correct}}
+\end{align*}
+\vspace{-0.5cm}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize Plain-English: \good{$P(\text{fix}|\text{broken})$}
+$=$ ``how often does refining a broken patch actually fix it?'' \quad
+\bad{$P(\text{break}|\text{correct})$} $=$ ``how often does refinement
+damage a working patch?'' \quad Both are measured per cell from the iter
+trajectories; they govern \texttt{bayesian\_DP}'s decision to \texttt{generate}
+(refine) vs.\ \texttt{verify} or \texttt{give\_up}.}
+\end{frame}
+
 % ----------- bayesian_DP detail -----------
 \begin{frame}[fragile]{\texttt{bayesian\_DP} --- backward-induction controller}
-\info{Mechanism:} discretise belief into $51$ grid points $\times$ horizon $H{=}3$;
-solve Bellman backwards; act greedily w.r.t.\ the resulting V-table. \good{Uses
-the measured kernel} $P(Y_{k+1}\mid Y_k)$ for \texttt{generate}; recurses on
-critic outcomes (can plan \texttt{L0$\to$L2$\to$verify} multi-step).
+\info{Mechanism:} discretise the continuous belief $b \in [0,1]$ into a
+uniform 51-point grid (step $0.02$), unroll the trajectory for horizon
+$H{=}3$, solve Bellman backwards over $51 \times 3 = 153$ (belief, step)
+states, act greedily w.r.t.\ the resulting V-table at decision time.
+\good{Uses the measured kernel} $P(Y_{k+1}\mid Y_k)$ for \texttt{generate};
+recurses on critic outcomes (can plan \texttt{L0$\to$L2$\to$verify} multi-step).
 
 \begin{block}{What data this method needs}
 \scriptsize
@@ -356,6 +972,50 @@ $\to L_2$ at $b_1{=}0.625$ $\to$ \good{verify} at $b_2{\approx}0.99$.
 
 \textcolor{softGrey}{\tiny \texttt{BayesianController.\_build()} in
 \texttt{run\_baseline\_vs\_controller.py:68--210}. Decision: $O(1)$ table lookup. Build: $O(H \cdot 51 \cdot |A|)$ per cell.}
+\end{frame}
+
+% ----------- Bellman equation explanation -----------
+\begin{frame}{\texttt{bayesian\_DP} --- which Bellman equation are we solving?}
+\info{Standard finite-horizon Bellman recursion} for the POMDP whose belief
+state is $b \in [0,1]$ and whose action set is the six moves from the
+\emph{Action set} slides. $V_k(b)$ is the optimal expected utility achievable
+from belief $b$ with $H{-}k$ moves remaining; $Q_k(a; b)$ is the expected
+utility of taking action $a$ first and then acting optimally.
+
+\begin{block}{Bellman optimality: $V_k(b) = \max_a Q_k(a;\, b)$}
+\vspace{-0.15cm}
+{\footnotesize
+\begin{align*}
+Q_k(\text{verify}; b)    &= R\, b - c_\text{ver}
+   && \text{(terminal: reward iff $Y{=}1$, minus oracle cost)}\\
+Q_k(\text{generate}; b)  &= -c_\text{gen} + V_{k{+}1}\bigl(\,\text{kernel}(b)\,\bigr)
+   && \text{(refine, then recurse one step later)}\\
+Q_k(L_\ell; b)           &= -c_{L_\ell} + \mathbb{E}_{z_\ell}\bigl[\,V_k^{\text{post}}\!\bigl(b'_{z_\ell}\bigr)\,\bigr]
+   && \text{(observe critic, Bayes-update $b \!\to\! b'$, recurse)}\\
+Q_k(\text{give\_up}; b)  &= 0
+   && \text{(terminal: zero reward, zero cost)}
+\end{align*}}
+\vspace{-0.35cm}
+\end{block}
+
+\begin{block}{The supporting pieces}
+\footnotesize
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{Base case at horizon:} $V_H(b) = \max(R\,b - c_\text{ver},\; 0)$ --- verify or give up.
+\item \textbf{Kernel transition for \texttt{generate}:}
+$\text{kernel}(b) = b\cdot(1{-}P_{\text{break}}) + (1{-}b)\cdot P_{\text{fix}}$ --- the post-refinement marginal.
+\item \textbf{Belief update on critic observation $z_\ell$:}
+$b'_{z_\ell} = \frac{P(z_\ell\mid Y{=}1)\,b}{P(z_\ell\mid Y{=}1)\,b + P(z_\ell\mid Y{=}0)(1{-}b)}$.
+\item \textbf{$\mathbb{E}_{z_\ell}[\cdot]$:} average over the two possible
+critic verdicts, weighted by $P(z_\ell{=}\text{pass}) = P(z_\ell{=}\text{pass}\mid Y{=}1)b + P(z_\ell{=}\text{pass}\mid Y{=}0)(1{-}b)$.
+\end{itemize}
+\end{block}
+
+\textcolor{softGrey}{\scriptsize \textbf{Algorithm:} initialize $V_H(b)$ at
+the 51 grid points; for $k = H{-}1, H{-}2, \dots, 0$ compute $V_k(b) =
+\max_a Q_k(a;b)$ at each grid point (look up $V_{k+1}$ on the grid via
+nearest-neighbour). At decision time, look up the $\arg\max_a Q_k(a;b)$
+entry --- $O(1)$ table lookup, no online optimisation.}
 \end{frame}
 
 \begin{frame}[fragile]{Self-Refine vs Reflexion --- algorithmically}
@@ -748,8 +1408,8 @@ $Y \in \{0, 1\}$ is the oracle ground truth from the harness.
   $\chi^2$ test summary.
 \end{enumerate}
 
-\textcolor{softGrey}{\scriptsize Example LCB-hard gpt5\_mini: $L_2$ gap $= +0.49$
-(highly informative), $L_3$ gap $= +0.07$ (mild).}
+\textcolor{softGrey}{\scriptsize Example LCB-hard gpt5\_mini: $L_2$ gap $= +0.71$
+(workhorse), $L_3$ gap $= +0.34$ (informative in the partial-information regime).}
 \end{frame}
 
 % ---------- Recipe 3a: Transition kernel — collect & classify ----------
@@ -818,8 +1478,8 @@ $Y \in \{0, 1\}$ is the oracle ground truth from the harness.
   counts\}.
 \end{enumerate}
 
-\textcolor{softGrey}{\scriptsize Example gpt5\_mini SWE-Verified:
-$\hat{P}(\text{fix}|\text{broken}) = 0.13$, $\hat{P}(\text{break}|\text{correct}) = 0.06$.
+\textcolor{softGrey}{\scriptsize Example gpt5\_mini SWE-Verified Self-Refine:
+$\hat{P}(\text{fix}|\text{broken}) = 0.22$, $\hat{P}(\text{break}|\text{correct}) = 0.16$.
 Markov chain $\neq$ iid Bernoulli.}
 \end{frame}
 
@@ -833,20 +1493,24 @@ Markov chain $\neq$ iid Bernoulli.}
 \toprule
 Critic & $P(z\mid Y{=}1)$ & $P(z\mid Y{=}0)$ & gap $\Delta$ \\
 \midrule
-\texttt{L0\_syntax} & 0.95 & 0.99 & \warn{$-0.04$} \\
-\texttt{L1\_lint} & 0.95 & 0.99 & \warn{$-0.04$} \\
-\texttt{L2\_public\_tests} & 0.90 & 0.41 & \good{$+0.49$} \\
-\texttt{L3\_llm\_review} & 0.30 & 0.23 & \good{$+0.07$} \\
+\texttt{L0\_syntax} & 0.96 & 0.68 & \good{$+0.28$} \\
+\texttt{L1\_lint} & 0.04 & 0.01 & \warn{$+0.03$} \\
+\texttt{L2\_public\_tests} & 0.96 & 0.25 & \good{$+0.71$} \\
+\texttt{L3\_llm\_review} & 0.83 & 0.49 & \good{$+0.34$} \\
 \bottomrule
 \end{tabular}
 \end{table}
 \vspace{0.4cm}
 \begin{itemize}
-\item \warn{L0/L1 are uninformative for $Y$} --- almost all patches parse
-cleanly.
-\item \good{L2 (public tests) is highly informative} --- gap $0.49$ is the
-workhorse signal for LCB.
-\item \info{L3 (LLM judge) is mildly informative} --- gap $0.07$.
+\item \warn{L1 is uninformative} --- almost no patches trip the conservative
+ruleset (gap $\approx 0$); dropped from the controller's action space.
+\item \good{L2 (public tests) is the workhorse signal} --- gap $0.71$:
+correct patches almost always pass, broken ones pass only 25\% of the time.
+\item \good{L3 (LLM judge) is meaningfully informative} --- gap $0.34$ on
+LCB-hard; broken patches still get PASS $\sim$50\% of the time (the
+partial-information regime).
+\item \info{L0 is mildly informative} --- gap $0.28$; syntax errors are
+slightly more common on broken patches.
 \item \info{Bayesian update:} $\frac{P(Y{=}1)}{P(Y{=}0)} \cdot
   \prod_\ell \frac{P(z_\ell \mid Y{=}1)}{P(z_\ell \mid Y{=}0)}$.
 \end{itemize}
@@ -929,7 +1593,7 @@ critic conditional structure is already captured by the likelihoods.}
 \begin{frame}{Concrete worked kernel (1/2): counts \& estimators}
 \vspace{0.15cm}
 \info{Cell:} \texttt{verified/gpt5\_mini/selfrefine}, $n = 30$ instances,
-trajectories of up to 5 steps each.
+trajectories of up to 5 steps each ($n_{\text{pairs}}=112$).
 
 \vspace{0.2cm}
 \textbf{Step 1: count consecutive transitions across all instances}
@@ -940,20 +1604,20 @@ trajectories of up to 5 steps each.
 \toprule
 \textbf{Transition} & \textbf{Y$_k$} & \textbf{Y$_{k+1}$} & \textbf{Count} \\
 \midrule
-\rowcolor{paleGreen}\good{fix} & 0 & 1 & 18 \\
-\warn{persist\_broken} & 0 & 0 & 122 \\
-\bad{break} & 1 & 0 & 9 \\
-\good{persist\_correct} & 1 & 1 & 130 \\
+\rowcolor{paleGreen}\good{fix} & 0 & 1 & 9 \\
+\warn{persist\_broken} & 0 & 0 & 35 \\
+\bad{break} & 1 & 0 & 10 \\
+\good{persist\_correct} & 1 & 1 & 58 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \vspace{0.2cm}
-\textbf{Step 2: maximum-likelihood estimators}
+\textbf{Step 2: Beta(1,1)-smoothed estimators}
 \[
-\hat{P}(\text{fix}\mid\text{broken}) = \frac{18}{18+122} = \textcolor{accentGreen}{\mathbf{0.13}}
+\hat{P}(\text{fix}\mid\text{broken}) = \frac{9+1}{(9+1)+(35+1)} = \textcolor{accentGreen}{\mathbf{0.22}}
 ,\quad
-\hat{P}(\text{break}\mid\text{correct}) = \frac{9}{9+130} = \textcolor{accentRed}{\mathbf{0.06}}
+\hat{P}(\text{break}\mid\text{correct}) = \frac{10+1}{(10+1)+(58+1)} = \textcolor{accentRed}{\mathbf{0.16}}
 \]
 
 \vspace{0.2cm}
@@ -966,24 +1630,25 @@ kernel rather than a synthesised one.}
 \vspace{0.15cm}
 \info{Same cell:} \texttt{verified/gpt5\_mini/selfrefine}.
 Point estimates from the previous slide:
-$\hat{P}(\text{fix}\mid\text{broken}) = \good{0.13}$,
-$\hat{P}(\text{break}\mid\text{correct}) = \bad{0.06}$.
+$\hat{P}(\text{fix}\mid\text{broken}) = \good{0.22}$,
+$\hat{P}(\text{break}\mid\text{correct}) = \bad{0.16}$.
 
 \vspace{0.3cm}
-\textbf{Step 3: cluster bootstrap CI ($B=1000$, instance-level)}
+\textbf{Step 3: Wilson 95\% CI (binomial on raw counts)}
 \begin{itemize}\setlength\itemsep{1pt}
-\item Resample 30 instances with replacement, recompute kernel per resample.
-\item Clustering at the instance level handles within-trajectory
-  auto-correlation (step $k+1$ conditions on step $k$).
-\item 95\% CI: $P(\text{fix}\mid\text{broken}) \in \good{[0.07, 0.20]}$,
-  $P(\text{break}\mid\text{correct}) \in \warn{[0.02, 0.11]}$.
+\item Conservative CI on each marginal pass rate; cluster-bootstrap variant
+resamples 30 whole instances to handle within-trajectory auto-correlation.
+\item 95\% CI: $P(\text{fix}\mid\text{broken}) \in \good{[0.11, 0.35]}$
+  ($n=44$), $P(\text{break}\mid\text{correct}) \in \warn{[0.08, 0.25]}$
+  ($n=68$).
 \end{itemize}
 
 \vspace{0.3cm}
 \textbf{Step 4: compare to IID baseline} \textcolor{softGrey}{\small (assuming patches are iid Bernoulli(prior))}
 \begin{itemize}\setlength\itemsep{1pt}
-\item IID would predict $P(\text{fix}\mid\text{broken}) = \text{prior} = 0.63$.
-\item \bad{Measured 0.13 $\ll$ IID 0.63} $\Rightarrow$ \warn{IID assumption strongly violated}.
+\item IID would predict $P(\text{fix}\mid\text{broken}) = \text{prior} = 0.74$.
+\item \bad{Measured 0.22 $\ll$ IID 0.74} $\Rightarrow$ \warn{IID assumption strongly violated}
+  (gap $-0.52$; consistent across the cube, commit \texttt{ef21a0a}).
 \item Implication: DP solver may strictly dominate Greedy here (\S F1 ablation).
 \end{itemize}
 \end{frame}
@@ -995,8 +1660,8 @@ $\text{Bernoulli}(\text{prior})$.
 
 \info{Reality (measured kernels on iter records):}
 \begin{itemize}
-\item $P(\text{fix} \mid \text{broken}) = 0.13$ (gpt5\_mini SWE-Verified)
-\item $P(\text{break} \mid \text{correct}) = 0.06$
+\item $P(\text{fix} \mid \text{broken}) = 0.22$ (gpt5\_mini SWE-Verified Self-Refine)
+\item $P(\text{break} \mid \text{correct}) = 0.16$
 \item \bad{Markov chain $\neq$ iid Bernoulli}.
 \end{itemize}
 
@@ -1022,9 +1687,12 @@ $\text{Bernoulli}(\text{prior})$.
 baseline (hatched, computed from $(instance, patch_id)$ pairs in
 calibration). \good{Bottom:} $\Delta = \text{iter} - \text{IID}$.
 \warn{Honest finding at full LCB sample (n=102/207/135):} iter $\le$
-IID baseline for nearly all closed-API cells. Only \texttt{qwen32b}/LCB-hard
-shows positive $\Delta$ ($+0.007$). The earlier ``iter helps capable
-gens on easy'' story was a small-sample artefact.
+IID baseline for nearly all cells. Only \texttt{qwen32b}/LCB-hard ($+0.007$)
+and \texttt{gpt5\_mini}/LCB-medium ($+0.023$) show meaningfully positive
+$\Delta$; \texttt{qwen3\_coder}/LCB-easy is $+0.001$ (noise). The earlier
+``iter helps capable gens on easy'' story (driven by gpt5\_mini LCB-easy
+$P_{\text{fix}}=0.529$ at $n=30$) was a small-sample artefact --- at full
+$n=135$ it collapses to $P_{\text{fix}}=0.074 < $ IID baseline $0.289$.
 \end{frame}
 
 % ============================================================================
@@ -1125,33 +1793,31 @@ gating on cheap critics.
 \begin{frame}{Step 0: where prior + likelihoods are used}
 \vspace{0.1cm}
 \info{Concrete instance:} \texttt{LCB-hard problem 2784}, generator
-\texttt{gpt5\_mini}.
+\texttt{gpt5\_mini}. A patch arrives; the controller decides what to do.
 
 \textbf{Belief state initialisation:}
 \[
 b_0 \;=\; P(Y{=}1 \mid \emptyset) \;=\; \text{prior} \;=\; \textcolor{primaryBlue}{0.21}
 \]
 
-\textbf{Step A: run $L_2$ (public tests, cost $5$)}
+\textbf{Step A: run $L_2$ (public tests, cost $2$)}
 \begin{itemize}
-\item Observe $z_{L_2} = \text{PASS}$.
-\item Bayes' rule with $P(L_2 \text{pass}\mid Y{=}1) = 0.90$, $P(L_2 \text{pass}\mid Y{=}0) = 0.41$:
+\item Observe $z_{L_2} = \text{FAIL}$ (one public example errors out).
+\item Bayes' rule with $P(L_2{=}\text{pass}\mid Y{=}1) = 0.96$, $P(L_2{=}\text{pass}\mid Y{=}0) = 0.25$\\
+(so $P(L_2{=}\text{fail}\mid Y{=}1) = 0.04$, $P(L_2{=}\text{fail}\mid Y{=}0) = 0.75$):
 \[
-b_1 = \frac{0.21 \times 0.90}{0.21 \times 0.90 + 0.79 \times 0.41} = \frac{0.189}{0.513} = \textcolor{accentGreen}{\mathbf{0.37}}
+b_1 = \frac{0.21 \times 0.04}{0.21 \times 0.04 + 0.79 \times 0.75} = \frac{0.0084}{0.601} = \textcolor{accentRed}{\mathbf{0.014}}
 \]
 \end{itemize}
 
-\textbf{Step B: run $L_3$ (LLM review, cost $5$)}
-\begin{itemize}
-\item Observe $z_{L_3} = \text{PASS}$.
-\item $P(L_3\mid Y{=}1) = 0.30$, $P(L_3\mid Y{=}0) = 0.23$:
-\[
-b_2 = \frac{0.37 \times 0.30}{0.37 \times 0.30 + 0.63 \times 0.23} = \frac{0.111}{0.256} = \textcolor{accentGreen}{\mathbf{0.43}}
-\]
-\end{itemize}
+\textbf{Decision:} $b_1 = 0.014 \ll 0.5$ $\Rightarrow$ \warn{don't verify; regenerate}.\\
+Cost so far: $c_g + c_{L_2} = 5+2 = 7$. \good{Skips $c_{L_3}$ and $c_v$:} $L_3$
+cannot push $b_1$ above $0.5$ given its gap $0.34$, so consulting it has no
+decision value.
 
-\textbf{Decision:} $b_2 = 0.43 < 0.5$ $\Rightarrow$ \warn{don't verify}; regenerate.\\
-$\Rightarrow$ Cost so far: $c_g + c_{L_2} + c_{L_3} = 5+5+5 = 15$. \good{Saves $c_v = 30$ vs \texttt{always\_verify}.}
+\textcolor{softGrey}{\scriptsize Alternative branch: if $L_2$ had \emph{passed},
+$b_1 = \frac{0.21 \cdot 0.96}{0.21 \cdot 0.96 + 0.79 \cdot 0.25} = 0.51 \Rightarrow$
+controller verifies, capturing reward $100$ iff $Y{=}1$.}
 \end{frame}
 
 \begin{frame}{Step $k \to k{+}1$: where the transition kernel is used}
@@ -1163,10 +1829,10 @@ Now at step 1.
 --- it's conditioned on \emph{having just failed step 0}. We use the kernel
 to propagate the belief.
 
-\textbf{Kernel from iter trajectories on this cell:}
+\textbf{Kernel from iter trajectories on this cell (LCB-hard / gpt5\_mini / Self-Refine):}
 \begin{itemize}
-\item $P(\text{fix} \mid \text{broken}) = 0.13$ (gpt5\_mini SWE-Verified, similar on LCB-hard)
-\item $P(\text{break} \mid \text{correct}) = 0.06$
+\item $P(\text{fix} \mid \text{broken}) = 0.012$
+\item $P(\text{break} \mid \text{correct}) = 0.083$
 \end{itemize}
 
 \textbf{Updated belief at step 1:}
@@ -1178,14 +1844,16 @@ b_1^{(\text{step}1)} \;=\;
 
 \textbf{Cost-benefit decision (refine vs.\ stop):}
 \begin{itemize}
-\item Expected gain from refinement: $0.13 \times 100 = 13$ utility
+\item Expected gain from refinement: $0.012 \times 100 = 1.2$ utility
 \item Refinement cost: $c_g = 5$
-\item \good{Net: $+8$} $\Rightarrow$ \good{refine and reassess}
+\item \bad{Net: $-3.8$} $\Rightarrow$ \warn{don't refine; give up}.
 \end{itemize}
 
 \info{This decision is impossible without the kernel.} A 1-step controller has
 no notion of ``what's the chance refinement fixes it'' --- it'd just regenerate
-from the prior.
+from the prior, overstating the value of a retry. The framework's negative
+verdict here matches the empirical finding that iterative refinement
+\emph{hurts} on LCB-hard (commit \texttt{fa299a0}).
 \end{frame}
 
 \begin{frame}{Side-by-side: the three statistics inside one trajectory}
@@ -1534,7 +2202,7 @@ calibrated likelihood table will yield $\Delta U \in [+8, +18]$ utility units
 vs.\ \texttt{always\_verify}, paired-bootstrap 95\% CI strictly above 0.''
 \end{exampleblock}
 \vspace{0.3cm}
-\good{Empirical result: $\Delta = +12.55$, CI $[+5.5, +19.5]$.} \\
+\good{Empirical result: $\Delta = +12.55$, CI $[+7.03, +18.07]$.} \\
 \good{Synthetic forecast on calibration data alone: $+12.2$.}
 \vspace{0.3cm}
 \warn{Why this is rare:} most empirical ML papers don't pre-register
@@ -1659,14 +2327,14 @@ on the $4{\times}4$ $(R, c_\mathrm{ver})$ grid slide.}
 \rowcolor{paleBlue}\textbf{Regime} & \textbf{Description} & \textbf{Defining condition} & \textbf{Best policy} \\
 \midrule
 \rowcolor{paleGreen}\textbf{A} & low prior, informative cheap critics &
-LCB-hard, prior $\approx 0.2$, $L_2$ gap $\approx 0.49$ &
+LCB-hard, prior $\approx 0.1$--$0.2$, $L_2$ gap $\approx 0.7$--$0.9$ &
 \good{Bayesian DP / greedy} \\
 \rowcolor{paleBlue}\textbf{B} & mid prior, near-oracle $L_2$ available &
-SWE-Lite / Verified, prior $\approx 0.4$ &
-\good{Bayesian DP / greedy} \\
+SWE-Lite / Verified, prior $\approx 0.3$--$0.7$ &
+\warn{threshold\_L2} \\
 \rowcolor{paleOrange}\textbf{C} & high prior, saturated benchmark &
-MBPP+ / HumanEval+ (prior $> 0.9$), LCB-easy on strong gens &
-\warn{threshold\_L2 ties always\_verify} \\
+MBPP+ (prior $\approx 0.75$) / HumanEval+ (prior $> 0.9$), LCB-easy on strong gens &
+\warn{always\_verify ties Bayesian (no policy beats it)} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1703,25 +2371,68 @@ $(R, c_\mathrm{ver})$ grid two slides later.
 
 % ----------- Per-cell winner: matrix view (visual) -----------
 \begin{frame}{Per-cell winner --- benchmark $\times$ generator matrix}
-\vspace{-0.15cm}
-\textcolor{softGrey}{\scriptsize
-\info{Cost vector held fixed at default deployment regime:}
-$R{=}100,\ c_\text{ver}{=}30,\ c_{L_0}{=}1,\ c_{L_2}{=}2,\ c_{L_3}{=}5,\
-c_\text{gen}{=}5$. Ratios: $c_\text{ver}/c_{L_2}{=}15$,
-$R/c_\text{ver}{\approx}3.3$. Per-cell winner shifts at other ratios
-(see 4×4 grid two slides later).}
+\vspace{-0.2cm}
+\textcolor{softGrey}{\tiny
+\info{Cost vector:} $R{=}100,\ c_\text{ver}{=}30,\ c_{L_0}{=}1,\ c_{L_2}{=}2,\ c_{L_3}{=}5,\ c_\text{gen}{=}5$
+(ratios $c_\text{ver}/c_{L_2}{=}15$, $R/c_\text{ver}{\approx}3.3$). Per-cell
+winner shifts at other ratios --- see 4×4 grid slide.}
 
-\vspace{-0.1cm}
+\vspace{-0.15cm}
 \begin{center}
-\includegraphics[height=0.78\textheight]{figures/fig_winner_matrix.png}
+\includegraphics[height=0.72\textheight]{figures/fig_winner_matrix.png}
 \end{center}
 
-\vspace{-0.15cm}
-\textcolor{softGrey}{\scriptsize
+\vspace{-0.25cm}
+\textcolor{softGrey}{\tiny
 Each cell: winning policy (bold) + its $\Delta$ vs \texttt{always\_verify}.
-\good{Green} = regime A (Bayesian wins);
-\warn{orange} = regime B (threshold(L2) wins);
-\textbf{grey} = regime C ties.}
+\good{Green} = Bayesian wins (regime A);
+\warn{orange} = threshold(L2) wins (regime B);
+\textbf{grey} = regime C ties. \info{Intuition for each regime on the
+next slide.}}
+\end{frame}
+
+% ----------- Intuition for the winner matrix -----------
+\begin{frame}{Per-cell winner --- intuition by regime}
+\info{Why each regime favours a particular policy.} Reading the matrix
+left-to-right (gpt5-mini, qwen3, haiku, sonnet, qwen32b) and top-to-bottom
+(LCB hard $\to$ SWE-Verified):
+
+\vspace{0.15cm}
+\begin{itemize}\setlength\itemsep{4pt}
+\item \textcolor{accentGreen}{\textbf{LCB-hard (regime A) --- Bayesian\_DP
+wins on 4/5 generators.}} Low prior ($\sim 0.07$--$0.21$) means
+\texttt{always\_verify} loses; $L_2$ is informative but not oracle
+(gap $0.6$--$0.86$). DP's multi-step backup over
+$L_0\!\to\! L_2\!\to\! L_3\!\to\!$\texttt{verify} (and the \texttt{give\_up}
+fallback) extracts more than greedy 1-step lookahead because there is real
+\emph{evidence to chain}.
+\item \textcolor{accentGreen}{\textbf{LCB-medium --- Bayesian\_greedy
+wins on 3, DP on qwen32b.}} Same regime, slightly higher prior; $L_2$ is
+nearly oracle for the closed-API gens ($\geq 0.87$) so the first PASS is
+near-enough to decide --- Greedy ties DP. On qwen32b the $L_2$ gap drops
+to $0.52$ (noisier), so DP's multi-critic chaining helps again.
+\item \textcolor{accentTeal}{\textbf{LCB-easy / MBPP+ / HumanEval+ (regime C)
+--- threshold(L2) or always\_verify.}} High prior ($\geq 0.35$ rising to
+$\sim 0.94$) means a single $L_2$ PASS is enough to commit to verify, or
+the prior alone makes verifying optimal. Bayesian rationally collapses
+to one of these and ties.
+\item \textcolor{accentOrange}{\textbf{SWE-Lite \& SWE-Verified (regime B)
+--- threshold(L2) wins all closed-API cells.}} $L_2$ gap is
+\emph{near-oracle} ($0.86$--$0.96$); after PASS the posterior is so high
+that no further critic helps. The Bayesian gain over threshold(L2)
+shrinks to noise, and threshold(L2) catches lucky low-prior fixes the
+Bayesian framework rationally gives up on.
+\item \textcolor{accentPurple}{\textbf{Open-weight Qwen32B SWE ---
+Bayesian\_greedy wins.}} Open-weight $L_2$ gap is much weaker than
+closed-API (qwen32b SWE-Lite $L_2$ gap $\approx 0$); threshold(L2) loses
+its near-oracle advantage. Bayesian's \texttt{give\_up} action plus
+selective $L_0/L_3$ chaining recovers the lead.
+\end{itemize}
+
+\textcolor{softGrey}{\scriptsize \textbf{Headline:} Bayesian dominates
+when critics are noisy enough to need composing (low/mid prior + non-oracle
+$L_2$); threshold(L2) dominates when $L_2$ is near-oracle and the
+posterior collapses after a single PASS.}
 \end{frame}
 
 % ----------- Per-cell winner: counts + regime framing -----------
@@ -1736,21 +2447,18 @@ Each cell: winning policy (bold) + its $\Delta$ vs \texttt{always\_verify}.
 \textbf{Winner} & \textbf{n / 35} & \textbf{Regime / typical cells} \\
 \midrule
 \rowcolor{paleGreen}
-\good{\texttt{bayesian\_greedy}} & \textbf{10}
-  & {\footnotesize Regime A --- LCB-hard / -medium / -easy on closed-API gens.} \\
+\good{\texttt{bayesian\_greedy}} & \textbf{8}
+  & {\footnotesize Regime A --- LCB-hard / -medium on closed-API gens.} \\
 \addlinespace[1pt]
 \rowcolor{paleGreen}
-\good{\texttt{bayesian\_DP}} & \textbf{2}
-  & {\footnotesize Regime A (within $\varepsilon$ of greedy): LCB-hard / haiku, qwen32b.} \\
+\good{\texttt{bayesian\_DP}} & \textbf{4}
+  & {\footnotesize Regime A/B where moderate measured $P_{\text{fix}}$ unlocks multi-step planning.} \\
 \addlinespace[2pt]
-\warn{\texttt{threshold(L2)}} & \textbf{17}
-  & {\footnotesize Regime B --- all SWE-Lite \& SWE-Verified closed-API; many MBPP+/HumanEval+.} \\
+\warn{\texttt{threshold(L2)}} & \textbf{19}
+  & {\footnotesize Regime B --- all SWE-Lite \& SWE-Verified closed-API; LCB-easy on gpt5; MBPP+/HumanEval+ where $L_2$ informative.} \\
 \addlinespace[1pt]
 \textbf{\texttt{always\_verify}} & \textbf{4}
-  & {\footnotesize Regime C ties: MBPP+ \{gpt5, sonnet\}; HumanEval+ \{haiku, sonnet\}.} \\
-\addlinespace[1pt]
-\textbf{\texttt{threshold(L0/L3)}} & \textbf{2}
-  & {\footnotesize Open-weight SWE quirks: SWE-Lite/qwen32b (\texttt{L3}); SWE-Ver/qwen32b (\texttt{L0}).} \\
+  & {\footnotesize Regime C ties: MBPP+ / HumanEval+ closed-API where prior is high enough that the framework correctly defers.} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1759,7 +2467,7 @@ Each cell: winning policy (bold) + its $\Delta$ vs \texttt{always\_verify}.
 {\footnotesize
 \good{\textbf{Honest framing:}}
 \textbf{Bayesian (greedy + DP) wins 12/35} cells --- regime A, where critics
-are noisy and need composing. \textbf{\texttt{threshold(L2)} wins 17/35} ---
+are noisy and need composing. \textbf{\texttt{threshold(L2)} wins 19/35} ---
 regime B, where the public-test critic has gap $> 0.7$ (just trust the tests).
 \textbf{\texttt{always\_verify} wins/ties 4/35} regime-C saturated cells.
 
@@ -1857,7 +2565,7 @@ bayes loses at $-5.9$.
 \good{qwen3 / haiku / sonnet:} bayes\_greedy $+19$--$+20$.
 \bad{gpt-5-mini:} \texttt{threshold(L2)} $+20.9$ \emph{and Reflexion} $+38.4$
 beat bayes ($+5.5$, $+18.0$).
-\warn{qwen2.5-32b:} all near 0 -- saturated prior $0.97$.
+\warn{qwen2.5-32b:} all near 0 -- saturated prior $0.89$.
 \end{block}
 \end{frame}
 
@@ -2163,16 +2871,16 @@ $R/c_\mathrm{ver}{\approx}3.3$); robustness on the $4{\times}4$ grid slide.}
 \toprule
 \rowcolor{paleBlue}\textbf{Generator} & \textbf{Benchmark} & \textbf{Regime} & \textbf{$\Delta$ (\texttt{bayes\_greedy} $-$ \texttt{always\_verify})} \\
 \midrule
-\rowcolor{paleGreen}sonnet45 & LCB-hard & A & \good{+20.3} \\
+\rowcolor{paleGreen}haiku45 & LCB-hard & A & \good{+23.1} \\
 \rowcolor{paleGreen}qwen3\_coder & LCB-hard & A & \good{+20.3} \\
-\rowcolor{paleGreen}haiku45 & LCB-hard & A & \good{+20.3} \\
-\rowcolor{paleGreen}haiku45 & LCB-easy & A/B & \good{+20.3} \\
-\rowcolor{paleGreen}qwen3\_coder & LCB-easy & A/B & \good{+19.8} \\
-\rowcolor{paleGreen}sonnet45 & LCB-easy & A/B & \good{+19.3} \\
-\rowcolor{paleGreen}haiku45 & LCB-medium & A & \good{+19.1} \\
-\rowcolor{paleGreen}qwen3\_coder & LCB-medium & A & \good{+18.4} \\
+\rowcolor{paleGreen}sonnet45 & LCB-hard & A & \good{+20.2} \\
+\rowcolor{paleGreen}haiku45 & LCB-medium & A & \good{+19.9} \\
+\rowcolor{paleGreen}qwen3\_coder & LCB-medium & A & \good{+18.7} \\
 \rowcolor{paleGreen}sonnet45 & SWE-Lite & B & \good{+17.6} \\
-\rowcolor{paleGreen}sonnet45 & LCB-medium & A & \good{+17.3} \\
+\rowcolor{paleGreen}sonnet45 & LCB-medium & A & \good{+17.5} \\
+\rowcolor{paleGreen}haiku45 & LCB-easy & A/B & \good{+17.3} \\
+\rowcolor{paleGreen}gpt5\_mini & LCB-medium & A & \good{+15.6} \\
+\rowcolor{paleGreen}gpt5\_mini & LCB-hard & A & \good{+12.6} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -2184,13 +2892,13 @@ Regime B (SWE) wins are smaller but still uniformly positive.
 informative critic) and prior $< 0.55$ (uncertain enough that gating helps).
 \end{frame}
 
-\begin{frame}{Case study: sonnet45 $\times$ LCB-hard ($\Delta = +20.3$)}
+\begin{frame}{Case study: sonnet45 $\times$ LCB-hard ($\Delta = +20.2$)}
 \vspace{0.15cm}
 \info{Cell parameters:}
 \begin{itemize}
-\item Prior $P(Y{=}1) = \textcolor{accentRed}{0.18}$ (capable model, but LCB-hard is hard)
-\item $L_2$ gap $= +0.49$ (workhorse signal: 90\% of correct patches pass public tests; 41\% of broken ones do too)
-\item $L_3$ gap $= +0.07$ (mildly informative)
+\item Prior $P(Y{=}1) = \textcolor{accentRed}{0.12}$ (capable model, but LCB-hard is hard)
+\item $L_2$ gap $= +0.84$ (workhorse signal: 95\% of correct patches pass public tests; only 11\% of broken ones do)
+\item $L_3$ gap $\approx 0.01$ (essentially uninformative with haiku reviewer on this cell --- controller correctly ignores it)
 \end{itemize}
 
 \textbf{Cost analysis per instance:}
@@ -2200,20 +2908,20 @@ informative critic) and prior $< 0.55$ (uncertain enough that gating helps).
 \rowcolor{paleBlue}\textbf{Strategy} & \textbf{Cost} & \textbf{Outcome} \\
 \midrule
 \rowcolor{paleRed}\texttt{always\_verify} & $5 + 30 = 35$ & always pay $c_v$ to learn $Y$ \\
-\rowcolor{paleGreen}\texttt{bayesian\_greedy} & $5 + 5$ if reject, $5+5+30$ if accept &
-gate via $L_2$, only verify confident ones \\
+\rowcolor{paleGreen}\texttt{bayesian\_greedy} & $5 + 2$ if $L_2$ fails, $5+2+30$ if $L_2$ passes &
+gate via $L_2$, only verify when $b_1 > 0.5$ \\
 \bottomrule
 \end{tabular}
 
-\textbf{Aggregate per instance ($n = 30$ cohort):}
+\textbf{Aggregate per instance:}
 \begin{itemize}
-\item \texttt{always\_verify}: $\bar{U} = 100 \cdot 0.18 - 35 = -17.0$
-\item \texttt{bayesian\_greedy}: \good{$\bar{U} = +3.3$}
+\item \texttt{always\_verify}: $\bar{U} = -18.2$ (prior $0.12 \cdot 100 - 35 \approx -23$, harness errors trim the mean)
+\item \texttt{bayesian\_greedy}: \good{$\bar{U} = +1.9$}
   \begin{itemize}
-  \item L2 fails on $\sim$0.59 of patches $\to$ skip verify, save $30 \times 30 \times 0.59 = \$531$ across cohort
-  \item L2 passes on $\sim$0.41 $\to$ verify, capture reward
+  \item Marginal $P(L_2{=}\text{pass}) \approx 0.21$: skip verify on $\sim$79\% of patches, saving $c_v = 30$ each
+  \item On the $\sim$21\% where $L_2$ passes $\Rightarrow$ verify, capture reward
   \end{itemize}
-\item \good{$\Delta = +20.3$ utility per instance, paired-bootstrap CI $[+13.7, +25.6]$}
+\item \good{$\Delta = +20.2$ utility per instance, paired-bootstrap CI $[+17.3, +22.7]$}
 \end{itemize}
 \end{frame}
 
@@ -2330,11 +3038,11 @@ column} --- local vLLM serving Qwen2.5-Coder-32B-Instruct, no API spend.
 \small
 \begin{tabular}{lcccc}
 \toprule
-\rowcolor{paleBlue}Difficulty & $n$ & prior & $L_2$ gap & Bayesian-DP $\Delta$ \\
+\rowcolor{paleBlue}Difficulty & instances & prior & $L_2$ gap & Bayesian-greedy $\Delta$ \\
 \midrule
-\rowcolor{paleGreen}hard & 29 & 0.21 & $+0.49$ & \good{$+4.62$} $[-3.5, +11.7]$ \\
-\rowcolor{paleRed}medium & 90 & 0.36 & $+0.28$ & \bad{$-7.83$} $[-10.8, -4.2]$ \\
-\rowcolor{paleOrange}easy & 62 & 0.97 & $+0.85$ & \warn{$-0.69$} $[-2.6, +2.5]$ \\
+\rowcolor{paleGreen}hard & 102 & 0.09 & $+0.64$ & \good{$+4.62$} $[-3.4, +11.7]$ \\
+\rowcolor{paleRed}medium & 207 & 0.25 & $+0.52$ & \bad{$-5.91$} $[-7.7, -3.9]$ \\
+\rowcolor{paleOrange}easy & 135 & 0.89 & $+0.81$ & \warn{$0.00$} $[0, 0]$ \\
 \bottomrule
 \end{tabular}
 \end{table}

@@ -1,0 +1,28 @@
+{
+  "issue": "harness_error_rate_high",
+  "context": "SWE-bench Lite iterative refinement, sonnet45 generator",
+  "harness_results_per_step": {
+    "step1": {"submitted": 29, "resolved": 3, "unresolved": 8, "errors": 18},
+    "step2": {"submitted": 28, "resolved": 3, "unresolved": 7, "errors": 18},
+    "step3": {"submitted": 26, "resolved": 3, "unresolved": 5, "errors": 18},
+    "step4": {"submitted": 25, "resolved": 3, "unresolved": 4, "errors": 18}
+  },
+  "comparison_to_haiku45": {
+    "haiku45_step1": {"submitted": 29, "resolved": 10, "errors": 5},
+    "haiku45_step4": {"submitted": 29, "resolved": 12, "errors": 5},
+    "ratio_sonnet_vs_haiku_errors": "18/5 = 3.6x"
+  },
+  "impact_on_kernel": {
+    "sonnet45_P_fix": 0.033,
+    "sonnet45_P_break": 0.476,
+    "note": "P_break inflated by errored instances (errored = Y=0). Sonnet's true P_break is likely closer to 0.10-0.15, in line with other generators on similar benchmarks. The 18 erroring instances repeatedly fail container build / container run on SWE-bench Lite Docker, dropping their Y to 0 and inflating the broken-step transitions."
+  },
+  "paper_disclosure": "Methods section should disclose this elevated error rate for sonnet45 on SWE-Lite iter and present the kernel as a noisy upper bound on P_break rather than a clean estimate. The §F1 ablation results for this cell (bayesian_DP +17.57, bayesian_greedy +17.57) are derived from this contaminated kernel; the qualitative claim that DP and Greedy converge at low P_fix still holds.",
+  "remediation_options": [
+    "(A) Re-run sonnet45 SWE-Lite iter with different harness configuration (different parallelism, different cleanup) — ~$4 in API + ~30 min cluster",
+    "(B) Drop sonnet45 SWE-Lite iter from the paper's headline tables; relegate to a known-issue footnote",
+    "(C) Report as-is with explicit disclosure (chosen for current submission)"
+  ],
+  "decision": "Option C for now: report as-is with explicit Methods disclosure",
+  "audit_date": "2026-05-06"
+}
