@@ -1,43 +1,58 @@
-# Bulky harness artifacts — keep aggregated reports + small metadata only.
-spot_check/eval/logs/
-spot_check/*/raw_responses/
-spot_check/*/predictions*.jsonl
-spot_check/*/generation_records.jsonl
+# === Data policy ===
+# Track ONLY:
+#   - PAPER_TABLE.{json,csv}            (canonical cube aggregate)
+#   - paper_figs/                       (figures embedded in deck/paper)
+#   - critic_independence/              (methodology summary)
+#   - mde_power/                        (methodology summary)
+#   - cluster_bootstrap/                (methodology summary)
+#   - fdr_correction/                   (methodology summary)
+#   - prior_ci/                         (methodology summary)
+#
+# Everything else is per-cell experiment output (likelihood_tables,
+# transition_kernel, policy_comparison, iter_records, sensitivity, etc.) and
+# lives on the cluster + Weights & Biases as artifacts. Use
+# scripts/sync_from_cluster.sh to pull locally on demand.
 
-# Same rules for spot_check_n50 (and any sibling _probe subtree).
-spot_check_n50/eval/logs/
-spot_check_n50/_run_logs/
-spot_check_n50/*/raw_responses/
-spot_check_n50/*/predictions*.jsonl
-spot_check_n50/*/generation_records.jsonl
-spot_check_n50/_probe/*/raw_responses/
-spot_check_n50/_probe/*/predictions*.jsonl
-spot_check_n50/_probe/*/generation_records.jsonl
-
-# All calibration / refinement / harness dirs follow the same rule:
-# keep aggregated artifacts (likelihood_tables, transition_kernel, policy_comparison,
-# cost_summary, sample/run_config, sensitivity, L3_sweep_summary, paper_figs)
-# and ignore per-cell bulk (raw_responses, predictions, generation_records,
-# iter_records, cost_log, calibration logs, harness logs, eval/logs).
-**/raw_responses/
-**/iter_raw_responses/
+# Per-cell calibration / iter / refinement / sensitivity outputs
+**/likelihood_tables*.json
+**/transition_kernel*.json
+**/policy_comparison*.json
+**/iter_records*.jsonl
 **/predictions*.jsonl
-**/generation_records.jsonl
-**/critic_results.jsonl
-**/critic_results.jsonl.bak_strict
-**/critic_results_rescued.jsonl
-**/iter_records.jsonl
-**/L3_sweep.jsonl
+**/critic_results*.jsonl
+**/generation_records*.jsonl
+**/L3_sweep*.json*
+**/L3_sweep*.csv
+**/L3_sweep*.jsonl
+**/sensitivity.json
+**/sensitivity.csv
+**/cost_summary.json
 **/cost_log.jsonl
-**/calibration*.log
-**/calibration*.pid
-**/harness*.log
+**/RUN_CONFIG.json
+**/sample.json
+**/stop_distribution.json
+
+# Raw payloads + harness logs (never useful in git)
+**/raw_responses/
+**/raw_calls/
+**/iter_raw_responses/
 **/eval/logs/
 **/eval/eval_logs/
+**/eval_logs/
 
-# SWE-Lite source mirror (114MB of raw v1-v3 spot-check artifacts; live on cluster).
-swebench_lite/source/
-
-# Backup snapshots from cluster surgical-retry / pre-merge
-*.bak
+# Process noise
+**/*.log
+**/*.pid
 **/*.bak
+**/.DS_Store
+
+# Per-cell harness eval JSON reports (per-instance pass/fail)
+**/eval/*_iter_step*.json
+**/eval/*__p[0-9].*.json
+**/eval/*_p[0-9].*.json
+
+# Top-level scratch / source dirs that are reproducible from scripts
+spot_check/
+spot_check_n50/
+swebench_lite/source/
+**/*_probe/
