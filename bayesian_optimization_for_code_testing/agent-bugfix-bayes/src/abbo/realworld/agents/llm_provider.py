@@ -66,6 +66,78 @@ def call_llm(prompt: str, config: LLMConfig | None = None) -> LLMResponse:
         raise ValueError(f"Unknown provider: {config.provider}")
 
 
+def _provider_default_base_url(provider: str) -> str:
+    if provider == "openrouter":
+        return "https://openrouter.ai/api"
+    if provider == "openai":
+        return "http://localhost:8000"
+    return "http://localhost:11434"
+
+
+def _get_env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _get_env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def build_llm_config_from_env(
+    *,
+    default_provider: str = "ollama",
+    default_model: str = "qwen2.5:7b",
+    default_base_url: str | None = None,
+    default_temperature: float = 0.2,
+    default_max_tokens: int = 4096,
+    default_timeout: int = 300,
+) -> LLMConfig:
+    """Build an LLMConfig from ABBO_LLM_* env vars with sensible defaults."""
+    provider = os.environ.get("ABBO_LLM_PROVIDER", "").strip() or default_provider
+    model = os.environ.get("ABBO_LLM_MODEL", "").strip() or default_model
+    base_url = os.environ.get("ABBO_LLM_BASE_URL", "").strip()
+    if not base_url:
+        base_url = default_base_url or _provider_default_base_url(provider)
+    return LLMConfig(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        temperature=_get_env_float("ABBO_LLM_TEMPERATURE", default_temperature),
+        max_tokens=_get_env_int("ABBO_LLM_MAX_TOKENS", default_max_tokens),
+        timeout=_get_env_int("ABBO_LLM_TIMEOUT", default_timeout),
+    )
+
+
+def llm_response_error(response: LLMResponse) -> str | None:
+    """Return the provider error message if the response is a transport/config failure."""
+    text = (response.text or "").strip()
+    if not text.startswith("Error"):
+        return None
+    if response.prompt_tokens or response.completion_tokens:
+        return None
+    return text
+
+
+def call_llm_or_raise(prompt: str, config: LLMConfig | None = None) -> LLMResponse:
+    """Call the configured LLM and raise on transport/configuration failures."""
+    response = call_llm(prompt, config)
+    err = llm_response_error(response)
+    if err:
+        raise RuntimeError(err)
+    return response
+
+
 def _call_ollama(prompt: str, config: LLMConfig, start: float) -> LLMResponse:
     """Call Ollama's /api/generate endpoint."""
     url = f"{config.base_url}/api/generate"
@@ -233,7 +305,7 @@ def _call_openrouter(prompt: str, config: LLMConfig, start: float) -> LLMRespons
     )
 
     # Retry-with-backoff for transient rate limits / upstream blips.
-    delays = [0, 4, 12, 30, 60]   # cumulative ~106s before final give-up
+    delays = [0, 10, 30, 60, 120]  # cumulative ~220s; covers free-tier 429 windows
     last_err = ""
     data = None
     for delay in delays:

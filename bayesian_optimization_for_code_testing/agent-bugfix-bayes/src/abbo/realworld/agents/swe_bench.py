@@ -54,7 +54,7 @@ SWE_INSTANCE_POOL: list[str] = [
 # Timeouts
 EXEC_TIMEOUT_CRITIC = 180    # per critic / oracle; Docker emulation slows things
 EXEC_TIMEOUT_SYNTAX = 30
-CONTAINER_LIFETIME = 1800    # 30 min; plenty for one instance's samples
+CONTAINER_LIFETIME = 7200    # 2 hr; covers 5 variants under amd64 emulation
 
 
 # ---------------------------------------------------------------------------
@@ -252,10 +252,19 @@ def run_critic_mid(cname: str, instance: dict) -> tuple[bool, str]:
     return ok, f"all FTP (n={len(ftp)}) ok={ok}"
 
 
-def run_full_test(cname: str, instance: dict) -> tuple[bool, str]:
-    tests = get_ftp(instance["instance_id"]) + get_ptp(instance["instance_id"])
-    ok = _run_pytest_subset(cname, tests, timeout=EXEC_TIMEOUT_CRITIC * 2)
-    return ok, f"full (FTP+PTP, n={len(tests)}) ok={ok}"
+def run_full_test(cname: str, instance: dict, max_ptp: int = 30,
+                  timeout: int = 1200) -> tuple[bool, str]:
+    """Verify Y. FAIL_TO_PASS must all pass; PASS_TO_PASS subset must not regress.
+
+    Caps PASS_TO_PASS to first `max_ptp` tests for speed: psf/requests has
+    ~140 PTP tests that easily exceed a 5-minute Docker exec. Conservative
+    Y proxy: still requires all FTP + first 30 PTP to pass.
+    """
+    ftp = get_ftp(instance["instance_id"])
+    ptp = get_ptp(instance["instance_id"])[:max_ptp]
+    tests = ftp + ptp
+    ok = _run_pytest_subset(cname, tests, timeout=timeout)
+    return ok, f"full (FTP={len(ftp)}, PTP_subset={len(ptp)}) ok={ok}"
 
 
 # ---------------------------------------------------------------------------

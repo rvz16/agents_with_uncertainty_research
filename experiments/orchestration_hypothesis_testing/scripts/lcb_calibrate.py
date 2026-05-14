@@ -335,9 +335,39 @@ GENERATORS = {
     "qwen3_coder": ("qwen/qwen3-coder",           "Qwen3 Coder",             None),
     "haiku45":     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5",        None),
     "sonnet45":    ("anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5",      None),
+    "qwen25_7b":   ("Qwen/Qwen2.5-Coder-7B-Instruct", "Qwen2.5-Coder-7B (open-weight, local vLLM)", "http://127.0.0.1:8001/v1"),
     "qwen25_32b":  ("Qwen/Qwen2.5-Coder-32B-Instruct", "Qwen2.5-Coder-32B (open-weight, local vLLM)", "http://127.0.0.1:8003/v1"),
+    "gpt_oss_20b": ("openai/gpt-oss-20b:free",    "gpt-oss-20b",             None),
 }
 
+
+def canonical_generator_key(raw: str) -> str:
+    """Map CLI aliases (e.g. hyphens) to keys in GENERATORS."""
+    g = raw.strip()
+    if not g:
+        raise ValueError("empty generator key")
+    if g in GENERATORS:
+        return g
+    alt = g.replace("-", "_")
+    if alt in GENERATORS:
+        return alt
+    raise SystemExit(
+        f"unknown generator {raw!r}; known: {', '.join(sorted(GENERATORS))}"
+    )
+
+
+OPENROUTER_KEY_NAMES = ("OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY", "OPEN_ROUTER")
+
+
+def _load_openrouter_key() -> str:
+    for key_name in OPENROUTER_KEY_NAMES:
+        value = os.environ.get(key_name, "").strip()
+        if value:
+            return value
+    raise SystemExit(
+        "OpenRouter API key not set. Expected one of: "
+        "OPENROUTER_API_KEY, OPEN_ROUTER_API_KEY, OPEN_ROUTER."
+    )
 
 
 def _make_client(generator_key: str | None = None):
@@ -352,7 +382,7 @@ def _make_client(generator_key: str | None = None):
         base_url = GENERATORS[generator_key][2]
     if base_url:
         return OpenAI(api_key="EMPTY", base_url=base_url)
-    return OpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url="https://openrouter.ai/api/v1")
+    return OpenAI(api_key=_load_openrouter_key(), base_url="https://openrouter.ai/api/v1")
 
 
 def build_prompt(problem: dict) -> str:
@@ -390,10 +420,16 @@ def cost_for_call(model_id: str, prompt_tokens: int, completion_tokens: int) -> 
         return (prompt_tokens / 1_000_000) * 0.5 + (completion_tokens / 1_000_000) * 4.0
     if "qwen3-coder" in model_id:
         return (prompt_tokens / 1_000_000) * 0.4 + (completion_tokens / 1_000_000) * 1.6
+    if "Qwen/Qwen2.5-Coder-7B-Instruct" in model_id:
+        return 0.0
+    if "Qwen/Qwen2.5-Coder-32B-Instruct" in model_id:
+        return 0.0
     if "claude-haiku" in model_id:
         return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
     if "claude-sonnet" in model_id:
         return (prompt_tokens / 1_000_000) * 3.0 + (completion_tokens / 1_000_000) * 15.0
+    if "gpt-oss-20b" in model_id:
+        return 0.0
     return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
 
 

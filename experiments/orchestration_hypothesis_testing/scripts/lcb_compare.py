@@ -25,8 +25,9 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/.claude/worktrees/reverent-vaughan-017bf5/experiments/orchestration_hypothesis_testing")
+ROOT = Path(__file__).resolve().parents[1]  # .../orchestration_hypothesis_testing
 sys.path.insert(0, str(ROOT / "scripts"))
+from lcb_calibrate import canonical_generator_key  # noqa: E402
 from run_baseline_vs_controller import (  # noqa: E402
     BayesianController, CostModel, simulate_policy,
     policy_always_verify, policy_threshold_L0, policy_threshold_L3,
@@ -41,7 +42,7 @@ def policy_threshold_L2(state, rec):
         return "L0"  # approximate L2 cost as L0 (cheap, both ~free)
     state["L2_done"] = False
     return "verify" if rec.get("L2_public_tests") else (
-        "generate" if state["patch_idx"] + 1 < 3 else "give_up"
+        "generate" if state["patch_idx"] + 1 < state.get("max_patches", 3) else "give_up"
     )
 
 
@@ -167,7 +168,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--generators", required=True)
+    parser.add_argument("--c-gen", type=float, default=5.0)
+    parser.add_argument("--c-l0", type=float, default=1.0)
+    parser.add_argument("--c-l2", type=float, default=2.0)
+    parser.add_argument("--c-l3", type=float, default=5.0)
     parser.add_argument("--c-ver", type=float, default=30.0)
+    parser.add_argument("--reward", type=float, default=100.0)
+    parser.add_argument("--horizon", type=int, default=3)
+    parser.add_argument("--best-of", type=int, default=3)
     parser.add_argument("--n-boot", type=int, default=1000)
     parser.add_argument("--kernel-file", type=str, default=None,
                         help="Optional gen=path[,gen=path] mapping to load measured "
@@ -179,7 +187,14 @@ def main() -> None:
     args = parser.parse_args()
 
     out_dir = args.output_dir.resolve()
-    cost = CostModel(c_gen=5, c_L0=1, c_L3=5, c_ver=args.c_ver, reward=100)
+    cost = CostModel(
+        c_gen=args.c_gen,
+        c_L0=args.c_l0,
+        c_L2=args.c_l2,
+        c_L3=args.c_l3,
+        c_ver=args.c_ver,
+        reward=args.reward,
+    )
 
     # Parse kernel-file mapping
     kernel_paths: dict[str, Path] = {}
@@ -188,9 +203,9 @@ def main() -> None:
             if "=" not in pair:
                 continue
             k, v = pair.split("=", 1)
-            kernel_paths[k.strip()] = Path(v.strip())
+            kernel_paths[canonical_generator_key(k)] = Path(v.strip())
 
-    for gen in [g.strip() for g in args.generators.split(",") if g.strip()]:
+    for gen in [canonical_generator_key(g) for g in args.generators.split(",") if g.strip()]:
         gen_dir = out_dir / gen
         rec_path = gen_dir / "critic_results.jsonl"
         like_path = gen_dir / "likelihood_tables.json"
@@ -224,7 +239,7 @@ def main() -> None:
                 print(f"[{gen}] kernel file {kp} not found; falling back to IID")
 
         # Build controllers
-        dp = BayesianController(prior, likes, kernel, cost, horizon=3)
+        dp = BayesianController(prior, likes, kernel, cost, horizon=args.horizon)
         greedy = GreedyController(prior, likes, cost)
 
         from run_baseline_vs_controller import make_bayesian_policy
@@ -234,7 +249,7 @@ def main() -> None:
             "threshold_L2": policy_threshold_L2,
             "threshold_L3": policy_threshold_L3,
             "fixed_pipeline": policy_fixed_pipeline,
-            "best_of_3": policy_best_of_N(3),
+            f"best_of_{args.best_of}": policy_best_of_N(args.best_of),
             "bayesian_DP": make_bayesian_policy(dp),
             "bayesian_greedy": make_greedy_policy(greedy),
         }

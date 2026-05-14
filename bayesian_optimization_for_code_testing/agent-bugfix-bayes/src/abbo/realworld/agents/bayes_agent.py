@@ -190,7 +190,18 @@ class DPPlanner:
         max_generators: int = 3,
         max_verifications: int = 2,
         critic_likelihoods: dict | None = None,
+        transition_kernel: dict | None = None,
     ):
+        """Args:
+            transition_kernel: optional measured kernel that overrides the
+                arm-specific GENERATOR_TRANSITIONS. Schema:
+                    {"p_fix_broken": float, "p_break_correct": float}
+                When provided, all `generate:<arm>` actions use the same
+                transition (the arm name is kept for action-log readability
+                but the per-arm rates are ignored). This is the second of
+                the two POMDP probability tables (the first being
+                critic_likelihoods).
+        """
         self.costs = costs
         self.max_generators = max_generators
         self.max_verifications = max_verifications
@@ -198,6 +209,7 @@ class DPPlanner:
             critic_likelihoods if critic_likelihoods is not None
             else CRITIC_LIKELIHOODS
         )
+        self.transition_kernel = transition_kernel  # None = use per-arm hand-tuned
         self._critic_names = list(self.critic_likelihoods.keys())
         self._cache: dict[DPState, tuple[float, str]] = {}
 
@@ -240,9 +252,15 @@ class DPPlanner:
                 best_action = "verify"
 
         # --- ACTION: generate(arm) ---
+        # If a measured transition_kernel is provided, all arms share the same
+        # transition; otherwise fall back to per-arm hand-tuned rates.
         if state.gen_left > 0:
-            for arm_idx, arm in enumerate(_GENERATOR_ARMS):
-                b_next = generator_transition(b, arm)
+            if self.transition_kernel is not None:
+                # Single arm with measured kernel.
+                # b' = b·(1 - P(break|correct)) + (1-b)·P(fix|broken)
+                p_fix = self.transition_kernel["p_fix_broken"]
+                p_break = self.transition_kernel["p_break_correct"]
+                b_next = b * (1 - p_break) + (1 - b) * p_fix
                 b_next_idx = discretize(b_next)
                 next_state = DPState(
                     belief_idx=b_next_idx,
@@ -253,7 +271,21 @@ class DPPlanner:
                 q_gen = -self.costs.c_llm_call + self._value(next_state)
                 if q_gen > best_val:
                     best_val = q_gen
-                    best_action = f"generate:{arm}"
+                    best_action = "generate:measured_kernel"
+            else:
+                for arm_idx, arm in enumerate(_GENERATOR_ARMS):
+                    b_next = generator_transition(b, arm)
+                    b_next_idx = discretize(b_next)
+                    next_state = DPState(
+                        belief_idx=b_next_idx,
+                        gen_left=state.gen_left - 1,
+                        crit_used=state.crit_used,
+                        ver_left=state.ver_left,
+                    )
+                    q_gen = -self.costs.c_llm_call + self._value(next_state)
+                    if q_gen > best_val:
+                        best_val = q_gen
+                        best_action = f"generate:{arm}"
 
         # --- ACTION: critic(subset) ---
         for critic_name in self._critic_names:

@@ -5,7 +5,7 @@ Steps 1..N = refinement attempts (Y reported here is from a separate
 Phase-2 harness eval of the refinement predictions; if not yet run, Y
 is None and the trajectory is dropped from kernel computation).
 
-Adds an `identical_to_prev` flag per step (sha256 of diff text) so we can
+Adds an `identical_to_prev` flag per step (sha256 of diff/code text) so we can
 either include or exclude trivial "stay" transitions caused by the model
 emitting byte-identical patches across steps.
 
@@ -25,8 +25,11 @@ from collections import Counter
 from pathlib import Path
 
 
-def _diff_hash(diff: str) -> str:
-    return hashlib.sha256((diff or "").encode()).hexdigest()
+def _artifact_hash(record: dict) -> str:
+    text = record.get("diff")
+    if not isinstance(text, str) or not text:
+        text = record.get("code")
+    return hashlib.sha256((text or "").encode()).hexdigest()
 
 
 def _annotate_identical(records: list[dict]) -> list[dict]:
@@ -39,7 +42,7 @@ def _annotate_identical(records: list[dict]) -> list[dict]:
         rs = sorted(rs, key=lambda r: r["step"])
         prev_hash = None
         for r in rs:
-            r["diff_hash"] = _diff_hash(r.get("diff", ""))
+            r["diff_hash"] = _artifact_hash(r)
             r["identical_to_prev"] = (prev_hash is not None and r["diff_hash"] == prev_hash)
             prev_hash = r["diff_hash"]
             annotated.append(r)

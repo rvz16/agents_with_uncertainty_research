@@ -23,8 +23,9 @@ POLICY-REPLAY APPROXIMATIONS (no new API spend; reuse existing iter trajectories
 
   reflexion_first_pass
     Spirit: external evaluator returns binary pass/fail; stop when test passes.
-    Replay (LCB): walk steps, take first patch where L2_public_tests = True
-      (treat L2 as the "external test"). If none, take last step.
+    Replay (LCB / bugfix): walk steps, take first patch where
+      L2_public_tests = True (treat L2 as the "external test"). If none,
+      take last step.
       Cost: (k+1) * c_gen + (k+1) * c_L2 + c_ver  where k = step chosen.
       Reward: reward * Y[step_chosen].
     Replay (SWE-bench, no L2 in iter records): walk steps, take first patch where
@@ -55,14 +56,22 @@ Schema (per file):
 Usage:
   python3 scripts/compute_iter_replay_baselines.py \\
     --iter-dir data/lcb_calibration_v2_iter   --variant lcb     --out-suffix _iter_replay_baselines
+
+  python3 scripts/compute_iter_replay_baselines.py \\
+    --iter-dir data/humanevalfix_iter         --variant bugfix  --c-gen 10 --c-l0 1 --c-l2 1 --c-l3 1 --c-ver 5
 """
 from __future__ import annotations
 
 import argparse
 import json
 import random
+import sys
 from collections import defaultdict
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from lcb_calibrate import canonical_generator_key  # noqa: E402
 
 GENERATORS = ["gpt5_mini", "qwen3_coder", "haiku45", "sonnet45"]
 
@@ -130,7 +139,7 @@ def utility_reflexion_first_pass(traj: list[dict], costs: dict, variant: str) ->
       external-test check at each step traversed: c_L2 (LCB) or c_ver (SWE)
       final verify of the chosen patch: c_ver (LCB only — SWE's test IS the verifier)
 
-    LCB variant: external test = L2_public_tests
+    LCB / bugfix variant: external test = L2_public_tests
     SWE variant: external test = Y itself (verifier IS the test, paid per step)
     """
     n_steps = len(traj)
@@ -138,7 +147,7 @@ def utility_reflexion_first_pass(traj: list[dict], costs: dict, variant: str) ->
         return 0.0
 
     chosen_idx = None
-    if variant == "lcb":
+    if variant in {"lcb", "bugfix"}:
         for i, r in enumerate(traj):
             if bool(r.get("L2_public_tests")):
                 chosen_idx = i
@@ -160,7 +169,7 @@ def utility_reflexion_first_pass(traj: list[dict], costs: dict, variant: str) ->
     n_traversed = chosen_idx + 1
     n_refines = max(0, n_traversed - 1)  # generations beyond step 0
 
-    if variant == "lcb":
+    if variant in {"lcb", "bugfix"}:
         # n_traversed L2 checks (one per step), plus final c_ver
         cost = n_refines * costs["c_gen"] + n_traversed * costs["c_L2"] + costs["c_ver"]
     else:  # swe
@@ -238,7 +247,7 @@ def run_cell(iter_dir: Path, gen: str, variant: str, costs: dict,
             pass_rx.append(0)
         else:
             chosen_idx = None
-            if variant == "lcb":
+            if variant in {"lcb", "bugfix"}:
                 for i, r in enumerate(traj):
                     if bool(r.get("L2_public_tests")):
                         chosen_idx = i; break
@@ -285,18 +294,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iter-dir", required=True, type=Path,
                         help="dir containing <gen>/iter_records.jsonl")
-    parser.add_argument("--variant", required=True, choices=["lcb", "swe"],
-                        help="trajectory variant: 'lcb' uses L2_public_tests as ext test; 'swe' uses Y")
+    parser.add_argument("--variant", required=True, choices=["lcb", "swe", "bugfix"],
+                        help="trajectory variant: 'lcb'/'bugfix' use L2_public_tests as ext test; 'swe' uses Y")
     parser.add_argument("--out-suffix", default="_iter_replay_baselines",
                         help="suffix for output JSON name (default: _iter_replay_baselines)")
     parser.add_argument("--generators", default=",".join(GENERATORS))
     parser.add_argument("--n-boot", type=int, default=1000)
+    parser.add_argument("--c-gen", type=float, default=DEFAULT_COSTS["c_gen"])
+    parser.add_argument("--c-l0", type=float, default=DEFAULT_COSTS["c_L0"])
+    parser.add_argument("--c-l2", type=float, default=DEFAULT_COSTS["c_L2"])
+    parser.add_argument("--c-l3", type=float, default=DEFAULT_COSTS["c_L3"])
     parser.add_argument("--c-ver", type=int, default=DEFAULT_COSTS["c_ver"])
+    parser.add_argument("--reward", type=float, default=DEFAULT_COSTS["reward"])
     args = parser.parse_args()
 
     costs = dict(DEFAULT_COSTS)
+    costs["c_gen"] = args.c_gen
+    costs["c_L0"] = args.c_l0
+    costs["c_L2"] = args.c_l2
+    costs["c_L3"] = args.c_l3
     costs["c_ver"] = args.c_ver
-    gens = [g.strip() for g in args.generators.split(",") if g.strip()]
+    costs["reward"] = args.reward
+    gens = [canonical_generator_key(g) for g in args.generators.split(",") if g.strip()]
 
     print(f"Iter dir: {args.iter_dir}")
     print(f"Variant:  {args.variant}")

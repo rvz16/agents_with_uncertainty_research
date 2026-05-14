@@ -176,7 +176,14 @@ class BayesianController:
 
 def simulate_policy(traj: list[dict], policy_fn, cost: CostModel) -> dict:
     """Run a stateful policy on a trajectory. Returns (reward, cost, actions)."""
-    state = {"step": 0, "patch_idx": 0, "verified": False, "given_up": False, "actions": []}
+    state = {
+        "step": 0,
+        "patch_idx": 0,
+        "max_patches": len(traj),
+        "verified": False,
+        "given_up": False,
+        "actions": [],
+    }
     cum_cost = 0.0
     reward = 0.0
     while not (state["verified"] or state["given_up"]) and state["step"] < len(traj):
@@ -234,7 +241,7 @@ def policy_threshold_L0(state, rec):
     state["L0_done"] = False  # reset for next patch
     if rec.get("L0_syntax"):
         return "verify"
-    if state["patch_idx"] + 1 < 5:
+    if state["patch_idx"] + 1 < state.get("max_patches", 5):
         return "generate"
     return "give_up"
 
@@ -246,7 +253,7 @@ def policy_threshold_L3(state, rec):
     state["L3_done"] = False
     if rec.get("L3_llm_review"):
         return "verify"
-    if state["patch_idx"] + 1 < 5:
+    if state["patch_idx"] + 1 < state.get("max_patches", 5):
         return "generate"
     return "give_up"
 
@@ -262,7 +269,7 @@ def policy_fixed_pipeline(state, rec):
     state["L3_done"] = False
     if rec.get("L0_syntax") and rec.get("L3_llm_review"):
         return "verify"
-    if state["patch_idx"] + 1 < 5:
+    if state["patch_idx"] + 1 < state.get("max_patches", 5):
         return "generate"
     return "give_up"
 

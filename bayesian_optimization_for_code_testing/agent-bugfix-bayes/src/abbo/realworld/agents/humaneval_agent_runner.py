@@ -41,7 +41,7 @@ from abbo.realworld.agents.humaneval_fix import (
     run_critic,
     run_full_test,
 )
-from abbo.realworld.agents.llm_provider import LLMConfig, call_llm
+from abbo.realworld.agents.llm_provider import LLMConfig, call_llm_or_raise
 from abbo.realworld.agents.simple_agent import AgentCostConfig
 
 
@@ -126,9 +126,11 @@ ARM_SEQUENCE = list(ARM_PROMPTS.keys())
 _CODE_FENCE_RE = re.compile(r"```(?:python|py)?\n(.*?)\n```", re.DOTALL)
 
 
-def extract_code(llm_text: str, fallback: str) -> str:
+def extract_code(llm_text: str | None, fallback: str) -> str:
     """Extract Python code from an LLM response. Prefer fenced blocks; else
     return whole text. Falls back to `fallback` if extraction yields empty."""
+    if not isinstance(llm_text, str):
+        return fallback
     m = _CODE_FENCE_RE.search(llm_text)
     if m:
         body = m.group(1).strip()
@@ -214,7 +216,7 @@ def run_simple(
                 test_output=test_out,
                 test_code=get_full_test_script(task_id),
             )
-            resp = call_llm(prompt, llm_config)
+            resp = call_llm_or_raise(prompt, llm_config)
             res.n_llm_calls += 1
             res.total_cost += cost_config.c_llm_call
             res.prompt_tokens += resp.prompt_tokens
@@ -343,7 +345,7 @@ def run_greedy(
                     source_code=current, test_output=test_out,
                     test_code=get_full_test_script(task_id),
                 )
-                resp = call_llm(prompt, llm_config)
+                resp = call_llm_or_raise(prompt, llm_config)
                 res.n_llm_calls += 1
                 res.total_cost += cost_config.c_llm_call
                 res.prompt_tokens += resp.prompt_tokens
@@ -445,7 +447,7 @@ def run_dp(
                     source_code=current, test_output=test_out,
                     test_code=get_full_test_script(task_id),
                 )
-                resp = call_llm(prompt, llm_config)
+                resp = call_llm_or_raise(prompt, llm_config)
                 res.n_llm_calls += 1
                 res.total_cost += cost_config.c_llm_call
                 res.prompt_tokens += resp.prompt_tokens
