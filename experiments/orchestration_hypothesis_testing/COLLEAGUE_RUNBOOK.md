@@ -737,7 +737,92 @@ For the paper notebook (final analysis + figures), see
 
 ---
 
-## 10. After everything is done
+## 10. Filling the GrFt / DPFt columns (sister codebase)
+
+`GrFt` (`greedy_fitted`) and `DPFt` (`dp_fitted`) in `tab:full_results`
+are produced by a **different codebase**:
+`bayesian_optimization_for_code_testing/agent-bugfix-bayes/`. They are
+fitted variants of the Bayesian controllers (Beta-Binomial-fitted
+critic likelihoods + measured kernel, instead of hand-tuned constants).
+
+### 10.1 Two ways the cells are produced
+
+| Path | Script | LLM calls? | Output | Used for |
+|---|---|---|---|---|
+| **Replay** | `pytest tests/test_humaneval_simulation.py` | No | `sim_results/humaneval_simulation_metrics.json` | DP-vs-Greedy / hand-vs-fitted comparison on existing patches |
+| **Replay** | `pytest tests/test_swebench_simulation.py` | No (uses Docker for critic outcomes) | `sim_results/swebench_simulation_metrics.json` | SWE-Bench appendix sub-rows |
+| **Live end-to-end** | `python scripts/run_humaneval_full.py` | **Yes** | `sim_results/humaneval_full_endtoend.json` | The HumanEvalFix + CodeContests GrFt/DPFt values in the main paper table |
+
+The fit step itself (`src/abbo/realworld/calibration/`) never needs
+new API calls — it's Beta-Binomial Laplace smoothing on existing
+calibration / iter data. **It's the evaluation that does or doesn't
+call the LLM, depending on which path you use.**
+
+### 10.2 Empty cells in the paper table — what's needed
+
+| Empty cells | What to do | New API calls? |
+|---|---|---|
+| **Function-level synthesis** (LCB-{hard,medium,easy}, MBPP+, HumanEval+) | No adapter exists. `realworld/agents/` has only `humaneval_fix.py`, `code_contests.py`, `swe_bench.py`. Would need a new adapter per benchmark mirroring those three. **Reasonable to leave these `--` for EMNLP.** | Yes (if added) |
+| **SWE-Bench Lite + Verified main rows** for missing generators | Adapter exists (`swe_bench.py`). Run the replay simulation via pytest (`-k swebench_simulation`). Needs Docker for critic recollection on missing instances, not LLM. | No (replay) |
+| **HumanEvalFix + CodeContests** for `gpt5_mini`, `Qwen2.5-Coder-7B`, `Qwen2.5-Coder-32B` | Adapter exists. Edit `LLM_MODEL` in `scripts/run_humaneval_full.py` (currently `"openai/gpt-oss-20b:free"`) and re-run per generator; output saves to a fresh `humaneval_full_endtoend_<gen>.json`. | Yes (live agent) |
+
+### 10.3 How to run
+
+```bash
+cd bayesian_optimization_for_code_testing/agent-bugfix-bayes
+bash scripts/setup_env.sh
+source .venv/bin/activate
+
+# (a) Replay-based: HumanEvalFix + SWE-Bench simulations (no LLM)
+#     Uses existing calibration data; outputs sim_results/*_simulation_metrics.json
+pytest -q -k "humaneval_simulation or swebench_simulation" \
+       --alluredir allure-results --clean-alluredir
+
+# (b) Live end-to-end on HumanEvalFix for a new generator.
+#     Edit LLM_MODEL in scripts/run_humaneval_full.py (line ~48),
+#     and either also edit RESULTS_PATH or set it per-generator before launch.
+LLM_MODEL=anthropic/claude-haiku-4.5 \
+RESULTS_PATH=sim_results/humaneval_full_endtoend_haiku45.json \
+python scripts/run_humaneval_full.py
+#     (the script reads both via module globals; set them in the file or
+#      patch the script to take CLI flags — see existing pattern).
+
+# Resume after a crash: re-running the same command skips
+# (task_id, variant) pairs already in the output JSON.
+```
+
+Per-instance cost on HumanEvalFix end-to-end is roughly 2–5 generator
+calls (1 initial fix + 0–2 regenerations + 1 verifier), so an n=124
+held-out split lands at ~$2–8 per closed-API generator. Local-vLLM
+generators are free at the API layer.
+
+### 10.4 Uploading results back to W&B
+
+After producing a new `sim_results/*.json`, fold it into the W&B
+project so the analysis notebook picks it up:
+
+```bash
+cd experiments/orchestration/wandb
+python3 upload_runs.py --track abbo                # walks sim_results/
+# OR a single cell:
+python3 upload_runs.py --track abbo \
+    --benchmark humanevalfix --generator haiku45
+```
+
+These land under `track:abbo` (the agent-bugfix-bayes track), not
+`track:orchestration` — that's the convention `analysis.ipynb` uses to
+distinguish replay-policy comparisons (orchestration) from fitted
+end-to-end agent runs (abbo).
+
+### 10.5 Practical recommendation for EMNLP deadline
+
+- **High value, cheap:** fill HumanEvalFix + CodeContests GrFt/DPFt for `gpt5_mini`, `qwen3_coder`, `haiku45`, `sonnet45`. ~$30 total.
+- **Medium value, cheap:** SWE-Bench Lite/Verified replay simulations for the missing generators. Docker required but no API spend.
+- **Defer:** function-level synthesis GrFt/DPFt — requires writing new benchmark adapters. Not blocking the headline three-regime story.
+
+---
+
+## 11. After everything is done
 
 1. `cd experiments/orchestration/wandb && python3 upload_runs.py` —
    pushes any local cells that aren't on W&B yet (idempotent;
