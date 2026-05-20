@@ -1,0 +1,561 @@
+# Colleague Runbook — running experiments end-to-end
+
+This document is for **someone running these experiments for the first time**.
+For the architecture of the pipeline (how to extend it with a new
+benchmark/generator/critic) see `PLAYBOOK.md`. For the full audit log of
+what was run historically see `EXPERIMENTAL_LOG.md`.
+
+Scope of this runbook: **function-level synthesis** (LCB, MBPP+, HumanEval+)
+and **repository-level patch generation** (SWE-Bench Lite, SWE-Bench
+Verified). Bug-fixing benchmarks (HumanEvalFix, CodeContests) use the
+`agent-bugfix-bayes/` pipeline and are out of scope here.
+
+All commands assume cwd = `experiments/orchestration_hypothesis_testing/`.
+
+---
+
+## 0. Prerequisites
+
+### 0.1 Python + repo
+
+```bash
+git clone https://github.com/rvz16/agents_with_uncertainty_research.git
+cd agents_with_uncertainty_research
+git checkout main                # base branch with the runbook
+cd experiments/orchestration_hypothesis_testing
+pip install -r ../../requirements.txt    # if present; otherwise install ad-hoc:
+pip install openai datasets evalplus python-dotenv numpy scipy matplotlib swebench
+```
+
+Python ≥ 3.10. Verified locally on 3.13.
+
+### 0.2 Secrets — put these in `<repo-root>/.env`
+
+```
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+All four entry scripts (`lcb_calibrate.py`, `mbpp_calibrate.py`,
+`humaneval_calibrate.py`, `spot_check_generators.py`) auto-load `.env`
+walking up from the script. You do **not** need to `export`.
+
+Optional caches (recommended on shared clusters where `~/.cache` is
+small):
+
+```bash
+export HF_HOME=/path/to/big/disk/hf_cache
+export TMPDIR=/path/to/big/disk/tmp
+```
+
+### 0.3 Docker / Podman — **only required for SWE-Bench**
+
+Function-level synthesis benchmarks (LCB / MBPP+ / HumanEval+) **do not
+need Docker**. They run public/hidden tests in a subprocess.
+
+SWE-Bench Phase 2 (harness eval) requires Docker or Podman with
+pre-built images for the dataset:
+
+```bash
+# Docker users — just have docker running.
+# Podman users — pin the socket and turn on the compat shim:
+export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+export SWEBENCH_PODMAN_COMPAT=1
+```
+
+**Architecture gotcha:** SWE-Bench pre-built images are `x86_64` only. On
+Apple Silicon (`arm64`) the harness will 404 every image. Run Phase 2 on
+a Linux x86_64 box (e.g. the cluster). Phase 1 (generation) is portable.
+
+### 0.4 Local vLLM endpoints — only for open-weight generators
+
+| Generator key | Model | Port | Needed for |
+|---|---|---|---|
+| `qwen25_32b` | Qwen/Qwen2.5-Coder-32B-Instruct | `8003` | LCB / MBPP+ / HumanEval+ |
+| `qwen25_7b` | Qwen/Qwen2.5-7B-Instruct | `8001` | SWE-Bench (registered in `spot_check_generators.py`) |
+| `qwen3_8b`, `qwen3_8b_thinking` | Qwen/Qwen3-8B | `8002` | SWE-Bench (extra, optional) |
+
+Closed-API generators (`gpt5_mini`, `qwen3_coder`, `haiku45`, `sonnet45`)
+go through OpenRouter and **do not need a local server**.
+
+Start a vLLM endpoint (one per port) e.g.:
+
+```bash
+# 32B on port 8003 (used by LCB/MBPP+/HumanEval+ via lcb_calibrate.GENERATORS)
+vllm serve Qwen/Qwen2.5-Coder-32B-Instruct \
+  --host 127.0.0.1 --port 8003 \
+  --max-model-len 16384 --gpu-memory-utilization 0.9
+```
+
+If you're using an SSH-tunneled remote vLLM (the Runpod-1 box), set up a
+local forward so the script can reach `127.0.0.1:8003`:
+
+```bash
+ssh -N -L 8003:127.0.0.1:8003 <runpod1-host>
+```
+
+### 0.5 Generator panel (which keys map to which model)
+
+Function-level synthesis (LCB / MBPP+ / HumanEval+) reads
+`scripts/lcb_calibrate.py:GENERATORS`:
+
+| Key | Model | Type |
+|---|---|---|
+| `gpt5_mini` | `openai/gpt-5-mini` | OpenRouter |
+| `qwen3_coder` | `qwen/qwen3-coder` | OpenRouter |
+| `haiku45` | `anthropic/claude-haiku-4.5` | OpenRouter |
+| `sonnet45` | `anthropic/claude-sonnet-4.5` | OpenRouter |
+| `qwen25_32b` | `Qwen/Qwen2.5-Coder-32B-Instruct` | **Local vLLM @ 8003** |
+
+SWE-Bench reads `scripts/spot_check_generators.py:GENERATORS`:
+
+| Key | Model | Type |
+|---|---|---|
+| `gpt5_mini`, `qwen3_coder`, `haiku45`, `sonnet45` | (same) | OpenRouter |
+| `qwen25_7b` | `Qwen/Qwen2.5-7B-Instruct` | **Local vLLM @ 8001** |
+| `qwen3_8b`, `qwen3_8b_thinking` | `Qwen/Qwen3-8B` | **Local vLLM @ 8002** |
+
+> **Note.** The paper's panel references `Qwen2.5-Coder-7B-Instruct` and
+> `gpt-oss-20b`, which are not yet registered in either GENERATORS dict.
+> If we want those rows in `tab:full_results`, add them to both dicts
+> (model id + base_url + enable_thinking) and start vLLM endpoints with
+> the matching ports.
+
+---
+
+## 1. Function-level synthesis (LCB / MBPP+ / HumanEval+)
+
+All three benchmarks share the same shape: single-shot generation +
+4 critics (L0 syntax, L1 lint, L2 public tests, L3 LLM-judge) + verifier
+(hidden tests). No Docker needed. Output layout per cell:
+
+```
+data/<bench>_calibration/<gen>/
+  ├─ critic_results.jsonl       # one row per (instance, patch)
+  ├─ likelihood_tables.json     # P(z|Y), prior, gaps
+  ├─ cost_summary.json
+  ├─ cost_log.jsonl
+  └─ raw_responses/<inst>_p<pid>.txt
+```
+
+### 1.1 LiveCodeBench (LCB-hard / medium / easy)
+
+Closed-API generators (no vLLM needed):
+
+```bash
+cd experiments/orchestration_hypothesis_testing
+
+# LCB-hard, 4 closed-API generators, n=30, 3 patches each
+python3 scripts/lcb_calibrate.py \
+  --output-dir data/lcb_calibration_hard \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --n-instances 30 --n-patches 3 \
+  --difficulty hard --platform leetcode \
+  --seed 42 \
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=5.0,sonnet45=12.0
+
+# Repeat for medium / easy by swapping --difficulty.
+```
+
+To include the open-weight 32B generator, start vLLM (§0.4) and append
+`qwen25_32b` to `--generators`. `--max-cost-usd-per-model` accepts
+`qwen25_32b=1000.0` (the cap is never reached on a local endpoint).
+
+### 1.2 MBPP+
+
+```bash
+python3 scripts/mbpp_calibrate.py \
+  --output-dir data/mbpp_calibration \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --n-instances 100 --n-patches 3 \
+  --seed 42 \
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=4.0,sonnet45=15.0
+```
+
+### 1.3 HumanEval+
+
+```bash
+python3 scripts/humaneval_calibrate.py \
+  --output-dir data/humaneval_calibration \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --n-instances 100 --n-patches 3 \
+  --plus-input-cap 200 \
+  --seed 42 \
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=4.0,sonnet45=15.0
+```
+
+### 1.4 Sanity check after each cell
+
+```bash
+ls data/<bench>_calibration/<gen>/critic_results.jsonl   # should be N×n_patches lines
+jq -s 'length' data/<bench>_calibration/<gen>/critic_results.jsonl
+cat data/<bench>_calibration/<gen>/likelihood_tables.json | jq '.prior_Y1, .critic_likelihoods | keys'
+```
+
+Acceptance gates (from `PLAYBOOK.md` master validation table):
+
+- `prior_Y1 ∈ [0.05, 0.95]` (sanity — not saturated either way).
+- For each critic L0/L2/L3, |gap| > 0.05 on at least one cell.
+
+### 1.5 Resume after a crash
+
+All three calibrators are idempotent: relaunching the same command skips
+`(instance_id, patch_id)` tuples already written to `critic_results.jsonl`.
+
+---
+
+## 2. Repository-level patch generation (SWE-Bench Lite / Verified)
+
+Two-phase pipeline. Phase 1 (generation) is portable; Phase 2 (Docker
+harness eval) needs x86_64 Linux + Docker/Podman.
+
+The script is **`scripts/spot_check_generators.py`**. The
+`--dataset` flag selects Lite vs Verified (and `--language-filter`
+is available for SWE-Pro multi-language filtering, e.g. `python`).
+
+### 2.1 Cost probe (no patches, $0.02 per generator)
+
+Before any real run, project the cost:
+
+```bash
+python3 scripts/spot_check_generators.py \
+  --dataset princeton-nlp/SWE-bench_Lite \
+  --output-dir data/swebench_lite \
+  --n-instances 30 --n-patches 3 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --probe-only
+```
+
+This runs 1 generation per (instance, generator) and projects the full
+cost. Read `data/swebench_lite/probe_report.json` before continuing.
+
+### 2.2 Full single-shot calibration
+
+```bash
+# SWE-Bench Lite
+python3 scripts/spot_check_generators.py \
+  --dataset princeton-nlp/SWE-bench_Lite \
+  --output-dir data/swebench_lite \
+  --n-instances 30 --n-patches 3 --seed 42 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=5.0,sonnet45=12.0 \
+  --max-workers-gen 8 --max-workers-eval 4
+
+# SWE-Bench Verified — same shape, different dataset + output dir
+python3 scripts/spot_check_generators.py \
+  --dataset princeton-nlp/SWE-bench_Verified \
+  --output-dir data/swebench_verified \
+  --n-instances 30 --n-patches 3 --seed 42 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=5.0,sonnet45=12.0 \
+  --max-workers-gen 8 --max-workers-eval 4
+```
+
+The script does:
+1. **Phase 1 — generation**: 30 instances × 3 patches × 4 generators = 360
+   calls (~25 min over OpenRouter). Output: `<gen>/predictions.jsonl` +
+   `predictions_p{0,1,2}.jsonl` + `raw_responses/`.
+2. **Phase 2 — Docker harness eval**: builds/pulls per-instance images,
+   runs hidden tests, writes `eval/<gen>_p<pid>.json` reports. **Needs
+   Docker/Podman + x86_64.**
+3. **Phase 3 — aggregation**: per-generator `cost_summary.json` and
+   run-level `summary.json` with base-rate-vs-PRE_REGISTRATION verdict.
+
+### 2.3 Skipping phases
+
+- `--skip-eval` — run Phase 1 + Phase 3 (skip Docker). Useful if you'll
+  run Phase 2 on a different machine.
+- `--skip-generate` — run Phase 2 only (uses existing predictions JSONLs).
+  Useful for the Mac-Phase1 → cluster-Phase2 hand-off below.
+
+### 2.4 Mac-Phase1 → cluster-Phase2 hand-off
+
+If you're on Apple Silicon, generate locally and eval on the cluster:
+
+```bash
+# Local (arm64): Phase 1 only
+python3 scripts/spot_check_generators.py ... --skip-eval
+
+# Push the predictions to the cluster
+rsync -av data/swebench_lite/ MBZUAI-Artem-1:/path/to/repo/.../data/swebench_lite/
+
+# Cluster (x86_64 + podman): Phase 2 only
+ssh MBZUAI-Artem-1
+cd /path/to/repo/.../experiments/orchestration_hypothesis_testing
+export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+export SWEBENCH_PODMAN_COMPAT=1
+python3 scripts/spot_check_generators.py \
+  --dataset princeton-nlp/SWE-bench_Lite \
+  --output-dir data/swebench_lite \
+  --n-instances 30 --n-patches 3 --seed 42 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --skip-generate
+```
+
+### 2.5 Critic computation on the SWE-Bench corpus
+
+After Phase 2 completes, run `calibrate_from_spotcheck.py` to compute
+L0/L1/L2/L3 critic results + likelihoods:
+
+```bash
+python3 scripts/calibrate_from_spotcheck.py \
+  --output-dir data/swebench_lite \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --dataset princeton-nlp/SWE-bench_Lite
+```
+
+(Use `--dataset princeton-nlp/SWE-bench_Verified` for the verified split.)
+
+---
+
+## 3. Policy comparison + paper table
+
+After calibration is done for a cell, compute the 8-policy comparison
+(this produces the Δ-utility numbers in `tab:full_results`):
+
+```bash
+# Works for LCB, MBPP+, HumanEval+, and the SWE-Bench cells alike.
+python3 scripts/lcb_compare.py \
+  --output-dir data/<bench>_calibration \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45
+```
+
+Output per cell: `<gen>/policy_comparison.json` with `mean_utility`,
+`diff_vs_always_verify`, and paired-bootstrap 95% CIs for each of:
+`always_verify`, `best_of_3`, `threshold_L{0,2,3}`, `fixed_pipeline`,
+`bayesian_greedy`, `bayesian_DP` (IID kernel at this point).
+
+Then aggregate to the paper-table:
+
+```bash
+python3 scripts/lcb_summarize_paper.py \
+  --hard-dir data/lcb_calibration_hard \
+  --medium-dir data/lcb_calibration_medium \
+  --easy-dir data/lcb_calibration_easy \
+  --output-root data
+python3 scripts/lcb_make_figures.py \
+  --paper-table data/PAPER_TABLE.json \
+  --out-dir data/paper_figs
+```
+
+For a multi-benchmark refresh (recommended once everything is in):
+
+```bash
+python3 scripts/lcb_summarize_paper.py \
+  --cells "lcb_hard=data/lcb_calibration_hard,lcb_medium=data/lcb_calibration_medium,lcb_easy=data/lcb_calibration_easy,mbpp=data/mbpp_calibration,humaneval=data/humaneval_calibration,swebench_lite=data/swebench_lite,swebench_verified=data/swebench_verified" \
+  --output-root data
+```
+
+---
+
+## 4. Iterative refinement (measured transition kernel)
+
+The IID kernel used by `lcb_compare.py` is a placeholder. To replace it
+with the **measured** kernel (the one in §F1 of the paper), run iter
+refinement and `compute_transition_kernel.py`.
+
+### 4.1 LCB iter
+
+```bash
+python3 scripts/iter_refine_lcb.py \
+  --src-dir data/lcb_calibration_hard \
+  --output-dir data/lcb_calibration_hard_iter \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --difficulty hard --platform leetcode \
+  --n-instances 30 --steps 5 \
+  --max-workers 6 --max-cost-usd-per-model 2.0
+```
+
+### 4.2 SWE-Bench iter (needs Docker for the harness backfill)
+
+```bash
+# Generation
+python3 scripts/iter_refine_swebench.py \
+  --dataset princeton-nlp/SWE-bench_Lite \
+  --src-dir data/swebench_lite/source \
+  --output-dir data/swebench_lite_iter \
+  --generators haiku45,sonnet45 \
+  --n-instances 30 --steps 5 --seed 42 --max-workers 6 \
+  --max-cost-usd-per-model 5.0
+
+# Harness eval over the new iter predictions
+python3 scripts/run_iter_harness.py \
+  --iter-dir data/swebench_lite_iter \
+  --work-dir data/swebench_lite_iter/eval \
+  --dataset princeton-nlp/SWE-bench_Lite \
+  --generators haiku45,sonnet45 --steps 1,2,3,4 --max-workers 2
+
+# Backfill Y into iter_records.jsonl
+python3 scripts/populate_iter_y_verified.py \
+  --iter-dir data/swebench_lite_iter \
+  --src-dir data/swebench_lite \
+  --generators haiku45,sonnet45 --steps 5
+
+# Measured kernel
+python3 scripts/compute_iter_kernel.py \
+  --iter-dir data/swebench_lite_iter \
+  --generators haiku45,sonnet45
+```
+
+### 4.3 Re-run policy comparison with the measured kernel
+
+```bash
+python3 scripts/lcb_compare.py \
+  --output-dir data/<bench>_calibration \
+  --generators <list> \
+  --kernel-file "gpt5_mini=data/<bench>_iter/gpt5_mini/transition_kernel.json,..." \
+  --out-suffix _kernel_iterative
+```
+
+This writes `<gen>/policy_comparison_kernel_iterative.json`. Re-run
+`lcb_summarize_paper.py` to fold the measured-kernel rows into
+`PAPER_TABLE.json`.
+
+---
+
+## 5. Two cost vectors (paper §Critic Stack / §Cost-vector choice)
+
+Both vectors share `c_gen=10, R=100`. The paper uses:
+
+| Vector | `c_ver` | `c_L0` | `c_L2` | `c_L3` | Used for |
+|---|---|---|---|---|---|
+| **Slow-oracle** ("slow oracle, fast critics") | 30 | 1 | 2 | 5 | LCB, MBPP+, HumanEval+, SWE-Bench Lite/Verified |
+| **Fast-oracle** ("fast oracle, balanced critics") | 5 | 1 | 1 | 1 | HumanEvalFix, CodeContests |
+
+`lcb_compare.py` uses the slow-oracle vector by default. Override via
+`--c-ver`, `--c-l0`, `--c-l2`, `--c-l3` for the fast-oracle vector or for
+the c_ver sensitivity sweep (`c_ver ∈ {15,20,25,30,40,60}`).
+
+---
+
+## 6. Recommended run order for filling `tab:full_results`
+
+The empty cells are roughly: **Qwen2.5-Coder-7B** (every row),
+**gpt-oss-20b** (synthesis + SWE-Bench), **Qwen2.5-Coder-32B** on SWE
+Lite/Verified, **gpt-5-mini** on HumanEvalFix + CodeContests-replay, and
+the **GrFt/DPFt** columns for synthesis + SWE rows.
+
+For each missing (benchmark, generator) cell, run in this order:
+
+1. **Add the generator** to `lcb_calibrate.GENERATORS` and
+   `spot_check_generators.GENERATORS` if it isn't there yet. Start the
+   vLLM endpoint at the registered port if open-weight.
+2. **Probe** (SWE only): `--probe-only` for cost projection.
+3. **Calibrate** (`lcb_calibrate.py` / `mbpp_calibrate.py` /
+   `humaneval_calibrate.py` / `spot_check_generators.py`) → produces
+   `critic_results.jsonl` and `likelihood_tables.json`.
+4. **Policy compare** (`lcb_compare.py`) → produces
+   `policy_comparison.json` (IID kernel).
+5. **Iter refinement** + harness backfill + `compute_transition_kernel.py`
+   → measured kernel.
+6. **Re-run policy compare** with `--kernel-file ...` → measured-kernel
+   `policy_comparison_kernel_iterative.json`.
+7. **Aggregate** with `lcb_summarize_paper.py` and refresh figures.
+
+Use the runtime estimates from `EXPERIMENTAL_LOG.md` (e.g. LCB-hard ~1 h
+per generator at n=30, MBPP+ ~30 min, SWE-Bench ~30 min generate +
+~45 min harness eval, total ~$10–15 for the closed-API panel).
+
+---
+
+## 7. Smoke tests (n=5 per benchmark) — do this first
+
+Confirm your setup works before launching a real run.
+
+```bash
+cd experiments/orchestration_hypothesis_testing
+
+# LCB-hard: 5 instances × 1 patch × gpt5_mini only
+python3 scripts/lcb_calibrate.py \
+  --output-dir /tmp/smoke_lcb_hard \
+  --generators gpt5_mini \
+  --n-instances 5 --n-patches 1 \
+  --difficulty hard --platform leetcode \
+  --max-cost-usd-per-model 0.50
+
+# MBPP+: 5 × 1
+python3 scripts/mbpp_calibrate.py \
+  --output-dir /tmp/smoke_mbpp \
+  --generators gpt5_mini \
+  --n-instances 5 --n-patches 1 \
+  --max-cost-usd-per-model 0.50
+
+# HumanEval+: 5 × 1
+python3 scripts/humaneval_calibrate.py \
+  --output-dir /tmp/smoke_humaneval \
+  --generators gpt5_mini \
+  --n-instances 5 --n-patches 1 \
+  --max-cost-usd-per-model 0.50
+
+# SWE-Bench Lite cost probe (no patches generated, no Docker)
+python3 scripts/spot_check_generators.py \
+  --dataset princeton-nlp/SWE-bench_Lite \
+  --output-dir /tmp/smoke_swe_lite \
+  --n-instances 5 --n-patches 1 \
+  --generators gpt5_mini --probe-only
+
+# SWE-Bench Verified cost probe
+python3 scripts/spot_check_generators.py \
+  --dataset princeton-nlp/SWE-bench_Verified \
+  --output-dir /tmp/smoke_swe_verified \
+  --n-instances 5 --n-patches 1 \
+  --generators gpt5_mini --probe-only
+```
+
+Each smoke run should finish in under 2 minutes and cost < $0.10. If any
+of them fails, fix it before starting the real cells.
+
+---
+
+## 8. Common gotchas (read before launching)
+
+- **`gpt5_mini` as L3 reviewer**: returns empty content because reasoning
+  tokens consume the entire `max_tokens` budget. Use it as a generator,
+  not as the L3 critic.
+- **OpenRouter Azure routing** rejects `max_tokens < 16`. The code uses
+  `max_tokens=32` for non-reasoning models and `max_tokens=200` for gpt-5.
+- **MBPP+ test format**: tests are self-running scripts (call function
+  inline at module level). Do not append `check(entry_point)`.
+- **LCB starter_code** must be honored. The functional runner imports the
+  module and calls `Solution().<method>(*args)`. A stdin runner gives 0%.
+- **Self-review L3**: when the L3 reviewer == the generator, the L3 gap
+  collapses (~50% on hard, ~95% on medium). Always pair L3 with a
+  different model family.
+- **SWE-Bench arm64**: pre-built images are x86_64 only. Run Phase 2 on
+  the cluster (`MBZUAI-Artem-*`), not on an M-series Mac.
+- **Cluster disk quota**: home is 200 GB. Send `HF_HOME` and `TMPDIR` to
+  `/mnt/data/...`. Run `podman system prune -a -f` and `conda clean -a`
+  if a run errors out with `ENOSPC`.
+- **`qwen3_coder` SWE-Bench parser bug**: thinking-block parser failure
+  causes ~100% empty patches on SWE. Known issue; fix before relying on
+  qwen3 SWE numbers.
+- **Cost caps**: every long-running script honours
+  `--max-cost-usd-per-model`. The cost tracker writes a per-call audit
+  log and aborts cleanly when the cap is hit. The script is resumable —
+  re-running picks up where it left off.
+
+---
+
+## 9. Where everything lands
+
+```
+data/
+  lcb_calibration_{hard,medium,easy}/<gen>/    # function-level synthesis
+  mbpp_calibration/<gen>/
+  humaneval_calibration/<gen>/
+  swebench_{lite,verified}/<gen>/              # repo-level patch generation
+  <bench>_{calibration,}_iter/<gen>/            # iter trajectories + kernels
+  PAPER_TABLE.{json,csv}                       # final aggregate
+  paper_figs/*.{png,pdf}                       # figures for the paper
+```
+
+For the paper notebook (final analysis + figures), see
+`experiments/orchestration/wandb/analysis.ipynb`.
+
+---
+
+## 10. After everything is done
+
+Re-run the notebook (`analysis.ipynb`) on the completed W&B panel, then
+regenerate the paper figures. See `emnlp2026/SUBMISSION_TODO.md` for the
+prioritised checklist that takes us from "experiments done" to
+"submission ready".
