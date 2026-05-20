@@ -120,6 +120,70 @@ SWE-Bench reads `scripts/spot_check_generators.py:GENERATORS`:
 > (model id + base_url + enable_thinking) and start vLLM endpoints with
 > the matching ports.
 
+### 0.6 W&B access (READ THIS BEFORE RUNNING ANYTHING)
+
+The paper's 35 main-panel cells (5 generators × 7 benchmarks) are
+**already in W&B**. Don't re-run them — fetch them.
+
+Project: [`nlpresearch.group/orchestration-hypothesis-testing`](https://wandb.ai/nlpresearch.group/orchestration-hypothesis-testing).
+
+```bash
+# One-time auth
+pip install wandb
+wandb login          # paste your W&B API key when prompted
+
+# Confirm access
+python3 -c "import wandb; api=wandb.Api(); print(len(list(api.runs('nlpresearch.group/orchestration-hypothesis-testing'))), 'runs visible')"
+```
+
+What's there right now (track:orchestration), per `SCHEMA.md`:
+
+| Experiment type | # of runs | Coverage |
+|---|---|---|
+| `calibration` | 35 | 5 gens × 7 benchmarks |
+| `iter` | ~25 | LCB-{hard,medium,easy} + SWE-{Lite,Verified} × 5 gens × {single_method, selfrefine, reflexion} |
+| `policy_comparison` | 140+ | each calibration × kernel variant (default / iid_baseline / measured / iterative / loo) |
+| `cver_sweep`, `theta_sweep`, `r_sweep`, `methodology` | various | sensitivity + methodology batches |
+
+Tracks:
+- `track:orchestration` — `gpt5_mini`, `qwen3_coder`, `haiku45`, `sonnet45`, `qwen25_32b` across LCB / MBPP+ / HumanEval+ / SWE-Lite / SWE-Verified.
+- `track:abbo` — `gpt_oss_20b` on HumanEvalFix, CodeContests, SWE-Lite (from the `bayesian_optimization_for_code_testing/agent-bugfix-bayes/` codebase).
+
+What's NOT there (these are the empty cells you need to fill):
+- `Qwen2.5-Coder-7B-Instruct` — every benchmark.
+- `gpt-oss-20b` — every benchmark in `track:orchestration` (it only exists on `track:abbo` for bug-fixing). Function-level synthesis + SWE-Bench cells are missing.
+- `Qwen2.5-Coder-32B` on SWE-Lite + SWE-Verified.
+- `gpt-5-mini` HumanEvalFix calibration; `gpt-5-mini` CodeContests BoN/threshold/SR/Rfx/BG/BDP.
+- GrFt/DPFt columns for all function-level synthesis + SWE rows.
+
+### 0.7 Fetching + re-analysing existing results
+
+Use the analysis notebook — it does the W&B fetch + cache for you:
+
+```bash
+cd experiments/orchestration/wandb
+jupyter notebook analysis.ipynb
+# Run all cells. First cells call wandb.Api(), pull runs into a DataFrame,
+# download per-run artifacts (critic_results.jsonl, iter_records.jsonl,
+# policy_comparison.json), cache under .cache/runs.parquet + .cache/raw/.
+# Re-runs use the cache; pass force_refresh=True to fetch_runs() to refresh.
+```
+
+If you only need a specific cell's raw data without the full notebook:
+
+```python
+import wandb
+api = wandb.Api()
+runs = api.runs("nlpresearch.group/orchestration-hypothesis-testing",
+                filters={"config.experiment_type": "calibration",
+                         "config.benchmark": "lcb_hard",
+                         "config.generator": "gpt5_mini"})
+for run in runs:
+    for art in run.logged_artifacts():
+        if "critic_results" in art.name:
+            art.download(root="/tmp/lcb_hard_gpt5_mini")
+```
+
 ---
 
 ## 1. Function-level synthesis (LCB / MBPP+ / HumanEval+)
@@ -137,50 +201,93 @@ data/<bench>_calibration/<gen>/
   └─ raw_responses/<inst>_p<pid>.txt
 ```
 
+### 1.0 Canonical N (paper Table 1) and per-cell draw n
+
+Per the paper (§5.4 *Calibration and refinement pipelines*): *"Per cell
+we draw n = 30–102 instances × k = 3 patches, with seed=42 fixed across
+generators for paired comparison."* The canonical N is the full
+benchmark size; the per-cell `n` is the subset actually run. Match the
+paper's draws when you fill new cells:
+
+| Benchmark | Canonical N (Table 1) | Per-cell n (paper draw) | LCB flag |
+|---|---|---|---|
+| LCB-hard | 102 | 102 | `--lcb-version all` |
+| LCB-medium | 207 | 207 | `--lcb-version all` |
+| LCB-easy | 135 | 135 | `--lcb-version all` |
+| MBPP+ | 378 | 100 | n/a |
+| HumanEval+ | 164 | 100 | n/a |
+| SWE-Bench Lite | 300 | 30 | n/a |
+| SWE-Bench Verified | 500 | 30 | n/a |
+| HumanEvalFix | 164 | 30 | (bug-fixing track) |
+| CodeContests | 165 | 30 | (bug-fixing track) |
+
+> **LCB pool note.** `--lcb-version v1` (the default) gives 29 / 90 / 62
+> instances for hard / medium / easy. To reach Table 1's full N use
+> `--lcb-version all` (v1+v2+...+v6 union → 102 / 207 / 135).
+
 ### 1.1 LiveCodeBench (LCB-hard / medium / easy)
 
-Closed-API generators (no vLLM needed):
+Closed-API generators (no vLLM needed). Use `--lcb-version all` and the
+Table-1 N values to match the paper exactly:
 
 ```bash
 cd experiments/orchestration_hypothesis_testing
 
-# LCB-hard, 4 closed-API generators, n=30, 3 patches each
+# LCB-hard, full closed-API panel + Qwen32B (start its vLLM first, see §0.4)
 python3 scripts/lcb_calibrate.py \
   --output-dir data/lcb_calibration_hard \
-  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
-  --n-instances 30 --n-patches 3 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
+  --n-instances 102 --n-patches 3 \
   --difficulty hard --platform leetcode \
+  --lcb-version all \
   --seed 42 \
-  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=5.0,sonnet45=12.0
+  --max-cost-usd-per-model gpt5_mini=3.0,qwen3_coder=3.0,haiku45=8.0,sonnet45=20.0,qwen25_32b=1000.0
 
-# Repeat for medium / easy by swapping --difficulty.
+# LCB-medium (N=207)
+python3 scripts/lcb_calibrate.py \
+  --output-dir data/lcb_calibration_medium \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
+  --n-instances 207 --n-patches 3 \
+  --difficulty medium --platform leetcode \
+  --lcb-version all --seed 42 \
+  --max-cost-usd-per-model gpt5_mini=5.0,qwen3_coder=5.0,haiku45=15.0,sonnet45=40.0,qwen25_32b=1000.0
+
+# LCB-easy (N=135)
+python3 scripts/lcb_calibrate.py \
+  --output-dir data/lcb_calibration_easy \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
+  --n-instances 135 --n-patches 3 \
+  --difficulty easy --platform leetcode \
+  --lcb-version all --seed 42 \
+  --max-cost-usd-per-model gpt5_mini=4.0,qwen3_coder=4.0,haiku45=10.0,sonnet45=25.0,qwen25_32b=1000.0
 ```
 
-To include the open-weight 32B generator, start vLLM (§0.4) and append
-`qwen25_32b` to `--generators`. `--max-cost-usd-per-model` accepts
-`qwen25_32b=1000.0` (the cap is never reached on a local endpoint).
+To skip Qwen32B, drop `qwen25_32b` from `--generators`. The
+`--max-cost-usd-per-model` cap is per-generator and the cost tracker
+aborts cleanly if hit (you can resume — the script skips
+`(instance, patch_id)` tuples already on disk).
 
-### 1.2 MBPP+
+### 1.2 MBPP+ (N=378 canonical; per-cell n=100 in paper)
 
 ```bash
 python3 scripts/mbpp_calibrate.py \
   --output-dir data/mbpp_calibration \
-  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 100 --n-patches 3 \
   --seed 42 \
-  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=4.0,sonnet45=15.0
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=4.0,sonnet45=15.0,qwen25_32b=1000.0
 ```
 
-### 1.3 HumanEval+
+### 1.3 HumanEval+ (N=164 canonical; per-cell n=100 in paper)
 
 ```bash
 python3 scripts/humaneval_calibrate.py \
   --output-dir data/humaneval_calibration \
-  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
+  --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 100 --n-patches 3 \
   --plus-input-cap 200 \
   --seed 42 \
-  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=4.0,sonnet45=15.0
+  --max-cost-usd-per-model gpt5_mini=2.0,qwen3_coder=2.0,haiku45=4.0,sonnet45=15.0,qwen25_32b=1000.0
 ```
 
 ### 1.4 Sanity check after each cell
@@ -429,10 +536,21 @@ the c_ver sensitivity sweep (`c_ver ∈ {15,20,25,30,40,60}`).
 
 ## 6. Recommended run order for filling `tab:full_results`
 
-The empty cells are roughly: **Qwen2.5-Coder-7B** (every row),
-**gpt-oss-20b** (synthesis + SWE-Bench), **Qwen2.5-Coder-32B** on SWE
-Lite/Verified, **gpt-5-mini** on HumanEvalFix + CodeContests-replay, and
-the **GrFt/DPFt** columns for synthesis + SWE rows.
+> **Step 0 — Don't re-run cells that are already in W&B.** Run
+> `analysis.ipynb` first (it fetches all 35 existing main-panel cells
+> from `nlpresearch.group/orchestration-hypothesis-testing`). Only the
+> cells that print `--` in `tab:full_results` need experiments. See §0.6.
+
+The empty cells (the only ones you should generate from scratch):
+
+| Empty (benchmark, generator) cells | Why |
+|---|---|
+| `Qwen2.5-Coder-7B-Instruct` × every benchmark | Not yet in any GENERATORS dict; not in W&B. |
+| `gpt-oss-20b` × LCB / MBPP+ / HumanEval+ / SWE-Lite / SWE-Verified | Exists on `track:abbo` for bug-fixing only; not in `track:orchestration`. |
+| `Qwen2.5-Coder-32B` × SWE-Lite + SWE-Verified | Closed-API rows filled; open-weight 32B missing on the SWE side. |
+| `gpt-5-mini` × HumanEvalFix | Whole row empty in the paper table. |
+| `gpt-5-mini` × CodeContests (BoN…BDP) | Only GrFt/DPFt populated; BoN-through-BDP replay missing. |
+| `GrFt / DPFt` × all function-level synthesis + SWE rows | End-to-end fitted-agent columns; from the `agent-bugfix-bayes` codebase, see its own pipeline. |
 
 For each missing (benchmark, generator) cell, run in this order:
 
@@ -450,10 +568,25 @@ For each missing (benchmark, generator) cell, run in this order:
 6. **Re-run policy compare** with `--kernel-file ...` → measured-kernel
    `policy_comparison_kernel_iterative.json`.
 7. **Aggregate** with `lcb_summarize_paper.py` and refresh figures.
+8. **Upload to W&B** so the analysis notebook picks the new cells up:
 
-Use the runtime estimates from `EXPERIMENTAL_LOG.md` (e.g. LCB-hard ~1 h
-per generator at n=30, MBPP+ ~30 min, SWE-Bench ~30 min generate +
-~45 min harness eval, total ~$10–15 for the closed-API panel).
+   ```bash
+   cd experiments/orchestration/wandb
+   python3 upload_runs.py --benchmark <bench> --generator <gen>     # single cell
+   # OR
+   python3 upload_runs.py --experiment calibration                   # all new calibrations
+   ```
+
+   `upload_runs.py` is idempotent — re-running skips runs that already
+   exist. Add `--force` to replace existing runs.
+
+9. **Re-run** `analysis.ipynb` (cell 3 `fetch_runs(force_refresh=True)`)
+   to fold the new cells into the paper table.
+
+Use the runtime estimates from `EXPERIMENTAL_LOG.md` (e.g. LCB-hard
+~1 h per generator at n=30, scales roughly linearly to n=102; MBPP+
+~30 min, SWE-Bench ~30 min generate + ~45 min harness eval; total
+~$10–15 for the closed-API panel at the paper's draws).
 
 ---
 
@@ -555,7 +688,14 @@ For the paper notebook (final analysis + figures), see
 
 ## 10. After everything is done
 
-Re-run the notebook (`analysis.ipynb`) on the completed W&B panel, then
-regenerate the paper figures. See `emnlp2026/SUBMISSION_TODO.md` for the
-prioritised checklist that takes us from "experiments done" to
-"submission ready".
+1. `cd experiments/orchestration/wandb && python3 upload_runs.py` —
+   pushes any local cells that aren't on W&B yet (idempotent;
+   `--force` overwrites).
+2. Open `analysis.ipynb`, run all cells with `force_refresh=True` on
+   the W&B fetch — the notebook recomputes every paper table and
+   figure from the W&B runs (no local-only path required).
+3. Regenerate any figures consumed by the paper LaTeX
+   (`paper_figs/*.{png,pdf}`).
+4. See `emnlp2026/SUBMISSION_TODO.md` (in the sister paper folder) for
+   the prioritised checklist that takes us from "experiments done" to
+   "submission ready".
