@@ -51,7 +51,8 @@ log = logging.getLogger("humaneval_cal")
 
 def load_humaneval_plus(n_instances: int, plus_input_cap: int, seed: int = 42) -> list[dict]:
     """Load HumanEval+ via evalplus library. Returns flat dicts."""
-    os.environ.setdefault("HF_HOME", "/mnt/data/users/vlad.smirnov/hf_cache")
+    # HF_HOME falls back to the system default (~/.cache/huggingface) when unset.
+    # Override via env var if a different cache location is desired.
     from evalplus.data import get_human_eval_plus
     raw = get_human_eval_plus()
     log.info("loaded %d HumanEval+ problems (%d capped plus_input)", len(raw), plus_input_cap)
@@ -367,6 +368,18 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-cost-usd-per-model", default="4.0")
     args = parser.parse_args()
+
+    # Auto-load OPENROUTER_API_KEY from a .env file walking up the tree
+    # (same chain as lcb_calibrate.py).
+    try:
+        from dotenv import load_dotenv
+        for env_path in [ROOT / ".env", ROOT.parent / ".env",
+                         ROOT.parent.parent / ".env",
+                         ROOT.parent.parent.parent / ".env"]:
+            if env_path.exists() and env_path.stat().st_size > 0:
+                load_dotenv(env_path, override=False)
+    except ImportError:
+        pass  # dotenv optional; rely on already-exported env vars
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
