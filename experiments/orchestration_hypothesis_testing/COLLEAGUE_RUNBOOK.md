@@ -416,6 +416,57 @@ python3 scripts/calibrate_from_spotcheck.py \
 
 ## 3. Policy comparison + paper table
 
+### 3.0 Two families of policies (read first)
+
+The paper's policies split into two families, and only one of them
+needs fresh LLM calls. Important to internalise this before launching
+runs — it saves a lot of compute and clarifies which steps cost money.
+
+**Family A — replay policies (no new LLM calls).** These are decision
+rules evaluated over the *evidence the single-shot calibration already
+produced* (`critic_results.jsonl`: L0, L1, L2, L3, Y for each
+`(instance, patch_id)` tuple). All eight are computed by one local pass
+through `scripts/lcb_compare.py` (or `run_baseline_vs_controller.py`):
+
+| Policy | Decision rule | New API calls? |
+|---|---|---|
+| `always_verify` | Skip critics, call oracle on every patch | No |
+| `best_of_3` | Generate 3, verify each, take best (uses 3 existing patches) | No |
+| `threshold_L0` / `L2` / `L3` | Verify iff critic_k = PASS, else regen | No |
+| `fixed_pipeline` | L0 → L2 → L3 AND-gate then verify | No |
+| `bayesian_greedy` | 1-step Bellman Q-value argmax | No |
+| `bayesian_DP` | Full backward induction over `(b, k)` | No |
+
+This is why `policy_comparison.json` is cheap to recompute and why all
+the kernel / c_ver / θ-sensitivity sweeps in §5 are free once
+calibration exists.
+
+**Family B — trajectory policies (need fresh LLM calls).** These are
+real implementations that loop generator → critic → regenerate, so
+each step is a new completion:
+
+| Policy | Script | Generator calls per instance |
+|---|---|---|
+| `Self-Refine` | `iter_refine_real_baselines.py --method selfrefine` | 1 + up to 4 refinements |
+| `Reflexion` | `iter_refine_real_baselines.py --method reflexion` | 1 + up to 4 with verbal-memory buffer |
+
+These produce `iter_records.jsonl` (per-step trajectory + Y at each
+step) that **doesn't exist** in the single-shot calibration. The same
+iter trajectory is *also* the input to `compute_transition_kernel.py`
+which produces the measured `P(fix|broken)` kernel that `bayesian_DP`
+uses (see §4) — so iter refinement does double duty for `bayesian_DP`
+and the SR / Rfx columns.
+
+**Subtlety — once a trajectory exists, SR / Rfx can be replayed for
+free.** `scripts/compute_iter_replay_baselines.py` takes existing
+`iter_records.jsonl` (from any source — your own iter run, an old
+W&B trajectory, etc.) and applies the SR / Rfx policy *replay* on top.
+No new API calls. This is what produced the 20-cell SR/Rfx comparison
+in the paper's §5.5. But you still need at least one trajectory to
+exist for the cell — see §4 for how to generate it.
+
+### 3.1 Running the replay policy comparison
+
 After calibration is done for a cell, compute the 8-policy comparison
 (this produces the Δ-utility numbers in `tab:full_results`):
 
