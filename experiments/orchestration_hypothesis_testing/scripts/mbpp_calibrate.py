@@ -26,6 +26,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -40,6 +42,7 @@ from lcb_calibrate import (  # noqa: E402
     critic_L3_review,
     cost_for_call,
     GENERATORS,
+    _ActionTelemetry,
 )
 from cost_tracker import CostTracker  # noqa: E402
 
@@ -208,6 +211,8 @@ def calibrate_one_generator(
     raw_dir.mkdir(exist_ok=True)
     results_path = gen_dir / "critic_results.jsonl"
     cost = CostTracker(name=gen_key, cap_usd=max_cost_usd, log_path=gen_dir / "cost_log.jsonl")
+    dataset_name = out_dir.name  # e.g. "mbpp_calibration"
+    tele = _ActionTelemetry(gen_dir / "action_telemetry.jsonl", dataset_name, gen_key)
 
     # Resume support
     done: set[tuple[str, int]] = set()
@@ -238,17 +243,21 @@ def calibrate_one_generator(
                     continue
                 # Generate
                 try:
+                    _t0 = time.perf_counter()
                     resp = gen_client.chat.completions.create(
                         model=model_id,
                         messages=[{"role": "user", "content": build_prompt(inst)}],
                         temperature=0.7, max_tokens=4000,
                     )
+                    _gen_rt = time.perf_counter() - _t0
                     text = resp.choices[0].message.content or ""
                     usage = resp.usage
                     c = cost_for_call(model_id, usage.prompt_tokens, usage.completion_tokens)
                     cost.record(c, prompt_tokens=usage.prompt_tokens,
                                 completion_tokens=usage.completion_tokens,
                                 instance_id=inst_id, patch_id=pid)
+                    tele.record(instance_id=inst_id, patch_id=pid, action_type="generate",
+                                runtime_s=_gen_rt, api_cost_usd=c)
                 except Exception as e:
                     log.warning("[%s] gen failed for %s: %s", gen_key, inst_id, e)
                     continue
@@ -256,19 +265,35 @@ def calibrate_one_generator(
                 code = extract_code(text)
                 # Critics
                 try:
+                    _t0 = time.perf_counter()
+                    l0 = critic_L0_syntax(code)
+                    tele.record(instance_id=inst_id, patch_id=pid, action_type="critic_L0",
+                                runtime_s=time.perf_counter() - _t0, passed=bool(l0))
+                    _t0 = time.perf_counter()
+                    l1 = critic_L1_lint(code)
+                    tele.record(instance_id=inst_id, patch_id=pid, action_type="critic_L1",
+                                runtime_s=time.perf_counter() - _t0, passed=bool(l1))
+                    _t0 = time.perf_counter()
                     l2_pass, l2_total = run_assertions(code, test_list)
                     l2_ok = (l2_pass == l2_total) and l2_total > 0
+                    tele.record(instance_id=inst_id, patch_id=pid, action_type="critic_L2",
+                                runtime_s=time.perf_counter() - _t0, passed=l2_ok)
+                    _t0 = time.perf_counter()
                     Y = run_full_test(code, test_block, entry_point)
-                    l0 = critic_L0_syntax(code)
-                    l1 = critic_L1_lint(code)
+                    tele.record(instance_id=inst_id, patch_id=pid, action_type="verify",
+                                runtime_s=time.perf_counter() - _t0, passed=bool(Y))
                 except Exception as e:
                     log.warning("[%s] critic eval failed for %s_p%d: %s", gen_key, inst_id, pid, e)
                     continue
                 l3 = None
                 if not cost.capped:
                     try:
+                        _t0 = time.perf_counter()
                         l3_pass, l3_cost = critic_L3_review(
                             inst.get("prompt", "")[:3000], code, client)
+                        tele.record(instance_id=inst_id, patch_id=pid, action_type="critic_L3",
+                                    runtime_s=time.perf_counter() - _t0,
+                                    passed=bool(l3_pass), api_cost_usd=l3_cost)
                         cost.record(l3_cost, prompt_tokens=0, completion_tokens=0,
                                     instance_id=inst_id, patch_id=pid,
                                     extra={"kind": "L3_review"})
@@ -296,6 +321,7 @@ def calibrate_one_generator(
                     log.info("[%s] %d records, cost $%.4f", gen_key, len(records), cost.total_usd)
     finally:
         out_fp.close()
+        tele.close()
 
     summary = {
         "model": gen_key, "cap_usd": cost.cap_usd, "total_usd": cost.total_usd,
