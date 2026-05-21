@@ -421,6 +421,10 @@ def main() -> None:
     p.add_argument("--hand-theta-from", default="",
                    help="Optional path to hand-tuned likelihood_tables.json for greedy_hand/dp_hand. "
                         "If empty, hand variants use the same fitted theta (effectively identical to fitted variants).")
+    p.add_argument("--variants", default="all",
+                   help="Comma-separated subset of variants to run. Default 'all' runs all 10. "
+                        "Use 'fitted' shorthand for just greedy_fitted+dp_fitted (GrFt+DPFt). "
+                        "Or list explicitly: greedy_fitted,dp_fitted,simple")
     args = p.parse_args()
 
     gen_dir = (args.src_dir / args.generator).resolve()
@@ -466,24 +470,49 @@ def main() -> None:
                    "costs": {"c_gen": costs.c_gen, "c_critic": costs.c_critic,
                              "c_ver": costs.c_ver, "reward": costs.reward}}
 
+    # Resolve --variants filter
+    all_variants = ["simple", "best_of_3", "threshold_L0", "threshold_L2", "threshold_L3",
+                    "fixed_pipeline", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted"]
+    if args.variants == "all":
+        wanted = set(all_variants)
+    elif args.variants == "fitted":
+        wanted = {"greedy_fitted", "dp_fitted"}
+    else:
+        wanted = {v.strip() for v in args.variants.split(",") if v.strip()}
+        unknown = wanted - set(all_variants)
+        if unknown:
+            raise SystemExit(f"unknown variants: {sorted(unknown)}. Valid: {all_variants}")
+    # Force `simple` to always run — it's the baseline for delta_vs_simple
+    wanted.add("simple")
+    log.info("running variants: %s", sorted(wanted))
+
     for tid in test_ids:
         patches = records_by_inst.get(tid, [])
         if not patches:
             log.warning("no cached patches for test instance %s — skipping", tid)
             continue
 
-        results = [
-            run_simple(tid, patches, costs),
-            run_best_of_n(tid, patches, costs, n=3),
-            run_threshold(tid, patches, costs, ["L0_syntax"], "threshold_L0"),
-            run_threshold(tid, patches, costs, ["L0_syntax", "L1_lint", "L2_public_tests"], "threshold_L2"),
-            run_threshold(tid, patches, costs, ["L0_syntax", "L1_lint", "L2_public_tests", "L3_llm_review"], "threshold_L3"),
-            run_fixed_pipeline(tid, patches, costs),
-            run_greedy(tid, patches, hand_theta, costs, "hand"),
-            run_greedy(tid, patches, fitted_theta, costs, "fitted"),
-            run_dp(tid, patches, hand_theta, costs, dp_hand, "hand"),
-            run_dp(tid, patches, fitted_theta, costs, dp_fitted, "fitted"),
-        ]
+        results = []
+        if "simple" in wanted:
+            results.append(run_simple(tid, patches, costs))
+        if "best_of_3" in wanted:
+            results.append(run_best_of_n(tid, patches, costs, n=3))
+        if "threshold_L0" in wanted:
+            results.append(run_threshold(tid, patches, costs, ["L0_syntax"], "threshold_L0"))
+        if "threshold_L2" in wanted:
+            results.append(run_threshold(tid, patches, costs, ["L0_syntax", "L1_lint", "L2_public_tests"], "threshold_L2"))
+        if "threshold_L3" in wanted:
+            results.append(run_threshold(tid, patches, costs, ["L0_syntax", "L1_lint", "L2_public_tests", "L3_llm_review"], "threshold_L3"))
+        if "fixed_pipeline" in wanted:
+            results.append(run_fixed_pipeline(tid, patches, costs))
+        if "greedy_hand" in wanted:
+            results.append(run_greedy(tid, patches, hand_theta, costs, "hand"))
+        if "greedy_fitted" in wanted:
+            results.append(run_greedy(tid, patches, fitted_theta, costs, "fitted"))
+        if "dp_hand" in wanted:
+            results.append(run_dp(tid, patches, hand_theta, costs, dp_hand, "hand"))
+        if "dp_fitted" in wanted:
+            results.append(run_dp(tid, patches, fitted_theta, costs, dp_fitted, "fitted"))
         for r in results:
             state["results"][f"{tid}|{r.variant}"] = r.to_dict()
 
