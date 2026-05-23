@@ -67,6 +67,7 @@ import json
 import logging
 import os
 import random
+import shlex
 import subprocess
 import sys
 import threading
@@ -995,6 +996,113 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
 
 
 # ============================================================================
+# Environment loading + combined-policy writer
+# (ported from PR #5: iter_refine_real_baselines auto-load .env + merge
+# per-method policy_comparison.json into one combined file)
+# ============================================================================
+
+OPENROUTER_KEY_NAMES = ("OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY", "OPEN_ROUTER")
+
+
+def load_env_chain() -> None:
+    """Auto-load .env from up to 5 parent directories of this script.
+
+    Uses python-dotenv if available; falls back to a minimal manual parser
+    so the script still works on machines without the package. Lets callers
+    skip the `set -a; source .env; set +a` dance.
+
+    Discovery order (first match per file: ROOT/.env first, then walk up):
+      ROOT/.env -> ROOT/../.env -> ../../.env -> ../../../.env -> ../../../../.env
+    """
+    try:
+        from dotenv import load_dotenv
+    except ModuleNotFoundError:
+        load_dotenv = None
+
+    for env_path in [
+        ROOT / ".env",
+        ROOT.parent / ".env",
+        ROOT.parent.parent / ".env",
+        ROOT.parent.parent.parent / ".env",
+        ROOT.parent.parent.parent.parent / ".env",
+    ]:
+        if not env_path.exists() or env_path.stat().st_size == 0:
+            continue
+        if load_dotenv is not None:
+            load_dotenv(env_path, override=False)
+            continue
+        # Fallback minimal parser if dotenv is missing.
+        for raw_line in env_path.read_text().splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key or key in os.environ:
+                continue
+            if value and value[0] in {"'", '"'}:
+                try:
+                    parsed = shlex.split(f"dummy={value}", posix=True)
+                except ValueError:
+                    parsed = [f"dummy={value.strip(chr(34))}"]
+                value = parsed[0].split("=", 1)[1] if parsed else value
+            else:
+                value = value.split(" #", 1)[0].strip()
+            os.environ[key] = value
+
+
+def load_openrouter_key() -> str:
+    """Return the first non-empty value from any of OPENROUTER_API_KEY,
+    OPEN_ROUTER_API_KEY, OPEN_ROUTER in env. Returns '' if all are unset."""
+    for key_name in OPENROUTER_KEY_NAMES:
+        value = os.environ.get(key_name, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def write_combined_iter_policy(gen_root: Path) -> None:
+    """Merge the per-method policy_comparison.json files into one combined
+    JSON so downstream consumers can see SR + Rfx side by side without
+    needing two file reads.
+
+    Output: <gen_root>/policy_comparison_iter_replay_baselines.json with:
+      policies.always_verify         -> shared baseline (taken from either)
+      policies.selfrefine_last       -> from selfrefine/policy_comparison.json
+      policies.reflexion_first_pass  -> from reflexion/policy_comparison.json
+      sources, cost_model, n_instances -> provenance metadata
+
+    Only writes if at least 2 policies make it into combined.policies
+    (otherwise the file would be a near-empty stub).
+    """
+    combined = {"policies": {}, "sources": {}}
+    for method, out_key in (
+        ("selfrefine", "selfrefine_last"),
+        ("reflexion", "reflexion_first_pass"),
+    ):
+        path = gen_root / method / "policy_comparison.json"
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text())
+        policies = data.get("policies", {})
+        if "always_verify" in policies and "always_verify" not in combined["policies"]:
+            combined["policies"]["always_verify"] = policies["always_verify"]
+        if method in policies:
+            combined["policies"][out_key] = policies[method]
+            combined["sources"][out_key] = str(path)
+            combined["n_instances"] = policies[method].get("n", combined.get("n_instances"))
+        if "cost_model" in data:
+            combined["cost_model"] = data["cost_model"]
+    if len(combined["policies"]) >= 2:
+        write_json(gen_root / "policy_comparison_iter_replay_baselines.json", combined)
+
+
+# ============================================================================
 # Aggregation: kernel + policy comparison
 # ============================================================================
 
@@ -1157,9 +1265,14 @@ def main() -> None:
     # Two-client setup:
     #   reviewer_client (OpenRouter): used by critic_L3_review.
     #   gen_client (per-generator): vLLM for qwen25_32b, OpenRouter otherwise.
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    # Auto-load .env walking up the tree (matches mbpp/humaneval_calibrate
+    # pattern; lets callers skip `set -a; source .env; set +a`).
+    load_env_chain()
+    api_key = load_openrouter_key()
     if not api_key:
-        log.error("OPENROUTER_API_KEY not set (needed for L3 reviewer)")
+        log.error("OPENROUTER_API_KEY not set (needed for L3 reviewer); "
+                  "tried %s in env + .env files up to 5 levels above ROOT",
+                  ", ".join(OPENROUTER_KEY_NAMES))
         sys.exit(1)
     from openai import OpenAI
     reviewer_client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
@@ -1401,6 +1514,12 @@ def main() -> None:
         write_json(gen_out / "transition_kernel.json", kernel)
         policy = compute_policy_comparison(records_path, gen, args.method)
         write_json(gen_out / "policy_comparison.json", policy)
+
+        # If the OTHER method has already been run for this generator,
+        # write a combined policy comparison so downstream consumers see
+        # SR + Rfx side-by-side without two file reads. No-op if only one
+        # method has been run so far (the other run will pick this up).
+        write_combined_iter_policy(gen_out.parent)
 
         log.info("[%s/%s] done: %d instances, $%.3f spent (cap $%.2f)",
                  gen, args.method, len(stop_distribution), total_cost, cap_usd)
