@@ -204,13 +204,17 @@ def test_online_kernel_posterior_approaches_truth():
 
 
 def test_online_kernel_thread_safe():
+    """8 workers × 100 deterministic updates each. With the (i%2, (i+1)%2)
+    pattern, every even i is a (0, 1) "fix" and every odd i is a (1, 0)
+    "break". A race that miscategorizes transitions would still hit the
+    total count — so this test also checks the per-regime breakdown."""
     ok = OnlineKernelCalibration()
     n_per_thread = 100
     n_threads = 8
 
     def worker():
         for i in range(n_per_thread):
-            # Mix of all 4 transition types
+            # Deterministic per-thread sequence: alternates fix / break
             ok.update(i % 2, (i + 1) % 2)
 
     threads = [threading.Thread(target=worker) for _ in range(n_threads)]
@@ -220,6 +224,13 @@ def test_online_kernel_thread_safe():
     s = ok.summary()
     total = s["n_broken_observed"] + s["n_correct_observed"]
     assert total == n_per_thread * n_threads
+    # Each worker emits exactly n_per_thread/2 of each (0,1) and (1,0). No
+    # (0,0) or (1,1) — so n_broken == k_fix, and n_correct == k_break.
+    expected_per_regime = (n_per_thread // 2) * n_threads
+    assert s["n_broken_observed"] == expected_per_regime
+    assert s["k_fix"] == expected_per_regime           # all 0→ are 0→1
+    assert s["n_correct_observed"] == expected_per_regime
+    assert s["k_break"] == expected_per_regime         # all 1→ are 1→0
 
 
 def test_online_kernel_summary_serializable():
@@ -293,3 +304,90 @@ def test_resolve_kernel_explicit_path(tmp_path):
     k, src, _ = resolve_kernel(tmp_path, mode="measured", kernel_path=custom)
     assert k == {"p_fix_broken": 0.55, "p_break_correct": 0.02}
     assert src == "measured"
+
+
+def test_resolve_kernel_malformed_json_raises(tmp_path):
+    """A corrupt transition_kernel.json should fail loudly, not silently
+    fall back to the default kernel — silent fallback would mask data
+    corruption in long-running pipelines."""
+    (tmp_path / "transition_kernel.json").write_text("{not valid json")
+    with pytest.raises(json.JSONDecodeError):
+        resolve_kernel(tmp_path, mode="measured")
+
+
+def test_resolve_kernel_missing_required_keys_raises(tmp_path):
+    """A JSON file that exists but doesn't carry the required P_fix /
+    P_break keys should also fail loudly. resolve_kernel currently surfaces
+    this as a KeyError from the dict access; this test pins that behavior."""
+    (tmp_path / "transition_kernel.json").write_text(json.dumps({
+        "kernel_all": {"foo": 0.5}  # neither P_fix_given_broken nor P_break_given_correct
+    }))
+    with pytest.raises(KeyError):
+        resolve_kernel(tmp_path, mode="measured")
+
+
+# ---------------------------------------------------------------------------
+# Validation — input-sanity checks added to OnlineKernelCalibration
+# ---------------------------------------------------------------------------
+
+def test_online_kernel_init_rejects_malformed_init_kernel():
+    """A malformed init_kernel should raise at construction, not later when
+    .get() falls back to the empty-regime defaults."""
+    with pytest.raises(ValueError, match="missing required keys"):
+        OnlineKernelCalibration(init_kernel={"foo": 0.5})
+
+
+def test_online_kernel_init_uppercase_only_succeeds():
+    """An init_kernel with only the uppercase keys should be normalized to
+    lowercase by the constructor — no exception, and .get() returns the
+    expected values."""
+    ok = OnlineKernelCalibration(init_kernel={
+        "P_fix_given_broken": 0.7,
+        "P_break_given_correct": 0.03,
+    })
+    assert ok.get() == {"p_fix_broken": 0.7, "p_break_correct": 0.03}
+
+
+@pytest.mark.parametrize("y_before,y_after", [
+    (None, 1),       # caller bug: forgot to verify
+    (2, 1),          # caller bug: wrong dtype
+    (0, "ok"),       # caller bug: stringy comparison
+    (-1, 0),         # caller bug: signed-int leak
+    (0, None),
+])
+def test_online_kernel_update_rejects_non_binary(y_before, y_after):
+    """Pre-validation prevents the silent-corruption bug surface: any
+    y != 0 used to fall into the "correct" regime. Now raises ValueError."""
+    ok = OnlineKernelCalibration()
+    with pytest.raises(ValueError, match="requires y_before and y_after"):
+        ok.update(y_before, y_after)
+    # Counts unchanged after the failed call
+    assert ok.summary()["n_broken_observed"] == 0
+    assert ok.summary()["n_correct_observed"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Asymmetric prior on a populated regime — the stay+change Beta posteriors
+# are independent, so with alpha != beta they DO NOT have to sum to 1.
+# Docstring claims this; test pins the property numerically so a future
+# refactor doesn't silently drop independent smoothing in favor of "1 −
+# p_fix" shortcuts.
+# ---------------------------------------------------------------------------
+
+def test_compute_kernel_asymmetric_prior_stay_plus_change_drifts_from_one():
+    """With alpha=2, beta=8 (strong prior toward stay), independent Beta
+    smoothing on each transition gives P_fix + P_stay_broken ≠ 1 — by
+    design. Verify numerically that the function honors the asymmetric
+    prior on populated counts (not just the all-empty case)."""
+    # 1 fix + 1 stay-broken transition with prior (alpha=2, beta=8).
+    # Independent smoothing:
+    #   P_fix       = (1 + 2) / (2 + 2 + 8) = 3/12 = 0.25
+    #   P_stay_brok = (1 + 2) / (2 + 2 + 8) = 3/12 = 0.25
+    # Sum is 0.5, NOT 1 — different priors push both probabilities down.
+    pairs = [(0, 1), (0, 0)]
+    out = compute_transition_kernel_from_pairs(pairs, alpha=2.0, beta=8.0)
+    assert out["P_fix_given_broken"] == pytest.approx(0.25)
+    assert out["P_stay_broken"] == pytest.approx(0.25)
+    # Independent posteriors DO NOT sum to 1 under asymmetric priors
+    assert (out["P_fix_given_broken"] + out["P_stay_broken"]
+            == pytest.approx(0.5))

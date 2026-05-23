@@ -199,13 +199,38 @@ class OnlineKernelCalibration:
             raw["p_fix_broken"] = raw["P_fix_given_broken"]
         if "P_break_given_correct" in raw and "p_break_correct" not in raw:
             raw["p_break_correct"] = raw["P_break_given_correct"]
+        # Validate at construction time so a malformed init_kernel raises
+        # here, not later inside .get() on an unrelated call site (KeyError
+        # in the middle of a hot loop is much harder to debug).
+        missing = {"p_fix_broken", "p_break_correct"} - raw.keys()
+        if missing:
+            raise ValueError(
+                "OnlineKernelCalibration init_kernel missing required keys "
+                f"{sorted(missing)} (accepted: lowercase {{p_fix_broken, "
+                f"p_break_correct}} or uppercase {{P_fix_given_broken, "
+                f"P_break_given_correct}}); got: {dict(raw)!r}"
+            )
         self._init = raw
         # RLock so summary() can call get() while holding the lock without
         # deadlocking. Re-entrant acquire is cheap in the uncontended case.
         self._lock = threading.RLock()
 
     def update(self, y_before: int, y_after: int) -> None:
-        """Record one observed transition."""
+        """Record one observed (Y_t, Y_{t+1}) transition.
+
+        Raises ValueError if either value is not in {0, 1} — silently
+        accepting non-binary input (e.g. None) was a bug surface because
+        anything `!= 0` previously landed in the "correct" regime, so
+        `update(None, 1)` would silently log a (correct → correct)
+        transition. Callers must filter their own data; both production
+        call sites already do.
+        """
+        if y_before not in (0, 1) or y_after not in (0, 1):
+            raise ValueError(
+                f"OnlineKernelCalibration.update requires y_before and "
+                f"y_after in {{0, 1}}; got y_before={y_before!r}, "
+                f"y_after={y_after!r}"
+            )
         with self._lock:
             if y_before == 0:
                 self.counts.n_broken += 1
@@ -266,7 +291,7 @@ def resolve_kernel(
     kernel_path: Path | None = None,
     alpha: float = 1.0,
     beta: float = 1.0,
-) -> tuple[dict, str, "OnlineKernelCalibration | None"]:
+) -> tuple[dict, str, OnlineKernelCalibration | None]:
     """Return (kernel_dict, source_label, online_or_None) for the given mode.
 
     `mode` is one of:

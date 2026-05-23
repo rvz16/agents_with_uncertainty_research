@@ -643,8 +643,10 @@ def load_theta(gen_dir: Path) -> tuple[dict, float]:
 
 
 # Note: DEFAULT_KERNEL, kernel_update, OnlineKernelCalibration moved to
-# _common/kernel.py (shared with iter/refine.py + abbo). load_kernel() was
-# folded into resolve_kernel(gen_dir, mode) in the same module.
+# _common/kernel.py. Now shared with iter/refine.py; the abbo bridge
+# (run_codecontests_full.py et al.) is deferred until abbo is retired —
+# see DEVELOPMENT_PROCESS.md. load_kernel() was folded into
+# resolve_kernel(gen_dir, mode) in the same module.
 
 
 # ============================================================================

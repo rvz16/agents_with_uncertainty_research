@@ -137,7 +137,7 @@ kernel computation plus the live Beta-Binomial estimator into one module.
 
 ### Verification
 
-- `python -m pytest tests/ -q` — **84 passed** (60 pre-existing + 24 new
+- `python -m pytest tests/ -q` — **94 passed** (60 pre-existing + 34
   kernel tests), no warnings beyond the existing urllib3 dependency warn.
 - Round-trip test on each migrated caller confirms output schemas match
   pre-migration behavior bit-for-bit on hand-built fixtures.
@@ -146,6 +146,32 @@ kernel computation plus the live Beta-Binomial estimator into one module.
 - The `--kernel-mode online` end-to-end path is exercised by a synthesized
   iter_records.jsonl fixture; produces the expected `n_broken_observed`,
   `k_fix`, etc. counts and `current_estimate`.
+
+### Post-review fixups (from self-review of PR #6)
+
+- `OnlineKernelCalibration.update()` now validates that y_before and
+  y_after are both in {0, 1}; previously, `update(None, 1)` silently
+  recorded a (correct → correct) transition because anything `!= 0`
+  fell through to the "else" branch. Both current callers
+  (iter/refine.py online block, scripts/run_synthesis_live.py per-variant
+  branches) already filter non-binary externally, so this is a tightening
+  of the contract, not a behavior break for production callers.
+- `OnlineKernelCalibration.__init__` now validates that init_kernel
+  carries the required keys at construction time, rather than letting a
+  malformed dict silently propagate and KeyError later inside `.get()`
+  on the first empty-regime fallback.
+- `scripts/run_synthesis_live.py` migration comment no longer claims
+  the abbo bridge is wired (it isn't — explicitly scoped out, see below).
+- `_common/kernel.py` drops a string-quoted forward ref now that
+  `from __future__ import annotations` is in scope.
+- Strengthened `test_online_kernel_thread_safe` to assert the per-regime
+  counts (`n_broken`, `k_fix`, `n_correct`, `k_break`) rather than just
+  the total, so a race that miscategorizes transitions can no longer
+  pass silently.
+- New tests: malformed kernel.json, missing required keys, init_kernel
+  validation, parameterized non-binary update rejection, asymmetric Beta
+  prior on a populated regime (pins the "P_fix + P_stay_broken ≠ 1 with
+  alpha ≠ beta" property the docstring claims).
 
 ### Out of scope (deliberate non-changes)
 
