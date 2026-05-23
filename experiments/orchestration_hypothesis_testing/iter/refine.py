@@ -71,6 +71,7 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,6 +92,10 @@ from _common.kernel import (  # noqa: E402
     pairs_from_trajectories,
     resolve_kernel,
 )
+# Shared per-action telemetry (TelemetryLogger). Each iter run writes one
+# action_telemetry.jsonl row per generate / refine / reflect / critic_L3 /
+# verify call. See _common/telemetry.py for the row schema.
+from _common.telemetry import TelemetryLogger  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(message)s",
@@ -515,6 +520,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                            steps: int, temperature: float, client,
                            gen_client=None,
                            call_logger: CallLogger,
+                           tele: "TelemetryLogger | None" = None,
                            cost_lock: threading.Lock, cost_counter: dict,
                            cap_usd: float, scg_helpers) -> dict:
     if gen_client is None:
@@ -575,6 +581,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             # Self-critique call
             critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
                 problem=problem_text, code=prev_code[:4000])
+            _t0 = time.perf_counter()
             try:
                 resp = gen_client.chat.completions.create(
                     model=model_id,
@@ -588,6 +595,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 stop_reason = "critique_api_error"
                 stop_step = t
                 break
+            _critique_rt = time.perf_counter() - _t0
             with cost_lock:
                 cost_counter["v"] += cost
             step_cost += cost
@@ -596,6 +604,10 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 model=model_id, prompt=critique_prompt, response=critique_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
                 cost_usd=cost)
+            if tele is not None:
+                tele.record(action_type="reflect", runtime_s=_critique_rt,
+                            instance_id=inst_id, step=t, api_cost_usd=cost,
+                            extra={"purpose": "selfrefine_critique"})
             method_specific["critique_text"] = critique_text
             # Stop check: "CRITIQUE_OK" substring
             if "CRITIQUE_OK" in critique_text.upper():
@@ -650,6 +662,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             reflect_prompt = REFLEXION_REFLECT_PROMPT.format(
                 problem=problem_text, prev_code=prev_code[:4000],
                 test_feedback=test_feedback_text)
+            _t0 = time.perf_counter()
             try:
                 resp = gen_client.chat.completions.create(
                     model=model_id,
@@ -663,6 +676,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 stop_reason = "reflect_api_error"
                 stop_step = t
                 break
+            _reflect_rt = time.perf_counter() - _t0
             with cost_lock:
                 cost_counter["v"] += cost
             step_cost += cost
@@ -671,6 +685,10 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 model=model_id, prompt=reflect_prompt, response=reflection_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
                 cost_usd=cost)
+            if tele is not None:
+                tele.record(action_type="reflect", runtime_s=_reflect_rt,
+                            instance_id=inst_id, step=t, api_cost_usd=cost,
+                            extra={"purpose": "reflexion_reflect"})
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -692,6 +710,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
         else:
             raise ValueError(method)
 
+        _t0 = time.perf_counter()
         try:
             resp = gen_client.chat.completions.create(
                 model=model_id,
@@ -705,6 +724,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             stop_reason = "refine_api_error"
             stop_step = t
             break
+        _refine_rt = time.perf_counter() - _t0
         with cost_lock:
             cost_counter["v"] += cost
         step_cost += cost
@@ -713,10 +733,14 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             model=model_id, prompt=refine_prompt, response=text,
             prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
             cost_usd=cost)
+        if tele is not None:
+            tele.record(action_type="refine", runtime_s=_refine_rt,
+                        instance_id=inst_id, step=t, api_cost_usd=cost)
 
         code = extract_code(text)
 
         # ----- Inline critic eval -----
+        _t_critic = time.perf_counter()
         try:
             l2_pass, l2_total = check_tests(code, public_tests, starter_code=starter)
             l2_ok = (l2_total > 0) and (l2_pass == l2_total)
@@ -729,18 +753,36 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             stop_reason = "critic_eval_error"
             stop_step = t
             break
+        # One record covers the combined L0+L1+L2+verify block. Disaggregating
+        # would require restructuring _eval_patch; for the latency-analysis
+        # use case, "wall time spent in non-LLM critics per step" is the
+        # signal we need anyway.
+        if tele is not None:
+            tele.record(action_type="verify",
+                        runtime_s=time.perf_counter() - _t_critic,
+                        instance_id=inst_id, step=t, passed=bool(Y),
+                        extra={"L0": bool(l0), "L1": bool(l1),
+                               "L2_ok": bool(l2_ok),
+                               "L2_pass_n": int(l2_pass),
+                               "L2_total": int(l2_total)})
 
         # L3 review (additional API call)
         l3 = None
         with cost_lock:
             cap_ok = cost_counter["v"] < cap_usd
         if cap_ok:
+            _t_l3 = time.perf_counter()
             try:
                 l3_pass, l3_cost = critic_L3_review(problem_text, code, client)
                 l3 = bool(l3_pass)
                 with cost_lock:
                     cost_counter["v"] += l3_cost
                 step_cost += l3_cost
+                if tele is not None:
+                    tele.record(action_type="critic_L3",
+                                runtime_s=time.perf_counter() - _t_l3,
+                                instance_id=inst_id, step=t,
+                                passed=l3, api_cost_usd=l3_cost)
                 # Note: critic_L3_review handles its own logging internally if any;
                 # we add a lightweight cost-log entry but skip the raw_calls dump
                 # since it's a separate review prompt with its own template.
@@ -792,6 +834,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                                 steps: int, temperature: float, client,
                                 gen_client=None,
                                 call_logger: CallLogger,
+                                tele: "TelemetryLogger | None" = None,
                                 cost_lock: threading.Lock, cost_counter: dict,
                                 cap_usd: float) -> dict:
     """SR/Rfx trajectory for the new variants. See _run_lcb_one_instance for
@@ -839,6 +882,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
         if method == "selfrefine":
             critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
                 problem=problem_text, code=prev_code[:4000])
+            _t0 = time.perf_counter()
             try:
                 resp = gen_client.chat.completions.create(
                     model=model_id,
@@ -850,6 +894,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             except Exception as e:
                 log.warning("[%s/%s] step %d critique failed: %s", gen_name, inst_id, t, e)
                 stop_reason = "critique_api_error"; stop_step = t; break
+            _critique_rt = time.perf_counter() - _t0
             with cost_lock: cost_counter["v"] += cost
             step_cost += cost
             call_logger.log_call(
@@ -857,6 +902,11 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                 prompt=critique_prompt, response=critique_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
                 cost_usd=cost)
+            if tele is not None:
+                tele.record(action_type="reflect", runtime_s=_critique_rt,
+                            instance_id=inst_id, step=t, api_cost_usd=cost,
+                            extra={"purpose": "selfrefine_critique",
+                                   "variant": variant})
             method_specific["critique_text"] = critique_text
             if "CRITIQUE_OK" in critique_text.upper():
                 stop_reason = "selfrefine_ok"; stop_step = t
@@ -903,6 +953,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             reflect_prompt = REFLEXION_REFLECT_PROMPT.format(
                 problem=problem_text, prev_code=prev_code[:4000],
                 test_feedback=test_feedback_text)
+            _t0 = time.perf_counter()
             try:
                 resp = gen_client.chat.completions.create(
                     model=model_id,
@@ -914,6 +965,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             except Exception as e:
                 log.warning("[%s/%s] step %d reflect failed: %s", gen_name, inst_id, t, e)
                 stop_reason = "reflect_api_error"; stop_step = t; break
+            _reflect_rt = time.perf_counter() - _t0
             with cost_lock: cost_counter["v"] += cost
             step_cost += cost
             call_logger.log_call(
@@ -921,6 +973,11 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                 prompt=reflect_prompt, response=reflection_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
                 cost_usd=cost)
+            if tele is not None:
+                tele.record(action_type="reflect", runtime_s=_reflect_rt,
+                            instance_id=inst_id, step=t, api_cost_usd=cost,
+                            extra={"purpose": "reflexion_reflect",
+                                   "variant": variant})
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -938,6 +995,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             refine_prompt = REFLEXION_REFINE_PROMPT.format(
                 problem=problem_text, reflections_section=refl_section[:3000])
 
+        _t0 = time.perf_counter()
         try:
             resp = gen_client.chat.completions.create(
                 model=model_id,
@@ -949,6 +1007,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
         except Exception as e:
             log.warning("[%s/%s] step %d refine failed: %s", gen_name, inst_id, t, e)
             stop_reason = "refine_api_error"; stop_step = t; break
+        _refine_rt = time.perf_counter() - _t0
         with cost_lock: cost_counter["v"] += cost
         step_cost += cost
         call_logger.log_call(
@@ -956,10 +1015,15 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             prompt=refine_prompt, response=text,
             prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
             cost_usd=cost)
+        if tele is not None:
+            tele.record(action_type="refine", runtime_s=_refine_rt,
+                        instance_id=inst_id, step=t, api_cost_usd=cost,
+                        extra={"variant": variant})
 
         code = extract_code(text)
 
         # ----- Inline critic eval (variant-specific) -----
+        _t_eval = time.perf_counter()
         try:
             ev, l3_cost = _eval_patch(
                 code, inst, variant,
@@ -969,6 +1033,19 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
         except Exception as e:
             log.warning("[%s/%s] step %d eval failed: %s", gen_name, inst_id, t, e)
             stop_reason = "critic_eval_error"; stop_step = t; break
+        # Single record for the whole L0+L1+L2+verify (+optional L3) block —
+        # _eval_patch fuses them. Granular per-critic timing inside _eval_patch
+        # is a follow-up. The L3 sub-cost is teased out below.
+        if tele is not None:
+            tele.record(action_type="verify",
+                        runtime_s=time.perf_counter() - _t_eval,
+                        instance_id=inst_id, step=t, passed=bool(ev["Y"]),
+                        api_cost_usd=l3_cost,
+                        extra={"variant": variant,
+                               "L0": bool(ev["L0_syntax"]),
+                               "L1": bool(ev["L1_lint"]),
+                               "L2_ok": bool(ev["L2_public_tests"]),
+                               "L3": ev["L3_llm_review"]})
 
         if l3_cost > 0:
             with cost_lock: cost_counter["v"] += l3_cost
@@ -1446,6 +1523,12 @@ def main() -> None:
         cap_usd = caps_dict.get(gen, caps_dict.get(None, 3.0))
 
         call_logger = CallLogger(gen_out)
+        # Per-action telemetry, separate from CallLogger's per-LLM-call raw
+        # audit. Closes the latency gap between calibration (step-0 only)
+        # and iter (refinement steps); feeds tab:action_latency joins.
+        tele = TelemetryLogger(gen_out / "action_telemetry.jsonl",
+                               dataset=str(args.output_dir.name),
+                               model_name=gen)
         records_path = gen_out / "iter_records.jsonl"
 
         # Resume / extend logic: if --extend-existing is set and a records file
@@ -1484,7 +1567,7 @@ def main() -> None:
                             method=args.method, model_id=model_id, gen_name=gen,
                             steps=args.steps, temperature=args.temperature,
                             client=reviewer_client, gen_client=gen_client,
-                            call_logger=call_logger,
+                            call_logger=call_logger, tele=tele,
                             cost_lock=cost_lock, cost_counter=cost_counter,
                             cap_usd=cap_usd, scg_helpers=scg_helpers,
                         )
@@ -1497,7 +1580,7 @@ def main() -> None:
                             model_id=model_id, gen_name=gen,
                             steps=args.steps, temperature=args.temperature,
                             client=reviewer_client, gen_client=gen_client,
-                            call_logger=call_logger,
+                            call_logger=call_logger, tele=tele,
                             cost_lock=cost_lock, cost_counter=cost_counter,
                             cap_usd=cap_usd,
                         )
@@ -1592,6 +1675,10 @@ def main() -> None:
         # SR + Rfx side-by-side without two file reads. No-op if only one
         # method has been run so far (the other run will pick this up).
         write_combined_iter_policy(gen_out.parent)
+
+        # Flush + close the per-generator action-telemetry log so the JSONL
+        # is durably on disk before the next generator's loop opens its own.
+        tele.close()
 
         log.info("[%s/%s] done: %d instances, $%.3f spent (cap $%.2f)",
                  gen, args.method, len(stop_distribution), total_cost, cap_usd)

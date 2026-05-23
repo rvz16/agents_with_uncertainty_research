@@ -35,12 +35,12 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from calibration.lcb import (  # noqa: E402
-    _ActionTelemetry,
     _make_client,
     extract_code, critic_L0_syntax, critic_L1_lint, critic_L3_review,
     cost_for_call, GENERATORS,
 )
 from _common.cost import CostTracker  # noqa: E402
+from _common.telemetry import TelemetryLogger as _ActionTelemetry  # noqa: E402
 import time as _time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
