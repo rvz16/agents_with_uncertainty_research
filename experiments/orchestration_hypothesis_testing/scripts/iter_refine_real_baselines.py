@@ -59,6 +59,7 @@ import json
 import logging
 import os
 import random
+import shlex
 import subprocess
 import sys
 import threading
@@ -74,6 +75,58 @@ logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(message)s",
                      datefmt="%H:%M:%S")
 log = logging.getLogger("real_baselines")
+
+OPENROUTER_KEY_NAMES = ("OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY", "OPEN_ROUTER")
+
+
+def load_env_chain() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ModuleNotFoundError:
+        load_dotenv = None
+
+    for env_path in [
+        ROOT / ".env",
+        ROOT.parent / ".env",
+        ROOT.parent.parent / ".env",
+        ROOT.parent.parent.parent / ".env",
+        ROOT.parent.parent.parent.parent / ".env",
+    ]:
+        if not env_path.exists() or env_path.stat().st_size == 0:
+            continue
+        if load_dotenv is not None:
+            load_dotenv(env_path, override=False)
+            continue
+        for raw_line in env_path.read_text().splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key or key in os.environ:
+                continue
+            if value and value[0] in {"'", '"'}:
+                try:
+                    parsed = shlex.split(f"dummy={value}", posix=True)
+                except ValueError:
+                    parsed = [f"dummy={value.strip('\"')}"]
+                value = parsed[0].split("=", 1)[1] if parsed else value
+            else:
+                value = value.split(" #", 1)[0].strip()
+            os.environ[key] = value
+
+
+def load_openrouter_key() -> str:
+    for key_name in OPENROUTER_KEY_NAMES:
+        value = os.environ.get(key_name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 # ============================================================================
@@ -252,6 +305,291 @@ class CallLogger:
             "prompt_hash": sha256_str(prompt),
             "response_hash": sha256_str(response),
         })
+
+
+# ============================================================================
+# Shared helpers for synthesis benchmarks
+# ============================================================================
+
+def _safe_raw_instance_id(variant: str, inst_id: str) -> str:
+    return inst_id.replace("/", "_") if variant == "humaneval" else inst_id
+
+
+def _problem_text_for_variant(variant: str, problem: dict) -> str:
+    if variant == "lcb":
+        return (problem.get("question_content") or problem.get("problem") or "")[:4000]
+    if variant == "mbpp":
+        return (problem.get("prompt") or problem.get("text") or "")[:4000]
+    if variant == "humaneval":
+        return (problem.get("prompt") or "")[:4000]
+    return ""
+
+
+def _build_refine_prompt(base_prompt: str, prev_code: str, feedback: str) -> str:
+    return (
+        f"{base_prompt}\n\n"
+        f"## Previous attempt (failed):\n```python\n{prev_code}\n```\n\n"
+        f"## Feedback:\n{feedback}\n\n"
+        "Return a corrected solution. Only the code, no explanations."
+    )
+
+
+def _run_synth_one_instance(*, inst: dict, inst_id: str, step0_code: str,
+                            step0_record: dict, method: str, model_id: str,
+                            gen_name: str, variant: str, steps: int,
+                            temperature: float, reviewer_client, gen_client,
+                            call_logger: CallLogger,
+                            cost_lock: threading.Lock, cost_counter: dict,
+                            cap_usd: float, build_prompt_fn, evaluate_fn) -> dict:
+    from lcb_calibrate import cost_for_call, extract_code
+
+    problem_text = _problem_text_for_variant(variant, inst)
+    traj = [{
+        "step": 0, "instance_id": inst_id, "method": method,
+        "code_chars": len(step0_code),
+        "Y": step0_record.get("Y"),
+        "L0_syntax": step0_record.get("L0_syntax"),
+        "L1_lint": step0_record.get("L1_lint"),
+        "L2_public_tests": step0_record.get("L2_public_tests"),
+        "L3_llm_review": step0_record.get("L3_llm_review"),
+        "step_cost_usd": 0.0,
+        "method_specific": {},
+    }]
+
+    reflections: list[str] = []
+    prev_code = step0_code
+    stop_step = None
+    stop_reason = None
+
+    for t in range(1, steps):
+        with cost_lock:
+            if cost_counter["v"] >= cap_usd:
+                stop_reason = "cost_cap"
+                stop_step = t
+                break
+
+        method_specific: dict = {}
+        step_cost = 0.0
+
+        if method == "selfrefine":
+            critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
+                problem=problem_text, code=prev_code[:4000])
+            try:
+                resp = gen_client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": critique_prompt}],
+                    temperature=temperature,
+                    max_tokens=1500,
+                )
+                critique_text = resp.choices[0].message.content or ""
+                u = resp.usage
+                cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
+            except Exception as e:
+                log.warning("[%s/%s] step %d critique failed: %s", gen_name, inst_id, t, e)
+                stop_reason = "critique_api_error"
+                stop_step = t
+                break
+            with cost_lock:
+                cost_counter["v"] += cost
+            step_cost += cost
+            call_logger.log_call(
+                instance_id=inst_id, step=t, purpose="critique",
+                model=model_id, prompt=critique_prompt, response=critique_text,
+                prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+                cost_usd=cost)
+            method_specific["critique_text"] = critique_text
+            if "CRITIQUE_OK" in critique_text.upper():
+                stop_reason = "selfrefine_ok"
+                stop_step = t
+                traj.append({
+                    "step": t, "instance_id": inst_id, "method": method,
+                    "code_chars": len(prev_code),
+                    "Y": traj[t - 1]["Y"],
+                    "L0_syntax": traj[t - 1]["L0_syntax"],
+                    "L1_lint": traj[t - 1]["L1_lint"],
+                    "L2_public_tests": traj[t - 1]["L2_public_tests"],
+                    "L3_llm_review": traj[t - 1]["L3_llm_review"],
+                    "step_cost_usd": step_cost,
+                    "method_specific": method_specific,
+                    "stop_decision": True,
+                })
+                break
+        elif method == "reflexion":
+            external_test_pass = bool(traj[t - 1]["L2_public_tests"])
+            test_feedback_text = (
+                "Visible tests passed, but hidden tests may still fail."
+                if external_test_pass
+                else "Visible tests failed. The previous program did not satisfy the public checks."
+            )
+            method_specific["external_test_pass"] = external_test_pass
+            method_specific["test_feedback"] = test_feedback_text
+
+            if external_test_pass:
+                stop_reason = "reflexion_test_pass"
+                stop_step = t
+                traj.append({
+                    "step": t, "instance_id": inst_id, "method": method,
+                    "code_chars": len(prev_code),
+                    "Y": traj[t - 1]["Y"],
+                    "L0_syntax": traj[t - 1]["L0_syntax"],
+                    "L1_lint": traj[t - 1]["L1_lint"],
+                    "L2_public_tests": True,
+                    "L3_llm_review": traj[t - 1]["L3_llm_review"],
+                    "step_cost_usd": 0.0,
+                    "method_specific": method_specific,
+                    "stop_decision": True,
+                })
+                break
+
+            reflect_prompt = REFLEXION_REFLECT_PROMPT.format(
+                problem=problem_text,
+                prev_code=prev_code[:4000],
+                test_feedback=test_feedback_text,
+            )
+            try:
+                resp = gen_client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": reflect_prompt}],
+                    temperature=temperature,
+                    max_tokens=500,
+                )
+                reflection_text = resp.choices[0].message.content or ""
+                u = resp.usage
+                cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
+            except Exception as e:
+                log.warning("[%s/%s] step %d reflect failed: %s", gen_name, inst_id, t, e)
+                stop_reason = "reflect_api_error"
+                stop_step = t
+                break
+            with cost_lock:
+                cost_counter["v"] += cost
+            step_cost += cost
+            call_logger.log_call(
+                instance_id=inst_id, step=t, purpose="reflect",
+                model=model_id, prompt=reflect_prompt, response=reflection_text,
+                prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+                cost_usd=cost)
+            reflections.append(reflection_text)
+            method_specific["reflection_text"] = reflection_text
+            method_specific["memory_size"] = len(reflections)
+        else:
+            raise ValueError(f"unknown method: {method}")
+
+        if method == "selfrefine":
+            refine_prompt = SELFREFINE_REFINE_PROMPT.format(
+                problem=problem_text,
+                prev_code=prev_code[:4000],
+                critique=method_specific.get("critique_text", "")[:1500],
+            )
+        else:
+            reflections_section = "\n\n".join(
+                f"Reflection {i + 1}: {r}" for i, r in enumerate(reflections)
+            )
+            refine_prompt = REFLEXION_REFINE_PROMPT.format(
+                problem=problem_text,
+                reflections_section=reflections_section[:3000],
+            )
+
+        try:
+            resp = gen_client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": refine_prompt}],
+                temperature=temperature,
+                max_tokens=4000,
+            )
+            text = resp.choices[0].message.content or ""
+            u = resp.usage
+            cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
+        except Exception as e:
+            log.warning("[%s/%s] step %d refine failed: %s", gen_name, inst_id, t, e)
+            stop_reason = "refine_api_error"
+            stop_step = t
+            break
+        with cost_lock:
+            cost_counter["v"] += cost
+        step_cost += cost
+        call_logger.log_call(
+            instance_id=inst_id, step=t, purpose="refine",
+            model=model_id, prompt=refine_prompt, response=text,
+            prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+            cost_usd=cost)
+
+        code = extract_code(text)
+
+        try:
+            eval_row = evaluate_fn(code, inst, reviewer_client)
+        except Exception as e:
+            log.warning("[%s/%s] step %d eval failed: %s", gen_name, inst_id, t, e)
+            stop_reason = "critic_eval_error"
+            stop_step = t
+            break
+        l3_cost = float(eval_row.get("l3_cost_usd", 0.0))
+        if l3_cost:
+            with cost_lock:
+                cost_counter["v"] += l3_cost
+            append_jsonl(call_logger.cost_log_path, {
+                "ts": now_iso(),
+                "instance_id": inst_id,
+                "step": t,
+                "purpose": "L3_review",
+                "model": "anthropic/claude-haiku-4.5",
+                "prompt_tokens": -1,
+                "completion_tokens": -1,
+                "cost_usd": l3_cost,
+                "cumulative_usd": cost_counter["v"],
+            })
+
+        traj.append({
+            "step": t, "instance_id": inst_id, "method": method,
+            "code_chars": len(code),
+            "Y": int(eval_row["Y"]),
+            "L0_syntax": bool(eval_row["L0_syntax"]),
+            "L1_lint": bool(eval_row["L1_lint"]),
+            "L2_public_tests": bool(eval_row["L2_public_tests"]),
+            "L3_llm_review": eval_row["L3_llm_review"],
+            "step_cost_usd": step_cost + l3_cost,
+            "method_specific": method_specific,
+            "stop_decision": False,
+        })
+        log.info("[%s/%s/%s] step %d: Y=%d L2=%s L0=%s",
+                 method, gen_name, inst_id, t, int(eval_row["Y"]),
+                 bool(eval_row["L2_public_tests"]), bool(eval_row["L0_syntax"]))
+        prev_code = code
+
+    if stop_step is None:
+        stop_step = max(0, len(traj) - 1)
+        stop_reason = "exhausted"
+
+    return {
+        "instance_id": inst_id,
+        "trajectory": traj,
+        "stop_step": stop_step,
+        "stop_reason": stop_reason,
+        "n_reflections": len(reflections),
+    }
+
+
+def write_combined_iter_policy(gen_root: Path) -> None:
+    combined = {"policies": {}, "sources": {}}
+    for method, out_key in (
+        ("selfrefine", "selfrefine_last"),
+        ("reflexion", "reflexion_first_pass"),
+    ):
+        path = gen_root / method / "policy_comparison.json"
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text())
+        policies = data.get("policies", {})
+        if "always_verify" in policies and "always_verify" not in combined["policies"]:
+            combined["policies"]["always_verify"] = policies["always_verify"]
+        if method in policies:
+            combined["policies"][out_key] = policies[method]
+            combined["sources"][out_key] = str(path)
+            combined["n_instances"] = policies[method].get("n", combined.get("n_instances"))
+        if "cost_model" in data:
+            combined["cost_model"] = data["cost_model"]
+    if len(combined["policies"]) >= 2:
+        write_json(gen_root / "policy_comparison_iter_replay_baselines.json", combined)
 
 
 # ============================================================================
@@ -656,12 +994,13 @@ def compute_policy_comparison(records_path: Path, generator: str,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--method", required=True, choices=["selfrefine", "reflexion"])
-    parser.add_argument("--variant", required=True, choices=["lcb", "swe"])
+    parser.add_argument("--variant", required=True, choices=["lcb", "mbpp", "humaneval", "swe"])
     parser.add_argument("--src-dir", required=True, type=Path,
                         help="dir with <gen>/critic_results.jsonl + raw_responses/")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--generators", required=True)
-    parser.add_argument("--n-instances", type=int, default=30)
+    parser.add_argument("--n-instances", type=int, default=30,
+                        help="Max number of eligible instances to run (0 = all)")
     parser.add_argument("--steps", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-workers", type=int, default=4)
@@ -672,6 +1011,8 @@ def main() -> None:
     parser.add_argument("--difficulty", default="hard", help="LCB only")
     parser.add_argument("--platform", default="leetcode", help="LCB only")
     parser.add_argument("--dataset", default=None, help="SWE only")
+    parser.add_argument("--plus-input-cap", type=int, default=200,
+                        help="HumanEval+ only: cap on plus_input length to match calibration")
     parser.add_argument("--lcb-version", default="v1", choices=["v1", "all"],
                         help="v1 = original test.jsonl; all = union of v1..v6")
     parser.add_argument("--extend-existing", action="store_true",
@@ -690,9 +1031,10 @@ def main() -> None:
     # Two-client setup:
     #   reviewer_client (OpenRouter): used by critic_L3_review.
     #   gen_client (per-generator): vLLM for qwen25_32b, OpenRouter otherwise.
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    load_env_chain()
+    api_key = load_openrouter_key()
     if not api_key:
-        log.error("OPENROUTER_API_KEY not set (needed for L3 reviewer)")
+        log.error("OpenRouter key not set (expected one of %s)", OPENROUTER_KEY_NAMES)
         sys.exit(1)
     from openai import OpenAI
     reviewer_client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
@@ -706,6 +1048,79 @@ def main() -> None:
                             lcb_version=args.lcb_version)
         log.info("loaded %d %s/%s LCB problems", len(problems), args.difficulty, args.platform)
         scg_helpers = None
+        variant_eval_fn = None
+    elif args.variant == "mbpp":
+        from lcb_calibrate import GENERATORS as SCG_GENERATORS, critic_L0_syntax, critic_L1_lint, critic_L3_review
+        from mbpp_calibrate import load_mbpp_plus, build_prompt as mbpp_build_prompt, run_assertions, run_full_test
+
+        problems = load_mbpp_plus(n_instances=10**9, seed=args.seed)
+        scg_helpers = None
+
+        def variant_eval_fn(code: str, problem: dict, reviewer) -> dict:
+            l0 = critic_L0_syntax(code)
+            l1 = critic_L1_lint(code)
+            test_list = (problem.get("test_list") or [])[:3]
+            l2_pass, l2_total = run_assertions(code, test_list, timeout=5)
+            l2_ok = (l2_total > 0) and (l2_pass == l2_total)
+            y_ok = bool(run_full_test(code, problem.get("test") or "", problem.get("entry_point"), timeout=10))
+            l3, l3_cost = critic_L3_review(problem.get("prompt", "")[:3000], code, reviewer)
+            return {
+                "Y": int(y_ok),
+                "L0_syntax": bool(l0),
+                "L1_lint": bool(l1),
+                "L2_public_tests": bool(l2_ok),
+                "L3_llm_review": bool(l3),
+                "l3_cost_usd": float(l3_cost),
+            }
+
+        def build_variant_prompt(problem: dict, prev_code: str | None = None, feedback: str | None = None) -> str:
+            base = mbpp_build_prompt(problem)
+            if prev_code is None or feedback is None:
+                return base
+            return _build_refine_prompt(base, prev_code, feedback)
+
+        log.info("loaded %d MBPP+ problems", len(problems))
+    elif args.variant == "humaneval":
+        from lcb_calibrate import GENERATORS as SCG_GENERATORS, critic_L0_syntax, critic_L1_lint, critic_L3_review
+        from humaneval_calibrate import (
+            load_humaneval_plus,
+            build_prompt as humaneval_build_prompt,
+            run_test_inputs,
+        )
+
+        problems = load_humaneval_plus(n_instances=10**9, plus_input_cap=args.plus_input_cap, seed=args.seed)
+        scg_helpers = None
+
+        def variant_eval_fn(code: str, problem: dict, reviewer) -> dict:
+            l0 = critic_L0_syntax(code)
+            l1 = critic_L1_lint(code)
+            base_in = problem.get("base_input") or []
+            plus_in = problem.get("plus_input") or []
+            entry = problem.get("entry_point", "")
+            canon = problem.get("canonical_full", "")
+            atol = problem.get("atol") or 0
+            l2_pass, l2_total = run_test_inputs(code, entry, canon, base_in, atol)
+            l2_ok = (l2_total > 0) and (l2_pass == l2_total)
+            full_inputs = list(base_in) + list(plus_in)
+            y_pass, y_total = run_test_inputs(code, entry, canon, full_inputs, atol)
+            y_ok = (y_total > 0) and (y_pass == y_total)
+            l3, l3_cost = critic_L3_review(problem.get("prompt", "")[:3000], code, reviewer)
+            return {
+                "Y": int(y_ok),
+                "L0_syntax": bool(l0),
+                "L1_lint": bool(l1),
+                "L2_public_tests": bool(l2_ok),
+                "L3_llm_review": bool(l3),
+                "l3_cost_usd": float(l3_cost),
+            }
+
+        def build_variant_prompt(problem: dict, prev_code: str | None = None, feedback: str | None = None) -> str:
+            base = humaneval_build_prompt(problem)
+            if prev_code is None or feedback is None:
+                return base
+            return _build_refine_prompt(base, prev_code, feedback)
+
+        log.info("loaded %d HumanEval+ problems (plus_input_cap=%d)", len(problems), args.plus_input_cap)
     else:
         # SWE: load HF dataset
         import datasets as hf_datasets
@@ -714,6 +1129,7 @@ def main() -> None:
         from spot_check_generators import GENERATORS as SCG_GENERATORS
         import spot_check_generators as scg
         scg_helpers = scg
+        variant_eval_fn = None
         log.info("loaded %d SWE-bench instances", len(problems))
 
     # Parse per-model cost caps
@@ -736,10 +1152,7 @@ def main() -> None:
         if gen not in SCG_GENERATORS:
             log.error("unknown generator: %s", gen)
             continue
-        if args.variant == "lcb":
-            model_id = SCG_GENERATORS[gen][0]  # tuple format (model, base_url, thinking)
-        else:
-            model_id = SCG_GENERATORS[gen][0]
+        model_id = SCG_GENERATORS[gen][0]
         # Per-generator generation client: qwen25_32b -> vLLM, others -> OpenRouter.
         from lcb_calibrate import _make_client
         gen_client = _make_client(gen)
@@ -789,7 +1202,7 @@ def main() -> None:
             raw_dir = args.src_dir / gen / "raw_responses"
         step0_code: dict[str, str] = {}
         for inst_id, rec in step0_records.items():
-            p = raw_dir / f"{inst_id}_p0.txt"
+            p = raw_dir / f"{_safe_raw_instance_id(args.variant, str(inst_id))}_p0.txt"
             if p.exists():
                 from lcb_calibrate import extract_code as lcb_extract
                 if args.variant == "lcb":
@@ -804,10 +1217,13 @@ def main() -> None:
         # Eligible instances: those with step0 code AND in problems
         if args.variant == "lcb":
             inst_to_problem = {str(p["question_id"]): p for p in problems}
+        elif args.variant in {"mbpp", "humaneval"}:
+            inst_to_problem = {str(p["task_id"]): p for p in problems}
         else:
             inst_to_problem = {p["instance_id"]: p for p in problems}
-        eligible = [iid for iid, code in step0_code.items()
-                    if code and iid in inst_to_problem][: args.n_instances]
+        eligible = [iid for iid, code in step0_code.items() if code and iid in inst_to_problem]
+        if args.n_instances > 0:
+            eligible = eligible[:args.n_instances]
         log.info("[%s/%s] %d eligible instances", gen, args.method, len(eligible))
 
         # Cost tracking
@@ -874,6 +1290,49 @@ def main() -> None:
                         "stop_reason": result["stop_reason"],
                         "n_reflections": result["n_reflections"],
                     })
+        elif args.variant in {"mbpp", "humaneval"}:
+            with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+                futures = {}
+                for inst_id in eligible:
+                    inst = inst_to_problem[inst_id]
+                    fut = ex.submit(
+                        _run_synth_one_instance,
+                        inst=inst,
+                        inst_id=str(inst_id),
+                        step0_code=step0_code[inst_id],
+                        step0_record=step0_records[inst_id],
+                        method=args.method,
+                        model_id=model_id,
+                        gen_name=gen,
+                        variant=args.variant,
+                        steps=args.steps,
+                        temperature=args.temperature,
+                        reviewer_client=reviewer_client,
+                        gen_client=gen_client,
+                        call_logger=call_logger,
+                        cost_lock=cost_lock,
+                        cost_counter=cost_counter,
+                        cap_usd=cap_usd,
+                        build_prompt_fn=build_variant_prompt,
+                        evaluate_fn=variant_eval_fn,
+                    )
+                    futures[fut] = inst_id
+                stop_distribution = []
+                for fut in as_completed(futures):
+                    inst_id = futures[fut]
+                    try:
+                        result = fut.result()
+                    except Exception as e:
+                        log.error("[%s/%s/%s] failed: %s", args.method, gen, inst_id, e)
+                        continue
+                    for row in result["trajectory"]:
+                        append_jsonl(records_path, row)
+                    stop_distribution.append({
+                        "instance_id": inst_id,
+                        "stop_step": result["stop_step"],
+                        "stop_reason": result["stop_reason"],
+                        "n_reflections": result["n_reflections"],
+                    })
         else:
             log.error("SWE variant for real baselines not yet implemented in this build")
             continue
@@ -897,6 +1356,7 @@ def main() -> None:
         write_json(gen_out / "transition_kernel.json", kernel)
         policy = compute_policy_comparison(records_path, gen, args.method)
         write_json(gen_out / "policy_comparison.json", policy)
+        write_combined_iter_policy(gen_out.parent)
 
         log.info("[%s/%s] done: %d instances, $%.3f spent (cap $%.2f)",
                  gen, args.method, len(stop_distribution), total_cost, cap_usd)
