@@ -208,3 +208,35 @@ def test_action_types_contains_expected_set():
                 "critic_L0", "critic_L1", "critic_L2", "critic_L3",
                 "verify"}
     assert ACTION_TYPES == expected
+
+
+# ---------------------------------------------------------------------------
+# `extra` field semantics — `is not None` (not truthiness) so an explicit
+# empty dict is written, matching the pattern used for other optional fields.
+# ---------------------------------------------------------------------------
+
+def test_record_extra_empty_dict_is_written(tmp_path):
+    """An explicit empty `extra={}` is written as `"extra": {}`, not
+    silently dropped. Truthiness-based drop was a bug because every other
+    optional field (`patch_id`, `step`, `belief_before`, `run_id`) uses
+    `is not None` — `extra` should be consistent."""
+    log_path = tmp_path / "log.jsonl"
+    tele = TelemetryLogger(log_path, dataset="d", model_name="m")
+    tele.record(action_type="generate", runtime_s=0.0,
+                instance_id="i", extra={})
+    tele.close()
+    rec = json.loads(log_path.read_text().strip())
+    assert "extra" in rec
+    assert rec["extra"] == {}
+
+
+def test_record_extra_none_is_omitted(tmp_path):
+    """The other side of the contract: extra=None (the default) means
+    'no extra field in the row'. Pins the slim-row behavior for the
+    common calibration case where the call-site doesn't pass `extra=`."""
+    log_path = tmp_path / "log.jsonl"
+    tele = TelemetryLogger(log_path, dataset="d", model_name="m")
+    tele.record(action_type="generate", runtime_s=0.0, instance_id="i")
+    tele.close()
+    rec = json.loads(log_path.read_text().strip())
+    assert "extra" not in rec

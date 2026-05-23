@@ -607,7 +607,8 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             if tele is not None:
                 tele.record(action_type="reflect", runtime_s=_critique_rt,
                             instance_id=inst_id, step=t, api_cost_usd=cost,
-                            extra={"purpose": "selfrefine_critique"})
+                            extra={"purpose": "selfrefine_critique",
+                                   "variant": "lcb"})
             method_specific["critique_text"] = critique_text
             # Stop check: "CRITIQUE_OK" substring
             if "CRITIQUE_OK" in critique_text.upper():
@@ -688,7 +689,8 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             if tele is not None:
                 tele.record(action_type="reflect", runtime_s=_reflect_rt,
                             instance_id=inst_id, step=t, api_cost_usd=cost,
-                            extra={"purpose": "reflexion_reflect"})
+                            extra={"purpose": "reflexion_reflect",
+                                   "variant": "lcb"})
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -735,7 +737,8 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             cost_usd=cost)
         if tele is not None:
             tele.record(action_type="refine", runtime_s=_refine_rt,
-                        instance_id=inst_id, step=t, api_cost_usd=cost)
+                        instance_id=inst_id, step=t, api_cost_usd=cost,
+                        extra={"variant": "lcb"})
 
         code = extract_code(text)
 
@@ -761,7 +764,8 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             tele.record(action_type="verify",
                         runtime_s=time.perf_counter() - _t_critic,
                         instance_id=inst_id, step=t, passed=bool(Y),
-                        extra={"L0": bool(l0), "L1": bool(l1),
+                        extra={"variant": "lcb",
+                               "L0": bool(l0), "L1": bool(l1),
                                "L2_ok": bool(l2_ok),
                                "L2_pass_n": int(l2_pass),
                                "L2_total": int(l2_total)})
@@ -782,7 +786,8 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                     tele.record(action_type="critic_L3",
                                 runtime_s=time.perf_counter() - _t_l3,
                                 instance_id=inst_id, step=t,
-                                passed=l3, api_cost_usd=l3_cost)
+                                passed=l3, api_cost_usd=l3_cost,
+                                extra={"variant": "lcb"})
                 # Note: critic_L3_review handles its own logging internally if any;
                 # we add a lightweight cost-log entry but skip the raw_calls dump
                 # since it's a separate review prompt with its own template.
@@ -1531,154 +1536,164 @@ def main() -> None:
                                model_name=gen)
         records_path = gen_out / "iter_records.jsonl"
 
-        # Resume / extend logic: if --extend-existing is set and a records file
-        # already exists, drop instance_ids that are already represented (by
-        # any step). The records file is append-only so existing rows are kept;
-        # the kernel + policy comparison are recomputed from the full file at
-        # the end. This lets us re-run ONLY for new LCB pool instances.
-        if args.extend_existing and records_path.exists():
-            done_iids = set()
-            for line in open(records_path):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                iid = rec.get("instance_id")
-                if iid is not None:
-                    done_iids.add(str(iid))
-            before = len(eligible)
-            eligible = [iid for iid in eligible if iid not in done_iids]
-            log.info("[%s/%s] --extend-existing: %d already done -> %d new instances to run",
-                     gen, args.method, before - len(eligible), len(eligible))
-
-        if args.variant == "lcb" or args.variant in GENERIC_VARIANTS:
-            with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
-                futures = {}
-                for inst_id in eligible:
-                    inst = inst_to_problem[inst_id]
-                    if args.variant == "lcb":
-                        fut = ex.submit(
-                            _run_lcb_one_instance,
-                            inst=inst, step0_code=step0_code[inst_id],
-                            step0_record=step0_records[inst_id],
-                            method=args.method, model_id=model_id, gen_name=gen,
-                            steps=args.steps, temperature=args.temperature,
-                            client=reviewer_client, gen_client=gen_client,
-                            call_logger=call_logger, tele=tele,
-                            cost_lock=cost_lock, cost_counter=cost_counter,
-                            cap_usd=cap_usd, scg_helpers=scg_helpers,
-                        )
-                    else:
-                        fut = ex.submit(
-                            _run_generic_one_instance,
-                            inst=inst, step0_code=step0_code[inst_id],
-                            step0_record=step0_records[inst_id],
-                            method=args.method, variant=args.variant,
-                            model_id=model_id, gen_name=gen,
-                            steps=args.steps, temperature=args.temperature,
-                            client=reviewer_client, gen_client=gen_client,
-                            call_logger=call_logger, tele=tele,
-                            cost_lock=cost_lock, cost_counter=cost_counter,
-                            cap_usd=cap_usd,
-                        )
-                    futures[fut] = inst_id
-                stop_distribution = []
-                for fut in as_completed(futures):
-                    inst_id = futures[fut]
-                    try:
-                        result = fut.result()
-                    except Exception as e:
-                        log.error("[%s/%s/%s] failed: %s", args.method, gen, inst_id, e)
-                        continue
-                    # Append all trajectory rows for this instance
-                    for row in result["trajectory"]:
-                        append_jsonl(records_path, row)
-                    stop_distribution.append({
-                        "instance_id": inst_id,
-                        "stop_step": result["stop_step"],
-                        "stop_reason": result["stop_reason"],
-                        "n_reflections": result["n_reflections"],
-                    })
-        else:
-            log.error("SWE variant for real baselines not yet implemented in this build")
-            continue
-
-        write_json(gen_out / "stop_distribution.json", {
-            "n_instances": len(stop_distribution),
-            "instances": stop_distribution,
-        })
-
-        # Cost summary
-        total_cost = cost_counter["v"]
-        write_json(gen_out / "cost_summary.json", {
-            "generator": gen, "method": args.method,
-            "n_instances_completed": len(stop_distribution),
-            "total_cost_usd": total_cost,
-            "cap_usd": cap_usd, "cap_hit": total_cost >= cap_usd,
-        })
-
-        # Compute kernel + policy comparison
-        kernel = compute_kernel(records_path, gen)
-        write_json(gen_out / "transition_kernel.json", kernel)
-
-        # --kernel-mode online: also write a Beta-Binomial posterior obtained
-        # by streaming this run's (Y_t, Y_{t+1}) transitions through an
-        # OnlineKernelCalibration seeded from the calibration kernel (or
-        # DEFAULT_KERNEL if none exists). This file is INFORMATIONAL —
-        # compute_policy_comparison above intentionally still uses the
-        # post-hoc kernel; consuming the online posterior is a separate
-        # methodology change. Hardcoded mode forces DEFAULT_KERNEL as the
-        # seed; measured/online mode reads the src-dir calibration kernel.
-        if args.kernel_mode in ("online", "hardcoded"):
-            calib_src_dir = args.src_dir / gen
-            seed_kernel, seed_src, online_kernel = resolve_kernel(
-                calib_src_dir, mode=args.kernel_mode,
-            )
-            if online_kernel is None:
-                # hardcoded mode — instantiate explicitly so we can still
-                # stream transitions through it for the summary.
-                online_kernel = OnlineKernelCalibration(init_kernel=seed_kernel)
-            # Replay this run's trajectory through the estimator in step order
-            if records_path.exists():
-                by_inst: dict[str, list[dict]] = {}
+        # All per-generator work below is wrapped in try/finally so the
+        # action_telemetry.jsonl handle is durably closed on every exit
+        # path — including the SWE-not-implemented `continue` and any
+        # exception in compute_kernel / compute_policy_comparison /
+        # write_combined_iter_policy. Matches the same try/finally
+        # pattern used in iter/refine_swe.py.
+        try:
+            # Resume / extend logic: if --extend-existing is set and a records
+            # file already exists, drop instance_ids that are already
+            # represented (by any step). The records file is append-only so
+            # existing rows are kept; the kernel + policy comparison are
+            # recomputed from the full file at the end. This lets us re-run
+            # ONLY for new LCB pool instances.
+            if args.extend_existing and records_path.exists():
+                done_iids = set()
                 for line in open(records_path):
                     line = line.strip()
                     if not line:
                         continue
-                    r = json.loads(line)
-                    by_inst.setdefault(r["instance_id"], []).append(r)
-                for rs in by_inst.values():
-                    rs.sort(key=lambda r: r["step"])
-                    for i in range(len(rs) - 1):
-                        yt = rs[i].get("Y")
-                        yt1 = rs[i + 1].get("Y")
-                        if yt not in (0, 1) or yt1 not in (0, 1):
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    iid = rec.get("instance_id")
+                    if iid is not None:
+                        done_iids.add(str(iid))
+                before = len(eligible)
+                eligible = [iid for iid in eligible if iid not in done_iids]
+                log.info("[%s/%s] --extend-existing: %d already done -> %d new instances to run",
+                         gen, args.method, before - len(eligible), len(eligible))
+
+            if args.variant == "lcb" or args.variant in GENERIC_VARIANTS:
+                with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+                    futures = {}
+                    for inst_id in eligible:
+                        inst = inst_to_problem[inst_id]
+                        if args.variant == "lcb":
+                            fut = ex.submit(
+                                _run_lcb_one_instance,
+                                inst=inst, step0_code=step0_code[inst_id],
+                                step0_record=step0_records[inst_id],
+                                method=args.method, model_id=model_id, gen_name=gen,
+                                steps=args.steps, temperature=args.temperature,
+                                client=reviewer_client, gen_client=gen_client,
+                                call_logger=call_logger, tele=tele,
+                                cost_lock=cost_lock, cost_counter=cost_counter,
+                                cap_usd=cap_usd, scg_helpers=scg_helpers,
+                            )
+                        else:
+                            fut = ex.submit(
+                                _run_generic_one_instance,
+                                inst=inst, step0_code=step0_code[inst_id],
+                                step0_record=step0_records[inst_id],
+                                method=args.method, variant=args.variant,
+                                model_id=model_id, gen_name=gen,
+                                steps=args.steps, temperature=args.temperature,
+                                client=reviewer_client, gen_client=gen_client,
+                                call_logger=call_logger, tele=tele,
+                                cost_lock=cost_lock, cost_counter=cost_counter,
+                                cap_usd=cap_usd,
+                            )
+                        futures[fut] = inst_id
+                    stop_distribution = []
+                    for fut in as_completed(futures):
+                        inst_id = futures[fut]
+                        try:
+                            result = fut.result()
+                        except Exception as e:
+                            log.error("[%s/%s/%s] failed: %s", args.method, gen, inst_id, e)
                             continue
-                        online_kernel.update(int(yt), int(yt1))
-            write_json(gen_out / "transition_kernel_online_final.json", {
-                "generator": gen,
-                "method": args.method,
-                "kernel_mode": args.kernel_mode,
-                "seed_source": seed_src,
-                "seed_kernel": seed_kernel,
-                "online_posterior": online_kernel.summary(),
+                        # Append all trajectory rows for this instance
+                        for row in result["trajectory"]:
+                            append_jsonl(records_path, row)
+                        stop_distribution.append({
+                            "instance_id": inst_id,
+                            "stop_step": result["stop_step"],
+                            "stop_reason": result["stop_reason"],
+                            "n_reflections": result["n_reflections"],
+                        })
+            else:
+                log.error("SWE variant for real baselines not yet implemented in this build")
+                continue
+
+            write_json(gen_out / "stop_distribution.json", {
+                "n_instances": len(stop_distribution),
+                "instances": stop_distribution,
             })
 
-        policy = compute_policy_comparison(records_path, gen, args.method)
-        write_json(gen_out / "policy_comparison.json", policy)
+            # Cost summary
+            total_cost = cost_counter["v"]
+            write_json(gen_out / "cost_summary.json", {
+                "generator": gen, "method": args.method,
+                "n_instances_completed": len(stop_distribution),
+                "total_cost_usd": total_cost,
+                "cap_usd": cap_usd, "cap_hit": total_cost >= cap_usd,
+            })
 
-        # If the OTHER method has already been run for this generator,
-        # write a combined policy comparison so downstream consumers see
-        # SR + Rfx side-by-side without two file reads. No-op if only one
-        # method has been run so far (the other run will pick this up).
-        write_combined_iter_policy(gen_out.parent)
+            # Compute kernel + policy comparison
+            kernel = compute_kernel(records_path, gen)
+            write_json(gen_out / "transition_kernel.json", kernel)
 
-        # Flush + close the per-generator action-telemetry log so the JSONL
-        # is durably on disk before the next generator's loop opens its own.
-        tele.close()
+            # --kernel-mode online: also write a Beta-Binomial posterior
+            # obtained by streaming this run's (Y_t, Y_{t+1}) transitions
+            # through an OnlineKernelCalibration seeded from the calibration
+            # kernel (or DEFAULT_KERNEL if none exists). This file is
+            # INFORMATIONAL — compute_policy_comparison below intentionally
+            # still uses the post-hoc kernel; consuming the online posterior
+            # is a separate methodology change. Hardcoded mode forces
+            # DEFAULT_KERNEL as the seed; measured/online mode reads the
+            # src-dir calibration kernel.
+            if args.kernel_mode in ("online", "hardcoded"):
+                calib_src_dir = args.src_dir / gen
+                seed_kernel, seed_src, online_kernel = resolve_kernel(
+                    calib_src_dir, mode=args.kernel_mode,
+                )
+                if online_kernel is None:
+                    # hardcoded mode — instantiate explicitly so we can
+                    # still stream transitions through it for the summary.
+                    online_kernel = OnlineKernelCalibration(init_kernel=seed_kernel)
+                # Replay this run's trajectory through the estimator in step order
+                if records_path.exists():
+                    by_inst: dict[str, list[dict]] = {}
+                    for line in open(records_path):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        r = json.loads(line)
+                        by_inst.setdefault(r["instance_id"], []).append(r)
+                    for rs in by_inst.values():
+                        rs.sort(key=lambda r: r["step"])
+                        for i in range(len(rs) - 1):
+                            yt = rs[i].get("Y")
+                            yt1 = rs[i + 1].get("Y")
+                            if yt not in (0, 1) or yt1 not in (0, 1):
+                                continue
+                            online_kernel.update(int(yt), int(yt1))
+                write_json(gen_out / "transition_kernel_online_final.json", {
+                    "generator": gen,
+                    "method": args.method,
+                    "kernel_mode": args.kernel_mode,
+                    "seed_source": seed_src,
+                    "seed_kernel": seed_kernel,
+                    "online_posterior": online_kernel.summary(),
+                })
+
+            policy = compute_policy_comparison(records_path, gen, args.method)
+            write_json(gen_out / "policy_comparison.json", policy)
+
+            # If the OTHER method has already been run for this generator,
+            # write a combined policy comparison so downstream consumers see
+            # SR + Rfx side-by-side without two file reads. No-op if only one
+            # method has been run so far (the other run will pick this up).
+            write_combined_iter_policy(gen_out.parent)
+        finally:
+            # Always close the per-generator telemetry handle — covers the
+            # happy path, the SWE-not-implemented `continue` above, and any
+            # exception in the post-iter writes (compute_kernel et al.).
+            tele.close()
 
         log.info("[%s/%s] done: %d instances, $%.3f spent (cap $%.2f)",
                  gen, args.method, len(stop_distribution), total_cost, cap_usd)

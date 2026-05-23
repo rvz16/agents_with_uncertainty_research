@@ -274,3 +274,29 @@ five scripts that were previously missing per-action timing.
   picked up automatically. No code change needed; verify on the next
   W&B sync.
 
+### Post-review fixups (from self-review of PR #7)
+
+- `iter/refine.py:main()` now wraps the per-generator work block in a
+  `try / finally` with `tele.close()` in the finally clause. The previous
+  code reached `tele.close()` only via the happy path — a SWE-not-
+  implemented `continue`, a worker-thread exception that propagated, or
+  any raise in `compute_kernel` / `compute_policy_comparison` /
+  `write_combined_iter_policy` would leak the file handle for the rest
+  of the run. This brings the file into line with `iter/refine_swe.py`
+  and all 5 calibration scripts.
+- `_common/telemetry.py:record()` now uses `if extra is not None` rather
+  than `if extra:` for the `extra` field. The truthiness check silently
+  dropped an explicit empty dict, which was inconsistent with the other
+  optional fields (`patch_id`, `step`, `belief_before`, `run_id` — all of
+  which use `is not None`). New tests pin both directions: `extra={}` is
+  now written as `"extra": {}`, and `extra=None` (default) still omits
+  the field for slim calibration JSONLs.
+- All 5 LCB `tele.record(...)` sites in `iter/refine.py` now carry
+  `extra={"variant": "lcb", ...}` to match the generic-variant and SWE
+  records. Downstream analyses that want to query "refine-step latency
+  by variant" can now do so via a uniform `extra.variant` field across
+  all three benchmark families.
+
+`pytest tests/ -q` → **74 passed** (60 pre-existing + 14 telemetry tests
+after the +2 new extra-semantics tests).
+

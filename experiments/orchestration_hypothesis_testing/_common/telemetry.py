@@ -144,7 +144,10 @@ class TelemetryLogger:
             row["belief_before"] = float(belief_before)
         if self._run_id is not None:
             row["run_id"] = self._run_id
-        if extra:
+        if extra is not None:
+            # `is not None` (not truthiness) so an explicit empty dict is
+            # written rather than silently dropped — matches the pattern
+            # used for the other optional fields above.
             row["extra"] = extra
         line = json.dumps(row)
         with self._lock:
