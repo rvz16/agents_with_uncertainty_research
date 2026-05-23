@@ -68,37 +68,15 @@ from _common.extract import extract_code  # noqa: E402, F401
 from _common.cost import (  # noqa: E402, F401
     cost_for_call, CostTracker, extract_usage, project_cost,
 )
+from _common.telemetry import TelemetryLogger  # noqa: E402
+# Back-compat alias — calibration/mbpp.py and humaneval.py still re-import
+# `_ActionTelemetry` from this module. Repointing their imports to
+# _common.telemetry happens in the same PR; this alias keeps the symbol
+# resolvable until both migrations land.
+_ActionTelemetry = TelemetryLogger
 # === end refactor bootstrap ===
 
 from _common.cost import CostTracker  # noqa: E402
-
-
-class _ActionTelemetry:
-    """Minimal append-only JSONL writer for per-action timing (thread-safe)."""
-    def __init__(self, path: Path, dataset: str, model: str) -> None:
-        self._path = path
-        self._dataset = dataset
-        self._model = model
-        self._fh = open(path, "a", buffering=1)
-        self._lock = threading.Lock()
-
-    def record(self, *, instance_id: str, patch_id: int, action_type: str,
-               runtime_s: float, passed=None, api_cost_usd: float = 0.0) -> None:
-        row = {
-            "dataset": self._dataset,
-            "model_name": self._model,
-            "instance_id": instance_id,
-            "patch_id": patch_id,
-            "action_type": action_type,
-            "runtime_seconds": round(runtime_s, 4),
-            "passed": passed,
-            "api_cost_usd": api_cost_usd,
-        }
-        with self._lock:
-            self._fh.write(json.dumps(row) + "\n")
-
-    def close(self) -> None:
-        self._fh.close()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("lcb_cal")

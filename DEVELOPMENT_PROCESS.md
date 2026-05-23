@@ -183,3 +183,120 @@ kernel computation plus the live Beta-Binomial estimator into one module.
   still imports the never-created `abbo.realworld.agents.kernel_helpers` +
   `abbo.realworld.telemetry` modules; deferred since abbo is being retired.
 
+---
+
+## 2026-05-23 — Shared per-action telemetry across calibration + iter
+
+Adopted PR #5's second follow-up request ("Structured Telemetry promoted to
+a shared library"). The `_ActionTelemetry` class that previously lived
+inline in `calibration/lcb.py` (and was cross-imported by `mbpp.py` and
+`humaneval.py`) moves into a proper module under `_common/`, picks up the
+superset schema needed by iter / BDP-aware code paths, and is wired into
+five scripts that were previously missing per-action timing.
+
+- **New: `experiments/orchestration_hypothesis_testing/_common/telemetry.py`**
+  - `TelemetryLogger(path, dataset, model_name, *, run_id=None)` —
+    thread-safe append-only JSONL writer, positional signature matches
+    the pre-existing `_ActionTelemetry` for back-compat
+  - `.record(*, action_type, runtime_s, instance_id, patch_id=None,
+    step=None, passed=None, api_cost_usd=0.0, belief_before=None,
+    extra=None)` — superset of the previous record shape; new optional
+    fields cover iter (`step`) and BDP-aware code paths (`belief_before`)
+  - `write_action(logger, ...)` — convenience wrapper matching abbo's
+    module-level `from abbo.realworld.telemetry import write_action`
+    shape so code ported from abbo can switch import path only
+  - `_ActionTelemetry = TelemetryLogger` — back-compat alias
+  - `ACTION_TYPES` — canonical set of action-type strings downstream
+    analyzers expect
+
+- **New: `tests/test_telemetry.py`** — 12 unit tests covering
+  construction, slim/rich record schemas, passed-field round-trip,
+  thread-safety under 8 concurrent workers, close idempotency,
+  context-manager usage, `write_action` equivalence with `record`,
+  back-compat alias identity, parent-dir mkdir, ACTION_TYPES contents.
+  All passing.
+
+- **Migrated existing callers** (3):
+  - `calibration/lcb.py`: deleted the inline `_ActionTelemetry` class,
+    added `from _common.telemetry import TelemetryLogger` plus a
+    `_ActionTelemetry = TelemetryLogger` re-export so any straggling
+    `from calibration.lcb import _ActionTelemetry` keeps working
+  - `calibration/mbpp.py`, `humaneval.py`: repointed their imports from
+    `calibration.lcb._ActionTelemetry` to
+    `_common.telemetry.TelemetryLogger as _ActionTelemetry`
+
+- **Instrumented previously-missing scripts** (5):
+  - `calibration/humanevalfix.py`: added `tele.record(...)` at 6 call
+    sites (generate / critic_L0 / critic_L1 / critic_L2 / verify /
+    critic_L3) mirroring `mbpp.py`'s template
+  - `calibration/codecontests.py`: same 6-site pattern
+  - `calibration/from_spotcheck.py`: 3 sites (critic_L0 / critic_L1 /
+    critic_L3 only — this script reads pre-existing predictions, no
+    generation or verify here)
+  - `iter/refine.py`: added `tele` kwarg to `_run_lcb_one_instance` and
+    `_run_generic_one_instance`. Records per-step `reflect` (SR critique
+    + Rfx reflection share this label), `refine`, optional `critic_L3`,
+    and a fused `verify` row for the L0+L1+L2+Y block. Closes
+    the latency-analysis gap (calibration had step-0 timing; iter now
+    has refinement-step timing). Per-critic granularity inside
+    `_eval_patch` is a follow-up.
+  - `iter/refine_swe.py`: same pattern; fused `critic_L0` row carries
+    `L1` in `extra` (the two are computed in lockstep on diff'd files);
+    separate `critic_L3` row for the LLM judge.
+
+- **JSONL row schema** (all 8 callers produce this superset; optional
+  fields omitted when not supplied so calibration JSONLs stay slim):
+  ```
+  ts, dataset, model_name, instance_id, action_type, runtime_seconds,
+  passed, api_cost_usd,
+  [patch_id], [step], [belief_before], [run_id], [extra]
+  ```
+
+### Verification
+
+- `python -m pytest tests/ -q` — **72 passed** (60 pre-existing + 12 new
+  telemetry tests), no regressions.
+- All 8 entry-point CLIs (`calibration.{lcb,mbpp,humaneval,humanevalfix,
+  codecontests,from_spotcheck}`, `iter.{refine,refine_swe}`) launch via
+  `python -m <pkg>.<mod> --help` without import errors.
+- End-to-end functional smoke: write 2 rows via the back-compat alias
+  path, read back, confirm schema includes `ts` + correct field names.
+
+### Out of scope (deliberate non-changes)
+
+- Per-critic granularity inside `_eval_patch` (the iter generic-variant
+  helper) — its L0/L1/L2/Y are fused in a single block; surfacing each
+  individually is a separate restructuring.
+- `scripts/run_synthesis_live.py` was already using `TelemetryLogger`
+  via the imports added in PR #5 — kept as is.
+- W&B upload of `action_telemetry.jsonl` files — `upload_runs.py` already
+  globs `*.jsonl` files alongside `cost_log.jsonl`, so the new files are
+  picked up automatically. No code change needed; verify on the next
+  W&B sync.
+
+### Post-review fixups (from self-review of PR #7)
+
+- `iter/refine.py:main()` now wraps the per-generator work block in a
+  `try / finally` with `tele.close()` in the finally clause. The previous
+  code reached `tele.close()` only via the happy path — a SWE-not-
+  implemented `continue`, a worker-thread exception that propagated, or
+  any raise in `compute_kernel` / `compute_policy_comparison` /
+  `write_combined_iter_policy` would leak the file handle for the rest
+  of the run. This brings the file into line with `iter/refine_swe.py`
+  and all 5 calibration scripts.
+- `_common/telemetry.py:record()` now uses `if extra is not None` rather
+  than `if extra:` for the `extra` field. The truthiness check silently
+  dropped an explicit empty dict, which was inconsistent with the other
+  optional fields (`patch_id`, `step`, `belief_before`, `run_id` — all of
+  which use `is not None`). New tests pin both directions: `extra={}` is
+  now written as `"extra": {}`, and `extra=None` (default) still omits
+  the field for slim calibration JSONLs.
+- All 5 LCB `tele.record(...)` sites in `iter/refine.py` now carry
+  `extra={"variant": "lcb", ...}` to match the generic-variant and SWE
+  records. Downstream analyses that want to query "refine-step latency
+  by variant" can now do so via a uniform `extra.variant` field across
+  all three benchmark families.
+
+`pytest tests/ -q` → **74 passed** (60 pre-existing + 14 telemetry tests
+after the +2 new extra-semantics tests).
+

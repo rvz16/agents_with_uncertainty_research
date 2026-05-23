@@ -33,6 +33,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -40,8 +41,10 @@ from pathlib import Path
 # File moved out of scripts/ during refactor; parents[1] is the
 # package root (experiments/orchestration_hypothesis_testing/).
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 import spot_check_generators as scg  # noqa: E402
+from _common.telemetry import TelemetryLogger  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -275,58 +278,84 @@ def main() -> None:
         # Iterate predictions
         records = []
         cumulative_cost = 0.0
-        for pid in (0, 1, 2):
-            pred_path = gen_dir / f"predictions_p{pid}.jsonl"
-            if not pred_path.exists():
-                continue
-            with open(pred_path) as f:
-                for line in f:
-                    r = json.loads(line)
-                    inst = r["instance_id"]
-                    diff = (r.get("model_patch") or "")
-                    Y = 1 if inst in resolved_per_pid[pid] else 0
-                    rec = {
-                        "generator": gen,
-                        "instance_id": inst,
-                        "patch_id": pid,
-                        "Y": Y,
-                        "diff_chars": len(diff),
-                    }
-                    if not diff.strip():
-                        rec.update(L0_syntax=False, L1_lint=False,
-                                   L3_llm_review=False, l3_cost=0.0,
-                                   note="empty_diff")
+        # Per-generator action telemetry. Unlike the calibration/lcb-family
+        # scripts, from_spotcheck doesn't do generation here — it only runs
+        # critics on pre-existing predictions — so the JSONL contains only
+        # critic_L0/L1/L3 rows (no "generate" or "verify").
+        tele = TelemetryLogger(gen_dir / "action_telemetry.jsonl",
+                               dataset=out_dir.name, model_name=gen)
+        try:
+            for pid in (0, 1, 2):
+                pred_path = gen_dir / f"predictions_p{pid}.jsonl"
+                if not pred_path.exists():
+                    continue
+                with open(pred_path) as f:
+                    for line in f:
+                        r = json.loads(line)
+                        inst = r["instance_id"]
+                        diff = (r.get("model_patch") or "")
+                        Y = 1 if inst in resolved_per_pid[pid] else 0
+                        rec = {
+                            "generator": gen,
+                            "instance_id": inst,
+                            "patch_id": pid,
+                            "Y": Y,
+                            "diff_chars": len(diff),
+                        }
+                        if not diff.strip():
+                            rec.update(L0_syntax=False, L1_lint=False,
+                                       L3_llm_review=False, l3_cost=0.0,
+                                       note="empty_diff")
+                            records.append(rec)
+                            continue
+                        oracle = oracle_cache.get(inst)
+                        if not oracle:
+                            rec.update(L0_syntax=None, L1_lint=None,
+                                       L3_llm_review=None, l3_cost=0.0,
+                                       note="oracle_missing")
+                            records.append(rec)
+                            continue
+                        modified = _modified_file_contents(diff, oracle)
+                        if modified is None:
+                            # Diff failed to apply — count critics as FAIL
+                            rec.update(L0_syntax=False, L1_lint=False,
+                                       note="diff_apply_failed")
+                        else:
+                            _t0 = time.perf_counter()
+                            l0 = critic_L0_syntax(modified)
+                            tele.record(action_type="critic_L0",
+                                        runtime_s=time.perf_counter() - _t0,
+                                        instance_id=inst, patch_id=pid,
+                                        passed=bool(l0))
+                            rec["L0_syntax"] = l0
+                            _t0 = time.perf_counter()
+                            l1 = critic_L1_lint(modified)
+                            tele.record(action_type="critic_L1",
+                                        runtime_s=time.perf_counter() - _t0,
+                                        instance_id=inst, patch_id=pid,
+                                        passed=bool(l1))
+                            rec["L1_lint"] = l1
+                        # L3 (paid)
+                        if not args.skip_l3 and cumulative_cost < args.max_cost_usd_per_model:
+                            problem = inst_to_row[inst]["problem_statement"]
+                            _t0 = time.perf_counter()
+                            passed, c = critic_L3_llm_review(inst, problem, diff, client)
+                            tele.record(action_type="critic_L3",
+                                        runtime_s=time.perf_counter() - _t0,
+                                        instance_id=inst, patch_id=pid,
+                                        passed=bool(passed), api_cost_usd=c)
+                            rec["L3_llm_review"] = passed
+                            rec["l3_cost"] = c
+                            cumulative_cost += c
+                        else:
+                            rec["L3_llm_review"] = None
+                            rec["l3_cost"] = 0.0
                         records.append(rec)
-                        continue
-                    oracle = oracle_cache.get(inst)
-                    if not oracle:
-                        rec.update(L0_syntax=None, L1_lint=None,
-                                   L3_llm_review=None, l3_cost=0.0,
-                                   note="oracle_missing")
-                        records.append(rec)
-                        continue
-                    modified = _modified_file_contents(diff, oracle)
-                    if modified is None:
-                        # Diff failed to apply — count critics as FAIL
-                        rec.update(L0_syntax=False, L1_lint=False,
-                                   note="diff_apply_failed")
-                    else:
-                        rec["L0_syntax"] = critic_L0_syntax(modified)
-                        rec["L1_lint"] = critic_L1_lint(modified)
-                    # L3 (paid)
-                    if not args.skip_l3 and cumulative_cost < args.max_cost_usd_per_model:
-                        problem = inst_to_row[inst]["problem_statement"]
-                        passed, c = critic_L3_llm_review(inst, problem, diff, client)
-                        rec["L3_llm_review"] = passed
-                        rec["l3_cost"] = c
-                        cumulative_cost += c
-                    else:
-                        rec["L3_llm_review"] = None
-                        rec["l3_cost"] = 0.0
-                    records.append(rec)
-                    if len(records) % 25 == 0:
-                        log.info("[%s] %d records, cumulative L3 cost = $%.4f",
-                                 gen, len(records), cumulative_cost)
+                        if len(records) % 25 == 0:
+                            log.info("[%s] %d records, cumulative L3 cost = $%.4f",
+                                     gen, len(records), cumulative_cost)
+        finally:
+            tele.close()
 
         # Write critic_results.jsonl
         out_path = gen_dir / "critic_results.jsonl"

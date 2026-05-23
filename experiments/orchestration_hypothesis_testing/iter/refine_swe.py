@@ -46,6 +46,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import spot_check_generators as scg  # noqa: E402
+from _common.telemetry import TelemetryLogger  # noqa: E402
 
 logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(message)s",
@@ -228,6 +230,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                       method: str, model_id: str, gen_name: str,
                       steps: int, temperature: float, client,
                       call_logger: CallLogger,
+                      tele: "TelemetryLogger | None" = None,
                       cost_lock: threading.Lock, cost_counter: dict,
                       cap_usd: float, gen_client=None) -> dict:
     if gen_client is None:
@@ -280,6 +283,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
         if method == "selfrefine":
             critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
                 issue_text=issue_text, prev_diff=prev_diff[:3000])
+            _t0 = time.perf_counter()
             try:
                 resp = gen_client.chat.completions.create(
                     model=model_id,
@@ -294,6 +298,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 stop_reason = "critique_api_error"
                 stop_step = t
                 break
+            _critique_rt = time.perf_counter() - _t0
             with cost_lock:
                 cost_counter["v"] += cost
             step_cost += cost
@@ -302,6 +307,11 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 model=model_id, prompt=critique_prompt, response=critique_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
                 cost_usd=cost)
+            if tele is not None:
+                tele.record(action_type="reflect", runtime_s=_critique_rt,
+                            instance_id=inst, step=t, api_cost_usd=cost,
+                            extra={"purpose": "selfrefine_critique",
+                                   "benchmark": "swe"})
             method_specific["critique_text"] = critique_text
             if "CRITIQUE_OK" in critique_text.upper():
                 stop_reason = "selfrefine_ok"
@@ -348,6 +358,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
             reflect_prompt = REFLEXION_REFLECT_PROMPT.format(
                 issue_text=issue_text, prev_diff=prev_diff[:3000],
                 feedback=feedback_text)
+            _t0 = time.perf_counter()
             try:
                 resp = gen_client.chat.completions.create(
                     model=model_id,
@@ -362,6 +373,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 stop_reason = "reflect_api_error"
                 stop_step = t
                 break
+            _reflect_rt = time.perf_counter() - _t0
             with cost_lock:
                 cost_counter["v"] += cost
             step_cost += cost
@@ -370,6 +382,11 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 model=model_id, prompt=reflect_prompt, response=reflection_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
                 cost_usd=cost)
+            if tele is not None:
+                tele.record(action_type="reflect", runtime_s=_reflect_rt,
+                            instance_id=inst, step=t, api_cost_usd=cost,
+                            extra={"purpose": "reflexion_reflect",
+                                   "benchmark": "swe"})
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -386,6 +403,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
             refine_prompt = base_prompt + REFLEXION_REFINE_SUFFIX.format(
                 reflections_section=refl_section[:3000])
 
+        _t0 = time.perf_counter()
         try:
             resp = gen_client.chat.completions.create(
                 model=model_id,
@@ -400,6 +418,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
             stop_reason = "refine_api_error"
             stop_step = t
             break
+        _refine_rt = time.perf_counter() - _t0
         with cost_lock:
             cost_counter["v"] += cost
         step_cost += cost
@@ -408,6 +427,10 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
             model=model_id, prompt=refine_prompt, response=text,
             prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
             cost_usd=cost)
+        if tele is not None:
+            tele.record(action_type="refine", runtime_s=_refine_rt,
+                        instance_id=inst, step=t, api_cost_usd=cost,
+                        extra={"benchmark": "swe"})
 
         # Parse new diff
         blocks = scg.parse_change_blocks(text)
@@ -418,14 +441,23 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
         l0 = l1 = l3 = None
         if new_diff.strip():
             mod_files = _modified_file_contents(new_diff, oracle)
+            _t_critic = time.perf_counter()
             if mod_files is not None:
                 l0 = critic_L0_syntax(mod_files)
                 l1 = critic_L1_lint(mod_files)
             else:
                 l0 = l1 = False
+            _critic_rt = time.perf_counter() - _t_critic
+            if tele is not None:
+                tele.record(action_type="critic_L0",
+                            runtime_s=_critic_rt,  # L0+L1 fused timing
+                            instance_id=inst, step=t, passed=bool(l0),
+                            extra={"benchmark": "swe", "L1": bool(l1),
+                                   "fused": "L0+L1"})
             with cost_lock:
                 cap_ok = cost_counter["v"] < cap_usd
             if cap_ok:
+                _t_l3 = time.perf_counter()
                 try:
                     l3_pass, l3_cost = critic_L3_llm_review(
                         inst, row["problem_statement"], new_diff, client)
@@ -441,6 +473,12 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                         "cost_usd": l3_cost,
                         "cumulative_usd": cost_counter["v"],
                     })
+                    if tele is not None:
+                        tele.record(action_type="critic_L3",
+                                    runtime_s=time.perf_counter() - _t_l3,
+                                    instance_id=inst, step=t,
+                                    passed=l3, api_cost_usd=l3_cost,
+                                    extra={"benchmark": "swe"})
                 except Exception as e:
                     log.warning("[%s/%s/%s] step %d L3 failed: %s",
                                  method, gen_name, inst, t, e)
@@ -595,34 +633,43 @@ def main() -> None:
         cost_lock = threading.Lock()
         cost_counter = {"v": 0.0}
         call_logger = CallLogger(gen_out)
+        # Per-generator action telemetry (refine/reflect/critic_L0/critic_L3
+        # per step) — see _common/telemetry.py for the row schema.
+        tele = TelemetryLogger(gen_out / "action_telemetry.jsonl",
+                               dataset=str(args.output_dir.name),
+                               model_name=gen)
         records_path = gen_out / "iter_records.jsonl"
 
         all_results: list[dict] = []
-        with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
-            futures = {}
-            for inst in candidate:
-                row = inst_to_row[inst]
-                fut = ex.submit(
-                    run_one_instance,
-                    inst=inst, row=row, oracle=oracle_cache[inst],
-                    step0_record=crit_by_inst[inst],
-                    step0_diff=diff_by_inst[inst],
-                    method=args.method, model_id=model_id, gen_name=gen,
-                    steps=args.steps, temperature=args.temperature,
-                    client=client, gen_client=gen_client, call_logger=call_logger,
-                    cost_lock=cost_lock, cost_counter=cost_counter,
-                    cap_usd=cap_usd)
-                futures[fut] = inst
-            for fut in as_completed(futures):
-                inst = futures[fut]
-                try:
-                    result = fut.result()
-                except Exception as e:
-                    log.error("[%s/%s/%s] failed: %s", args.method, gen, inst, e)
-                    continue
-                all_results.append(result)
-                for row in result["trajectory"]:
-                    append_jsonl(records_path, row)
+        try:
+            with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+                futures = {}
+                for inst in candidate:
+                    row = inst_to_row[inst]
+                    fut = ex.submit(
+                        run_one_instance,
+                        inst=inst, row=row, oracle=oracle_cache[inst],
+                        step0_record=crit_by_inst[inst],
+                        step0_diff=diff_by_inst[inst],
+                        method=args.method, model_id=model_id, gen_name=gen,
+                        steps=args.steps, temperature=args.temperature,
+                        client=client, gen_client=gen_client,
+                        call_logger=call_logger, tele=tele,
+                        cost_lock=cost_lock, cost_counter=cost_counter,
+                        cap_usd=cap_usd)
+                    futures[fut] = inst
+                for fut in as_completed(futures):
+                    inst = futures[fut]
+                    try:
+                        result = fut.result()
+                    except Exception as e:
+                        log.error("[%s/%s/%s] failed: %s", args.method, gen, inst, e)
+                        continue
+                    all_results.append(result)
+                    for row in result["trajectory"]:
+                        append_jsonl(records_path, row)
+        finally:
+            tele.close()
 
         # Stop distribution
         write_json(gen_out / "stop_distribution.json", {

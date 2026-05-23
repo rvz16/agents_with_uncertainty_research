@@ -45,9 +45,9 @@ from calibration.lcb import (  # noqa: E402
     critic_L3_review,
     cost_for_call,
     GENERATORS,
-    _ActionTelemetry,
 )
 from _common.cost import CostTracker  # noqa: E402
+from _common.telemetry import TelemetryLogger as _ActionTelemetry  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("mbpp_cal")
