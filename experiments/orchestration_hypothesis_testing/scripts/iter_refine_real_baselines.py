@@ -24,6 +24,14 @@ Variant support:
   --variant lcb : uses inline LCB test runner (cheap, no external infra).
                   Reflexion external test = L2_public_tests.
   --variant swe : Self-Refine only (Reflexion on SWE deferred).
+  --variant mbpp / humaneval : uses EvalPlus-style assertion runner.
+                  Reflexion external test = original (non-plus) asserts.
+  --variant humanevalfix : uses HumanEvalPack (python) -- the original
+                  assertions act as BOTH L2 (Reflexion signal) and Y
+                  oracle (no public/private split on this benchmark).
+  --variant codecontests : uses stdin/stdout subprocess test runner.
+                  Reflexion external test = public_tests; Y oracle is
+                  private_tests + generated_tests (capped at 30).
 
 Usage:
   # LCB Self-Refine (4 gens):
@@ -252,6 +260,202 @@ class CallLogger:
             "prompt_hash": sha256_str(prompt),
             "response_hash": sha256_str(response),
         })
+
+
+# ============================================================================
+# Generic-variant helpers — used by MBPP+, HumanEval+, HumanEvalFix, CodeContests.
+# The SR/Rfx LOOP logic is identical to LCB; only these per-variant pieces
+# differ: instance schema, problem-text extraction, and L0/L1/L2/Y evaluation.
+# ============================================================================
+import tempfile
+
+def _get_inst_id(inst: dict, variant: str) -> str:
+    """Extract a stable instance ID from a benchmark-specific record."""
+    if variant == "mbpp":
+        return str(inst.get("task_id"))
+    elif variant == "humaneval":
+        return str(inst.get("task_id"))
+    elif variant == "humanevalfix":
+        # bigcode/humanevalpack uses task_id like "Python/0"
+        return str(inst.get("task_id"))
+    elif variant == "codecontests":
+        # deepmind/code_contests uses `name` as a stable string ID
+        return str(inst.get("name", inst.get("task_id", "")))
+    raise ValueError(f"_get_inst_id: unknown variant {variant!r}")
+
+def _get_problem_text(inst: dict, variant: str) -> str:
+    """Extract the human-readable problem statement for the SR/Rfx prompts."""
+    if variant == "mbpp":
+        # MBPP+ stores the natural-language prompt in "text" (+ sample asserts)
+        return (inst.get("prompt") or inst.get("text") or "")[:4000]
+    elif variant == "humaneval":
+        return (inst.get("prompt") or "")[:4000]
+    elif variant == "humanevalfix":
+        # HumanEvalPack provides the docstring prompt + the buggy function;
+        # frame as a bug-fix instruction.
+        prompt   = inst.get("prompt", "") or ""
+        buggy    = inst.get("buggy_solution", "") or inst.get("declaration", "")
+        return (f"Fix the bugs in this function:\n\n{prompt}\n{buggy}")[:4000]
+    elif variant == "codecontests":
+        return (inst.get("description") or "")[:4000]
+    raise ValueError(f"_get_problem_text: unknown variant {variant!r}")
+
+def _run_stdio_tests(code: str, inputs: list, outputs: list,
+                       timeout: float = 5.0) -> tuple[int, int]:
+    """CodeContests-style stdin/stdout test runner. For each (input, expected
+    output) pair, run `code` as a subprocess with the input piped to stdin and
+    compare the stripped stdout against the expected. Returns (n_pass, n_total).
+
+    Caps at min(len(inputs), len(outputs)) to handle malformed pairs.
+    """
+    total = min(len(inputs), len(outputs))
+    if total == 0:
+        return 0, 0
+    n_pass = 0
+    tf = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False)
+    try:
+        tf.write(code); tf.flush(); tf.close()
+        for inp, exp in zip(inputs[:total], outputs[:total]):
+            try:
+                result = subprocess.run(
+                    [sys.executable, tf.name],
+                    input=str(inp), capture_output=True, text=True, timeout=timeout)
+                actual_lines = (result.stdout or "").strip().splitlines()
+                expected_lines = (str(exp) or "").strip().splitlines()
+                # CodeContests accepts trailing-whitespace and trailing-newline
+                # differences; compare line-by-line after strip().
+                if [a.rstrip() for a in actual_lines] == [e.rstrip() for e in expected_lines]:
+                    n_pass += 1
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+    finally:
+        try: os.unlink(tf.name)
+        except Exception: pass
+    return n_pass, total
+
+def _eval_patch(code: str, inst: dict, variant: str,
+                reviewer_client=None, problem_text: str = "",
+                cost_lock=None, cost_counter=None, cap_usd: float = 1e9,
+                call_logger=None, inst_id: str = "", step: int = 0
+                ) -> tuple[dict, float]:
+    """Run the inline critic stack (L0 syntax / L1 lint / L2 test / Y oracle)
+    for the given variant. Returns ({L0,L1,L2_ok,L2_pass_n,L2_total,Y}, l3_cost).
+
+    The L3 (LLM judge) is run separately by the caller (matches the LCB
+    runner's structure) because it requires the cost accounting + API client.
+    """
+    from lcb_calibrate import critic_L0_syntax, critic_L1_lint
+    l0 = bool(critic_L0_syntax(code))
+    l1 = bool(critic_L1_lint(code))
+
+    if variant == "mbpp":
+        from mbpp_calibrate import run_assertions, run_full_test
+        # L2 (public): subset of original 3 MBPP asserts.
+        # Y (oracle): full EvalPlus test_block (more rigorous).
+        asserts_public = inst.get("test_list", []) or inst.get("base_input", [])
+        if isinstance(asserts_public, str):
+            asserts_public = [asserts_public]
+        l2_pass, l2_total = run_assertions(code, asserts_public, timeout=10)
+        test_block  = inst.get("test", "") or "\n".join(asserts_public)
+        entry_point = inst.get("entry_point", "")
+        y_pass, y_total = run_full_test(code, test_block, entry_point, timeout=10)
+        Y = 1 if (y_total > 0) and (y_pass == y_total) else 0
+
+    elif variant in ("humaneval", "humanevalfix"):
+        from humaneval_calibrate import run_test_inputs
+        entry_point = inst.get("entry_point", "")
+        canon_full = inst.get("canonical_solution", "") or inst.get("prompt", "")
+        # L2 (public): base inputs from the docstring tests.
+        # Y (oracle): full plus_input for HumanEval+; same as L2 for HEFix.
+        l2_inputs = inst.get("base_input", []) or []
+        y_inputs  = inst.get("plus_input", l2_inputs) or l2_inputs
+        atol = inst.get("atol", 0.0) or 0.0
+        if l2_inputs:
+            l2_pass, l2_total = run_test_inputs(
+                code, entry_point, canon_full, l2_inputs, atol, timeout=10)
+        else:
+            l2_pass, l2_total = 0, 0
+        if y_inputs:
+            y_pass, y_total = run_test_inputs(
+                code, entry_point, canon_full, y_inputs, atol, timeout=10)
+            Y = 1 if (y_total > 0) and (y_pass == y_total) else 0
+        else:
+            Y = 0
+
+    elif variant == "codecontests":
+        # CodeContests: stdin/stdout tests stored as {"input":[...], "output":[...]}
+        public_tests  = inst.get("public_tests",  {}) or {}
+        private_tests = inst.get("private_tests", {}) or {}
+        gen_tests     = inst.get("generated_tests", {}) or {}
+        l2_inputs  = list(public_tests.get("input",  []))
+        l2_outputs = list(public_tests.get("output", []))
+        y_inputs   = (list(private_tests.get("input",  [])) +
+                      list(gen_tests.get("input",  [])) + l2_inputs)
+        y_outputs  = (list(private_tests.get("output", [])) +
+                      list(gen_tests.get("output", [])) + l2_outputs)
+        l2_pass, l2_total = _run_stdio_tests(code, l2_inputs, l2_outputs, timeout=5)
+        # Cap private+generated at 30 to keep iter-eval latency bounded.
+        y_pass, y_total = _run_stdio_tests(code, y_inputs[:30], y_outputs[:30], timeout=5)
+        Y = 1 if (y_total > 0) and (y_pass == y_total) else 0
+
+    else:
+        raise ValueError(f"_eval_patch: unknown variant {variant!r}")
+
+    l2_ok = (l2_total > 0) and (l2_pass == l2_total)
+
+    # Optional L3 LLM review (caller supplies the client). Mirrors the LCB
+    # runner: try the review, account for cost, swallow exceptions.
+    l3 = None
+    l3_cost = 0.0
+    if reviewer_client is not None and problem_text:
+        from lcb_calibrate import critic_L3_review
+        if cost_lock is None or cost_counter is None or cost_counter.get("v", 0.0) < cap_usd:
+            try:
+                l3_pass, l3_cost = critic_L3_review(problem_text, code, reviewer_client)
+                l3 = bool(l3_pass)
+            except Exception:
+                l3, l3_cost = None, 0.0
+
+    return ({
+        "L0_syntax": l0,
+        "L1_lint":   l1,
+        "L2_public_tests": l2_ok,
+        "L2_pass_n":      int(l2_pass),
+        "L2_total":       int(l2_total),
+        "Y":              int(Y),
+        "L3_llm_review":  l3,
+    }, float(l3_cost))
+
+
+def _load_instances_for_variant(variant: str, n_instances: int, seed: int,
+                                  plus_input_cap: int = 200) -> list:
+    """Load benchmark instances. Mirrors the existing LCB loader pattern;
+    SR/Rfx run on the same N=n_instances sample the calibration ran on
+    (paired comparison via the shared seed).
+    """
+    if variant == "mbpp":
+        from mbpp_calibrate import load_mbpp_plus
+        return load_mbpp_plus(n_instances, seed)
+    elif variant == "humaneval":
+        from humaneval_calibrate import load_humaneval_plus
+        return load_humaneval_plus(n_instances, plus_input_cap, seed)
+    elif variant == "humanevalfix":
+        from datasets import load_dataset
+        ds = load_dataset("bigcode/humanevalpack", "python", split="test")
+        problems = [dict(r) for r in ds]
+        rng = random.Random(seed)
+        rng.shuffle(problems)
+        return problems[:n_instances] if n_instances > 0 else problems
+    elif variant == "codecontests":
+        from datasets import load_dataset
+        ds = load_dataset("deepmind/code_contests", split="test")
+        problems = [dict(r) for r in ds]
+        rng = random.Random(seed)
+        rng.shuffle(problems)
+        return problems[:n_instances] if n_instances > 0 else problems
+    raise ValueError(f"_load_instances_for_variant: unknown variant {variant!r}")
 
 
 # ============================================================================
@@ -528,6 +732,232 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
 
 
 # ============================================================================
+# Generic-variant runner — MBPP+, HumanEval+, HumanEvalFix, CodeContests.
+# Structurally mirrors _run_lcb_one_instance: same SR/Rfx loop, same stop
+# conditions, same trajectory schema. Only the per-step critic eval and the
+# instance schema differ; both are routed through _eval_patch + _get_*().
+# ============================================================================
+
+def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
+                                method: str, variant: str,
+                                model_id: str, gen_name: str,
+                                steps: int, temperature: float, client,
+                                gen_client=None,
+                                call_logger: CallLogger,
+                                cost_lock: threading.Lock, cost_counter: dict,
+                                cap_usd: float) -> dict:
+    """SR/Rfx trajectory for the new variants. See _run_lcb_one_instance for
+    the canonical version this is patterned after."""
+    if gen_client is None:
+        gen_client = client
+    from lcb_calibrate import cost_for_call, extract_code
+    inst_id = _get_inst_id(inst, variant)
+    problem_text = _get_problem_text(inst, variant)
+
+    # Step 0 record (sunk) -- re-evaluate the step-0 code through the variant
+    # critic stack so we have a consistent L2_ok / L0 / L1 / Y for the
+    # trajectory's row 0 (the calibration record may not have L2 in the
+    # variant's "public test" sense, especially for HEFix where L2==Y).
+    step0_eval, _step0_l3_cost = _eval_patch(
+        step0_code, inst, variant,
+        reviewer_client=None,  # don't waste L3 call on the sunk step
+        problem_text=problem_text)
+    traj = [{
+        "step": 0, "instance_id": inst_id, "method": method,
+        "code_chars": len(step0_code),
+        "Y": step0_record.get("Y", step0_eval["Y"]),
+        "L0_syntax": step0_record.get("L0_syntax", step0_eval["L0_syntax"]),
+        "L1_lint":   step0_record.get("L1_lint",   step0_eval["L1_lint"]),
+        "L2_public_tests": step0_eval["L2_public_tests"],
+        "L3_llm_review":   step0_record.get("L3_llm_review"),
+        "step_cost_usd": 0.0,
+        "method_specific": {},
+    }]
+
+    reflections: list[str] = []
+    prev_code = step0_code
+    stop_step = None
+    stop_reason = None
+
+    for t in range(1, steps):
+        with cost_lock:
+            if cost_counter["v"] >= cap_usd:
+                stop_reason = "cost_cap"; stop_step = t; break
+
+        method_specific: dict = {}
+        step_cost = 0.0
+
+        # ----- Stage 1: critique (Self-Refine) or reflect (Reflexion) -----
+        if method == "selfrefine":
+            critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
+                problem=problem_text, code=prev_code[:4000])
+            try:
+                resp = gen_client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": critique_prompt}],
+                    temperature=temperature, max_tokens=1500)
+                critique_text = resp.choices[0].message.content or ""
+                u = resp.usage
+                cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
+            except Exception as e:
+                log.warning("[%s/%s] step %d critique failed: %s", gen_name, inst_id, t, e)
+                stop_reason = "critique_api_error"; stop_step = t; break
+            with cost_lock: cost_counter["v"] += cost
+            step_cost += cost
+            call_logger.log_call(
+                instance_id=inst_id, step=t, purpose="critique", model=model_id,
+                prompt=critique_prompt, response=critique_text,
+                prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+                cost_usd=cost)
+            method_specific["critique_text"] = critique_text
+            if "CRITIQUE_OK" in critique_text.upper():
+                stop_reason = "selfrefine_ok"; stop_step = t
+                traj.append({
+                    "step": t, "instance_id": inst_id, "method": method,
+                    "code_chars": len(prev_code),
+                    "Y":               traj[t - 1]["Y"],
+                    "L0_syntax":       traj[t - 1]["L0_syntax"],
+                    "L1_lint":         traj[t - 1]["L1_lint"],
+                    "L2_public_tests": traj[t - 1]["L2_public_tests"],
+                    "L3_llm_review":   traj[t - 1]["L3_llm_review"],
+                    "step_cost_usd": step_cost,
+                    "method_specific": method_specific,
+                    "stop_decision": True,
+                })
+                break
+
+        elif method == "reflexion":
+            external_test_pass = traj[t - 1]["L2_public_tests"]
+            test_feedback_text = (
+                "Public tests passed. But hidden tests may have failed."
+                if external_test_pass
+                else "Public tests failed. Code did not pass visible test cases."
+            )
+            method_specific["external_test_pass"] = external_test_pass
+            method_specific["test_feedback"] = test_feedback_text
+
+            if external_test_pass:
+                stop_reason = "reflexion_test_pass"; stop_step = t
+                traj.append({
+                    "step": t, "instance_id": inst_id, "method": method,
+                    "code_chars": len(prev_code),
+                    "Y":               traj[t - 1]["Y"],
+                    "L0_syntax":       traj[t - 1]["L0_syntax"],
+                    "L1_lint":         traj[t - 1]["L1_lint"],
+                    "L2_public_tests": True,
+                    "L3_llm_review":   traj[t - 1]["L3_llm_review"],
+                    "step_cost_usd": 0.0,
+                    "method_specific": method_specific,
+                    "stop_decision": True,
+                })
+                break
+
+            reflect_prompt = REFLEXION_REFLECT_PROMPT.format(
+                problem=problem_text, prev_code=prev_code[:4000],
+                test_feedback=test_feedback_text)
+            try:
+                resp = gen_client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": reflect_prompt}],
+                    temperature=temperature, max_tokens=500)
+                reflection_text = resp.choices[0].message.content or ""
+                u = resp.usage
+                cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
+            except Exception as e:
+                log.warning("[%s/%s] step %d reflect failed: %s", gen_name, inst_id, t, e)
+                stop_reason = "reflect_api_error"; stop_step = t; break
+            with cost_lock: cost_counter["v"] += cost
+            step_cost += cost
+            call_logger.log_call(
+                instance_id=inst_id, step=t, purpose="reflect", model=model_id,
+                prompt=reflect_prompt, response=reflection_text,
+                prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+                cost_usd=cost)
+            reflections.append(reflection_text)
+            method_specific["reflection_text"] = reflection_text
+            method_specific["memory_size"] = len(reflections)
+        else:
+            raise ValueError(f"unknown method: {method}")
+
+        # ----- Stage 2: refine -----
+        if method == "selfrefine":
+            refine_prompt = SELFREFINE_REFINE_PROMPT.format(
+                problem=problem_text, prev_code=prev_code[:4000],
+                critique=method_specific.get("critique_text", "")[:1500])
+        else:
+            refl_section = "\n\n".join(
+                f"Reflection {i+1}: {r}" for i, r in enumerate(reflections))
+            refine_prompt = REFLEXION_REFINE_PROMPT.format(
+                problem=problem_text, reflections_section=refl_section[:3000])
+
+        try:
+            resp = gen_client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": refine_prompt}],
+                temperature=temperature, max_tokens=4000)
+            text = resp.choices[0].message.content or ""
+            u = resp.usage
+            cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
+        except Exception as e:
+            log.warning("[%s/%s] step %d refine failed: %s", gen_name, inst_id, t, e)
+            stop_reason = "refine_api_error"; stop_step = t; break
+        with cost_lock: cost_counter["v"] += cost
+        step_cost += cost
+        call_logger.log_call(
+            instance_id=inst_id, step=t, purpose="refine", model=model_id,
+            prompt=refine_prompt, response=text,
+            prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
+            cost_usd=cost)
+
+        code = extract_code(text)
+
+        # ----- Inline critic eval (variant-specific) -----
+        try:
+            ev, l3_cost = _eval_patch(
+                code, inst, variant,
+                reviewer_client=client, problem_text=problem_text,
+                cost_lock=cost_lock, cost_counter=cost_counter, cap_usd=cap_usd,
+                call_logger=call_logger, inst_id=inst_id, step=t)
+        except Exception as e:
+            log.warning("[%s/%s] step %d eval failed: %s", gen_name, inst_id, t, e)
+            stop_reason = "critic_eval_error"; stop_step = t; break
+
+        if l3_cost > 0:
+            with cost_lock: cost_counter["v"] += l3_cost
+            step_cost += l3_cost
+            append_jsonl(call_logger.cost_log_path, {
+                "ts": now_iso(),
+                "instance_id": inst_id, "step": t, "purpose": "L3_review",
+                "model": "L3_reviewer", "prompt_tokens": -1, "completion_tokens": -1,
+                "cost_usd": l3_cost, "cumulative_usd": cost_counter["v"],
+            })
+
+        traj.append({
+            "step": t, "instance_id": inst_id, "method": method,
+            "code_chars": len(code),
+            "Y":               ev["Y"],
+            "L0_syntax":       ev["L0_syntax"],
+            "L1_lint":         ev["L1_lint"],
+            "L2_public_tests": ev["L2_public_tests"],
+            "L3_llm_review":   ev["L3_llm_review"],
+            "step_cost_usd": step_cost,
+            "method_specific": method_specific,
+            "stop_decision": False,
+        })
+        log.info("[%s/%s/%s] step %d: Y=%d L2=%s L0=%s",
+                 method, gen_name, inst_id, t, ev["Y"], ev["L2_public_tests"], ev["L0_syntax"])
+        prev_code = code
+
+    return {
+        "instance_id": inst_id,
+        "trajectory": traj,
+        "stop_step": stop_step,
+        "stop_reason": stop_reason,
+        "n_reflections": len(reflections),
+    }
+
+
+# ============================================================================
 # Aggregation: kernel + policy comparison
 # ============================================================================
 
@@ -656,7 +1086,7 @@ def compute_policy_comparison(records_path: Path, generator: str,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--method", required=True, choices=["selfrefine", "reflexion"])
-    parser.add_argument("--variant", required=True, choices=["lcb", "swe"])
+    parser.add_argument("--variant", required=True, choices=["lcb", "swe", "mbpp", "humaneval", "humanevalfix", "codecontests"])
     parser.add_argument("--src-dir", required=True, type=Path,
                         help="dir with <gen>/critic_results.jsonl + raw_responses/")
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -698,6 +1128,7 @@ def main() -> None:
     reviewer_client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
     client = reviewer_client  # alias for backward compat in non-iter callers
 
+    GENERIC_VARIANTS = {"mbpp", "humaneval", "humanevalfix", "codecontests"}
     if args.variant == "lcb":
         # Load LCB
         os.environ.setdefault("HF_HOME", "/mnt/data/users/vlad.smirnov/hf_cache")
@@ -705,6 +1136,16 @@ def main() -> None:
         problems = load_lcb(difficulty=args.difficulty, platform=args.platform,
                             lcb_version=args.lcb_version)
         log.info("loaded %d %s/%s LCB problems", len(problems), args.difficulty, args.platform)
+        scg_helpers = None
+    elif args.variant in GENERIC_VARIANTS:
+        # MBPP+ / HumanEval+ / HumanEvalFix / CodeContests
+        os.environ.setdefault("HF_HOME", "/mnt/data/users/vlad.smirnov/hf_cache")
+        # Use lcb_calibrate's GENERATORS table since it carries the
+        # OpenRouter/vLLM endpoints for every model id Artem might pass.
+        from lcb_calibrate import GENERATORS as SCG_GENERATORS
+        problems = _load_instances_for_variant(args.variant,
+                                                args.n_instances, args.seed)
+        log.info("loaded %d %s instances", len(problems), args.variant)
         scg_helpers = None
     else:
         # SWE: load HF dataset
@@ -804,6 +1245,8 @@ def main() -> None:
         # Eligible instances: those with step0 code AND in problems
         if args.variant == "lcb":
             inst_to_problem = {str(p["question_id"]): p for p in problems}
+        elif args.variant in GENERIC_VARIANTS:
+            inst_to_problem = {_get_inst_id(p, args.variant): p for p in problems}
         else:
             inst_to_problem = {p["instance_id"]: p for p in problems}
         eligible = [iid for iid, code in step0_code.items()
@@ -841,21 +1284,36 @@ def main() -> None:
             log.info("[%s/%s] --extend-existing: %d already done -> %d new instances to run",
                      gen, args.method, before - len(eligible), len(eligible))
 
-        if args.variant == "lcb":
+        if args.variant == "lcb" or args.variant in GENERIC_VARIANTS:
             with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
                 futures = {}
                 for inst_id in eligible:
                     inst = inst_to_problem[inst_id]
-                    fut = ex.submit(
-                        _run_lcb_one_instance,
-                        inst=inst, step0_code=step0_code[inst_id],
-                        step0_record=step0_records[inst_id],
-                        method=args.method, model_id=model_id, gen_name=gen,
-                        steps=args.steps, temperature=args.temperature,
-                        client=reviewer_client, gen_client=gen_client, call_logger=call_logger,
-                        cost_lock=cost_lock, cost_counter=cost_counter,
-                        cap_usd=cap_usd, scg_helpers=scg_helpers,
-                    )
+                    if args.variant == "lcb":
+                        fut = ex.submit(
+                            _run_lcb_one_instance,
+                            inst=inst, step0_code=step0_code[inst_id],
+                            step0_record=step0_records[inst_id],
+                            method=args.method, model_id=model_id, gen_name=gen,
+                            steps=args.steps, temperature=args.temperature,
+                            client=reviewer_client, gen_client=gen_client,
+                            call_logger=call_logger,
+                            cost_lock=cost_lock, cost_counter=cost_counter,
+                            cap_usd=cap_usd, scg_helpers=scg_helpers,
+                        )
+                    else:
+                        fut = ex.submit(
+                            _run_generic_one_instance,
+                            inst=inst, step0_code=step0_code[inst_id],
+                            step0_record=step0_records[inst_id],
+                            method=args.method, variant=args.variant,
+                            model_id=model_id, gen_name=gen,
+                            steps=args.steps, temperature=args.temperature,
+                            client=reviewer_client, gen_client=gen_client,
+                            call_logger=call_logger,
+                            cost_lock=cost_lock, cost_counter=cost_counter,
+                            cap_usd=cap_usd,
+                        )
                     futures[fut] = inst_id
                 stop_distribution = []
                 for fut in as_completed(futures):
