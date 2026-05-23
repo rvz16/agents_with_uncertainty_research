@@ -25,8 +25,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from collections import defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _common.kernel import (  # noqa: E402
+    DEFAULT_KERNEL,
+    compute_transition_kernel_from_pairs,
+    pairs_from_trajectories,
+)
 
 log = logging.getLogger("synth_kernel")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
@@ -43,42 +51,39 @@ def instance_id_of(rec: dict) -> str:
 def compute_transition_kernel(records: list[dict], gen: str, benchmark: str,
                               alpha: float = 1.0, beta: float = 1.0) -> dict:
     """Group records by instance_id, sort by patch_id, count Y[i]->Y[i+1].
-    Same shape as `iter_refine_bugfix.compute_transition_kernel`."""
+
+    Output schema preserves the source / benchmark / generator metadata that
+    downstream synthesis consumers expect alongside the canonical kernel_all
+    blob. Empty-regime fallback differs from the shared default: uses the
+    literature prior (0.5 / 0.05) rather than Laplace-uniform.
+    """
     by_inst: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         by_inst[instance_id_of(r)].append(r)
     for iid in by_inst:
         by_inst[iid].sort(key=lambda r: int(r.get("patch_id", 0)))
 
-    counts = {"0->0": 0, "0->1": 0, "1->0": 0, "1->1": 0}
-    for rows in by_inst.values():
-        for i in range(len(rows) - 1):
-            y0 = rows[i].get("Y")
-            y1 = rows[i + 1].get("Y")
-            if y0 is None or y1 is None:
-                continue
-            counts[f"{int(y0)}->{int(y1)}"] += 1
+    pairs = pairs_from_trajectories(by_inst.values())
+    k = compute_transition_kernel_from_pairs(pairs, alpha=alpha, beta=beta)
 
-    n_broken = counts["0->0"] + counts["0->1"]
-    n_correct = counts["1->0"] + counts["1->1"]
-
-    # Beta(alpha, beta) Laplace-smoothed estimates
-    p_fix = (counts["0->1"] + alpha) / (n_broken + alpha + beta) if (n_broken > 0) \
-            else 0.5  # fallback if no broken seeds observed
-    p_break = (counts["1->0"] + alpha) / (n_correct + alpha + beta) if (n_correct > 0) \
-              else 0.05  # literature prior
+    # Empty-regime overrides: this script uses the literature prior, not the
+    # Laplace-uniform that the shared helper returns when n=0.
+    if k["n_broken_observed"] == 0:
+        k["P_fix_given_broken"] = DEFAULT_KERNEL["p_fix_broken"]
+    if k["n_correct_observed"] == 0:
+        k["P_break_given_correct"] = DEFAULT_KERNEL["p_break_correct"]
 
     return {
         "generator": gen,
         "benchmark": benchmark,
         "source": "synthesis_transition_kernel (post-hoc from critic_results.jsonl)",
         "kernel_all": {
-            "P_fix_given_broken": p_fix,
-            "P_break_given_correct": p_break,
-            "raw_counts": counts,
-            "n_pairs": n_broken + n_correct,
-            "n_broken_observed": n_broken,
-            "n_correct_observed": n_correct,
+            "P_fix_given_broken": k["P_fix_given_broken"],
+            "P_break_given_correct": k["P_break_given_correct"],
+            "raw_counts": k["raw_counts"],
+            "n_pairs": k["n_pairs"],
+            "n_broken_observed": k["n_broken_observed"],
+            "n_correct_observed": k["n_correct_observed"],
             "smoothing": f"Beta({alpha},{beta})",
         },
     }

@@ -1,0 +1,295 @@
+"""Unit tests for the shared transition-kernel utilities. No API calls."""
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+import threading
+
+import pytest
+
+# Tests live in tests/; the package root (orchestration_hypothesis_testing/) is
+# the parent of tests/. Add it to sys.path so we can import from _common/
+# directly without installing the package.
+_PKG_ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PKG_ROOT))
+
+from _common.kernel import (  # noqa: E402
+    DEFAULT_KERNEL,
+    OnlineKernelCalibration,
+    compute_transition_kernel_from_pairs,
+    kernel_update,
+    pairs_from_trajectories,
+    resolve_kernel,
+)
+
+
+# ---------------------------------------------------------------------------
+# kernel_update — belief propagation
+# ---------------------------------------------------------------------------
+
+def test_kernel_update_lowercase_keys():
+    k = {"p_fix_broken": 0.6, "p_break_correct": 0.1}
+    # b'=b*(1-p_break)+(1-b)*p_fix
+    assert kernel_update(0.5, k) == pytest.approx(0.5 * 0.9 + 0.5 * 0.6)
+
+
+def test_kernel_update_uppercase_keys():
+    # Accepts the post-hoc schema directly (used by some callers reading
+    # transition_kernel.json's kernel_all blob).
+    k = {"P_fix_given_broken": 0.6, "P_break_given_correct": 0.1}
+    assert kernel_update(0.5, k) == pytest.approx(0.5 * 0.9 + 0.5 * 0.6)
+
+
+def test_kernel_update_belief_extremes():
+    k = {"p_fix_broken": 0.4, "p_break_correct": 0.2}
+    # b=0 → b' = p_fix
+    assert kernel_update(0.0, k) == pytest.approx(0.4)
+    # b=1 → b' = 1 - p_break
+    assert kernel_update(1.0, k) == pytest.approx(0.8)
+
+
+def test_kernel_update_rejects_missing_keys():
+    with pytest.raises(ValueError, match="missing"):
+        kernel_update(0.5, {"foo": 0.1})
+
+
+# ---------------------------------------------------------------------------
+# compute_transition_kernel_from_pairs — post-hoc Beta-smoothed estimate
+# ---------------------------------------------------------------------------
+
+def test_compute_kernel_empty_pairs_returns_uniform_laplace():
+    out = compute_transition_kernel_from_pairs([])
+    # Beta(1,1) on zero data → p_fix = 1/(0+2) = 0.5, ditto p_break
+    assert out["P_fix_given_broken"] == pytest.approx(0.5)
+    assert out["P_break_given_correct"] == pytest.approx(0.5)
+    assert out["n_pairs"] == 0
+    assert out["raw_counts"] == {"0->0": 0, "0->1": 0, "1->0": 0, "1->1": 0}
+
+
+def test_compute_kernel_counts_and_smoothing():
+    # Pairs: 3× 0→1 (fixes), 1× 0→0 (stay broken),
+    #        1× 1→0 (breaks), 2× 1→1 (stay correct)
+    pairs = [(0, 1)] * 3 + [(0, 0)] + [(1, 0)] + [(1, 1)] * 2
+    out = compute_transition_kernel_from_pairs(pairs)
+    # n_broken = 4, k_fix = 3 → (3+1)/(4+2) = 4/6 = 0.6666...
+    assert out["P_fix_given_broken"] == pytest.approx(4 / 6)
+    # n_correct = 3, k_break = 1 → (1+1)/(3+2) = 2/5
+    assert out["P_break_given_correct"] == pytest.approx(2 / 5)
+    # Laplace symmetry: stay + change = 1 within each regime
+    assert (out["P_fix_given_broken"] + out["P_stay_broken"]
+            == pytest.approx(1.0))
+    assert (out["P_break_given_correct"] + out["P_stay_correct"]
+            == pytest.approx(1.0))
+    assert out["n_pairs"] == 7
+    assert out["n_broken_observed"] == 4
+    assert out["n_correct_observed"] == 3
+    assert out["raw_counts"] == {"0->0": 1, "0->1": 3, "1->0": 1, "1->1": 2}
+    assert out["smoothing"] == "Beta(1.0,1.0)"
+
+
+def test_compute_kernel_drops_non_binary_pairs():
+    pairs = [(0, 1), (0, None), (None, 1), (0, 2), (1, 1)]
+    out = compute_transition_kernel_from_pairs(pairs)
+    # Only (0,1) and (1,1) survive
+    assert out["n_pairs"] == 2
+    assert out["raw_counts"]["0->1"] == 1
+    assert out["raw_counts"]["1->1"] == 1
+
+
+def test_compute_kernel_custom_prior():
+    # Strong prior toward p_fix = 0.9 even with no data
+    out = compute_transition_kernel_from_pairs([], alpha=9.0, beta=1.0)
+    assert out["P_fix_given_broken"] == pytest.approx(0.9)
+
+
+# ---------------------------------------------------------------------------
+# pairs_from_trajectories — trajectory unrolling helper
+# ---------------------------------------------------------------------------
+
+def test_pairs_from_trajectories_basic():
+    trajs = [
+        [{"Y": 0}, {"Y": 1}, {"Y": 1}],   # 2 pairs: (0,1) and (1,1)
+        [{"Y": 1}, {"Y": 0}],             # 1 pair: (1,0)
+        [{"Y": 1}],                       # no pairs (single step)
+    ]
+    pairs = pairs_from_trajectories(trajs)
+    assert sorted(pairs) == [(0, 1), (1, 0), (1, 1)]
+
+
+def test_pairs_from_trajectories_drops_missing_y():
+    trajs = [
+        [{"Y": 0}, {"Y": None}, {"Y": 1}],   # (0,None) and (None,1) both dropped
+        [{"Y": 1}, {"Y": 0}],
+    ]
+    pairs = pairs_from_trajectories(trajs)
+    assert pairs == [(1, 0)]
+
+
+def test_pairs_from_trajectories_custom_key():
+    trajs = [[{"y_hat": 0}, {"y_hat": 1}]]
+    assert pairs_from_trajectories(trajs, y_key="y_hat") == [(0, 1)]
+
+
+# ---------------------------------------------------------------------------
+# OnlineKernelCalibration — Beta-Binomial running estimator
+# ---------------------------------------------------------------------------
+
+def test_online_kernel_prior_only():
+    ok = OnlineKernelCalibration(init_kernel={"p_fix_broken": 0.4,
+                                              "p_break_correct": 0.07})
+    # No updates yet — falls back to init_kernel
+    assert ok.get() == {"p_fix_broken": 0.4, "p_break_correct": 0.07}
+
+
+def test_online_kernel_accepts_uppercase_init():
+    # init_kernel from kernel_all blob in transition_kernel.json
+    ok = OnlineKernelCalibration(init_kernel={
+        "P_fix_given_broken": 0.42,
+        "P_break_given_correct": 0.08,
+    })
+    assert ok.get()["p_fix_broken"] == pytest.approx(0.42)
+    assert ok.get()["p_break_correct"] == pytest.approx(0.08)
+
+
+def test_online_kernel_update_records_transitions():
+    ok = OnlineKernelCalibration()
+    ok.update(0, 1)  # fix
+    ok.update(0, 1)  # fix
+    ok.update(0, 0)  # stay broken
+    ok.update(1, 0)  # break
+    ok.update(1, 1)  # stay correct
+    s = ok.summary()
+    assert s["n_broken_observed"] == 3
+    assert s["k_fix"] == 2
+    assert s["n_correct_observed"] == 2
+    assert s["k_break"] == 1
+    # Posterior: p_fix = (2+1)/(3+2) = 0.6; p_break = (1+1)/(2+2) = 0.5
+    est = ok.get()
+    assert est["p_fix_broken"] == pytest.approx(0.6)
+    assert est["p_break_correct"] == pytest.approx(0.5)
+
+
+def test_online_kernel_falls_back_per_regime():
+    # If we only observe broken->* transitions, p_break should still come
+    # from init_kernel (no n_correct samples yet).
+    ok = OnlineKernelCalibration(init_kernel={"p_fix_broken": 0.5,
+                                              "p_break_correct": 0.03})
+    for _ in range(10):
+        ok.update(0, 1)
+    est = ok.get()
+    # p_fix moved toward 1 (with Laplace from 0.5 toward (10+1)/(10+2))
+    assert est["p_fix_broken"] == pytest.approx(11 / 12)
+    # p_break unchanged — still the prior
+    assert est["p_break_correct"] == pytest.approx(0.03)
+
+
+def test_online_kernel_posterior_approaches_truth():
+    # True p_fix = 0.7, p_break = 0.1 over many samples — posterior mean
+    # should land close to truth.
+    import random
+    rng = random.Random(42)
+    ok = OnlineKernelCalibration()
+    for _ in range(2000):
+        # Half broken, half correct seeds
+        y_before = rng.choice([0, 1])
+        if y_before == 0:
+            y_after = 1 if rng.random() < 0.7 else 0
+        else:
+            y_after = 0 if rng.random() < 0.1 else 1
+        ok.update(y_before, y_after)
+    est = ok.get()
+    assert abs(est["p_fix_broken"] - 0.7) < 0.03
+    assert abs(est["p_break_correct"] - 0.1) < 0.03
+
+
+def test_online_kernel_thread_safe():
+    ok = OnlineKernelCalibration()
+    n_per_thread = 100
+    n_threads = 8
+
+    def worker():
+        for i in range(n_per_thread):
+            # Mix of all 4 transition types
+            ok.update(i % 2, (i + 1) % 2)
+
+    threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    s = ok.summary()
+    total = s["n_broken_observed"] + s["n_correct_observed"]
+    assert total == n_per_thread * n_threads
+
+
+def test_online_kernel_summary_serializable():
+    ok = OnlineKernelCalibration()
+    ok.update(0, 1)
+    ok.update(1, 0)
+    # summary() must be JSON-serializable so we can persist it at end-of-run
+    s = ok.summary()
+    json.dumps(s)  # no exception
+
+
+# ---------------------------------------------------------------------------
+# resolve_kernel — file-based + mode dispatch
+# ---------------------------------------------------------------------------
+
+def test_resolve_kernel_hardcoded_mode(tmp_path):
+    k, src, ok = resolve_kernel(tmp_path, mode="hardcoded")
+    assert k == DEFAULT_KERNEL
+    assert src == "hardcoded"
+    assert ok is None
+
+
+def test_resolve_kernel_measured_with_file(tmp_path):
+    # Write a transition_kernel.json with the production schema
+    (tmp_path / "transition_kernel.json").write_text(json.dumps({
+        "generator": "test",
+        "kernel_all": {
+            "P_fix_given_broken": 0.42,
+            "P_break_given_correct": 0.08,
+            "raw_counts": {"0->0": 5, "0->1": 5, "1->0": 1, "1->1": 9},
+            "n_pairs": 20,
+            "smoothing": "Beta(1,1)",
+        },
+    }))
+    k, src, ok = resolve_kernel(tmp_path, mode="measured")
+    assert k == {"p_fix_broken": 0.42, "p_break_correct": 0.08}
+    assert src == "measured"
+    assert ok is None
+
+
+def test_resolve_kernel_measured_no_file_falls_back(tmp_path):
+    k, src, ok = resolve_kernel(tmp_path, mode="measured")
+    assert k == DEFAULT_KERNEL
+    assert src == "default"
+    assert ok is None
+
+
+def test_resolve_kernel_online_returns_estimator(tmp_path):
+    (tmp_path / "transition_kernel.json").write_text(json.dumps({
+        "kernel_all": {"P_fix_given_broken": 0.6, "P_break_given_correct": 0.05},
+    }))
+    k, src, ok = resolve_kernel(tmp_path, mode="online")
+    assert k == {"p_fix_broken": 0.6, "p_break_correct": 0.05}
+    assert src == "measured"
+    assert isinstance(ok, OnlineKernelCalibration)
+    # Estimator starts at the measured kernel
+    assert ok.get() == {"p_fix_broken": 0.6, "p_break_correct": 0.05}
+
+
+def test_resolve_kernel_unknown_mode_raises():
+    with pytest.raises(ValueError, match="unknown kernel mode"):
+        resolve_kernel(pathlib.Path("/tmp"), mode="garbage")
+
+
+def test_resolve_kernel_explicit_path(tmp_path):
+    custom = tmp_path / "my_kernel.json"
+    custom.write_text(json.dumps({
+        "P_fix_given_broken": 0.55, "P_break_given_correct": 0.02,
+    }))
+    # No kernel_all wrapper — should still work
+    k, src, _ = resolve_kernel(tmp_path, mode="measured", kernel_path=custom)
+    assert k == {"p_fix_broken": 0.55, "p_break_correct": 0.02}
+    assert src == "measured"
