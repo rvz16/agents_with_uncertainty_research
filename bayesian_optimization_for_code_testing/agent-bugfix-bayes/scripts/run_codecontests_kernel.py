@@ -29,7 +29,7 @@ from abbo.realworld.agents.simple_agent import AgentCostConfig
 # Import functions from the existing runner
 sys.path.insert(0, str(ROOT / "scripts"))
 from run_codecontests_full import (
-    FITTED_THETA, SPLIT_SEED, N_TRAIN, PRIOR,
+    FITTED_THETA, SPLIT_SEED, TRAIN_FRAC, PRIOR,
     MAX_GENERATORS, MAX_VERIFICATIONS, LLM_MODEL,
     run_dp, serialize, load_existing, save_progress,
 )
@@ -49,7 +49,8 @@ def main():
     rng = random.Random(SPLIT_SEED)
     all_ids = list_task_ids()
     rng.shuffle(all_ids)
-    test_ids = all_ids[N_TRAIN:]
+    n_train = int(round(TRAIN_FRAC * len(all_ids)))
+    test_ids = all_ids[n_train:]
     print(f"Held-out: {len(test_ids)} tasks")
     print(f"Measured kernel: {MEASURED_KERNEL_CC}")
 

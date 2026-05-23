@@ -182,8 +182,12 @@ def main() -> None:
                         "lcb_calibrate.py / mbpp_calibrate.py / humaneval_calibrate.py)")
     p.add_argument("--generators", required=True,
                    help="Comma-separated generator slugs (e.g. haiku45,sonnet45)")
-    p.add_argument("--n-train", type=int, required=True,
-                   help="Number of instances used for fitting likelihoods (train slice)")
+    p.add_argument("--n-train", type=int, default=None,
+                   help="Number of instances used for fitting likelihoods (train slice). "
+                        "If omitted, computed from --train-frac (default 0.75).")
+    p.add_argument("--train-frac", type=float, default=0.75,
+                   help="Fraction of instances in train slice if --n-train not given "
+                        "(default 0.75, i.e. 75/25 split)")
     p.add_argument("--split-seed", type=int, default=42,
                    help="Random seed for the train/test partition (default 42)")
     p.add_argument("--alpha", type=float, default=1.0,
@@ -198,7 +202,20 @@ def main() -> None:
 
     generators = [g.strip() for g in args.generators.split(",") if g.strip()]
     for gen in generators:
-        split_one_generator(src_dir, gen, args.n_train, args.split_seed,
+        # Resolve n_train per-generator (different generators may have different n)
+        if args.n_train is not None:
+            n_train_this = args.n_train
+        else:
+            # Need to peek at n_total for this generator's critic_results
+            crit_path = src_dir / gen / "critic_results.jsonl"
+            if not crit_path.exists():
+                print(f"[{gen}] missing {crit_path}; skipping")
+                continue
+            n_total = len({json.loads(l)["instance_id"]
+                          for l in crit_path.read_text().splitlines() if l.strip()})
+            n_train_this = int(round(args.train_frac * n_total))
+            print(f"[{gen}] n_total={n_total}, train_frac={args.train_frac} -> n_train={n_train_this}")
+        split_one_generator(src_dir, gen, n_train_this, args.split_seed,
                             args.alpha, args.beta)
 
 

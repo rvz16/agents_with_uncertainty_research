@@ -29,21 +29,27 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from abbo.realworld.agents.bayes_agent import DPPlanner, bayes_update
+from abbo.realworld.agents.kernel_helpers import (
+    DEFAULT_KERNEL, kernel_update, resolve_kernel, OnlineKernelCalibration,
+)
 from abbo.realworld.agents.llm_provider import build_llm_config_from_env, call_llm_or_raise
 from abbo.realworld.agents.simple_agent import AgentCostConfig
 from abbo.realworld.agents.swe_bench import (
     SWE_CRITIC_LIKELIHOODS, SWE_INSTANCE_POOL, SWE_CRITIC_NAMES,
+    PYTEST_ENV_PREFIX,
     _exec, _exec_stdin,
-    changed_files_from_patch, get_instance,
+    changed_files_from_patch, get_ftp, get_instance,
     list_instance_ids, prepare_repo, pull_image,
     run_critic, run_full_test,
     start_container, stop_container,
 )
+from abbo.realworld.telemetry import TelemetryLogger, measured_action
 
 
 # ---- Knobs ----
 SPLIT_SEED = 42
-N_TRAIN = 7              # same as test_swebench_calibration.py
+TRAIN_FRAC = 0.75   # default 75/25 train/test split
+N_TRAIN = None      # if None, computed as int(round(TRAIN_FRAC * n_total)); override via ABBO_N_TRAIN env or --n-train
 PRIOR = 0.5
 MAX_GENERATORS = 2       # SWE patches are big — keep budget small
 MAX_VERIFICATIONS = 1
@@ -51,7 +57,16 @@ LLM_MODEL = os.environ.get("ABBO_LLM_MODEL", "openai/gpt-oss-20b:free")
 _model_slug = LLM_MODEL.split("/")[-1].replace(":", "_").replace(".", "_")
 RESULTS_PATH = ROOT / "sim_results" / f"swebench_full_endtoend__{_model_slug}.json"
 
-VARIANTS = ("simple", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
+VARIANTS = (
+    "simple",
+    "best_of_3",
+    "threshold_L0", "threshold_L2", "threshold_L3",
+    "fixed_pipeline",
+    "greedy_hand", "greedy_fitted",
+    "dp_hand", "dp_fitted",
+    "self_refine", "reflexion",
+)
+TELEMETRY_PATH = ROOT / "logs" / f"action_telemetry_swebench__{_model_slug}.jsonl"
 
 # Cached fitted theta from the SWE calibration run (allure artifact 9e7fd0d7)
 FITTED_THETA = {
@@ -202,6 +217,24 @@ def reset_repo_for_variant(cname: str, instance: dict) -> None:
     prepare_repo(cname, instance, apply_fix=False)
 
 
+def _tlog(logger, run_id, instance_id, action_type, runtime_s,
+          passed=None, belief_before=None, model_name=None, metadata=None):
+    """Write one telemetry record if logger is provided."""
+    if logger is None:
+        return
+    logger.write({
+        "run_id": run_id,
+        "dataset": "swebench",
+        "instance_id": instance_id,
+        "action_type": action_type,
+        "runtime_seconds": runtime_s,
+        "model_name": model_name,
+        "passed": passed,
+        "belief_before": belief_before,
+        "metadata": metadata or {},
+    })
+
+
 # ---- Result ----
 @dataclass
 class Result:
@@ -220,14 +253,19 @@ class Result:
 
 
 # ---- Variants ----
-def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
+def run_simple(instance, cname, llm_cfg, costs, n_retries=2,
+               logger=None, run_id=None):
     res = Result(instance_id=instance["instance_id"], variant="simple")
     start = time.perf_counter()
     issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
     for attempt in range(n_retries):
         files = get_files_block(cname, instance)
         prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+        t0 = time.perf_counter()
         r = call_llm_or_raise(prompt, llm_cfg)
+        _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0,
+              model_name=llm_cfg.model)
         res.n_llm_calls += 1
         res.total_cost += costs.c_llm_call
         res.completion_tokens += r.completion_tokens
@@ -236,10 +274,11 @@ def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
             res.n_patch_apply_fails += 1
             res.actions.append({"step": attempt, "n_blocks": n_blocks,
                                 "n_applied": n_ok, "applied": False})
-            # Reset for next attempt (the failed apply may have left state weird)
             reset_repo_for_variant(cname, instance)
             continue
+        t0 = time.perf_counter()
         ok, _ = run_full_test(cname, instance)
+        _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0, passed=ok)
         res.n_full_tests += 1
         res.total_cost += costs.c_full_test
         res.actions.append({"step": attempt, "n_blocks": n_blocks,
@@ -249,7 +288,6 @@ def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
             res.fixed = True
             res.final_action = "verify_pass"
             break
-        # Failed verify → reset for next attempt
         reset_repo_for_variant(cname, instance)
     if not res.fixed:
         res.final_action = res.final_action or "exhausted"
@@ -267,16 +305,23 @@ def _q_one_step_critic(b, c, theta, costs):
         + (1-p) * max(0.0, -costs.c_full_test + bf * costs.reward)
 
 
-def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0.5):
+def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0.5,
+               logger=None, run_id=None, kernel=None, online_kernel=None):
+    """kernel: dict {p_fix_broken, p_break_correct}; if None, uses DEFAULT_KERNEL.
+    online_kernel: OnlineKernelCalibration; if provided, kernel updates after each verify."""
+    if kernel is None:
+        kernel = DEFAULT_KERNEL
     res = Result(instance_id=instance["instance_id"], variant=f"greedy_{label}")
     start = time.perf_counter()
     issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
     belief = prior; gen_left = max_gen
     crit_used: set[str] = set(); step = 0
     has_patch = False
+    prev_Y = 0  # SWE-bench seed is buggy by construction
     while step < 10:
+        active_kernel = online_kernel.get() if online_kernel is not None else kernel
         Q_bail = 0.0
-        # Only allow verify once a patch is actually in place.
         Q_verify = (-costs.c_full_test + belief * costs.reward) if has_patch else -math.inf
         Q_critics = {c: _q_one_step_critic(belief, c, theta, costs)
                      for c in theta if c not in crit_used}
@@ -284,7 +329,7 @@ def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0
                           if Q_critics else (None, -math.inf))
         Q_gen = -math.inf
         if gen_left > 0:
-            b_after = belief * 0.95 + (1-belief) * 0.50
+            b_after = kernel_update(belief, active_kernel)
             Q_gen = -costs.c_llm_call - costs.c_full_test + b_after * costs.reward
         choices = [("bail", Q_bail), ("verify", Q_verify)]
         if best_c: choices.append((f"critic:{best_c}", best_q))
@@ -294,18 +339,28 @@ def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0
         if action == "bail":
             res.final_action = "bail"; break
         if action == "verify":
+            t0 = time.perf_counter()
             ok, _ = run_full_test(cname, instance)
+            _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0,
+                  passed=ok, belief_before=belief)
             res.n_full_tests += 1; res.total_cost += costs.c_full_test
             res.actions.append({"step": step, "action": "verify", "ok": ok, "b": belief})
+            y_now = 1 if ok else 0
+            if online_kernel is not None and prev_Y is not None:
+                online_kernel.update(prev_Y, y_now)
+            prev_Y = y_now
             if ok:
                 res.fixed = True; res.final_action = "verify_pass"; break
             belief = 0.05
             has_patch = False
-            crit_used = set()  # repo reset → new critic epoch
+            crit_used = set()
             reset_repo_for_variant(cname, instance)
         elif action.startswith("critic:"):
             cn = action.split(":", 1)[1]
+            t0 = time.perf_counter()
             passed, _ = run_critic(cname, cn, instance)
+            _tlog(logger, run_id, iid, cn, time.perf_counter() - t0,
+                  passed=passed, belief_before=belief)
             res.n_critic_runs += 1; res.total_cost += costs.c_critic_test
             belief = bayes_update(belief, cn, passed, likelihoods=theta)
             crit_used.add(cn)
@@ -313,17 +368,19 @@ def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0
         else:  # generate
             files = get_files_block(cname, instance)
             prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+            t0 = time.perf_counter()
             r = call_llm_or_raise(prompt, llm_cfg)
+            _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0,
+                  belief_before=belief, model_name=llm_cfg.model)
             res.n_llm_calls += 1; res.total_cost += costs.c_llm_call
             res.completion_tokens += r.completion_tokens
             applied, n_blocks, n_ok = apply_llm_patch(cname, r.text)
             gen_left -= 1
             if applied:
                 has_patch = True
-                belief = belief * 0.95 + (1-belief) * 0.50
+                belief = kernel_update(belief, active_kernel)
                 crit_used = set()
             else:
-                # Patch didn't apply — repo unchanged, belief unchanged.
                 res.n_patch_apply_fails += 1
                 reset_repo_for_variant(cname, instance)
                 has_patch = False
@@ -336,35 +393,54 @@ def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0
     return res
 
 
-def run_dp(instance, cname, theta, label, llm_cfg, costs, planner,
-           max_gen=2, max_ver=1, prior=0.5):
+def run_dp(instance, cname, theta, label, llm_cfg, costs, make_planner,
+           max_gen=2, max_ver=1, prior=0.5,
+           logger=None, run_id=None, kernel=None, online_kernel=None):
+    """make_planner: callable(critic_likelihoods, transition_kernel) -> DPPlanner (pre-solved).
+    kernel/online_kernel: same as run_greedy."""
+    if kernel is None:
+        kernel = DEFAULT_KERNEL
     res = Result(instance_id=instance["instance_id"], variant=f"dp_{label}")
     start = time.perf_counter()
     issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
     belief = prior; gen_left = max_gen; ver_left = max_ver
     crit_used: frozenset[str] = frozenset(); step = 0
     has_patch = False
+    prev_Y = 0
+    active_kernel = online_kernel.get() if online_kernel is not None else kernel
+    planner = make_planner(theta, active_kernel)
     while step < 12:
         action, _q = planner.choose_action(belief, gen_left, crit_used, ver_left)
-        # DPPlanner doesn't know about has_patch — override verify before any patch exists.
         if action == "verify" and not has_patch:
             action = "generate:override" if gen_left > 0 else "bail_out"
         if action == "bail_out":
             res.final_action = "bail"; break
         if action == "verify":
+            t0 = time.perf_counter()
             ok, _ = run_full_test(cname, instance)
+            _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0,
+                  passed=ok, belief_before=belief)
             res.n_full_tests += 1; res.total_cost += costs.c_full_test
             ver_left -= 1
             res.actions.append({"step": step, "action": "verify", "ok": ok, "b": belief})
+            y_now = 1 if ok else 0
+            if online_kernel is not None and prev_Y is not None:
+                online_kernel.update(prev_Y, y_now)
+                planner = make_planner(theta, online_kernel.get())
+            prev_Y = y_now
             if ok:
                 res.fixed = True; res.final_action = "verify_pass"; break
             belief = 0.05
             has_patch = False
-            crit_used = frozenset()  # repo reset → new critic epoch
+            crit_used = frozenset()
             reset_repo_for_variant(cname, instance)
         elif action.startswith("critic:"):
             cn = action.split(":", 1)[1]
+            t0 = time.perf_counter()
             passed, _ = run_critic(cname, cn, instance)
+            _tlog(logger, run_id, iid, cn, time.perf_counter() - t0,
+                  passed=passed, belief_before=belief)
             res.n_critic_runs += 1; res.total_cost += costs.c_critic_test
             belief = bayes_update(belief, cn, passed, likelihoods=theta)
             crit_used = crit_used | frozenset([cn])
@@ -372,17 +448,20 @@ def run_dp(instance, cname, theta, label, llm_cfg, costs, planner,
         elif action.startswith("generate:"):
             files = get_files_block(cname, instance)
             prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+            t0 = time.perf_counter()
             r = call_llm_or_raise(prompt, llm_cfg)
+            _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0,
+                  belief_before=belief, model_name=llm_cfg.model)
             res.n_llm_calls += 1; res.total_cost += costs.c_llm_call
             res.completion_tokens += r.completion_tokens
             applied, n_blocks, n_ok = apply_llm_patch(cname, r.text)
             gen_left -= 1
+            active_kernel = online_kernel.get() if online_kernel is not None else kernel
             if applied:
                 has_patch = True
-                belief = belief * 0.95 + (1-belief) * 0.50
+                belief = kernel_update(belief, active_kernel)
                 crit_used = frozenset()
             else:
-                # Patch didn't apply — repo unchanged, belief unchanged.
                 res.n_patch_apply_fails += 1
                 reset_repo_for_variant(cname, instance)
                 has_patch = False
@@ -391,6 +470,332 @@ def run_dp(instance, cname, theta, label, llm_cfg, costs, planner,
         step += 1
     if not res.fixed and not res.final_action:
         res.final_action = "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+# ---- Ordered critic sequence (L0 → L1 → L2 → L3) ----
+SWE_CRITICS_ORDERED = ["critic_syntax", "critic_lint", "critic_early", "critic_mid"]
+
+# Maps threshold variant name → critics to gate on
+THRESHOLD_CRITICS = {
+    "threshold_L0": ["critic_syntax"],
+    "threshold_L2": ["critic_syntax", "critic_early"],
+    "threshold_L3": SWE_CRITICS_ORDERED,
+}
+
+REFINE_PROMPT_TEMPLATE = """You are a software engineer fixing a bug in a Python repository.
+
+Issue:
+{issue}
+
+Files you may need to modify (current contents shown below):
+{files_block}
+
+Your previous patch did not pass the following checks:
+{feedback}
+
+Please provide a revised patch that addresses these issues.
+
+Produce one or more SEARCH/REPLACE blocks that fix the bug. Each block must be:
+
+```
+<<<<<<< SEARCH path/to/file.py
+exact lines to find
+(must match file contents byte-for-byte including indentation)
+=======
+exact replacement lines
+>>>>>>> REPLACE
+```
+
+Return ONLY the SEARCH/REPLACE blocks (no explanation, no markdown fence around the whole thing).
+Keep blocks small and targeted; one block per change-site."""
+
+REFLEXION_PROMPT_TEMPLATE = """You are a software engineer fixing a bug in a Python repository.
+
+Issue:
+{issue}
+
+Files you may need to modify (current contents shown below):
+{files_block}
+
+Your previous patch failed the test suite. Test output:
+{test_feedback}
+
+Reflect on what went wrong and provide a corrected patch.
+
+Produce one or more SEARCH/REPLACE blocks that fix the bug. Each block must be:
+
+```
+<<<<<<< SEARCH path/to/file.py
+exact lines to find
+(must match file contents byte-for-byte including indentation)
+=======
+exact replacement lines
+>>>>>>> REPLACE
+```
+
+Return ONLY the SEARCH/REPLACE blocks (no explanation, no markdown fence around the whole thing).
+Keep blocks small and targeted; one block per change-site."""
+
+
+def _collect_critic_feedback(cname: str, instance: dict, critics: list[str]) -> str:
+    """Run listed critics, return human-readable failure summary."""
+    failures = []
+    for cn in critics:
+        passed, msg = run_critic(cname, cn, instance)
+        if not passed:
+            failures.append(f"- {cn}: {msg}")
+    return "\n".join(failures) if failures else "All checks passed."
+
+
+def _get_test_feedback(cname: str, instance: dict, timeout: int = 90) -> str:
+    """Run first FTP test and return short pytest output for reflection prompt."""
+    ftp = get_ftp(instance["instance_id"])[:2]
+    if not ftp:
+        return "No fail-to-pass tests available."
+    args = " ".join(ftp)
+    r = _exec(cname, PYTEST_ENV_PREFIX + f"python -m pytest --tb=short -q {args} 2>&1 | tail -40",
+              timeout=timeout)
+    return ((r.stdout or "") + (r.stderr or ""))[:600].strip() or "No output captured."
+
+
+# ---- New variant runners ----
+
+def run_best_of_n(instance, cname, llm_cfg, costs, n=3, logger=None, run_id=None):
+    """Generate up to n patches independently, verify each, return on first success."""
+    res = Result(instance_id=instance["instance_id"], variant="best_of_3")
+    start = time.perf_counter()
+    issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
+    for attempt in range(n):
+        reset_repo_for_variant(cname, instance)
+        files = get_files_block(cname, instance)
+        prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+        t0 = time.perf_counter()
+        r = call_llm_or_raise(prompt, llm_cfg)
+        _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0, model_name=llm_cfg.model)
+        res.n_llm_calls += 1
+        res.total_cost += costs.c_llm_call
+        res.completion_tokens += r.completion_tokens
+        applied, n_blocks, n_ok = apply_llm_patch(cname, r.text)
+        if not applied:
+            res.n_patch_apply_fails += 1
+            res.actions.append({"step": attempt, "action": "generate", "applied": False})
+            continue
+        t0 = time.perf_counter()
+        ok, _ = run_full_test(cname, instance)
+        _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0, passed=ok)
+        res.n_full_tests += 1
+        res.total_cost += costs.c_full_test
+        res.actions.append({"step": attempt, "action": "verify", "applied": True, "ok": ok})
+        if ok:
+            res.fixed = True
+            res.final_action = "verify_pass"
+            break
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_threshold(instance, cname, variant_name, critics, llm_cfg, costs,
+                  max_gen=2, logger=None, run_id=None):
+    """Generate, gate full verification on all threshold critics passing."""
+    res = Result(instance_id=instance["instance_id"], variant=variant_name)
+    start = time.perf_counter()
+    issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
+    for attempt in range(max_gen):
+        reset_repo_for_variant(cname, instance)
+        files = get_files_block(cname, instance)
+        prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+        t0 = time.perf_counter()
+        r = call_llm_or_raise(prompt, llm_cfg)
+        _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0, model_name=llm_cfg.model)
+        res.n_llm_calls += 1
+        res.total_cost += costs.c_llm_call
+        res.completion_tokens += r.completion_tokens
+        applied, _, _ = apply_llm_patch(cname, r.text)
+        if not applied:
+            res.n_patch_apply_fails += 1
+            res.actions.append({"step": attempt, "action": "generate", "applied": False})
+            continue
+        gate = True
+        for cn in critics:
+            t0 = time.perf_counter()
+            passed, _ = run_critic(cname, cn, instance)
+            _tlog(logger, run_id, iid, cn, time.perf_counter() - t0, passed=passed)
+            res.n_critic_runs += 1
+            res.total_cost += costs.c_critic_test
+            res.actions.append({"step": attempt, "action": f"critic:{cn}", "passed": passed})
+            if not passed:
+                gate = False
+                break
+        if gate:
+            t0 = time.perf_counter()
+            ok, _ = run_full_test(cname, instance)
+            _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0, passed=ok)
+            res.n_full_tests += 1
+            res.total_cost += costs.c_full_test
+            res.actions.append({"step": attempt, "action": "verify", "ok": ok})
+            if ok:
+                res.fixed = True
+                res.final_action = "verify_pass"
+                break
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_fixed_pipeline(instance, cname, llm_cfg, costs, max_gen=2, logger=None, run_id=None):
+    """Run L0→L1→L2→L3 in fixed order before each verify attempt."""
+    res = Result(instance_id=instance["instance_id"], variant="fixed_pipeline")
+    start = time.perf_counter()
+    issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
+    for attempt in range(max_gen):
+        reset_repo_for_variant(cname, instance)
+        files = get_files_block(cname, instance)
+        prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+        t0 = time.perf_counter()
+        r = call_llm_or_raise(prompt, llm_cfg)
+        _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0, model_name=llm_cfg.model)
+        res.n_llm_calls += 1
+        res.total_cost += costs.c_llm_call
+        res.completion_tokens += r.completion_tokens
+        applied, _, _ = apply_llm_patch(cname, r.text)
+        if not applied:
+            res.n_patch_apply_fails += 1
+            res.actions.append({"step": attempt, "action": "generate", "applied": False})
+            continue
+        gate = True
+        for cn in SWE_CRITICS_ORDERED:
+            t0 = time.perf_counter()
+            passed, _ = run_critic(cname, cn, instance)
+            _tlog(logger, run_id, iid, cn, time.perf_counter() - t0, passed=passed)
+            res.n_critic_runs += 1
+            res.total_cost += costs.c_critic_test
+            res.actions.append({"step": attempt, "action": f"critic:{cn}", "passed": passed})
+            if not passed:
+                gate = False
+                break
+        if gate:
+            t0 = time.perf_counter()
+            ok, _ = run_full_test(cname, instance)
+            _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0, passed=ok)
+            res.n_full_tests += 1
+            res.total_cost += costs.c_full_test
+            res.actions.append({"step": attempt, "action": "verify", "ok": ok})
+            if ok:
+                res.fixed = True
+                res.final_action = "verify_pass"
+                break
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_self_refine(instance, cname, llm_cfg, costs, max_rounds=2, logger=None, run_id=None):
+    """Generate → run critics → if fail, refine with feedback → verify."""
+    res = Result(instance_id=instance["instance_id"], variant="self_refine")
+    start = time.perf_counter()
+    issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
+    current_prompt = PROMPT_TEMPLATE.format(
+        issue=issue, files_block=get_files_block(cname, instance))
+    for rnd in range(max_rounds + 1):
+        reset_repo_for_variant(cname, instance)
+        t0 = time.perf_counter()
+        r = call_llm_or_raise(current_prompt, llm_cfg)
+        _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0, model_name=llm_cfg.model)
+        res.n_llm_calls += 1
+        res.total_cost += costs.c_llm_call
+        res.completion_tokens += r.completion_tokens
+        applied, _, _ = apply_llm_patch(cname, r.text)
+        if not applied:
+            res.n_patch_apply_fails += 1
+            res.actions.append({"round": rnd, "action": "generate", "applied": False})
+            break
+        # Run all critics to decide: verify or refine?
+        feedback_parts = []
+        for cn in SWE_CRITICS_ORDERED:
+            t0 = time.perf_counter()
+            passed, msg = run_critic(cname, cn, instance)
+            _tlog(logger, run_id, iid, cn, time.perf_counter() - t0, passed=passed)
+            res.n_critic_runs += 1
+            res.total_cost += costs.c_critic_test
+            if not passed:
+                feedback_parts.append(f"- {cn}: {msg}")
+        res.actions.append({"round": rnd, "action": "critics",
+                            "n_failed": len(feedback_parts)})
+        if not feedback_parts or rnd == max_rounds:
+            # Critics passed (or last round) → verify
+            t0 = time.perf_counter()
+            ok, _ = run_full_test(cname, instance)
+            _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0, passed=ok)
+            res.n_full_tests += 1
+            res.total_cost += costs.c_full_test
+            res.actions.append({"round": rnd, "action": "verify", "ok": ok})
+            if ok:
+                res.fixed = True
+                res.final_action = "verify_pass"
+            break
+        else:
+            feedback = "\n".join(feedback_parts)
+            current_prompt = REFINE_PROMPT_TEMPLATE.format(
+                issue=issue,
+                files_block=get_files_block(cname, instance),
+                feedback=feedback,
+            )
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_reflexion(instance, cname, llm_cfg, costs, max_rounds=2, logger=None, run_id=None):
+    """Generate → verify → if fail, reflect on test output → regenerate → verify."""
+    res = Result(instance_id=instance["instance_id"], variant="reflexion")
+    start = time.perf_counter()
+    issue = instance["problem_statement"][:4000]
+    iid = instance["instance_id"]
+    current_prompt = PROMPT_TEMPLATE.format(
+        issue=issue, files_block=get_files_block(cname, instance))
+    for rnd in range(max_rounds + 1):
+        reset_repo_for_variant(cname, instance)
+        t0 = time.perf_counter()
+        r = call_llm_or_raise(current_prompt, llm_cfg)
+        _tlog(logger, run_id, iid, "generate", time.perf_counter() - t0, model_name=llm_cfg.model)
+        res.n_llm_calls += 1
+        res.total_cost += costs.c_llm_call
+        res.completion_tokens += r.completion_tokens
+        applied, _, _ = apply_llm_patch(cname, r.text)
+        if not applied:
+            res.n_patch_apply_fails += 1
+            res.actions.append({"round": rnd, "action": "generate", "applied": False})
+            break
+        t0 = time.perf_counter()
+        ok, _ = run_full_test(cname, instance)
+        _tlog(logger, run_id, iid, "verify", time.perf_counter() - t0, passed=ok)
+        res.n_full_tests += 1
+        res.total_cost += costs.c_full_test
+        res.actions.append({"round": rnd, "action": "verify", "ok": ok})
+        if ok:
+            res.fixed = True
+            res.final_action = "verify_pass"
+            break
+        if rnd < max_rounds:
+            test_feedback = _get_test_feedback(cname, instance)
+            current_prompt = REFLEXION_PROMPT_TEMPLATE.format(
+                issue=issue,
+                files_block=get_files_block(cname, instance),
+                test_feedback=test_feedback,
+            )
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
     res.wall_clock = time.perf_counter() - start
     return res
 
@@ -427,7 +832,26 @@ def main():
     rng = random.Random(SPLIT_SEED)
     all_ids = SWE_INSTANCE_POOL[:]   # 11 small-deps instances
     rng.shuffle(all_ids)
-    test_ids = all_ids[N_TRAIN:]
+    # Resolve n_train: env var override > computed from TRAIN_FRAC
+    env_n_train = os.environ.get("ABBO_N_TRAIN")
+    if env_n_train is not None:
+        n_train_active = int(env_n_train)
+    else:
+        n_train_active = int(round(TRAIN_FRAC * len(all_ids)))
+    if n_train_active < 1 or n_train_active >= len(all_ids):
+        raise SystemExit(
+            f"n_train {n_train_active} invalid (must be 1..{len(all_ids)-1}; "
+            f"total instances = {len(all_ids)})"
+        )
+    test_ids = all_ids[n_train_active:]
+    # Drop instances that don't exist in the currently-loaded dataset
+    # (e.g. Lite-only IDs when running on SWE-bench_Verified).
+    from abbo.realworld.agents.swe_bench import list_instance_ids as _present_ids
+    _present = set(_present_ids())
+    _skipped = [tid for tid in test_ids if tid not in _present]
+    if _skipped:
+        print(f"Skipping {len(_skipped)} instance(s) not in current dataset: {_skipped}")
+    test_ids = [tid for tid in test_ids if tid in _present]
     print(f"Held-out: {len(test_ids)} instances")
     for tid in test_ids:
         print(f"  {tid}")
@@ -436,10 +860,50 @@ def main():
     results = state.setdefault("results", {})
 
     costs = AgentCostConfig()
-    dp_hand = DPPlanner(costs, MAX_GENERATORS, MAX_VERIFICATIONS,
-                        critic_likelihoods=SWE_CRITIC_LIKELIHOODS); dp_hand.solve()
-    dp_fitted = DPPlanner(costs, MAX_GENERATORS, MAX_VERIFICATIONS,
-                          critic_likelihoods=FITTED_THETA); dp_fitted.solve()
+
+    # Resolve transition kernel from env var ABBO_KERNEL_MODE
+    # ('measured' default; 'online'; 'hardcoded') and ABBO_KERNEL_DIR (optional).
+    kernel_mode = os.environ.get("ABBO_KERNEL_MODE", "measured").lower()
+    if kernel_mode not in ("measured", "online", "hardcoded"):
+        raise SystemExit(f"invalid ABBO_KERNEL_MODE: {kernel_mode!r}")
+    kernel_dir_env = os.environ.get("ABBO_KERNEL_DIR", "").strip()
+    if kernel_dir_env:
+        kernel, kernel_src, online_kernel = resolve_kernel(Path(kernel_dir_env), kernel_mode)
+    else:
+        # Fallback: try sim_results/transition_kernels.json
+        legacy_path = ROOT / "sim_results" / "transition_kernels.json"
+        if legacy_path.exists() and kernel_mode != "hardcoded":
+            jj = json.loads(legacy_path.read_text())
+            sw = jj.get("swebench", {})
+            if "p_fix_broken" in sw:
+                measured = {"p_fix_broken": float(sw["p_fix_broken"]),
+                            "p_break_correct": float(sw["p_break_correct"]
+                                                     if sw.get("p_break_correct") is not None
+                                                     else jj.get("prior_break_correct", 0.05))}
+                kernel = measured
+                kernel_src = "measured (sim_results/transition_kernels.json)"
+                online_kernel = (OnlineKernelCalibration(init_kernel=measured)
+                                  if kernel_mode == "online" else None)
+            else:
+                kernel = DEFAULT_KERNEL.copy(); kernel_src = "default (no swebench kernel)"
+                online_kernel = (OnlineKernelCalibration(init_kernel=kernel)
+                                  if kernel_mode == "online" else None)
+        else:
+            kernel = DEFAULT_KERNEL.copy()
+            kernel_src = ("hardcoded (forced)" if kernel_mode == "hardcoded"
+                          else "default (no kernel file)")
+            online_kernel = (OnlineKernelCalibration(init_kernel=kernel)
+                              if kernel_mode == "online" else None)
+    print(f"Transition kernel: source={kernel_src}, "
+          f"p_fix={kernel['p_fix_broken']:.3f}, p_break={kernel['p_break_correct']:.3f}, "
+          f"mode={kernel_mode}")
+
+    # Factory used both for initial solve and for online-mode re-solves
+    def make_dp(theta_dict, kern):
+        p = DPPlanner(costs, MAX_GENERATORS, MAX_VERIFICATIONS,
+                      critic_likelihoods=theta_dict, transition_kernel=kern)
+        p.solve()
+        return p
 
     llm_cfg = build_llm_config_from_env(
         default_provider="openrouter",
@@ -455,6 +919,8 @@ def main():
     done = sum(1 for tid in test_ids for v in VARIANTS if results.get(f"{tid}|{v}"))
     print(f"\nResume: {done}/{total} pairs already done.\n")
 
+    tlog = TelemetryLogger(TELEMETRY_PATH)
+    print(f"Telemetry → {TELEMETRY_PATH}")
     started = time.time()
     for i, tid in enumerate(test_ids):
         # Skip if all variants done for this instance
@@ -484,23 +950,50 @@ def main():
                     print(f"  [{v}] reset failed: {e}")
                     continue
 
+                run_id = f"{_model_slug}__{tid}__{v}"
                 try:
                     if v == "simple":
-                        r = run_simple(instance, cname, llm_cfg, costs)
+                        r = run_simple(instance, cname, llm_cfg, costs,
+                                       logger=tlog, run_id=run_id)
+                    elif v == "best_of_3":
+                        r = run_best_of_n(instance, cname, llm_cfg, costs, n=3,
+                                          logger=tlog, run_id=run_id)
+                    elif v in THRESHOLD_CRITICS:
+                        r = run_threshold(instance, cname, v, THRESHOLD_CRITICS[v],
+                                          llm_cfg, costs, MAX_GENERATORS,
+                                          logger=tlog, run_id=run_id)
+                    elif v == "fixed_pipeline":
+                        r = run_fixed_pipeline(instance, cname, llm_cfg, costs,
+                                               MAX_GENERATORS,
+                                               logger=tlog, run_id=run_id)
                     elif v == "greedy_hand":
                         r = run_greedy(instance, cname, SWE_CRITIC_LIKELIHOODS, "hand",
-                                       llm_cfg, costs, MAX_GENERATORS, PRIOR)
+                                       llm_cfg, costs, MAX_GENERATORS, PRIOR,
+                                       logger=tlog, run_id=run_id,
+                                       kernel=kernel, online_kernel=online_kernel)
                     elif v == "greedy_fitted":
                         r = run_greedy(instance, cname, FITTED_THETA, "fitted",
-                                       llm_cfg, costs, MAX_GENERATORS, PRIOR)
+                                       llm_cfg, costs, MAX_GENERATORS, PRIOR,
+                                       logger=tlog, run_id=run_id,
+                                       kernel=kernel, online_kernel=online_kernel)
                     elif v == "dp_hand":
                         r = run_dp(instance, cname, SWE_CRITIC_LIKELIHOODS, "hand",
-                                   llm_cfg, costs, dp_hand,
-                                   MAX_GENERATORS, MAX_VERIFICATIONS, PRIOR)
+                                   llm_cfg, costs, make_dp,
+                                   MAX_GENERATORS, MAX_VERIFICATIONS, PRIOR,
+                                   logger=tlog, run_id=run_id,
+                                   kernel=kernel, online_kernel=online_kernel)
                     elif v == "dp_fitted":
                         r = run_dp(instance, cname, FITTED_THETA, "fitted",
-                                   llm_cfg, costs, dp_fitted,
-                                   MAX_GENERATORS, MAX_VERIFICATIONS, PRIOR)
+                                   llm_cfg, costs, make_dp,
+                                   MAX_GENERATORS, MAX_VERIFICATIONS, PRIOR,
+                                   logger=tlog, run_id=run_id,
+                                   kernel=kernel, online_kernel=online_kernel)
+                    elif v == "self_refine":
+                        r = run_self_refine(instance, cname, llm_cfg, costs,
+                                            logger=tlog, run_id=run_id)
+                    elif v == "reflexion":
+                        r = run_reflexion(instance, cname, llm_cfg, costs,
+                                          logger=tlog, run_id=run_id)
                     else:
                         continue
                 except Exception as e:
@@ -530,7 +1023,7 @@ def main():
                        for r in by_v["simple"]) / len(by_v["simple"])
     else:
         baseline = 0.0
-    for v in VARIANTS:
+    for v in (*VARIANTS, *[k for k in by_v if k not in VARIANTS]):
         rs = by_v.get(v, [])
         if not rs: continue
         n = len(rs)
@@ -542,10 +1035,11 @@ def main():
 
     state["llm_model"] = LLM_MODEL
     state["fitted_theta"] = FITTED_THETA
-    state["n_train"] = N_TRAIN
+    state["n_train"] = n_train_active
     state["n_test"] = len(test_ids)
     save_progress(RESULTS_PATH, state)
     print(f"\nSaved: {RESULTS_PATH}")
+    tlog.close()
 
 
 if __name__ == "__main__":
