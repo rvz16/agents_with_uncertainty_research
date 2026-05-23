@@ -164,14 +164,24 @@ def test_mode_for_benchmark_unknown():
 
 
 def test_mode_ranges_are_sane():
-    # FAST mode: keep c_gen=10, c_critic small, c_ver sweep starts low
+    # Both modes use c_gen=10 (unified), c_critic asymmetry is what
+    # distinguishes them (FAST=1/1/1, SLOW=1/2/5), AND both modes cap
+    # their c_ver sweep at 0.9 · reward = 90 to keep the policy comparison
+    # methodologically coherent (c_ver < reward = 100 ensures AV's utility
+    # can be non-negative on correct patches).
     assert FAST_MODE.c_gen == 10.0
-    assert FAST_MODE.c_ver_range[0] < FAST_MODE.c_ver_range[1]
-    assert FAST_MODE.c_ver_current >= FAST_MODE.c_ver_range[0]
-    assert FAST_MODE.c_ver_current <= FAST_MODE.c_ver_range[1]
-    # SLOW mode: c_gen smaller, c_critic higher, c_ver range goes higher
-    assert SLOW_MODE.c_ver_range[1] > FAST_MODE.c_ver_range[1]
-    assert SLOW_MODE.c_ver_current >= SLOW_MODE.c_ver_range[0]
+    assert SLOW_MODE.c_gen == 10.0
+    # SLOW critics are heavier (Docker)
+    assert SLOW_MODE.c_critic_l2 > FAST_MODE.c_critic_l2
+    assert SLOW_MODE.c_critic_l3 > FAST_MODE.c_critic_l3
+    # Both modes cap at the same upper bound (reward-anchored)
+    assert FAST_MODE.c_ver_range[1] == SLOW_MODE.c_ver_range[1] == 90.0
+    # Each mode's current §2.5 c_ver sits inside its sweep range
+    assert FAST_MODE.c_ver_range[0] <= FAST_MODE.c_ver_current <= FAST_MODE.c_ver_range[1]
+    assert SLOW_MODE.c_ver_range[0] <= SLOW_MODE.c_ver_current <= SLOW_MODE.c_ver_range[1]
+    # Lower bound: positive and below current
+    assert FAST_MODE.c_ver_range[0] > 0
+    assert SLOW_MODE.c_ver_range[0] > 0
 
 
 # ---------------------------------------------------------------------------

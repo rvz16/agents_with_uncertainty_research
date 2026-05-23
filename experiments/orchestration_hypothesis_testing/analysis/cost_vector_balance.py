@@ -85,24 +85,24 @@ class CostMode:
 # the *lowest* c_gen was double-counting the FAST/SLOW asymmetry. Now the
 # only structural difference between modes is in c_critic (Docker-level
 # critics on SWE are measurably slower than function-level) and in the
-# c_ver sweep range. Naive unification — c_critic and c_ver values are
-# NOT rescaled to preserve the old ratios; SLOW's effective c_ver/c_gen
-# ratio drops from 6.0 to 3.0 as a result. Whether SLOW's previously-
-# balanced histograms remain balanced is now an empirical question that
-# the balance sweep answers.
+# c_ver sweep range.
 #
-# Both modes also extend their sweep ranges:
-#   FAST: was [1, 30], now [1, 100] — the previous sweep ceilinged at 30
-#         (median optimal c_ver = 30.0 = the ceiling), so the true FAST
-#         optimum was beyond the search range.
-#   SLOW: was [5, 100], now [5, 200] — with c_gen now 10, the "equivalent"
-#         range needs to scale up to keep the same upper-bound c_ver/c_gen
-#         ratio reachable.
+# c_ver sweep upper bound: capped at 0.9 · reward = 90. The previous sweep
+# upper-bounds (FAST=100, SLOW=200) violated the methodology constraint
+# c_ver < reward: when c_ver > reward, AV's utility is strictly negative
+# even on correct patches (reward · Y − c_ver < 0 for any Y), so AV
+# becomes trivially worst. The "balance" metric then saturates artificially
+# at the high-c_ver end — picking c_vers from this regime as "balance-
+# optimal" is meaningless because the comparison is degenerate-in-disguise.
+# The 0.9 buffer keeps AV competitive on Y=1 patches across plausible
+# priors. A stricter per-benchmark bound would be c_ver < reward · prior_Y1
+# (so AV has positive expected utility), but priors vary per cell — the
+# fixed 0.9·reward is a defensible mode-level cap.
 
 FAST_MODE = CostMode(
     name="FAST",
     c_gen=10.0, c_critic_l0=1.0, c_critic_l2=1.0, c_critic_l3=1.0,
-    c_ver_range=(1.0, 100.0), c_ver_current=5.0,
+    c_ver_range=(1.0, 90.0), c_ver_current=5.0,
     benchmarks=("lcb_easy", "lcb_medium", "lcb_hard",
                 "mbpp", "humaneval", "humanevalfix", "codecontests"),
 )
@@ -110,7 +110,7 @@ FAST_MODE = CostMode(
 SLOW_MODE = CostMode(
     name="SLOW",
     c_gen=10.0, c_critic_l0=1.0, c_critic_l2=2.0, c_critic_l3=5.0,
-    c_ver_range=(5.0, 200.0), c_ver_current=30.0,
+    c_ver_range=(5.0, 90.0), c_ver_current=30.0,
     benchmarks=("swe_lite", "swe_verified"),
 )
 
