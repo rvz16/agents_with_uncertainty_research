@@ -77,3 +77,109 @@ containers or images after run.
 ---
 
 (append future entries below this line, newest on top)
+
+---
+
+## 2026-05-23 — Shared online + post-hoc transition-kernel module
+
+Adopted PR #5's first follow-up request ("Online Kernel Calibration ported
+to a shared library"). Unified five copies of the post-hoc Beta(1,1)-smoothed
+kernel computation plus the live Beta-Binomial estimator into one module.
+
+- **New: `experiments/orchestration_hypothesis_testing/_common/kernel.py`.**
+  Exports `DEFAULT_KERNEL`, `kernel_update`, `compute_transition_kernel_from_pairs`,
+  `pairs_from_trajectories`, `OnlineKernelCalibration`, `resolve_kernel`. The
+  online estimator is a thread-safe Beta-Binomial running posterior with
+  per-regime fallback to the seed kernel. `resolve_kernel(gen_dir, mode)`
+  is a three-way switch: `measured` (load file or default), `online` (same
+  + return an estimator), `hardcoded` (always literature default).
+
+- **New: `tests/test_kernel.py`** — 24 unit tests covering kernel_update
+  with both lowercase/uppercase schemas, post-hoc Laplace smoothing, custom
+  Beta priors, online posterior convergence to ground truth (2000 samples),
+  thread-safety under 8 concurrent workers, per-regime fallback, and
+  resolve_kernel mode dispatch. All passing.
+
+- **Migrated callers** (4 of 5 — see exclusion below):
+  - `scripts/run_synthesis_live.py`: deleted the inline `DEFAULT_KERNEL`,
+    `kernel_update`, `load_kernel`, `_KernelCounts`, `OnlineKernelCalibration`
+    (~75 lines); now imports from `_common.kernel`. The 8-line load + mode
+    dispatch block collapses to `kernel, src, _ = resolve_kernel(...)`.
+  - `iter/refine.py:compute_kernel`: now a thin wrapper over the shared
+    helper. Preserves iter's legacy contract (returns `None` for an empty
+    regime rather than Laplace-uniform 0.5) for back-compat.
+  - `iter/kernel.py`: standalone CLI now uses the shared helper; output
+    schema (with `P_stay_*` fields under a `kernel_all` wrapper) unchanged.
+  - `analysis/compute_transition_kernel.py:_kernel_from_pairs`: shared
+    helper + legacy alias keys (`n_broken_transitions`, etc.) kept so
+    existing `transition_kernel.json` jq queries don't break.
+  - `scripts/synthesis_transition_kernel.py`: shared helper + literature-
+    prior fallback (0.5 / 0.05) for empty regimes overrides the helper's
+    Laplace-uniform default.
+
+- **Deliberately NOT migrated: `iter/swe_kernel.py:compute_kernel`.** Its
+  `transition_kernel.json` output is a flat unsmoothed schema (no
+  `kernel_all` wrapper, raw counts as `fix_count` etc.), consumed by the
+  SWE sections of `analysis.ipynb` with that exact shape. Migrating it
+  would be a downstream-visible JSON shape change and is scoped out. Note
+  is in `_common/kernel.py`'s module docstring.
+
+- **New `iter/refine.py` flag: `--kernel-mode {measured,online,hardcoded}`**
+  (default `measured`, no behavior change). When set to `online` or
+  `hardcoded`, the post-iter block also streams this run's (Y_t, Y_{t+1})
+  transitions through an `OnlineKernelCalibration` (seeded from the
+  src-dir calibration kernel for `online`, or `DEFAULT_KERNEL` for
+  `hardcoded`) and writes `transition_kernel_online_final.json` with the
+  Beta-Binomial posterior summary. This file is informational only — the
+  existing post-hoc `transition_kernel.json` is still produced, and
+  `compute_policy_comparison` continues to use the static kernel (a
+  methodology change for a future PR).
+
+### Verification
+
+- `python -m pytest tests/ -q` — **94 passed** (60 pre-existing + 34
+  kernel tests), no warnings beyond the existing urllib3 dependency warn.
+- Round-trip test on each migrated caller confirms output schemas match
+  pre-migration behavior bit-for-bit on hand-built fixtures.
+- All 4 migrated CLIs launch via `python -m <pkg>.<mod> --help` without
+  import errors.
+- The `--kernel-mode online` end-to-end path is exercised by a synthesized
+  iter_records.jsonl fixture; produces the expected `n_broken_observed`,
+  `k_fix`, etc. counts and `current_estimate`.
+
+### Post-review fixups (from self-review of PR #6)
+
+- `OnlineKernelCalibration.update()` now validates that y_before and
+  y_after are both in {0, 1}; previously, `update(None, 1)` silently
+  recorded a (correct → correct) transition because anything `!= 0`
+  fell through to the "else" branch. Both current callers
+  (iter/refine.py online block, scripts/run_synthesis_live.py per-variant
+  branches) already filter non-binary externally, so this is a tightening
+  of the contract, not a behavior break for production callers.
+- `OnlineKernelCalibration.__init__` now validates that init_kernel
+  carries the required keys at construction time, rather than letting a
+  malformed dict silently propagate and KeyError later inside `.get()`
+  on the first empty-regime fallback.
+- `scripts/run_synthesis_live.py` migration comment no longer claims
+  the abbo bridge is wired (it isn't — explicitly scoped out, see below).
+- `_common/kernel.py` drops a string-quoted forward ref now that
+  `from __future__ import annotations` is in scope.
+- Strengthened `test_online_kernel_thread_safe` to assert the per-regime
+  counts (`n_broken`, `k_fix`, `n_correct`, `k_break`) rather than just
+  the total, so a race that miscategorizes transitions can no longer
+  pass silently.
+- New tests: malformed kernel.json, missing required keys, init_kernel
+  validation, parameterized non-binary update rejection, asymmetric Beta
+  prior on a populated regime (pins the "P_fix + P_stay_broken ≠ 1 with
+  alpha ≠ beta" property the docstring claims).
+
+### Out of scope (deliberate non-changes)
+
+- `iter/swe_kernel.py` keeps its private compute_kernel (different schema).
+- `compute_policy_comparison` semantics unchanged — it still consumes the
+  static post-hoc kernel. Wiring it to the online posterior is a separate
+  methodology discussion.
+- abbo's `bayesian_optimization_for_code_testing/.../run_codecontests_full.py`
+  still imports the never-created `abbo.realworld.agents.kernel_helpers` +
+  `abbo.realworld.telemetry` modules; deferred since abbo is being retired.
+

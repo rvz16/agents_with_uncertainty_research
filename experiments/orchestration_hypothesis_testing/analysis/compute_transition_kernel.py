@@ -21,8 +21,10 @@ import argparse
 import hashlib
 import json
 import sys
-from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _common.kernel import compute_transition_kernel_from_pairs  # noqa: E402
 
 
 def _artifact_hash(record: dict) -> str:
@@ -49,30 +51,22 @@ def _annotate_identical(records: list[dict]) -> list[dict]:
     return annotated
 
 
-def _beta_smooth(success: int, total: int, a: float = 1.0, b: float = 1.0) -> float:
-    return (success + a) / (total + a + b)
-
-
 def _kernel_from_pairs(pairs: list[tuple[int, int]]) -> dict:
-    """pairs: list of (Y_t, Y_{t+1}) with Y in {0, 1}."""
-    counts = Counter(pairs)
-    n_broken = counts[(0, 0)] + counts[(0, 1)]
-    n_correct = counts[(1, 0)] + counts[(1, 1)]
-    p_fix = _beta_smooth(counts[(0, 1)], n_broken)
-    p_stay_broken = _beta_smooth(counts[(0, 0)], n_broken)
-    p_break = _beta_smooth(counts[(1, 0)], n_correct)
-    p_stay_correct = _beta_smooth(counts[(1, 1)], n_correct)
-    return {
-        "n_pairs": len(pairs),
-        "n_broken_transitions": n_broken,
-        "n_correct_transitions": n_correct,
-        "raw_counts": {f"{a}->{b}": counts[(a, b)] for a in (0, 1) for b in (0, 1)},
-        "P_fix_given_broken": p_fix,
-        "P_stay_broken": p_stay_broken,
-        "P_break_given_correct": p_break,
-        "P_stay_correct": p_stay_correct,
-        "smoothing": "Beta(1,1)",
-    }
+    """pairs: list of (Y_t, Y_{t+1}) with Y in {0, 1}.
+
+    Output schema preserved for downstream consumers: includes the legacy
+    `n_broken_transitions` / `n_correct_transitions` aliases alongside the
+    canonical `n_broken_observed` / `n_correct_observed`.
+    """
+    k = compute_transition_kernel_from_pairs(pairs)
+    # Legacy alias names — keep both so old jq queries against existing
+    # transition_kernel.json files still work.
+    k["n_broken_transitions"] = k["n_broken_observed"]
+    k["n_correct_transitions"] = k["n_correct_observed"]
+    # The pre-shared-module impl reported "Beta(1,1)" verbatim regardless of
+    # the actual prior; preserve that exact string for back-compat.
+    k["smoothing"] = "Beta(1,1)"
+    return k
 
 
 def main() -> None:

@@ -82,6 +82,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+# Shared transition-kernel utilities — moved here from a copy that previously
+# lived in compute_kernel() below. _common.kernel also hosts the online
+# Beta-Binomial estimator that --kernel-mode online activates.
+from _common.kernel import (  # noqa: E402
+    OnlineKernelCalibration,
+    compute_transition_kernel_from_pairs,
+    pairs_from_trajectories,
+    resolve_kernel,
+)
+
 logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(message)s",
                      datefmt="%H:%M:%S")
@@ -1108,7 +1118,17 @@ def write_combined_iter_policy(gen_root: Path) -> None:
 
 def compute_kernel(records_path: Path, generator: str) -> dict:
     """Compute Beta(1,1)-smoothed (Y_t, Y_{t+1}) transition kernel from
-    trajectory rows."""
+    trajectory rows.
+
+    Thin wrapper over _common.kernel.compute_transition_kernel_from_pairs.
+    Preserves the iter-output schema: {generator, kernel_all: {...},
+    n_instances}, with kernel_all containing P_fix_given_broken,
+    P_break_given_correct, raw_counts, n_pairs, smoothing — but NOT the
+    P_stay_* keys (which downstream consumers don't read here).
+
+    Returns p_fix / p_break as None (not the Laplace-uniform 0.5) when the
+    corresponding regime is empty, matching the pre-shared-module behavior.
+    """
     if not records_path.exists():
         return {}
     by_inst: dict[str, list[dict]] = {}
@@ -1122,25 +1142,20 @@ def compute_kernel(records_path: Path, generator: str) -> dict:
     for rs in by_inst.values():
         rs.sort(key=lambda r: r["step"])
 
-    counts = {"0->0": 0, "0->1": 0, "1->0": 0, "1->1": 0}
-    for inst, rs in by_inst.items():
-        for i in range(len(rs) - 1):
-            yt = rs[i].get("Y")
-            yt1 = rs[i + 1].get("Y")
-            if yt not in (0, 1) or yt1 not in (0, 1):
-                continue
-            counts[f"{yt}->{yt1}"] += 1
-    n_y0 = counts["0->0"] + counts["0->1"]
-    n_y1 = counts["1->0"] + counts["1->1"]
-    p_fix = (counts["0->1"] + 1) / (n_y0 + 2) if n_y0 > 0 else None
-    p_break = (counts["1->0"] + 1) / (n_y1 + 2) if n_y1 > 0 else None
+    pairs = pairs_from_trajectories(by_inst.values())
+    k = compute_transition_kernel_from_pairs(pairs)
+    # Iter's legacy contract: None when a regime is empty (callers do
+    # `if p_fix is not None`). The shared helper always returns the
+    # Laplace-uniform 0.5; override here for back-compat.
+    n_y0 = k["n_broken_observed"]
+    n_y1 = k["n_correct_observed"]
     return {
         "generator": generator,
         "kernel_all": {
-            "P_fix_given_broken": p_fix,
-            "P_break_given_correct": p_break,
-            "raw_counts": counts,
-            "n_pairs": sum(counts.values()),
+            "P_fix_given_broken": k["P_fix_given_broken"] if n_y0 > 0 else None,
+            "P_break_given_correct": k["P_break_given_correct"] if n_y1 > 0 else None,
+            "raw_counts": k["raw_counts"],
+            "n_pairs": k["n_pairs"],
             "smoothing": "Beta(1,1)",
         },
         "n_instances": len(by_inst),
@@ -1252,6 +1267,19 @@ def main() -> None:
     parser.add_argument("--extend-existing", action="store_true",
                         help="If set, skip instance_ids already present in iter_records.jsonl "
                              "(only run iter for new instances added by LCB pool expansion).")
+    parser.add_argument("--kernel-mode", default="measured",
+                        choices=["measured", "online", "hardcoded"],
+                        help="Transition-kernel source. 'measured' (default): "
+                             "load <src>/<gen>/transition_kernel.json if present, "
+                             "else fall back to literature default. 'online': "
+                             "also accumulate (Y_t, Y_{t+1}) transitions during "
+                             "this run and write <out>/<gen>/<method>/"
+                             "transition_kernel_online_final.json with the "
+                             "final Beta-Binomial posterior. 'hardcoded': "
+                             "always use the literature default (no file). The "
+                             "post-hoc kernel written to transition_kernel.json "
+                             "from this run's own trajectory is independent of "
+                             "this flag.")
     args = parser.parse_args()
 
     if args.variant == "swe" and args.method == "reflexion":
@@ -1512,6 +1540,50 @@ def main() -> None:
         # Compute kernel + policy comparison
         kernel = compute_kernel(records_path, gen)
         write_json(gen_out / "transition_kernel.json", kernel)
+
+        # --kernel-mode online: also write a Beta-Binomial posterior obtained
+        # by streaming this run's (Y_t, Y_{t+1}) transitions through an
+        # OnlineKernelCalibration seeded from the calibration kernel (or
+        # DEFAULT_KERNEL if none exists). This file is INFORMATIONAL —
+        # compute_policy_comparison above intentionally still uses the
+        # post-hoc kernel; consuming the online posterior is a separate
+        # methodology change. Hardcoded mode forces DEFAULT_KERNEL as the
+        # seed; measured/online mode reads the src-dir calibration kernel.
+        if args.kernel_mode in ("online", "hardcoded"):
+            calib_src_dir = args.src_dir / gen
+            seed_kernel, seed_src, online_kernel = resolve_kernel(
+                calib_src_dir, mode=args.kernel_mode,
+            )
+            if online_kernel is None:
+                # hardcoded mode — instantiate explicitly so we can still
+                # stream transitions through it for the summary.
+                online_kernel = OnlineKernelCalibration(init_kernel=seed_kernel)
+            # Replay this run's trajectory through the estimator in step order
+            if records_path.exists():
+                by_inst: dict[str, list[dict]] = {}
+                for line in open(records_path):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    r = json.loads(line)
+                    by_inst.setdefault(r["instance_id"], []).append(r)
+                for rs in by_inst.values():
+                    rs.sort(key=lambda r: r["step"])
+                    for i in range(len(rs) - 1):
+                        yt = rs[i].get("Y")
+                        yt1 = rs[i + 1].get("Y")
+                        if yt not in (0, 1) or yt1 not in (0, 1):
+                            continue
+                        online_kernel.update(int(yt), int(yt1))
+            write_json(gen_out / "transition_kernel_online_final.json", {
+                "generator": gen,
+                "method": args.method,
+                "kernel_mode": args.kernel_mode,
+                "seed_source": seed_src,
+                "seed_kernel": seed_kernel,
+                "online_posterior": online_kernel.summary(),
+            })
+
         policy = compute_policy_comparison(records_path, gen, args.method)
         write_json(gen_out / "policy_comparison.json", policy)
 
