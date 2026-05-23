@@ -8,10 +8,15 @@ import threading
 
 import pytest
 
-SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
+# Tests live in tests/; the package root (orchestration_hypothesis_testing/)
+# is the parent of tests/. Add it to sys.path so we can import from _common/
+# directly. Also keep scripts/ on the path for the legacy cost_tracker shim
+# (used by callers we haven't migrated yet -- removed in refactor phase 6).
+_PKG_ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PKG_ROOT))
+sys.path.insert(0, str(_PKG_ROOT / "scripts"))
 
-from cost_tracker import CostTracker, extract_usage, project_cost  # noqa: E402
+from _common.cost import CostTracker, extract_usage, project_cost  # noqa: E402
 
 
 def test_under_cap_can_proceed():

@@ -44,6 +44,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/.claude/worktrees/reverent-vaughan-017bf5/experiments/orchestration_hypothesis_testing")
 sys.path.insert(0, str(ROOT / "scripts"))
+
+# === Refactor Phase 2 (refactor/scripts-cleanup): _common bootstrap ===
+# Shared helpers (GENERATORS, critic_L*, extract_code, cost_for_call,
+# CostTracker) now live in <orchestration_hypothesis_testing>/_common/.
+# Add the package root to sys.path so we can import them, then re-export
+# the symbols so legacy callers (`from lcb_calibrate import X`) keep
+# working unchanged. Remove this shim in Phase 6 by updating callers to
+# import from _common directly.
+import sys as _sys
+if str(ROOT) not in _sys.path:
+    _sys.path.insert(0, str(ROOT))
+from _common.generators import (  # noqa: E402, F401
+    GENERATORS, canonical_generator_key, _make_client,
+    _load_openrouter_key, OPENROUTER_KEY_NAMES,
+)
+from _common.critics import (  # noqa: E402, F401
+    critic_L0_syntax, critic_L1_lint, critic_L3_review,
+)
+from _common.extract import extract_code  # noqa: E402, F401
+from _common.cost import (  # noqa: E402, F401
+    cost_for_call, CostTracker, extract_usage, project_cost,
+)
+# === end refactor bootstrap ===
+
 from cost_tracker import CostTracker  # noqa: E402
 
 
@@ -155,14 +179,8 @@ def decode_private_tests(encoded: str) -> list[dict]:
 
 # ---------- Code extraction (LCB outputs raw code, simpler than SEARCH/REPLACE) ----------
 
-def extract_code(response: str) -> str:
-    """Extract Python code from a model response. Tries fenced blocks first."""
-    if not response:
-        return ""
-    m = re.search(r"```(?:python)?\s*\n([\s\S]+?)```", response)
-    if m:
-        return m.group(1).strip()
-    return response.strip()
+# extract_code moved to _common/extract.py; re-exported below for callers
+# that still do `from lcb_calibrate import extract_code`.
 
 
 # ---------- Test runners ----------
@@ -304,115 +322,13 @@ def check_tests(code: str, tests: list[dict], starter_code: str = "") -> tuple[i
 
 
 # ---------- Critics ----------
-
-def critic_L0_syntax(code: str) -> bool:
-    if not code.strip():
-        return False
-    try:
-        ast.parse(code)
-        return True
-    except SyntaxError:
-        return False
-
-
-def critic_L1_lint(code: str) -> bool:
-    """Same conservative ruff ruleset as SWE-bench Lite (only F821, F811, E999)."""
-    if not code.strip():
-        return False
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-        f.write(code)
-        tmp = f.name
-    try:
-        proc = subprocess.run(
-            ["ruff", "check", "--quiet", "--no-cache", "--select", "F821,F811,E999", tmp],
-            capture_output=True, text=True, timeout=15,
-        )
-        return proc.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return True
-    finally:
-        os.unlink(tmp)
-
-
-def critic_L3_review(problem: str, code: str, client) -> tuple[bool, float]:
-    """Haiku PASS/FAIL on (problem, code). Returns (passed, cost_usd)."""
-    prompt = (
-        "You are a senior software engineer reviewing a code submission.\n\n"
-        f"## Problem\n{problem[:3000]}\n\n"
-        f"## Submitted code\n```python\n{code[:6000]}\n```\n\n"
-        "Does this code correctly solve the problem? Respond with exactly one word: "
-        "PASS or FAIL. No explanation."
-    )
-    try:
-        resp = client.chat.completions.create(
-            model="anthropic/claude-haiku-4.5",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0, max_tokens=10,
-        )
-        text = resp.choices[0].message.content.strip().upper()
-        usage = resp.usage
-        cost = (usage.prompt_tokens / 1_000_000) * 1.0 + (usage.completion_tokens / 1_000_000) * 5.0
-        return ("PASS" in text and "FAIL" not in text), cost
-    except Exception as e:
-        log.warning("L3 failed: %s", e)
-        return False, 0.0
+# critic_L0_syntax, critic_L1_lint, critic_L3_review moved to _common/critics.py; re-exported below for legacy callers.
 
 
 # ---------- Generators ----------
-
-GENERATORS = {
-    "gpt5_mini":   ("openai/gpt-5-mini",          "OpenAI gpt-5-mini",       None),
-    "qwen3_coder": ("qwen/qwen3-coder",           "Qwen3 Coder",             None),
-    "haiku45":     ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5",        None),
-    "sonnet45":    ("anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5",      None),
-    "qwen25_7b":   ("Qwen/Qwen2.5-Coder-7B-Instruct", "Qwen2.5-Coder-7B (open-weight, local vLLM)", "http://127.0.0.1:8001/v1"),
-    "qwen25_32b":  ("Qwen/Qwen2.5-Coder-32B-Instruct", "Qwen2.5-Coder-32B (open-weight, local vLLM)", "http://127.0.0.1:8003/v1"),
-    "gpt_oss_20b": ("openai/gpt-oss-20b:free",    "gpt-oss-20b",             None),
-}
-
-
-def canonical_generator_key(raw: str) -> str:
-    """Map CLI aliases (e.g. hyphens) to keys in GENERATORS."""
-    g = raw.strip()
-    if not g:
-        raise ValueError("empty generator key")
-    if g in GENERATORS:
-        return g
-    alt = g.replace("-", "_")
-    if alt in GENERATORS:
-        return alt
-    raise SystemExit(
-        f"unknown generator {raw!r}; known: {', '.join(sorted(GENERATORS))}"
-    )
-
-
-OPENROUTER_KEY_NAMES = ("OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY", "OPEN_ROUTER")
-
-
-def _load_openrouter_key() -> str:
-    for key_name in OPENROUTER_KEY_NAMES:
-        value = os.environ.get(key_name, "").strip()
-        if value:
-            return value
-    raise SystemExit(
-        "OpenRouter API key not set. Expected one of: "
-        "OPENROUTER_API_KEY, OPEN_ROUTER_API_KEY, OPEN_ROUTER."
-    )
-
-
-def _make_client(generator_key: str | None = None):
-    """Build an OpenAI-compatible client.
-
-    For qwen25_32b: local vLLM at base_url stored in GENERATORS tuple slot 2.
-    Otherwise: OpenRouter.
-    """
-    from openai import OpenAI
-    base_url = None
-    if generator_key and generator_key in GENERATORS and len(GENERATORS[generator_key]) >= 3:
-        base_url = GENERATORS[generator_key][2]
-    if base_url:
-        return OpenAI(api_key="EMPTY", base_url=base_url)
-    return OpenAI(api_key=_load_openrouter_key(), base_url="https://openrouter.ai/api/v1")
+# GENERATORS, canonical_generator_key, _make_client, _load_openrouter_key,
+# OPENROUTER_KEY_NAMES moved to _common/generators.py;
+# re-exported below for legacy callers.
 
 
 def build_prompt(problem: dict) -> str:
@@ -444,23 +360,7 @@ def build_prompt(problem: dict) -> str:
 
 # ---------- Main pipeline ----------
 
-def cost_for_call(model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
-    """Approximate per-call cost (USD)."""
-    if "gpt-5-mini" in model_id:
-        return (prompt_tokens / 1_000_000) * 0.5 + (completion_tokens / 1_000_000) * 4.0
-    if "qwen3-coder" in model_id:
-        return (prompt_tokens / 1_000_000) * 0.4 + (completion_tokens / 1_000_000) * 1.6
-    if "Qwen/Qwen2.5-Coder-7B-Instruct" in model_id:
-        return 0.0
-    if "Qwen/Qwen2.5-Coder-32B-Instruct" in model_id:
-        return 0.0
-    if "claude-haiku" in model_id:
-        return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
-    if "claude-sonnet" in model_id:
-        return (prompt_tokens / 1_000_000) * 3.0 + (completion_tokens / 1_000_000) * 15.0
-    if "gpt-oss-20b" in model_id:
-        return 0.0
-    return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
+# cost_for_call moved to _common/cost.py; re-exported below.
 
 
 def calibrate_one_generator(
