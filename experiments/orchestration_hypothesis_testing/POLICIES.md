@@ -198,7 +198,7 @@ Total cost: up to $3 c_\text{ver}$. Solves the instance iff at least one of the 
 
 **When it loses.** Regime A: low prior + expensive verifier. The fixed cost $3 c_\text{ver}$ wipes out the modest reward from low base rates.
 
-**Implementation.** `scripts/run_baseline_vs_controller.py:policy_always_verify` (one-liner).
+**Implementation.** `analysis/controller.py:policy_always_verify` (one-liner).
 
 ---
 
@@ -222,7 +222,7 @@ Total cost: up to $3 c_\text{ver}$. Solves the instance iff at least one of the 
 
 **When it loses.** Almost always, except on very high-variance generators where the 3-patch diversity helps cover instances no single patch solves. On the paper's panel: 0 wins.
 
-**Implementation.** `scripts/run_baseline_vs_controller.py:policy_best_of_N` (`N=3`).
+**Implementation.** `analysis/controller.py:policy_best_of_N` (`N=3`).
 
 ---
 
@@ -255,7 +255,7 @@ else:
 
 **When it loses.** When $L_k$ has a low gap. `threshold_L0` (syntax) is rarely informative on its own. `threshold_L3` (LLM judge) sometimes wins on regime-A cells but is dominated by Bayesian gating elsewhere.
 
-**Implementation.** `scripts/run_baseline_vs_controller.py:policy_threshold_L0/L2/L3`.
+**Implementation.** `analysis/controller.py:policy_threshold_L0/L2/L3`.
 
 ---
 
@@ -285,7 +285,7 @@ else:
 
 **When it loses.** Most cells. Empirically dominated by `threshold_L2` (one near-oracle critic ≫ three weaker AND-gate critics).
 
-**Implementation.** `scripts/run_baseline_vs_controller.py:policy_fixed_pipeline`.
+**Implementation.** `analysis/controller.py:policy_fixed_pipeline`.
 
 ---
 
@@ -326,7 +326,7 @@ Contrast with `always_verify` on the same instance: 3 verifies × $c_\text{ver} 
 
 **When it loses.** Regimes B (where threshold_L2 already extracts most of the signal) and C (where the prior is high enough that always_verify is near-optimal).
 
-**Implementation.** `scripts/run_baseline_vs_controller.py:BayesianController` with effective horizon 1 + the prior-rather-than-kernel regen branch; wired via `make_bayesian_policy`.
+**Implementation.** `analysis/controller.py:BayesianController` with effective horizon 1 + the prior-rather-than-kernel regen branch; wired via `make_bayesian_policy`.
 
 ---
 
@@ -393,7 +393,7 @@ return FAIL
 
 **When it loses.** 22 out of 24 LCB cells. The empirical claim of the paper: the Bayesian framework beats Self-Refine in mean Δ by ~24.5 utility units on its winning cells.
 
-**Implementation.** `scripts/iter_refine_real_baselines.py --method selfrefine` (live impl) and `scripts/compute_iter_replay_baselines.py` (replay variant).
+**Implementation.** `iter/refine.py --method selfrefine` (live impl) and `iter/replay_baselines.py` (replay variant).
 
 ---
 
@@ -417,7 +417,7 @@ return FAIL
 
 **When it loses.** Same as Self-Refine — 22/24 LCB cells.
 
-**Implementation.** `scripts/iter_refine_real_baselines.py --method reflexion`.
+**Implementation.** `iter/refine.py --method reflexion`.
 
 ---
 
@@ -439,7 +439,7 @@ return FAIL
 
 **When it wins / loses.** Used as a cost-controlled lower bound on what live Self-Refine / Reflexion can achieve. In practice the live and replay variants agree closely on cells where the feedback signal is weak. They diverge on the few cells where the live agent's feedback prompt yields better refinements than naive "regenerate from the same context" would.
 
-**Implementation.** `scripts/compute_iter_replay_baselines.py`.
+**Implementation.** `iter/replay_baselines.py`.
 
 ---
 
@@ -570,8 +570,8 @@ comment thread (comments
 
 ### Replay policies (BG, BDP, all unfitted)
 
-- **Single entry point:** `scripts/lcb_compare.py` (works for LCB, MBPP+, HumanEval+, SWE-Bench cells).
-- **Core machinery:** `scripts/run_baseline_vs_controller.py`
+- **Single entry point:** `analysis/lcb_compare.py` (works for LCB, MBPP+, HumanEval+, SWE-Bench cells).
+- **Core machinery:** `analysis/controller.py`
   - `BayesianController` — the DP planner (used by both BG and BDP, with different horizon settings).
   - `simulate_policy` — the state-machine loop that walks the `critic_results.jsonl` log.
   - `policy_always_verify`, `policy_threshold_L0/L2/L3`, `policy_fixed_pipeline`, `policy_best_of_N` — the unfitted policies as small lambda-like functions.
@@ -579,8 +579,8 @@ comment thread (comments
 
 ### Trajectory baselines
 
-- **Live impl:** `scripts/iter_refine_real_baselines.py --method {selfrefine,reflexion}` (LCB) and `_swe.py` (SWE-Bench).
-- **Replay impl:** `scripts/compute_iter_replay_baselines.py`.
+- **Live impl:** `iter/refine.py --method {selfrefine,reflexion}` (LCB) and `_swe.py` (SWE-Bench).
+- **Replay impl:** `iter/replay_baselines.py`.
 
 ### Live fitted policies (GrFt, DPFt)
 

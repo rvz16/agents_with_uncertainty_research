@@ -20,7 +20,7 @@ Found two off-cluster papercuts and fixed them.
   in `tab:full_results`. Sister to `PLAYBOOK.md` (which is about
   *extending* the matrix); this one is about *running* it.
 
-- **`experiments/orchestration_hypothesis_testing/scripts/mbpp_calibrate.py`,
+- **`experiments/orchestration_hypothesis_testing/calibration/mbpp.py`,
   `humaneval_calibrate.py`:** two fixes that were blocking first-time
   off-cluster runs.
   1. Dropped `os.environ.setdefault("HF_HOME", "/mnt/data/users/vlad.smirnov/hf_cache")`

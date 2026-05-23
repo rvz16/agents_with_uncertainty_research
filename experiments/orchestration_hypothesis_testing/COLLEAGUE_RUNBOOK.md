@@ -35,9 +35,9 @@ Python ≥ 3.10. Verified locally on 3.13.
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-All four entry scripts (`lcb_calibrate.py`, `mbpp_calibrate.py`,
-`humaneval_calibrate.py`, `spot_check_generators.py`) auto-load `.env`
-walking up from the script. You do **not** need to `export`.
+All four entry scripts (`calibration/lcb.py`, `calibration/mbpp.py`,
+`calibration/humaneval.py`, `scripts/spot_check_generators.py`) auto-load
+`.env` walking up from the script. You do **not** need to `export`.
 
 Optional caches (recommended on shared clusters where `~/.cache` is
 small):
@@ -96,7 +96,7 @@ ssh -N -L 8003:127.0.0.1:8003 <runpod1-host>
 ### 0.5 Generator panel (which keys map to which model)
 
 Function-level synthesis (LCB / MBPP+ / HumanEval+) reads
-`scripts/lcb_calibrate.py:GENERATORS`:
+`calibration/lcb.py:GENERATORS`:
 
 | Key | Model | Type |
 |---|---|---|
@@ -234,7 +234,7 @@ Table-1 N values to match the paper exactly:
 cd experiments/orchestration_hypothesis_testing
 
 # LCB-hard, full closed-API panel + Qwen32B (start its vLLM first, see §0.4)
-python3 scripts/lcb_calibrate.py \
+python3 -m calibration.lcb \
   --output-dir data/lcb_calibration_hard \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 102 --n-patches 3 \
@@ -244,7 +244,7 @@ python3 scripts/lcb_calibrate.py \
   --max-cost-usd-per-model gpt5_mini=3.0,qwen3_coder=3.0,haiku45=8.0,sonnet45=20.0,qwen25_32b=1000.0
 
 # LCB-medium (N=207)
-python3 scripts/lcb_calibrate.py \
+python3 -m calibration.lcb \
   --output-dir data/lcb_calibration_medium \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 207 --n-patches 3 \
@@ -253,7 +253,7 @@ python3 scripts/lcb_calibrate.py \
   --max-cost-usd-per-model gpt5_mini=5.0,qwen3_coder=5.0,haiku45=15.0,sonnet45=40.0,qwen25_32b=1000.0
 
 # LCB-easy (N=135)
-python3 scripts/lcb_calibrate.py \
+python3 -m calibration.lcb \
   --output-dir data/lcb_calibration_easy \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 135 --n-patches 3 \
@@ -270,7 +270,7 @@ aborts cleanly if hit (you can resume — the script skips
 ### 1.2 MBPP+ (N=378 canonical; per-cell n=100 in paper)
 
 ```bash
-python3 scripts/mbpp_calibrate.py \
+python3 -m calibration.mbpp \
   --output-dir data/mbpp_calibration \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 100 --n-patches 3 \
@@ -281,7 +281,7 @@ python3 scripts/mbpp_calibrate.py \
 ### 1.3 HumanEval+ (N=164 canonical; per-cell n=100 in paper)
 
 ```bash
-python3 scripts/humaneval_calibrate.py \
+python3 -m calibration.humaneval \
   --output-dir data/humaneval_calibration \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45,qwen25_32b \
   --n-instances 100 --n-patches 3 \
@@ -404,7 +404,7 @@ After Phase 2 completes, run `calibrate_from_spotcheck.py` to compute
 L0/L1/L2/L3 critic results + likelihoods:
 
 ```bash
-python3 scripts/calibrate_from_spotcheck.py \
+python3 -m calibration.from_spotcheck \
   --output-dir data/swebench_lite \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
   --dataset princeton-nlp/SWE-bench_Lite
@@ -426,7 +426,7 @@ runs — it saves a lot of compute and clarifies which steps cost money.
 rules evaluated over the *evidence the single-shot calibration already
 produced* (`critic_results.jsonl`: L0, L1, L2, L3, Y for each
 `(instance, patch_id)` tuple). All eight are computed by one local pass
-through `scripts/lcb_compare.py` (or `run_baseline_vs_controller.py`):
+through `analysis/lcb_compare.py` (or `run_baseline_vs_controller.py`):
 
 | Policy | Decision rule | New API calls? |
 |---|---|---|
@@ -447,8 +447,8 @@ each step is a new completion:
 
 | Policy | Script | Generator calls per instance |
 |---|---|---|
-| `Self-Refine` | `iter_refine_real_baselines.py --method selfrefine` | 1 + up to 4 refinements |
-| `Reflexion` | `iter_refine_real_baselines.py --method reflexion` | 1 + up to 4 with verbal-memory buffer |
+| `Self-Refine` | `python -m iter.refine --method selfrefine` | 1 + up to 4 refinements |
+| `Reflexion` | `python -m iter.refine --method reflexion` | 1 + up to 4 with verbal-memory buffer |
 
 These produce `iter_records.jsonl` (per-step trajectory + Y at each
 step) that **doesn't exist** in the single-shot calibration. The same
@@ -458,7 +458,7 @@ uses (see §4) — so iter refinement does double duty for `bayesian_DP`
 and the SR / Rfx columns.
 
 **Subtlety — once a trajectory exists, SR / Rfx can be replayed for
-free.** `scripts/compute_iter_replay_baselines.py` takes existing
+free.** `iter/replay_baselines.py` takes existing
 `iter_records.jsonl` (from any source — your own iter run, an old
 W&B trajectory, etc.) and applies the SR / Rfx policy *replay* on top.
 No new API calls. This is what produced the 20-cell SR/Rfx comparison
@@ -472,7 +472,7 @@ After calibration is done for a cell, compute the 8-policy comparison
 
 ```bash
 # Works for LCB, MBPP+, HumanEval+, and the SWE-Bench cells alike.
-python3 scripts/lcb_compare.py \
+python3 -m analysis.lcb_compare \
   --output-dir data/<bench>_calibration \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45
 ```
@@ -485,12 +485,12 @@ Output per cell: `<gen>/policy_comparison.json` with `mean_utility`,
 Then aggregate to the paper-table:
 
 ```bash
-python3 scripts/lcb_summarize_paper.py \
+python3 -m analysis.lcb_summarize_paper \
   --hard-dir data/lcb_calibration_hard \
   --medium-dir data/lcb_calibration_medium \
   --easy-dir data/lcb_calibration_easy \
   --output-root data
-python3 scripts/lcb_make_figures.py \
+python3 figures/lcb_make_figures.py \
   --paper-table data/PAPER_TABLE.json \
   --out-dir data/paper_figs
 ```
@@ -498,7 +498,7 @@ python3 scripts/lcb_make_figures.py \
 For a multi-benchmark refresh (recommended once everything is in):
 
 ```bash
-python3 scripts/lcb_summarize_paper.py \
+python3 -m analysis.lcb_summarize_paper \
   --cells "lcb_hard=data/lcb_calibration_hard,lcb_medium=data/lcb_calibration_medium,lcb_easy=data/lcb_calibration_easy,mbpp=data/mbpp_calibration,humaneval=data/humaneval_calibration,swebench_lite=data/swebench_lite,swebench_verified=data/swebench_verified" \
   --output-root data
 ```
@@ -513,8 +513,14 @@ refinement and `compute_transition_kernel.py`.
 
 ### 4.1 LCB iter
 
+The `single_method` iter (one-arm regeneration; produces the
+`(Y_t, Y_{t+1})` pairs that the measured kernel is fit from) lives in
+the legacy iter dir. The current `iter/refine.py` handles SR/Rfx only;
+`single_method` was not ported because the kernel computation was the
+only consumer and that flow is well-established.
+
 ```bash
-python3 scripts/iter_refine_lcb.py \
+python3 -m iter._legacy.refine_lcb \
   --src-dir data/lcb_calibration_hard \
   --output-dir data/lcb_calibration_hard_iter \
   --generators gpt5_mini,qwen3_coder,haiku45,sonnet45 \
@@ -526,8 +532,8 @@ python3 scripts/iter_refine_lcb.py \
 ### 4.2 SWE-Bench iter (needs Docker for the harness backfill)
 
 ```bash
-# Generation
-python3 scripts/iter_refine_swebench.py \
+# Generation (legacy single-method iter — see §4.1 note)
+python3 -m iter._legacy.refine_swebench \
   --dataset princeton-nlp/SWE-bench_Lite \
   --src-dir data/swebench_lite/source \
   --output-dir data/swebench_lite_iter \
@@ -536,20 +542,20 @@ python3 scripts/iter_refine_swebench.py \
   --max-cost-usd-per-model 5.0
 
 # Harness eval over the new iter predictions
-python3 scripts/run_iter_harness.py \
+python3 -m iter.harness \
   --iter-dir data/swebench_lite_iter \
   --work-dir data/swebench_lite_iter/eval \
   --dataset princeton-nlp/SWE-bench_Lite \
   --generators haiku45,sonnet45 --steps 1,2,3,4 --max-workers 2
 
-# Backfill Y into iter_records.jsonl
-python3 scripts/populate_iter_y_verified.py \
+# Backfill Y into iter_records.jsonl (post-refactor: at iter/swe_backfill_y.py)
+python3 -m iter.swe_backfill_y \
   --iter-dir data/swebench_lite_iter \
   --src-dir data/swebench_lite \
   --generators haiku45,sonnet45 --steps 5
 
 # Measured kernel
-python3 scripts/compute_iter_kernel.py \
+python3 -m iter.kernel \
   --iter-dir data/swebench_lite_iter \
   --generators haiku45,sonnet45
 ```
@@ -557,7 +563,7 @@ python3 scripts/compute_iter_kernel.py \
 ### 4.3 Re-run policy comparison with the measured kernel
 
 ```bash
-python3 scripts/lcb_compare.py \
+python3 -m analysis.lcb_compare \
   --output-dir data/<bench>_calibration \
   --generators <list> \
   --kernel-file "gpt5_mini=data/<bench>_iter/gpt5_mini/transition_kernel.json,..." \
@@ -609,9 +615,9 @@ For each missing (benchmark, generator) cell, run in this order:
    `spot_check_generators.GENERATORS` if it isn't there yet. Start the
    vLLM endpoint at the registered port if open-weight.
 2. **Probe** (SWE only): `--probe-only` for cost projection.
-3. **Calibrate** (`lcb_calibrate.py` / `mbpp_calibrate.py` /
-   `humaneval_calibrate.py` / `spot_check_generators.py`) → produces
-   `critic_results.jsonl` and `likelihood_tables.json`.
+3. **Calibrate** (`python -m calibration.lcb` / `calibration.mbpp` /
+   `calibration.humaneval` / `python3 scripts/spot_check_generators.py`)
+   → produces `critic_results.jsonl` and `likelihood_tables.json`.
 4. **Policy compare** (`lcb_compare.py`) → produces
    `policy_comparison.json` (IID kernel).
 5. **Iter refinement** + harness backfill + `compute_transition_kernel.py`
@@ -649,7 +655,7 @@ Confirm your setup works before launching a real run.
 cd experiments/orchestration_hypothesis_testing
 
 # LCB-hard: 5 instances × 1 patch × gpt5_mini only
-python3 scripts/lcb_calibrate.py \
+python3 -m calibration.lcb \
   --output-dir /tmp/smoke_lcb_hard \
   --generators gpt5_mini \
   --n-instances 5 --n-patches 1 \
@@ -657,14 +663,14 @@ python3 scripts/lcb_calibrate.py \
   --max-cost-usd-per-model 0.50
 
 # MBPP+: 5 × 1
-python3 scripts/mbpp_calibrate.py \
+python3 -m calibration.mbpp \
   --output-dir /tmp/smoke_mbpp \
   --generators gpt5_mini \
   --n-instances 5 --n-patches 1 \
   --max-cost-usd-per-model 0.50
 
 # HumanEval+: 5 × 1
-python3 scripts/humaneval_calibrate.py \
+python3 -m calibration.humaneval \
   --output-dir /tmp/smoke_humaneval \
   --generators gpt5_mini \
   --n-instances 5 --n-patches 1 \
