@@ -115,14 +115,26 @@ for VARIANT in mbpp humaneval humanevalfix codecontests; do
         --src-dir ${SRC[$VARIANT]} \
         --output-dir $OUT/iter/${VARIANT}__qwen25_32b__${METHOD} \
         --generators qwen25_32b \
-        --n-instances 0 --steps 4 --seed 42 \
+        --n-instances 0 --steps 5 --seed 42 \
         --max-cost-usd-per-model 3.0 \
         --max-workers 4
   done
 done
 ```
 
-`--n-instances 0` = all available. `--steps 4` matches the paper's `K=4`. `seed=42` matches the existing splits.
+**Flag glossary:**
+- `--n-instances 0` — sentinel for "all available instances in the
+  calibration corpus" (the script has `... if n_instances > 0 else problems`).
+  Set to a positive integer to cap.
+- `--steps 5` — upper bound (exclusive) of the refinement-step loop:
+  the script iterates `for t in range(1, steps)`, so `steps=5` gives
+  4 actual refinement steps (t=1, 2, 3, 4) on top of the sunk step 0.
+  Matches the script default and the existing LCB/SWE iter runs already
+  on W&B for `qwen25_32b`.
+- `--seed 42` — matches the 75/25 split discipline used everywhere
+  else in the pipeline.
+- `--max-workers 4` — parallel instance trajectories within one
+  generator. Bump if vLLM has spare capacity.
 
 ## Step 4 — upload to W&B
 
