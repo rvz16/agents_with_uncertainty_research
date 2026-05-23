@@ -479,9 +479,16 @@ def _load_instances_for_variant(variant: str, n_instances: int, seed: int,
         rng.shuffle(problems)
         return problems[:n_instances] if n_instances > 0 else problems
     elif variant == "codecontests":
-        from datasets import load_dataset
-        ds = load_dataset("deepmind/code_contests", split="test")
-        problems = [dict(r) for r in ds]
+        # Direct parquet fetch (63 MB) rather than load_dataset which pulls
+        # the full 13 GB repo. Same workaround as calibration/codecontests.py.
+        from huggingface_hub import hf_hub_download
+        import pyarrow.parquet as pq
+        parquet_path = hf_hub_download(
+            repo_id="deepmind/code_contests",
+            filename="data/test-00000-of-00001-9c49eeff30aacaa8.parquet",
+            repo_type="dataset",
+        )
+        problems = pq.read_table(parquet_path).to_pylist()
         rng = random.Random(seed)
         rng.shuffle(problems)
         return problems[:n_instances] if n_instances > 0 else problems
@@ -1263,7 +1270,12 @@ def main() -> None:
             # Calibration scripts sanitize inst_id for filesystem paths
             # (replace "/" with "_") so HumanEval/61 -> HumanEval_61_p0.txt.
             # LCB uses integer IDs; the replace is a no-op there.
-            safe_id = str(inst_id).replace("/", "_")
+            # Match calibration scripts' filename sanitization. HumanEval
+            # uses inst_id.replace("/", "_") so HumanEval/61 -> HumanEval_61.
+            # CodeContests instance names contain spaces and dots
+            # (e.g. "1598_D. Training Session") so calibration also strips
+            # spaces. Apply both substitutions here.
+            safe_id = str(inst_id).replace("/", "_").replace(" ", "_")
             p = raw_dir / f"{safe_id}_p0.txt"
             if p.exists():
                 from calibration.lcb import extract_code as lcb_extract

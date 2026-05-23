@@ -13,10 +13,11 @@ iter_refine_real_baselines.py.
 Per-generator output mirrors the LCB/MBPP/HumanEval+ layout under
 <output-dir>/<gen>/{critic_results.jsonl,raw_responses/,...}.
 
-WARNING: deepmind/code_contests is large (~13 GB total). The first
-load_dataset() call on a fresh machine will download the dataset cache.
-Set HF_HOME to a disk with sufficient space. Subsequent calibrations
-hit the cache.
+NOTE: deepmind/code_contests is ~13 GB total (all splits). The naive
+`load_dataset("deepmind/code_contests", split="test")` greedily pulls
+ALL the train shards too, even when only test is requested. This loader
+sidesteps that by directly fetching the single 63 MB test parquet via
+hf_hub_download. First-run download is ~20s; cached thereafter.
 
 Usage:
   python3 codecontests_calibrate.py \\
@@ -80,10 +81,23 @@ def load_codecontests(n_instances: int, seed: int = 42) -> list[dict]:
                        (we don't use the bundled solutions; generators write
                        their own)
     """
-    from datasets import load_dataset
-    ds = load_dataset("deepmind/code_contests", split="test")
+    # Direct parquet fetch — pulls just the 63 MB test shard, not the
+    # full 13 GB repo. load_dataset() greedy-pulls all train shards even
+    # when split="test"; this is the known workaround (see
+    # README in this package).
+    from huggingface_hub import hf_hub_download
+    import pyarrow.parquet as pq
+    parquet_path = hf_hub_download(
+        repo_id="deepmind/code_contests",
+        filename="data/test-00000-of-00001-9c49eeff30aacaa8.parquet",
+        repo_type="dataset",
+    )
+    tbl = pq.read_table(parquet_path,
+                        columns=["name", "description", "public_tests",
+                                 "private_tests", "generated_tests"])
+    rows = tbl.to_pylist()
     out: list[dict] = []
-    for r in ds:
+    for r in rows:
         # Normalize: keep only the fields the calibration + iter pipelines need
         out.append({
             "name":            r.get("name"),
@@ -92,7 +106,7 @@ def load_codecontests(n_instances: int, seed: int = 42) -> list[dict]:
             "private_tests":   dict(r.get("private_tests") or {}),
             "generated_tests": dict(r.get("generated_tests") or {}),
         })
-    log.info("loaded %d CodeContests test problems", len(out))
+    log.info("loaded %d CodeContests test problems (parquet-only loader)", len(out))
     if n_instances and n_instances < len(out):
         random.Random(seed).shuffle(out)
         out = out[:n_instances]
