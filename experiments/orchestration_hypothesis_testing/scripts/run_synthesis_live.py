@@ -43,7 +43,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
+
+# Shared kernel utilities (Beta-Binomial online estimator + DEFAULT_KERNEL +
+# kernel_update belief propagation + resolve_kernel mode dispatch).
+from _common.kernel import (  # noqa: E402
+    DEFAULT_KERNEL,
+    OnlineKernelCalibration,
+    kernel_update,
+    resolve_kernel,
+)
 
 # abbo bayes machinery (DPPlanner, bayes_update)
 ABBO_SRC = ROOT.parent.parent / "bayesian_optimization_for_code_testing" \
@@ -141,7 +153,7 @@ def _benchmark_loader(benchmark: str):
 
 def _lcb_adapter(benchmark: str):
     """Adapter for LCB-easy/medium/hard. Reuses lcb_calibrate primitives."""
-    import lcb_calibrate as lcb  # noqa: E402
+    from calibration import lcb  # noqa: E402
 
     difficulty = benchmark.split("_", 1)[1] if "_" in benchmark else "hard"
 
@@ -200,7 +212,7 @@ def _lcb_adapter(benchmark: str):
 
 def _mbpp_adapter():
     """Adapter for MBPP+. Reuses mbpp_calibrate primitives."""
-    import mbpp_calibrate as mbpp  # noqa: E402
+    from calibration import mbpp  # noqa: E402
 
     def load_fn():
         return mbpp.load_mbpp_plus(n_instances=10**9, seed=42)  # load all
@@ -242,7 +254,7 @@ def _mbpp_adapter():
 
 def _humaneval_adapter():
     """Adapter for HumanEval+. Mirrors mbpp adapter (similar dataset shape)."""
-    import humaneval_calibrate as he  # noqa: E402
+    from calibration import humaneval as he  # noqa: E402
 
     def load_fn():
         return he.load_humaneval_plus(n_instances=10**9, seed=42)
@@ -335,7 +347,7 @@ def _llm_judge(code: str, problem_text: str, client) -> bool:
 # ============================================================================
 def llm_generate(client, prompt: str) -> tuple[str, int, int, float]:
     """Returns (extracted_code, prompt_tokens, completion_tokens, api_cost_usd)."""
-    import lcb_calibrate as lcb  # for cost_for_call + extract_code
+    from calibration import lcb  # for cost_for_call + extract_code
     resp = client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -630,83 +642,11 @@ def load_theta(gen_dir: Path) -> tuple[dict, float]:
     return out, j.get("prior_Y1", 0.5)
 
 
-# Default fallback transition kernel (matches abbo hardcoded constant)
-DEFAULT_KERNEL = {"p_fix_broken": 0.50, "p_break_correct": 0.05}
-
-
-def load_kernel(gen_dir: Path) -> tuple[dict, str]:
-    """Return ({"p_fix_broken": ..., "p_break_correct": ...}, source_label).
-    Source label is one of: 'measured', 'default'.
-    """
-    kernel_path = gen_dir / "transition_kernel.json"
-    if kernel_path.exists():
-        kj = json.loads(kernel_path.read_text())
-        k = kj.get("kernel_all", kj)
-        return {
-            "p_fix_broken": k["P_fix_given_broken"],
-            "p_break_correct": k["P_break_given_correct"],
-        }, "measured"
-    return DEFAULT_KERNEL.copy(), "default"
-
-
-def kernel_update(belief: float, kernel: dict) -> float:
-    """b' = b · (1 - p_break) + (1-b) · p_fix"""
-    return belief * (1 - kernel["p_break_correct"]) + (1 - belief) * kernel["p_fix_broken"]
-
-
-# ============================================================================
-# Online kernel calibration — Variant B (Beta-Binomial updates from observed
-# (Y_before, Y_after) transitions during live agent runs)
-# ============================================================================
-@dataclass
-class _KernelCounts:
-    n_broken: int = 0   # Y_before == 0
-    k_fix:    int = 0   # transitions 0 -> 1
-    n_correct: int = 0  # Y_before == 1
-    k_break:   int = 0  # transitions 1 -> 0
-
-
-class OnlineKernelCalibration:
-    """Updates kernel from observed (Y_before, Y_after) pairs.
-
-    Initialized with prior counts (default = Beta(1,1) ≈ no info).
-    `.update(y_before, y_after)` adds one observation.
-    `.get()` returns the current posterior estimate (compatible with
-    DPPlanner's `transition_kernel=` argument shape).
-    """
-    def __init__(self, init_kernel: dict | None = None,
-                 alpha: float = 1.0, beta: float = 1.0):
-        self.counts = _KernelCounts()
-        self.alpha = alpha
-        self.beta = beta
-        self._init = init_kernel or DEFAULT_KERNEL
-
-    def update(self, y_before: int, y_after: int) -> None:
-        if y_before == 0:
-            self.counts.n_broken += 1
-            self.counts.k_fix += int(y_after == 1)
-        else:
-            self.counts.n_correct += 1
-            self.counts.k_break += int(y_after == 0)
-
-    def get(self) -> dict:
-        c = self.counts
-        if c.n_broken > 0:
-            p_fix = (c.k_fix + self.alpha) / (c.n_broken + self.alpha + self.beta)
-        else:
-            p_fix = self._init["p_fix_broken"]
-        if c.n_correct > 0:
-            p_break = (c.k_break + self.alpha) / (c.n_correct + self.alpha + self.beta)
-        else:
-            p_break = self._init["p_break_correct"]
-        return {"p_fix_broken": p_fix, "p_break_correct": p_break}
-
-    def summary(self) -> dict:
-        c = self.counts
-        return {"n_broken_observed": c.n_broken, "n_correct_observed": c.n_correct,
-                "k_fix": c.k_fix, "k_break": c.k_break,
-                "alpha": self.alpha, "beta": self.beta,
-                "current_estimate": self.get()}
+# Note: DEFAULT_KERNEL, kernel_update, OnlineKernelCalibration moved to
+# _common/kernel.py. Now shared with iter/refine.py; the abbo bridge
+# (run_codecontests_full.py et al.) is deferred until abbo is retired —
+# see DEVELOPMENT_PROCESS.md. load_kernel() was folded into
+# resolve_kernel(gen_dir, mode) in the same module.
 
 
 # ============================================================================
@@ -771,7 +711,7 @@ def main() -> None:
     log.info("Variants: %s", sorted(wanted))
 
     # LLM client (re-use lcb_calibrate's factory; works for OpenRouter)
-    import lcb_calibrate as lcb
+    from calibration import lcb
     client = lcb._make_client()
 
     # Benchmark dispatcher
@@ -784,13 +724,11 @@ def main() -> None:
             if k in prob:
                 by_id[str(prob[k])] = prob; break
 
-    # Resolve transition kernel
-    measured_kernel, kernel_src = load_kernel(gen_dir)
-    if args.kernel_mode == "hardcoded":
-        kernel = DEFAULT_KERNEL.copy()
-        kernel_src = "hardcoded (forced via --kernel-mode hardcoded)"
-    else:
-        kernel = measured_kernel
+    # Resolve transition kernel via _common.kernel. The third return value
+    # (the OnlineKernelCalibration instance) is discarded here because each
+    # per-variant branch below builds its own per-task estimator — preserving
+    # the existing reset-per-task semantics.
+    kernel, kernel_src, _ = resolve_kernel(gen_dir, args.kernel_mode)
     log.info("transition kernel: source=%s, p_fix=%.3f, p_break=%.3f",
              kernel_src, kernel["p_fix_broken"], kernel["p_break_correct"])
 
