@@ -401,3 +401,56 @@ comparison; this module surfaces the tradeoff.
 - **No update to Table 1 cells.** Cell 13's STAT_POLICY still uses
   §2.5 cost vectors as-is. The sweep is additive.
 
+### Post-iteration: reframing the balance analysis as a diagnostic
+
+The first run of the balance sweep produced FAST median optimal c_ver
+≈ 75 (with the [1, 100] range, ceiling-clipped). Two issues surfaced:
+
+1. **c_ver > reward is methodologically incoherent.** When c_ver > R,
+   AV's utility is strictly negative even on correct patches. The
+   balance metric then saturates at high c_ver values for the wrong
+   reason — AV is artificially worst. Both sweep ranges have been
+   capped at 0.9·R = 90.
+
+2. **FAST balance-optimal c_ver > SLOW balance-optimal c_ver is
+   counterintuitive given the FAST/SLOW labels** (FAST = measured-fast
+   verification = should have *cheap* c_ver). This contradiction
+   surfaces the real finding: the "balance objective" doesn't track
+   measurement-anchored c_ver. For SWE (SLOW), they coincide. For
+   function-level (FAST), they diverge — function-level benchmarks
+   have cheap verification AND high prior_Y1, putting AV in a regime
+   where it's trivially optimal *by design* (§2.5 deliberately puts
+   FAST below the analytic crossover at c_ver/R = 0.05). The balance
+   metric would push c_ver up toward R to rescue these cells, but
+   that requires inflating verification cost beyond measurement.
+
+**Conclusion: the balance analysis is a DIAGNOSTIC of regime structure,
+not a prescription to change §2.5.** §2.5's design — FAST below
+crossover (AV trivially wins by design), SLOW above crossover
+(framework operates) — is methodologically correct. The "degenerate
+histograms" we observed for function-level cells at c_ver=5 are
+*confirming evidence*, not bugs to fix.
+
+The c_gen unification commit stays — it removes an unmeasured
+asymmetry. §2.5 c_ver values (5 FAST, 30 SLOW) are unchanged; their
+c_ver/R ratios (0.05, 0.30) are the methodology-anchored quantities
+and remain at the design points.
+
+What the balance analysis IS useful for in the paper:
+- Confirming the regime structure of §2.5
+- Identifying intrinsically-saturated cells (balance ≤ 1 at any c_ver
+  in [1, 90]) — these are (benchmark, generator) pairs where the
+  policy framework structurally doesn't discriminate. Worth a footnote.
+
+Reframing:
+- `cost_vector_balance.py` module docstring updated to lead with the
+  "diagnostic, not prescription" framing
+- Notebook cells 19-21 rewritten to interpret balance scores as
+  regime confirmation, not as a recommendation to change §2.5
+- The "headline" section now distinguishes:
+  - cells balanced at §2.5 design point (framework operates here)
+  - cells intrinsically saturated (paper footnote candidates)
+  - cells only balanced at high c_ver (DO NOT rescue — by-design
+    below-crossover)
+- New explicit table of intrinsically-saturated cells
+

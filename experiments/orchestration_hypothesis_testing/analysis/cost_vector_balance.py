@@ -1,51 +1,57 @@
-"""Cost-vector balance search.
+"""Cost-vector balance DIAGNOSTIC (not a prescription).
 
-Goal: find c_ver values (within measurement-justified ranges) that produce
-**balanced policy comparison histograms** — i.e., where multiple policies
-beat `always_verify` AND multiple policies lose to it, rather than the
-degenerate case where AV dominates everything.
+This module sweeps c_ver across each mode's range and scores how many
+policies meaningfully beat / lose to AV at each value. It was originally
+written to "find balance-optimal c_ver values"; running it across the
+calibration corpus revealed a subtler story which is the actual
+publishable finding:
 
-Why this matters: if all eight policies sit below the AV baseline (the
-`lcb_hard/gpt5_mini` pathology in our cell 13 output), the comparison
-isn't informative — the cost vector is in a regime where verification is
-so cheap that nothing beats just-verify-everything. The interesting story
-sits at the inflection point where critic-based and Bayesian policies
-can outperform AV but also where naive policies (best_of_N, fixed_pipeline)
-can do worse. That's the regime where uncertainty-aware orchestration
-matters.
+**The §2.5 design correctly identifies two distinct regimes**, and the
+balance metric's preference for *high* FAST c_ver is a methodology
+artifact, NOT a recommendation to change §2.5:
 
-Two measurement-derived mode regimes (Table tab:action_latency):
+  FAST mode  (function-level + bug-fix benchmarks, §2.5: c_ver/R = 0.05)
+    BELOW the analytic crossover. AV is trivially optimal here by design.
+    The "degenerate histograms" at c_ver=5 are confirming evidence, not a
+    bug. The balance metric would push c_ver up toward R = 100 to rescue
+    these cells, but that requires INFLATING verification cost beyond
+    what measurement supports — the cell's natural regime is "AV wins".
 
-  FAST mode  (function-level + bug-fix benchmarks)
-    Measured c_ver / c_gen ratios: 0.009 - 0.059
-    Current §2.5: c_ver=5, c_gen=10, critic=1/1/1   (ratio 0.5)
-    Sweep range: c_ver in [1, 100] (keep c_gen=10 fixed)
+  SLOW mode  (SWE-Bench Lite + Verified, §2.5: c_ver/R = 0.30)
+    ABOVE the analytic crossover. The policy framework genuinely operates
+    here: BDP and critic gates have real opportunities to outperform AV.
+    Balance-optimal c_ver in [5, 90] lands near §2.5's current value
+    (~47 vs current 30), confirming the design.
 
-  SLOW mode  (SWE-Bench Lite + Verified)
-    Measured: pooled median c_ver/c_gen = 0.19; heavy-suite p90 ≈ 68
-    Current §2.5: c_ver=30, c_gen=10, critic=1/2/5  (ratio 3.0 after unification; was 6.0)
-    Sweep range: c_ver in [5, 200] (keep c_gen=10 fixed; ratio 3.0)
+The c_gen difference between the original §2.5 vectors (FAST=10, SLOW=5)
+had no measurement basis (Table tab:action_latency shows SWE-Bench has
+the *highest* measured a_gen) — that asymmetry has been removed.
+Unified c_gen=10 across both modes preserves §2.5's c_ver/R ratios
+(0.05 FAST, 0.30 SLOW) which is the methodology-anchored quantity.
 
-The current §2.5 c_ver values sit ~10x higher than measured medians for
-the FAST mode and within bimodal range for SLOW. The measured medians
-likely under-represent the perceived cost (they ignore API spend,
-batch-effect latencies, multi-tenant retry cost, etc.) — but our cost
-vectors are abstract utility units that already bake in those factors.
-This module's job is to find c_ver values in each mode that make the
-policy comparison *informative*, not to pin a single "true" c_ver.
+The c_critic asymmetry IS measurement-anchored (Docker critics on SWE
+are 33× slower than function-level Cr_test per Table) — preserved.
+
+Sweep ranges (both modes capped at 0.9·R = 90 — see methodology note
+in CostMode dataclass below).
 
 The balance metric (C: effective-competitor count):
 
   For each (benchmark, generator) cell, given policy deltas Δ_p vs AV:
     pos = #{p : Δ_p > +ε}     (policies meaningfully above AV)
     neg = #{p : Δ_p < -ε}     (policies meaningfully below AV)
-    balance = min(pos, neg)   (both sides must have multiple non-trivial
-                              members for the cell to count as "balanced")
-  Default ε = 2.0 utility points. Ties broken by max(pos + neg).
+    balance = min(pos, neg)
+  Default ε = 2.0 utility points.
 
-Aggregation:
-  Per mode (FAST/SLOW), recommend the c_ver that maximizes the average
-  balance score across all cells in that mode.
+Interpreting the output:
+- High balance at current §2.5 c_ver  →  framework is informative for
+  this cell at the design point.
+- Low balance at current c_ver, high at high c_ver  →  cell is in the
+  "AV-trivially-wins" regime by design; high-c_ver "rescue" is not
+  measurement-anchored and should NOT be adopted.
+- Low balance everywhere in [1, 90]  →  cell is genuinely saturated;
+  policy framework doesn't discriminate for this (benchmark, generator).
+  These cells should be explicitly flagged in the paper.
 """
 from __future__ import annotations
 
