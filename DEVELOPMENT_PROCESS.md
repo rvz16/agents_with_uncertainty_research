@@ -454,3 +454,79 @@ Reframing:
     below-crossover)
 - New explicit table of intrinsically-saturated cells
 
+### Follow-up: SWE-Bench heavy-suite sensitivity vector
+
+After re-analyzing Table tab:action_latency, a real methodology gap
+surfaces: the §2.5 `SLOW_ORACLE_COST` (c_ver=30, c_ver/R=0.30) is
+anchored to SWE-Bench's pooled-median verification cost (a_ver=1.9s),
+but Docker eval is bimodal — heavy-suite (e.g. `psf/requests`) takes
+~672s, pooled p90 = 682s. The median-anchored vector understates the
+worst-case eval cost a deployed agent would face by ~22×.
+
+Resolution (this commit): add a SECOND cost vector for SWE-Bench
+specifically — `SLOW_HEAVY_COST` (c_ver=90, c_ver/R=0.90) — capped at
+0.9·R to keep the policy comparison methodologically coherent
+(c_ver > R would make AV's utility strictly negative even on correct
+verifications). This is NOT a new MODE; the FAST/SLOW dichotomy still
+holds. SLOW_HEAVY is a robustness-check sidecar to SLOW, used for
+sensitivity analysis only.
+
+- **New: `SLOW_HEAVY_COST` in §2.5 (notebook cell 11)** — `dict(c_gen=10,
+  c_L0=1, c_L2=2, c_L3=5, c_ver=90, reward=100)`. Same c_critic
+  structure as SLOW (Docker-aware), c_ver tripled to capture the
+  heavy-suite Docker tail.
+
+- **New helper: `cost_model_for_sensitivity(bench, regime='default')`**.
+  `regime='default'` returns the §2.5 per-benchmark cost (unchanged).
+  `regime='slow_heavy'` returns SLOW_HEAVY_COST. Raises for non-SWE
+  benchmarks (the heavy-suite interpretation doesn't apply to function-
+  level verification — no bimodality in that family per Table).
+
+- **New notebook cells (§3h + §3i)** inserted after the balance heatmap
+  (§3g):
+  - **§3h** (code): builds `STAT_POLICY_SWE_HEAVY` — re-runs each
+    SWE-Bench calibration cell's `run_policies` under SLOW_HEAVY_COST,
+    using the same fit/eval split and measured kernel (`KERN_MEAS`)
+    as cell 13's STAT_POLICY. Same paired-bootstrap CI machinery.
+  - **§3i** (code): side-by-side comparison. Merges STAT_POLICY (SLOW)
+    and STAT_POLICY_SWE_HEAVY (heavy) per (b, g, policy), reports
+    delta_SLOW vs delta_SLOW_HEAVY + per-cell paired-bar chart. Also
+    reports per-policy median shift across SWE cells (robustness
+    summary) + sign-flip detection (any policy whose Δ-vs-AV changes
+    sign between the two regimes).
+
+- **No changes to §2.5 defaults.** Cell 13's STAT_POLICY still uses
+  the §2.5 per-benchmark cost vectors. SLOW_HEAVY is opt-in via the
+  new sensitivity cell.
+
+### Verification
+
+- `pytest tests/ -q` → **131 passed** (unchanged from previous commit;
+  no test changes needed — the new cell 11 additions don't break the
+  existing balance tests).
+- All 5 added/modified notebook cells `ast.parse` cleanly.
+
+### Paper-narrative gain
+
+The headline robustness claim becomes much stronger:
+- §2.5 SLOW vector: BDP / SR / Rfx beat AV on SWE-Bench cells (current
+  Table 1 result).
+- SLOW_HEAVY vector (worst-case Docker tail): if the same policies STILL
+  beat AV, that's a 22× cost-range robustness claim. If they don't, we
+  disclose this as a sensitivity limitation in the methodology section.
+
+Either outcome strengthens the paper. The headline finding from running
+§3h / §3i (after re-running cells in order) will tell us which.
+
+### Out of scope (deliberate, follow-up candidate)
+
+- **Per-benchmark `c_L3` adjustments for MBPP+ and HEFix.** Table
+  tab:action_latency shows these benchmarks have `Cr_llm / a_gen` ≈
+  0.88-0.95 (LLM critic is comparable to gen), but §2.5 FAST assigns
+  `c_L3 = 1` (10× cheaper than gen). A measurement-anchored adjustment
+  would set `c_L3 ≈ 9` for these benchmarks. The change might shift
+  BDP / gate(L3) decisions for MBPP+/HEFix cells specifically. Held
+  back from this PR to keep the SWE-Bench sensitivity self-contained
+  and reviewable. Worth a follow-up PR if the SWE_HEAVY analysis lands
+  well.
+
