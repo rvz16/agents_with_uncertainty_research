@@ -359,11 +359,34 @@ def test_online_kernel_update_rejects_non_binary(y_before, y_after):
     """Pre-validation prevents the silent-corruption bug surface: any
     y != 0 used to fall into the "correct" regime. Now raises ValueError."""
     ok = OnlineKernelCalibration()
-    with pytest.raises(ValueError, match="requires y_before and y_after"):
+    with pytest.raises(ValueError, match="y_before and y_after"):
         ok.update(y_before, y_after)
     # Counts unchanged after the failed call
     assert ok.summary()["n_broken_observed"] == 0
     assert ok.summary()["n_correct_observed"] == 0
+
+
+@pytest.mark.parametrize("y_before,y_after,exp_broken,exp_fix,exp_correct,exp_break", [
+    (True, False, 0, 0, 1, 1),   # bool: True == 1, False == 0 → (1→0) = break
+    (False, True, 1, 1, 0, 0),   # bool: (0→1) = fix
+    (0.0, 1.0, 1, 1, 0, 0),       # float zero/one accepted (== 0/1)
+    (1.0, 0.0, 0, 0, 1, 1),
+])
+def test_online_kernel_update_accepts_bool_and_float_zero_one(
+    y_before, y_after, exp_broken, exp_fix, exp_correct, exp_break,
+):
+    """The validation uses `==` equality, so bool (True/False) and
+    float 0.0/1.0 are accepted in addition to int 0/1 — they all
+    round-trip to the same counts. Pins this so the error message
+    in update() remains accurate ("must equal 0 or 1", not "must
+    be int 0 or 1")."""
+    ok = OnlineKernelCalibration()
+    ok.update(y_before, y_after)  # no exception
+    s = ok.summary()
+    assert s["n_broken_observed"] == exp_broken
+    assert s["k_fix"] == exp_fix
+    assert s["n_correct_observed"] == exp_correct
+    assert s["k_break"] == exp_break
 
 
 # ---------------------------------------------------------------------------
