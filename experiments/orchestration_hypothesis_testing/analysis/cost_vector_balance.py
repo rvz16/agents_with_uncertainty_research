@@ -19,12 +19,12 @@ Two measurement-derived mode regimes (Table tab:action_latency):
   FAST mode  (function-level + bug-fix benchmarks)
     Measured c_ver / c_gen ratios: 0.009 - 0.059
     Current §2.5: c_ver=5, c_gen=10, critic=1/1/1   (ratio 0.5)
-    Sweep range: c_ver in [1, 30] (keep c_gen=10 fixed)
+    Sweep range: c_ver in [1, 100] (keep c_gen=10 fixed)
 
   SLOW mode  (SWE-Bench Lite + Verified)
     Measured: pooled median c_ver/c_gen = 0.19; heavy-suite p90 ≈ 68
-    Current §2.5: c_ver=30, c_gen=5, critic=1/2/5   (ratio 6.0)
-    Sweep range: c_ver in [5, 100] (keep c_gen=5 fixed)
+    Current §2.5: c_ver=30, c_gen=10, critic=1/2/5  (ratio 3.0 after unification; was 6.0)
+    Sweep range: c_ver in [5, 200] (keep c_gen=10 fixed; ratio 3.0)
 
 The current §2.5 c_ver values sit ~10x higher than measured medians for
 the FAST mode and within bimodal range for SLOW. The measured medians
