@@ -300,3 +300,86 @@ five scripts that were previously missing per-action timing.
 `pytest tests/ -q` → **74 passed** (60 pre-existing + 14 telemetry tests
 after the +2 new extra-semantics tests).
 
+---
+
+## 2026-05-23 — Online-BDP analysis cell on iter trajectories
+
+Adds a counter-factual column to the analysis notebook: **"what if the BDP
+planner had been learning the transition kernel online as it walked each
+iter trajectory, rather than using a fixed measured kernel?"**
+
+This was scoped intentionally to iter data only — calibration data has at
+most one Y observation per instance (simulate_policy ends at first verify),
+so no within-trajectory transitions exist for an online estimator to learn
+from. Iter trajectories observe Y at every step (the iter script always
+backfills via the oracle), so each step→step+1 boundary provides a real
+`(Y_t, Y_{t+1})` transition pair.
+
+- **New module:
+  `experiments/orchestration_hypothesis_testing/analysis/online_dp_iter.py`**
+  - `simulate_online_bdp_on_iter(iter_traj, likes, prior, kernel_seed, cost)`
+    — per-instance replay. Walks the trajectory step-by-step, after each
+    `generate` action absorbs the observed `(Y_t, Y_{t+1})` pair into an
+    `OnlineKernelCalibration` seeded from the calibration kernel, then
+    re-decides at the next step using the updated posterior.
+  - `_online_bdp_decide(belief, k_left, kernel, cost)` — small backward
+    induction over only `{verify, give_up, generate}`. Iter-replay-specific:
+    critic outcomes are pre-observed (cost is sunk in `step_cost_usd`),
+    so the action space collapses to just the verify-or-continue decision.
+    Faster + cleaner than rebuilding the full `BayesianController` per step.
+  - `_bayes_update_belief(belief, critic_likes, rec)` — Bayes-updates
+    belief on all critic outcomes available in a step record. Matches
+    `BayesianController._bayes_update` arithmetic, so iter-replay belief is
+    directly comparable to static-BDP belief at the same step.
+  - Per-instance reset (single-task picture, no cross-instance transfer).
+    Cross-instance accumulation is a different research question deserving
+    its own paper section; not in this PR.
+
+- **New: `tests/test_online_dp_iter.py`** — 21 unit tests covering:
+  - Decision DP: high/low belief → verify/give_up; high-p_fix kernel →
+    generate; uppercase + lowercase kernel keys; malformed kernel raises
+  - Bayes-update: pass/fail directions; skips missing/None likes
+  - Simulator: empty trajectory, high-prior step-0 verify, low-prior
+    give-up, kernel updates equal generate count, kernel actually evolves
+    away from seed, per-instance reset is independent, Y=None handled
+    mid-trajectory and at verify, critics move belief, belief propagates
+    via online (not seed) kernel between steps
+  - All 21 tests pass.
+
+- **New: 3 notebook cells in `experiments/orchestration/wandb/analysis.ipynb`**
+  inserted at positions 16-18, right after the existing SR/Rfx iter
+  analysis (`STAT_ITER`):
+  - Cell 16 (markdown): methodology explanation — what online-BDP means
+    here, why it's meaningful on iter data but not on calibration data,
+    why per-instance reset.
+  - Cell 17 (code): builds `STAT_ITER_ONLINE_DP` dataframe. For each
+    (benchmark, generator, method) iter cell: downloads `iter_records.jsonl`
+    from W&B, downloads `critic_results.jsonl` for likelihoods, seeds the
+    online kernel from `KERN_MEAS` (same source as static-BDP), runs
+    `simulate_online_bdp_on_iter` per instance, paired-bootstrap delta vs
+    `always_verify`. Schema parallels `STAT_ITER`.
+  - Cell 18 (code): side-by-side bar plot of static-BDP vs online-BDP
+    delta-vs-always-verify, per (benchmark, generator) cell. Saves
+    `static_vs_online_bdp_eval.png` and prints average Δ summary.
+
+### Verification
+
+- `pytest tests/ -q` → **133 passed** (60 pre-existing + 38 kernel +
+  14 telemetry + 21 new online-dp-iter).
+- Both new code cells `ast.parse` cleanly.
+- Notebook JSON-roundtrips cleanly (cell count 86 → 89).
+
+### Out of scope (deliberate non-changes)
+
+- Cross-instance accumulation variant of online-BDP. The per-instance
+  reset is the cleaner single-task story; accumulation models a fleet-
+  learning agent and would need its own paper section to motivate.
+- Live BDP-online agent (vs replay). The live version exists in
+  `scripts/run_synthesis_live.py` with `--kernel-mode online --variants
+  dp_fitted` and produces its own W&B runs; the notebook surfaces those
+  results from a different code path. This PR is replay-only.
+- Wiring online-BDP into the existing visualizations (cells 29/35/46
+  bar charts, cell 70 regime maps). The new analysis sits as a
+  standalone supplementary section; touching the main visualizations
+  would risk regressions in Table 1's existing static-BDP figures.
+
