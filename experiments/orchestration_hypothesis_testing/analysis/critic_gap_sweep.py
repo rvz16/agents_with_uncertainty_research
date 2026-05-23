@@ -28,8 +28,11 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/.claude/worktrees/reverent-vaughan-017bf5/experiments/orchestration_hypothesis_testing")
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_baseline_vs_controller import (  # noqa: E402
+from analysis.controller import (  # noqa: E402
     BayesianController, CostModel, simulate_policy,
     policy_always_verify, policy_threshold_L0, policy_threshold_L3,
     policy_fixed_pipeline, policy_best_of_N, make_bayesian_policy,

@@ -28,9 +28,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from lcb_calibrate import (  # noqa: E402
+from calibration.lcb import (  # noqa: E402
     extract_code, load_lcb,
 )
 

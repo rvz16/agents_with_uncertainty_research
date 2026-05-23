@@ -25,6 +25,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from bugfix_table4_common import (  # noqa: E402
@@ -35,8 +38,8 @@ from bugfix_table4_common import (  # noqa: E402
     get_initial_source,
     safe_stem,
 )
-from cost_tracker import CostTracker  # noqa: E402
-from lcb_calibrate import (  # noqa: E402
+from _common.cost import CostTracker  # noqa: E402
+from calibration.lcb import (  # noqa: E402
     GENERATORS,
     OPENROUTER_KEY_NAMES,
     _make_client,

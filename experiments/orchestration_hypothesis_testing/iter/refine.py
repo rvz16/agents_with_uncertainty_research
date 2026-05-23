@@ -76,6 +76,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 logging.basicConfig(level=logging.INFO,
@@ -346,12 +349,12 @@ def _eval_patch(code: str, inst: dict, variant: str,
     The L3 (LLM judge) is run separately by the caller (matches the LCB
     runner's structure) because it requires the cost accounting + API client.
     """
-    from lcb_calibrate import critic_L0_syntax, critic_L1_lint
+    from calibration.lcb import critic_L0_syntax, critic_L1_lint
     l0 = bool(critic_L0_syntax(code))
     l1 = bool(critic_L1_lint(code))
 
     if variant == "mbpp":
-        from mbpp_calibrate import run_assertions, run_full_test
+        from calibration.mbpp import run_assertions, run_full_test
         # L2 (public): subset of original MBPP asserts -> tuple[int,int].
         # Y (oracle): full EvalPlus test_block -> BOOL (run_full_test returns
         # a single bool, not a tuple). MBPP+ has no entry_point field; the
@@ -369,7 +372,7 @@ def _eval_patch(code: str, inst: dict, variant: str,
         # HumanEval+ (EvalPlus schema): base_input + plus_input as
         # input-list vectors; use run_test_inputs which feeds inputs to the
         # candidate function and compares the return value.
-        from humaneval_calibrate import run_test_inputs
+        from calibration.humaneval import run_test_inputs
         entry_point = inst.get("entry_point", "")
         canon_full  = inst.get("canonical_full", "") or inst.get("canonical_solution", "") or inst.get("prompt", "")
         l2_inputs = inst.get("base_input", []) or []
@@ -394,7 +397,7 @@ def _eval_patch(code: str, inst: dict, variant: str,
         # (shared imports), `entry_point`. Use mbpp's run_full_test since
         # it accepts a test block and an entry point (sets `candidate`
         # before running). L2 = example_test; Y = test (full).
-        from mbpp_calibrate import run_full_test
+        from calibration.mbpp import run_full_test
         entry_point = inst.get("entry_point", "") or None
         test_setup  = inst.get("test_setup", "") or ""
         l2_block    = inst.get("example_test", "") or ""
@@ -437,7 +440,7 @@ def _eval_patch(code: str, inst: dict, variant: str,
     l3 = None
     l3_cost = 0.0
     if reviewer_client is not None and problem_text:
-        from lcb_calibrate import critic_L3_review
+        from calibration.lcb import critic_L3_review
         if cost_lock is None or cost_counter is None or cost_counter.get("v", 0.0) < cap_usd:
             try:
                 l3_pass, l3_cost = critic_L3_review(problem_text, code, reviewer_client)
@@ -463,10 +466,10 @@ def _load_instances_for_variant(variant: str, n_instances: int, seed: int,
     (paired comparison via the shared seed).
     """
     if variant == "mbpp":
-        from mbpp_calibrate import load_mbpp_plus
+        from calibration.mbpp import load_mbpp_plus
         return load_mbpp_plus(n_instances, seed)
     elif variant == "humaneval":
-        from humaneval_calibrate import load_humaneval_plus
+        from calibration.humaneval import load_humaneval_plus
         return load_humaneval_plus(n_instances, plus_input_cap, seed)
     elif variant == "humanevalfix":
         from datasets import load_dataset
@@ -502,7 +505,7 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
 
     Returns a dict with the full per-step trajectory, stop info, and per-call
     references. Critic outcomes (L0/L1/L2/L3 + Y) computed inline."""
-    from lcb_calibrate import (cost_for_call, check_tests, decode_private_tests,
+    from calibration.lcb import (cost_for_call, check_tests, decode_private_tests,
                                  critic_L0_syntax, critic_L1_lint,
                                  critic_L3_review, MAX_PRIVATE_TESTS,
                                  build_prompt, extract_code)
@@ -777,7 +780,7 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
     the canonical version this is patterned after."""
     if gen_client is None:
         gen_client = client
-    from lcb_calibrate import cost_for_call, extract_code
+    from calibration.lcb import cost_for_call, extract_code
     inst_id = _get_inst_id(inst, variant)
     problem_text = _get_problem_text(inst, variant)
 
@@ -1159,7 +1162,7 @@ def main() -> None:
     if args.variant == "lcb":
         # Load LCB
         os.environ.setdefault("HF_HOME", "/mnt/data/users/vlad.smirnov/hf_cache")
-        from lcb_calibrate import load_lcb, GENERATORS as SCG_GENERATORS
+        from calibration.lcb import load_lcb, GENERATORS as SCG_GENERATORS
         problems = load_lcb(difficulty=args.difficulty, platform=args.platform,
                             lcb_version=args.lcb_version)
         log.info("loaded %d %s/%s LCB problems", len(problems), args.difficulty, args.platform)
@@ -1169,7 +1172,7 @@ def main() -> None:
         os.environ.setdefault("HF_HOME", "/mnt/data/users/vlad.smirnov/hf_cache")
         # Use lcb_calibrate's GENERATORS table since it carries the
         # OpenRouter/vLLM endpoints for every model id Artem might pass.
-        from lcb_calibrate import GENERATORS as SCG_GENERATORS
+        from calibration.lcb import GENERATORS as SCG_GENERATORS
         problems = _load_instances_for_variant(args.variant,
                                                 args.n_instances, args.seed)
         log.info("loaded %d %s instances", len(problems), args.variant)
@@ -1209,7 +1212,7 @@ def main() -> None:
         else:
             model_id = SCG_GENERATORS[gen][0]
         # Per-generator generation client: qwen25_32b -> vLLM, others -> OpenRouter.
-        from lcb_calibrate import _make_client
+        from calibration.lcb import _make_client
         gen_client = _make_client(gen)
 
         gen_out = out_root / gen / args.method
@@ -1263,7 +1266,7 @@ def main() -> None:
             safe_id = str(inst_id).replace("/", "_")
             p = raw_dir / f"{safe_id}_p0.txt"
             if p.exists():
-                from lcb_calibrate import extract_code as lcb_extract
+                from calibration.lcb import extract_code as lcb_extract
                 if args.variant == "lcb":
                     text = p.read_text()
                     step0_code[inst_id] = lcb_extract(text)

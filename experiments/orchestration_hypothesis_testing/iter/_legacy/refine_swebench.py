@@ -39,6 +39,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/experiments/orchestration_hypothesis_testing")
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import spot_check_generators as scg  # noqa: E402
@@ -145,7 +148,7 @@ def run_one_instance(
         modified = scg.apply_change_blocks(oracle, blocks) if blocks else {}
         diff = scg.build_diff(oracle, modified) if modified else ""
 
-        from calibrate_from_spotcheck import (
+        from calibration.from_spotcheck import (
             _modified_file_contents, critic_L0_syntax,
             critic_L1_lint, critic_L3_llm_review,
         )

@@ -26,9 +26,12 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]  # .../orchestration_hypothesis_testing
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-from lcb_calibrate import canonical_generator_key  # noqa: E402
-from run_baseline_vs_controller import (  # noqa: E402
+from calibration.lcb import canonical_generator_key  # noqa: E402
+from analysis.controller import (  # noqa: E402
     BayesianController, CostModel, simulate_policy,
     policy_always_verify, policy_threshold_L0, policy_threshold_L3,
     policy_fixed_pipeline, policy_best_of_N,
@@ -242,7 +245,7 @@ def main() -> None:
         dp = BayesianController(prior, likes, kernel, cost, horizon=args.horizon)
         greedy = GreedyController(prior, likes, cost)
 
-        from run_baseline_vs_controller import make_bayesian_policy
+        from analysis.controller import make_bayesian_policy
         policies = {
             "always_verify": policy_always_verify,
             "threshold_L0": policy_threshold_L0,

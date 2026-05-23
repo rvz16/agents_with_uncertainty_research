@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_baseline_vs_controller import (  # noqa: E402
+from analysis.controller import (  # noqa: E402
     BayesianController,
     CostModel,
     load_trajectories,

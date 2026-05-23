@@ -68,7 +68,7 @@ sys.path.insert(0, str(ROOT))
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-from cost_tracker import CostTracker, extract_usage, project_cost  # noqa: E402
+from _common.cost import CostTracker, extract_usage, project_cost  # noqa: E402
 
 # Provider exceptions that should NOT be retried; we abort immediately.
 # A wrong API key won't fix itself by retrying 599 more times.

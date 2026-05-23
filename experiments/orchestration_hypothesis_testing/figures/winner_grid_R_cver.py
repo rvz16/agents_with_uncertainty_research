@@ -23,11 +23,14 @@ import numpy as np
 from matplotlib.patches import Rectangle
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from run_baseline_vs_controller import CostModel  # noqa: E402
-from lcb_sensitivity import run_policies  # noqa: E402
-from lcb_compare import load_lcb_trajectories  # noqa: E402
+from analysis.controller import CostModel  # noqa: E402
+from analysis.lcb_sensitivity import run_policies  # noqa: E402
+from analysis.lcb_compare import load_lcb_trajectories  # noqa: E402
 
 
 # 4 R values × 4 c_ver values = 16 panels

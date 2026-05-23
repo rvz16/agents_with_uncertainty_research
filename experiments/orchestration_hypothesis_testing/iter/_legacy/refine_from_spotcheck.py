@@ -27,6 +27,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/.claude/worktrees/reverent-vaughan-017bf5/experiments/orchestration_hypothesis_testing")
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 import spot_check_generators as scg  # noqa: E402
 
@@ -223,7 +226,7 @@ def main() -> None:
 
                 # Inline critic scoring so step t+1 gets real feedback (not None).
                 # L0/L1 are free; L3 is paid (~$0.001/call).
-                from calibrate_from_spotcheck import (
+                from calibration.from_spotcheck import (
                     _modified_file_contents, critic_L0_syntax,
                     critic_L1_lint, critic_L3_llm_review,
                 )

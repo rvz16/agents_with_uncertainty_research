@@ -70,8 +70,11 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-from lcb_calibrate import canonical_generator_key  # noqa: E402
+from calibration.lcb import canonical_generator_key  # noqa: E402
 
 GENERATORS = ["gpt5_mini", "qwen3_coder", "haiku45", "sonnet45"]
 

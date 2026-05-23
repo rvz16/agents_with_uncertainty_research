@@ -24,10 +24,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from mbpp_calibrate import run_assertions, load_mbpp_plus  # noqa: E402
-from lcb_calibrate import extract_code  # noqa: E402
+from calibration.mbpp import run_assertions, load_mbpp_plus  # noqa: E402
+from calibration.lcb import extract_code  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("mbpp_reeval")

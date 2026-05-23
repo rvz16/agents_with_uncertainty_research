@@ -49,7 +49,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # Shared helpers (GENERATORS, critic_L*, extract_code, cost_for_call,
 # CostTracker) now live in <orchestration_hypothesis_testing>/_common/.
 # Add the package root to sys.path so we can import them, then re-export
-# the symbols so legacy callers (`from lcb_calibrate import X`) keep
+# the symbols so legacy callers (`from calibration.lcb import X`) keep
 # working unchanged. Remove this shim in Phase 6 by updating callers to
 # import from _common directly.
 import sys as _sys
@@ -68,7 +68,7 @@ from _common.cost import (  # noqa: E402, F401
 )
 # === end refactor bootstrap ===
 
-from cost_tracker import CostTracker  # noqa: E402
+from _common.cost import CostTracker  # noqa: E402
 
 
 class _ActionTelemetry:
@@ -180,7 +180,7 @@ def decode_private_tests(encoded: str) -> list[dict]:
 # ---------- Code extraction (LCB outputs raw code, simpler than SEARCH/REPLACE) ----------
 
 # extract_code moved to _common/extract.py; re-exported below for callers
-# that still do `from lcb_calibrate import extract_code`.
+# that still do `from calibration.lcb import extract_code`.
 
 
 # ---------- Test runners ----------

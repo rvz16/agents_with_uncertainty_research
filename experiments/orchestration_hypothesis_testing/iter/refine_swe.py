@@ -51,6 +51,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import spot_check_generators as scg  # noqa: E402
@@ -257,7 +260,7 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
     stop_step = None
     stop_reason = None
 
-    from calibrate_from_spotcheck import (
+    from calibration.from_spotcheck import (
         _modified_file_contents, critic_L0_syntax,
         critic_L1_lint, critic_L3_llm_review,
     )

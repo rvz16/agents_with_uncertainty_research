@@ -34,7 +34,7 @@ from pathlib import Path
 # Import controller classes from the existing module
 THIS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(THIS_DIR))
-from run_baseline_vs_controller import (  # noqa: E402
+from analysis.controller import (  # noqa: E402
     BayesianController, CostModel, simulate_policy,
     policy_always_verify, policy_threshold_L0, policy_threshold_L3,
     policy_fixed_pipeline, policy_best_of_N,
@@ -42,7 +42,7 @@ from run_baseline_vs_controller import (  # noqa: E402
 )
 
 # Re-import GreedyController + threshold_L2 + greedy policy from lcb_compare
-from lcb_compare import (  # noqa: E402
+from analysis.lcb_compare import (  # noqa: E402
     GreedyController, make_greedy_policy, policy_threshold_L2,
 )
 

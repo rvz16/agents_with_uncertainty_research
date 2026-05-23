@@ -43,6 +43,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 # abbo bayes machinery (DPPlanner, bayes_update)
@@ -141,7 +144,7 @@ def _benchmark_loader(benchmark: str):
 
 def _lcb_adapter(benchmark: str):
     """Adapter for LCB-easy/medium/hard. Reuses lcb_calibrate primitives."""
-    import lcb_calibrate as lcb  # noqa: E402
+    from calibration import lcb  # noqa: E402
 
     difficulty = benchmark.split("_", 1)[1] if "_" in benchmark else "hard"
 
@@ -200,7 +203,7 @@ def _lcb_adapter(benchmark: str):
 
 def _mbpp_adapter():
     """Adapter for MBPP+. Reuses mbpp_calibrate primitives."""
-    import mbpp_calibrate as mbpp  # noqa: E402
+    from calibration import mbpp  # noqa: E402
 
     def load_fn():
         return mbpp.load_mbpp_plus(n_instances=10**9, seed=42)  # load all
@@ -242,7 +245,7 @@ def _mbpp_adapter():
 
 def _humaneval_adapter():
     """Adapter for HumanEval+. Mirrors mbpp adapter (similar dataset shape)."""
-    import humaneval_calibrate as he  # noqa: E402
+    from calibration import humaneval as he  # noqa: E402
 
     def load_fn():
         return he.load_humaneval_plus(n_instances=10**9, seed=42)
@@ -335,7 +338,7 @@ def _llm_judge(code: str, problem_text: str, client) -> bool:
 # ============================================================================
 def llm_generate(client, prompt: str) -> tuple[str, int, int, float]:
     """Returns (extracted_code, prompt_tokens, completion_tokens, api_cost_usd)."""
-    import lcb_calibrate as lcb  # for cost_for_call + extract_code
+    from calibration import lcb  # for cost_for_call + extract_code
     resp = client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -771,7 +774,7 @@ def main() -> None:
     log.info("Variants: %s", sorted(wanted))
 
     # LLM client (re-use lcb_calibrate's factory; works for OpenRouter)
-    import lcb_calibrate as lcb
+    from calibration import lcb
     client = lcb._make_client()
 
     # Benchmark dispatcher

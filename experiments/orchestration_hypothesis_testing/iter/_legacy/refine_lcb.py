@@ -36,9 +36,12 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/experiments/orchestration_hypothesis_testing")
+# Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
+# `from iter.X import Y`, etc. resolve to the new refactored layout.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from lcb_calibrate import (  # noqa: E402
+from calibration.lcb import (  # noqa: E402
     GENERATORS, build_prompt, extract_code,
     critic_L0_syntax, critic_L1_lint, critic_L3_review,
     cost_for_call, check_tests, decode_private_tests,
