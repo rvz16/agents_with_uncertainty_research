@@ -178,14 +178,14 @@ Approximate inventory (2026-05-23):
 
 What's still missing (the focus for new runs):
 
-- `**Qwen2.5-Coder-32B**` on HEFix + CC (cal + iter); on MBPP+ / HumanEval+ (iter only). See `[QWEN32B_SR_RFX_TASKS.md](QWEN32B_SR_RFX_TASKS.md)`.
-- `**gpt-oss-20b**` on most benchmarks. (See task list TBD.)
-- `**Qwen2.5-Coder-7B**` on most benchmarks. (Add to `_common/generators.py` first.)
-- `**gpt-5-mini**` on HumanEvalFix + CodeContests.
+- **`Qwen2.5-Coder-32B`** on HEFix + CC (cal + iter); on MBPP+ / HumanEval+ (iter only).
+- **`gpt-oss-20b`** on most benchmarks.
+- **`Qwen2.5-Coder-7B`** on most benchmarks. (Add to `_common/generators.py` first.)
+- **`gpt-5-mini`** on HumanEvalFix + CodeContests.
 
-The `analysis.ipynb` data inventory cell (cell 21) renders a green/red
-matrix showing exactly which (benchmark, generator, policy) cells are
-filled vs missing.
+For the live "what's missing" picture, run `analysis.ipynb` cell 21
+(data inventory) — it renders a green/red matrix per (benchmark,
+generator, policy) cell against the paper's `tab:full_results` panel.
 
 ---
 
