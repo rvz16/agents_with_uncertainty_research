@@ -37,7 +37,9 @@ from collections import Counter
 from pathlib import Path
 
 # We import the v3 parser/matcher from spot_check_generators
-ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/.claude/worktrees/reverent-vaughan-017bf5/experiments/orchestration_hypothesis_testing")
+# File moved out of scripts/ during refactor; parents[1] is the
+# package root (experiments/orchestration_hypothesis_testing/).
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import spot_check_generators as scg  # noqa: E402
 

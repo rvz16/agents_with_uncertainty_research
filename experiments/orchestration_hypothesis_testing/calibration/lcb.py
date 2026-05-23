@@ -42,7 +42,9 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/.claude/worktrees/reverent-vaughan-017bf5/experiments/orchestration_hypothesis_testing")
+# File moved out of scripts/ during refactor; parents[1] is the
+# package root (experiments/orchestration_hypothesis_testing/).
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 # === Refactor Phase 2 (refactor/scripts-cleanup): _common bootstrap ===

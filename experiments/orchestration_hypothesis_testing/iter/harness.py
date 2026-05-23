@@ -16,8 +16,11 @@ import logging
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/experiments/orchestration_hypothesis_testing")
-sys.path.insert(0, str(ROOT / "scripts"))
+# File moved to iter/ during the scripts refactor; parents[1] is the
+# package root (experiments/orchestration_hypothesis_testing/).
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))            # for `from analysis.X import Y` etc.
+sys.path.insert(0, str(ROOT / "scripts")) # for legacy `import spot_check_generators`
 
 import spot_check_generators as scg  # noqa: E402
 

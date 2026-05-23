@@ -35,7 +35,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1] if "scripts" in str(Path(__file__).resolve()) else Path("/mnt/data/users/vlad.smirnov/agents_with_uncertainty_research/experiments/orchestration_hypothesis_testing")
+# File moved out of scripts/ during refactor; parents[1] is the
+# package root (experiments/orchestration_hypothesis_testing/).
+ROOT = Path(__file__).resolve().parents[1]
 # Package root (parents[1]) on sys.path so imports like `from calibration.X import Y`,
 # `from iter.X import Y`, etc. resolve to the new refactored layout.
 sys.path.insert(0, str(ROOT))
