@@ -352,23 +352,26 @@ def _eval_patch(code: str, inst: dict, variant: str,
 
     if variant == "mbpp":
         from mbpp_calibrate import run_assertions, run_full_test
-        # L2 (public): subset of original 3 MBPP asserts.
-        # Y (oracle): full EvalPlus test_block (more rigorous).
+        # L2 (public): subset of original MBPP asserts -> tuple[int,int].
+        # Y (oracle): full EvalPlus test_block -> BOOL (run_full_test returns
+        # a single bool, not a tuple). MBPP+ has no entry_point field; the
+        # test_block defines the test function inline.
         asserts_public = inst.get("test_list", []) or inst.get("base_input", [])
         if isinstance(asserts_public, str):
             asserts_public = [asserts_public]
         l2_pass, l2_total = run_assertions(code, asserts_public, timeout=10)
         test_block  = inst.get("test", "") or "\n".join(asserts_public)
-        entry_point = inst.get("entry_point", "")
-        y_pass, y_total = run_full_test(code, test_block, entry_point, timeout=10)
-        Y = 1 if (y_total > 0) and (y_pass == y_total) else 0
+        entry_point = inst.get("entry_point") or None
+        y_ok = run_full_test(code, test_block, entry_point, timeout=10)
+        Y = 1 if y_ok else 0
 
-    elif variant in ("humaneval", "humanevalfix"):
+    elif variant == "humaneval":
+        # HumanEval+ (EvalPlus schema): base_input + plus_input as
+        # input-list vectors; use run_test_inputs which feeds inputs to the
+        # candidate function and compares the return value.
         from humaneval_calibrate import run_test_inputs
         entry_point = inst.get("entry_point", "")
-        canon_full = inst.get("canonical_solution", "") or inst.get("prompt", "")
-        # L2 (public): base inputs from the docstring tests.
-        # Y (oracle): full plus_input for HumanEval+; same as L2 for HEFix.
+        canon_full  = inst.get("canonical_full", "") or inst.get("canonical_solution", "") or inst.get("prompt", "")
         l2_inputs = inst.get("base_input", []) or []
         y_inputs  = inst.get("plus_input", l2_inputs) or l2_inputs
         atol = inst.get("atol", 0.0) or 0.0
@@ -383,6 +386,30 @@ def _eval_patch(code: str, inst: dict, variant: str,
             Y = 1 if (y_total > 0) and (y_pass == y_total) else 0
         else:
             Y = 0
+
+    elif variant == "humanevalfix":
+        # HumanEvalPack (python): tests are CODE BLOCKS that define a
+        # `check(candidate)` function and then call it on `entry_point`.
+        # Schema: `test` (oracle), `example_test` (public), `test_setup`
+        # (shared imports), `entry_point`. Use mbpp's run_full_test since
+        # it accepts a test block and an entry point (sets `candidate`
+        # before running). L2 = example_test; Y = test (full).
+        from mbpp_calibrate import run_full_test
+        entry_point = inst.get("entry_point", "") or None
+        test_setup  = inst.get("test_setup", "") or ""
+        l2_block    = inst.get("example_test", "") or ""
+        y_block     = inst.get("test", "") or l2_block
+        # Prepend test_setup imports if any (HEFix sometimes uses external libs)
+        l2_full = (test_setup + "\n\n" + l2_block) if test_setup else l2_block
+        y_full  = (test_setup + "\n\n" + y_block)  if test_setup else y_block
+        # L2 as bool -> (1,1) if pass, (0,1) if fail; (0,0) if no public test.
+        if l2_block.strip():
+            l2_ok_bool = run_full_test(code, l2_full, entry_point, timeout=10)
+            l2_pass, l2_total = (1, 1) if l2_ok_bool else (0, 1)
+        else:
+            l2_pass, l2_total = 0, 0
+        y_ok = run_full_test(code, y_full, entry_point, timeout=10) if y_full.strip() else False
+        Y = 1 if y_ok else 0
 
     elif variant == "codecontests":
         # CodeContests: stdin/stdout tests stored as {"input":[...], "output":[...]}
@@ -1230,7 +1257,11 @@ def main() -> None:
             raw_dir = args.src_dir / gen / "raw_responses"
         step0_code: dict[str, str] = {}
         for inst_id, rec in step0_records.items():
-            p = raw_dir / f"{inst_id}_p0.txt"
+            # Calibration scripts sanitize inst_id for filesystem paths
+            # (replace "/" with "_") so HumanEval/61 -> HumanEval_61_p0.txt.
+            # LCB uses integer IDs; the replace is a no-op there.
+            safe_id = str(inst_id).replace("/", "_")
+            p = raw_dir / f"{safe_id}_p0.txt"
             if p.exists():
                 from lcb_calibrate import extract_code as lcb_extract
                 if args.variant == "lcb":
