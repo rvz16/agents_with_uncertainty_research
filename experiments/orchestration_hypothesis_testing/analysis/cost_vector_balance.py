@@ -78,18 +78,39 @@ class CostMode:
     benchmarks: tuple[str, ...]        # which benchmarks fall in this mode
 
 
+# c_gen is unified across both modes (was c_gen=10 FAST, c_gen=5 SLOW in
+# the original §2.5 vectors). The original asymmetry had no measurement
+# basis — Table tab:action_latency actually shows SWE-Bench has the
+# *highest* measured a_gen (10.0s vs 1.3s for MBPP+), so assigning SLOW
+# the *lowest* c_gen was double-counting the FAST/SLOW asymmetry. Now the
+# only structural difference between modes is in c_critic (Docker-level
+# critics on SWE are measurably slower than function-level) and in the
+# c_ver sweep range. Naive unification — c_critic and c_ver values are
+# NOT rescaled to preserve the old ratios; SLOW's effective c_ver/c_gen
+# ratio drops from 6.0 to 3.0 as a result. Whether SLOW's previously-
+# balanced histograms remain balanced is now an empirical question that
+# the balance sweep answers.
+#
+# Both modes also extend their sweep ranges:
+#   FAST: was [1, 30], now [1, 100] — the previous sweep ceilinged at 30
+#         (median optimal c_ver = 30.0 = the ceiling), so the true FAST
+#         optimum was beyond the search range.
+#   SLOW: was [5, 100], now [5, 200] — with c_gen now 10, the "equivalent"
+#         range needs to scale up to keep the same upper-bound c_ver/c_gen
+#         ratio reachable.
+
 FAST_MODE = CostMode(
     name="FAST",
     c_gen=10.0, c_critic_l0=1.0, c_critic_l2=1.0, c_critic_l3=1.0,
-    c_ver_range=(1.0, 30.0), c_ver_current=5.0,
+    c_ver_range=(1.0, 100.0), c_ver_current=5.0,
     benchmarks=("lcb_easy", "lcb_medium", "lcb_hard",
                 "mbpp", "humaneval", "humanevalfix", "codecontests"),
 )
 
 SLOW_MODE = CostMode(
     name="SLOW",
-    c_gen=5.0, c_critic_l0=1.0, c_critic_l2=2.0, c_critic_l3=5.0,
-    c_ver_range=(5.0, 100.0), c_ver_current=30.0,
+    c_gen=10.0, c_critic_l0=1.0, c_critic_l2=2.0, c_critic_l3=5.0,
+    c_ver_range=(5.0, 200.0), c_ver_current=30.0,
     benchmarks=("swe_lite", "swe_verified"),
 )
 
