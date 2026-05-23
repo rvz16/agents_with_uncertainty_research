@@ -300,3 +300,104 @@ five scripts that were previously missing per-action timing.
 `pytest tests/ -q` → **74 passed** (60 pre-existing + 14 telemetry tests
 after the +2 new extra-semantics tests).
 
+---
+
+## 2026-05-23 — Cost-vector balance search
+
+Adds a measurement-anchored sweep over `c_ver` within each cost-mode
+regime (FAST / SLOW) to find values that produce **balanced policy
+comparison histograms** — multiple non-trivial winners against AV AND
+multiple non-trivial losers. The motivation: several §2.5 cells (e.g.
+`lcb_hard/gpt5_mini`) currently produce degenerate histograms where
+every policy sits below `always_verify`, which makes the policy
+comparison uninformative. The c_ver values most likely justifiable by
+measurement may not be the values that produce the most informative
+comparison; this module surfaces the tradeoff.
+
+- **New module:
+  `experiments/orchestration_hypothesis_testing/analysis/cost_vector_balance.py`**
+  - `balance_score(policy_deltas, epsilon=2.0)` — effective-competitor
+    count: `min(#policies with Δ > +ε, #policies with Δ < -ε)`. Higher
+    = the comparison is more informative. Excludes `always_verify`
+    itself (sits at 0 by definition).
+  - `CostMode` dataclass — packs `c_gen`, `c_critic_*`, sweep `c_ver`
+    range, current §2.5 c_ver value, and which benchmarks fall in the
+    mode.
+  - `FAST_MODE` (LCB-{easy,medium,hard}, MBPP+, HumanEval+, HEFix, CC;
+    c_gen=10, sweep `c_ver ∈ [1, 30]`, current 5).
+  - `SLOW_MODE` (SWE-Bench Lite + Verified; c_gen=5, sweep
+    `c_ver ∈ [5, 100]`, current 30). SLOW range covers up to ~20×
+    pooled median to capture the bimodal Docker-eval tail (heavy-suite
+    p90 ≈ 682s in Table tab:action_latency).
+  - `sweep_c_ver_one_cell(traj, likes, prior, mode)` — per-cell
+    backward-induction policy comparison at each c_ver in the mode's
+    grid; reuses the existing `run_policies` from
+    `analysis/lcb_sensitivity.py`.
+  - `aggregate_mode_balance(per_cell_sweeps, mode)` — average balance
+    score across all cells in a mode at each c_ver.
+  - `recommend_c_ver_for_mode(aggregated, min_balance=1.0)` — pick the
+    c_ver that maximizes mean balance across cells, ties broken by
+    spread (std of Δ across policies). Returns `None` if no c_ver
+    achieves `min_balance` (degenerate mode).
+
+- **New: `tests/test_cost_vector_balance.py`** — 19 unit tests covering:
+  - `balance_score` math (balanced histogram, all-below-AV degenerate,
+    all-above-AV degenerate, custom epsilon, AV exclusion/inclusion,
+    spread tiebreaker, empty input)
+  - mode definitions (known/unknown benchmarks, sweep range sanity)
+  - mode aggregation (cell filtering by benchmark membership, multi-cell
+    averaging, empty input)
+  - recommendation (max-balance pick, spread tiebreaker, below-threshold
+    None return, empty input)
+
+- **3 new notebook cells in `analysis.ipynb`** (positions 19-21, right
+  after the §3c canonical `pc` cell):
+  - Cell 19 (markdown): methodology, mode definitions, output schema
+  - Cell 20 (code): sweeps c_ver across each mode's grid for every
+    calibration cell, builds `STAT_CVER_SWEEP` dataframe, prints
+    per-mode recommendation (current vs balance-optimal c_ver, mean
+    balance score at each)
+  - Cell 21 (code): heatmap (x=c_ver, y=cell, color=balance score) with
+    vertical lines marking current §2.5 + recommended c_vers; saves
+    `c_ver_balance_heatmap.png`; prints per-cell diagnostic table +
+    "how many cells could improve" headline
+
+### Verification
+
+- `python -m pytest tests/ -q` → **131 passed** (60 baseline + 38
+  kernel + 14 telemetry + 19 new balance), no regressions.
+- Both new code cells `ast.parse` cleanly.
+- Notebook: 86 → 89 cells.
+
+### Methodology notes
+
+- The current §2.5 c_ver values (FAST=5, SLOW=30) were chosen as
+  "honest matches" to per-benchmark measured c_ver/c_gen ratios, but
+  the measurement table (`tab:action_latency`) shows the median
+  measured ratios are much smaller than the current §2.5 values for
+  FAST benchmarks (0.009 - 0.059 measured vs 0.5 used). The current
+  §2.5 values are abstract utility units that already bake in
+  perceived-cost factors beyond wall-clock (API spend, batch effects,
+  retry cost, user friction). This module's job is **not** to compete
+  with §2.5 on measurement fidelity, but to surface which c_ver
+  values within each mode's plausible range produce the most
+  informative policy comparison — and to flag cells where no c_ver
+  in range achieves balance (genuinely degenerate cells).
+- Per-mode aggregation uses mean balance across cells. Median is
+  reported alongside in case of outlier-driven mean inflation. A
+  more conservative choice would be `min` across cells — guarantees
+  every cell hits the recommended balance — but that's pessimistic
+  on heterogeneous mode populations.
+- The sweep uses `n_boot=100` (vs cell 13's 1000) because we're
+  scoring sign-of-Δ patterns rather than pinning CIs tightly; the
+  speed gain is ~10×.
+
+### Out of scope (deliberate non-changes)
+
+- **§2.5 cost-vector assignments are not modified.** This is a
+  diagnostic / exploratory module; if the recommendation is to move
+  to different c_ver values, that's a separate PR with its own
+  paper-section discussion and a full Table 1 re-computation.
+- **No update to Table 1 cells.** Cell 13's STAT_POLICY still uses
+  §2.5 cost vectors as-is. The sweep is additive.
+
