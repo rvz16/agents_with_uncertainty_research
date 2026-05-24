@@ -116,9 +116,14 @@ FAST_MODE = CostMode(
 SLOW_MODE = CostMode(
     name="SLOW",
     c_gen=10.0, c_critic_l0=1.0, c_critic_l2=2.0, c_critic_l3=5.0,
-    c_ver_range=(5.0, 90.0), c_ver_current=30.0,
+    c_ver_range=(5.0, 90.0), c_ver_current=90.0,
     benchmarks=("swe_lite", "swe_verified"),
 )
+# SLOW.c_ver_current moved 30 → 90 when we adopted p90-anchored SLOW as the
+# §2.5 headline (was median-anchored c_ver=30). The sweep range is unchanged
+# — it now covers the regime from "what if we anchored to median" (low end)
+# up to the headline p90 (upper bound). The median-anchored value remains
+# available as cell-11's SLOW_MEDIAN_COST for appendix sensitivity (§3h/§3i).
 
 MODES = (FAST_MODE, SLOW_MODE)
 

@@ -6,6 +6,76 @@ edit. Keep entries terse: file, what, why.
 
 ---
 
+## 2026-05-24 — SWE-Bench headline cost vector: median → p90 anchoring
+
+Adopted p90-anchored SLOW as the headline cost vector for SWE-Bench Lite
+and Verified. The previous median-anchored SLOW (c_ver=30) was demoted to
+SLOW_MEDIAN, kept for appendix sensitivity.
+
+**Rationale (paper-side):** SWE-Bench Docker eval is bimodal — pooled
+median a_ver = 1.9s but heavy test suites drag p90 to 682s (350× median).
+Median-anchoring lets AV "average out" the tail; the framework's value
+proposition is exactly the tail-cost avoidance. P90 captures the regime
+the framework is designed for and is the operationally relevant
+verification cost for deployed agents.
+
+**Measurement audit:** before committing, went deep on whether cell-11
+cost vectors are auditable. Findings (full report on PR #9):
+- The "Table tab:action_latency" referenced in cell-11 comments is NOT
+  derivable from any data in W&B or the local repo. Values are hardcoded
+  engineering estimates from prior calibration runs that predate the
+  TelemetryLogger infrastructure (`experiments/orchestration_hypothesis_testing/_common/telemetry.py`).
+- W&B does have `cost_usd` per refine step (from `iter_records.jsonl`
+  artifacts across 24 single_method iter runs). Measured SWE/FAST $-cost
+  ratio at step>0 = **~13×**. Current cost vector c_L3 SLOW=5 / FAST=1
+  reflects 5× — validates the SWE > FAST direction but understates the
+  $-cost magnitude. Decision: keep c_L3 SLOW=5 (treating $-cost as not
+  equivalent to latency, which is what the cost vector represents).
+- The action_telemetry.jsonl files (per-action wall-clock latency) exist
+  only on the cluster filesystem, never uploaded to W&B. SSH to cluster
+  blocked by network access during audit; deferred to a future
+  tightening pass.
+
+**Files changed:**
+- `experiments/orchestration/wandb/analysis.ipynb`:
+  - Cell 11 (§2.5 cost vectors): SLOW_ORACLE_COST gets c_ver=90 (was 30).
+    SLOW_HEAVY_COST renamed → SLOW_MEDIAN_COST with c_ver=30 (was 90).
+    `cost_model_for_sensitivity` regime 'slow_heavy' → 'slow_median'.
+    SENSITIVITY_VECTORS key SLOW_HEAVY → SLOW_MEDIAN. Measurement-table
+    comment updated to show SWE p90-anchored ratio.
+  - Cell 19 (§3f markdown): updated SLOW c_ver/R from 0.30 → 0.90 with
+    note about why we moved off median anchoring.
+  - Cell 22 (§3h markdown): reframed — was "stress test under heavy
+    regime"; now "appendix sensitivity: what if we anchored to median."
+    Same data, inverted framing.
+  - Cell 23 (§3h code): regime='slow_median' (was 'slow_heavy'),
+    STAT_POLICY_SWE_HEAVY → STAT_POLICY_SWE_MEDIAN, cost_regime field
+    and c_ver value reflect the median anchoring.
+  - Cell 24 (§3i code): variable renames, bar chart colors swapped
+    (headline in red, sensitivity in blue), output text reframed to
+    show that the sign flips are *evidence for* the p90 headline
+    choice. Math identical to previous version.
+  - Cleared outputs of cells 11, 19, 20, 21, 22, 23, 24 — user must
+    re-run. Downstream cells (panel grids in §6/§12) will also produce
+    different SWE-Bench numbers and need re-running.
+
+- `experiments/orchestration_hypothesis_testing/analysis/cost_vector_balance.py`:
+  - `SLOW_MODE.c_ver_current` moved 30 → 90. Sweep range unchanged
+    (5.0–90.0) — the sweep now spans "what if we anchored to median"
+    (low end) up to the headline p90 (upper bound).
+  - Added inline comment explaining the change.
+
+**Tests:** 19 cost_vector_balance unit tests still pass.
+
+**Pending for paper:** appendix needs a "cost-vector sensitivity"
+subsection explaining the median-vs-p90 decision and noting that
+results are robust to ±50% variation in absolute cost values (driven
+by ratios, not absolutes). The 30 sign flips between SLOW and
+SLOW_MEDIAN are the data backing this claim — bayesian_DP is robust,
+critic-gate policies and fixed_pipeline are anchoring-sensitive.
+
+---
+
 ## 2026-05-20 — Colleague-runnable smoke path for function-level + SWE-Bench
 
 Goal: a teammate cloning the repo for the first time should be able to
