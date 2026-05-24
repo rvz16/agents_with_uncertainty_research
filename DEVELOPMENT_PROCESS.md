@@ -6,6 +6,80 @@ edit. Keep entries terse: file, what, why.
 
 ---
 
+## 2026-05-24 — bayesian_DP kernel source: switch to selfrefine, drop on miss
+
+Adopted selfrefine iter trajectories as the uniform source for `KERN_MEAS`
+(the empirical refine transition kernel used by `bayesian_DP`). Previously
+used `single_method` iter runs, which covered only 24/54 (benchmark,
+generator) cells; the remaining 30 silently fell back to IID DP from
+`run_policies`, mixing measured-kernel and IID DP rows under the same
+`bayesian_DP` label. With selfrefine sourcing, **48/54 cells** have a
+measured kernel; the remaining 6 get `bayesian_DP` dropped (loud, not
+silent).
+
+**Rationale.** Production code-fixing agents include a self-critique step
+as part of their refine action. Selfrefine trajectories ARE the empirical
+refine kernel for the agent's deployed algorithm. Cost-vector treatment:
+`c_gen` represents one refine PRIMITIVE call regardless of internal
+sub-steps (critique, self-reflection). See
+`experiments/orchestration_hypothesis_testing/KERNEL_SOURCE_DECISION.md`
+for the full argument.
+
+**No silent fallbacks** — every lookup in `analysis.ipynb` now raises
+loudly on unknown inputs rather than returning a misleading default:
+
+- `canonical_generator(name)`: raises `ValueError` on `None`, `KeyError`
+  on names not in `GENERATORS_RAW` (the explicit set of every valid raw
+  W&B generator name). Previously silently passed through unknown names.
+- `cost_dict_for(bench)`: raises `KeyError` on unknown benchmark.
+  Previously silently used `FAST_ORACLE_COST` as default — would
+  mis-cost any typo'd SWE benchmark catastrophically.
+- Iter variant assignment (cell 15): replaced silent `else None`
+  fallback with explicit `ITER_VARIANT_MAP[b]` — raises `KeyError` if a
+  new benchmark gets uploaded without being registered. Previously
+  skipped mbpp / humaneval / humanevalfix / codecontests entirely from
+  `STAT_ITER` because they didn't match "lcb" or "swe" prefix.
+
+**Source contract assertion (cell 13).** A post-loop assertion verifies
+that no `bayesian_DP` row exists in `STAT_POLICY` for any (b, g) cell
+NOT in `KERN_MEAS`. If a future change adds a new code path that
+bypasses the override/drop pattern, the assertion fires and refuses to
+let stale IID DP rows reach figures.
+
+**Files changed:**
+- `experiments/orchestration/wandb/analysis.ipynb`:
+  - Cell 1: `GENERATOR_NAME_MAP` extended with `"gpt-oss-20b" → "gpt_oss_20b"`
+    (third name variant discovered in `.cache/raw_evidence/`). Added
+    `GENERATORS_RAW` frozenset + strict `canonical_generator()` raising
+    `ValueError`/`KeyError` on bad input.
+  - Cell 11: `cost_dict_for()` made strict.
+  - Cell 13: `KERN_MEAS` filter `_k.method == "single_method"` →
+    `_k.method == "selfrefine"`. Added pre-KERN_MEAS source-contract
+    banner; pre-loop coverage report; `BDP_ABSENT_CELLS` tracker for
+    cells with no calibration at all (vs `BDP_NO_KERNEL_CELLS` for cells
+    with cal but no selfrefine kernel); end-of-cell summary banner; and
+    post-loop assertion. Reframed pc-vs-STAT_POLICY xcheck message
+    (legacy pc is heterogeneous; not "CORRECTED" but "differs-from-canonical").
+  - Cell 15: replaced variant fallback with explicit `ITER_VARIANT_MAP`.
+  - Cells 41 + 78: `RAW.glob("calib__*")` now dedupes by
+    `canonical_generator(g)` to handle the multiple cache-dir copies per
+    gpt-oss-20b cell (different uploaders wrote `gpt-oss-20b`,
+    `gpt_oss_20b`, and `gpt_oss_20b_local` separately).
+
+- New: `experiments/orchestration_hypothesis_testing/KERNEL_SOURCE_DECISION.md`
+  documenting the source contract, cost-vector interpretation (Fix i),
+  coverage matrix, remaining 6-cell gap, and ETA for closing it.
+
+**Coverage outcome.** 48/54 (b, g) cells have measured selfrefine
+kernel. Remaining 6 cells (`gpt5_mini` + `qwen3_coder` ×
+{`codecontests`, `humanevalfix`}; `gpt_oss_20b` × {`swe_lite`,
+`swe_verified`}) get `bayesian_DP` dropped explicitly. Per-cell `ERROR`
+print + end-of-cell summary banner. Closing the gap requires running
+selfrefine iter for those 6 cells (calibration first for 2 of them);
+estimated ~6.5 h sequential, parallelisable.
+
+---
+
 ## 2026-05-24 — SWE-Bench headline cost vector: median → p90 anchoring
 
 Adopted p90-anchored SLOW as the headline cost vector for SWE-Bench Lite
