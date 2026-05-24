@@ -6,6 +6,54 @@ edit. Keep entries terse: file, what, why.
 
 ---
 
+## 2026-05-24 — bayesian_DP kernel source: switch to selfrefine, drop on miss
+
+Adopted selfrefine iter trajectories as the uniform source for
+`KERN_MEAS` (the empirical refine transition kernel used by
+`bayesian_DP`). Previously used `single_method` iter runs, which covered
+only 24/54 (benchmark, generator) cells; the remaining 30 silently fell
+back to IID DP from `run_policies`, mixing measured-kernel and IID DP
+rows under the same `bayesian_DP` label.
+
+**Rationale.** Production code-fixing agents include a self-critique step
+as part of their refine action. Selfrefine trajectories ARE the empirical
+refine kernel for the agent's deployed algorithm. Cost-vector treatment:
+`c_gen` represents one refine PRIMITIVE call regardless of internal
+sub-steps (critique, self-reflection). See
+`experiments/orchestration_hypothesis_testing/KERNEL_SOURCE_DECISION.md`
+for the full argument.
+
+**Coverage outcome.** 48 of 54 cells now have a measured selfrefine
+kernel (was 24/54 with single_method). The remaining 6 cells (gpt5_mini
+and qwen3_coder × {codecontests, humanevalfix}; gpt_oss_20b ×
+{swe_lite, swe_verified}) get `bayesian_DP` DROPPED explicitly. Per-cell
+`ERROR:` print + end-of-cell summary banner in cell 13.
+
+**Files changed (single-method-coverage branch):**
+- `experiments/orchestration/wandb/analysis.ipynb`:
+  - Cell 13: `KERN_MEAS` filter `_k.method == "single_method"` →
+    `_k.method == "selfrefine"`. Added `BDP_NO_KERNEL_CELLS` tracker.
+    `bayesian_DP` else branch now drops the policy and prints `ERROR:`
+    instead of silently falling back to IID. End-of-cell summary banner
+    lists affected cells.
+  - Cell 35 (§7 winner grid), cell 46 (all-policies plotter), cell 72
+    (regime grid helper): same drop-on-missing pattern (no silent IID).
+- `experiments/orchestration_hypothesis_testing/KERNEL_SOURCE_DECISION.md`
+  (NEW): decision document explaining the selfrefine choice, cost-vector
+  interpretation, coverage matrix, 6-cell gap, and ETA for closing it.
+- Removed `experiments/orchestration_hypothesis_testing/SINGLE_METHOD_AUDIT.md`
+  and `SINGLE_METHOD_RUNBOOK.md` (superseded by KERNEL_SOURCE_DECISION.md;
+  Path A "run 30 single_method campaigns" is not pursued).
+
+**Outstanding work:**
+- Run selfrefine for the 6 missing cells (~6.5 h sequential).
+- Paper methodology paragraph documenting the kernel choice + cost
+  interpretation.
+- If PR #9 (cost-vector-balance-search) merges, port the cell patches
+  into the post-PR-9 cell numbering (cells 13 / 41 / 52 / 78 there).
+
+---
+
 ## 2026-05-20 — Colleague-runnable smoke path for function-level + SWE-Bench
 
 Goal: a teammate cloning the repo for the first time should be able to
