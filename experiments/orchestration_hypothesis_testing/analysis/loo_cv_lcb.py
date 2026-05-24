@@ -209,7 +209,7 @@ def main() -> None:
     parser.add_argument("--out-suffix", default="_loo")
     args = parser.parse_args()
 
-    cost = CostModel(c_gen=5, c_L0=1, c_L3=5, c_ver=args.c_ver, reward=100)
+    cost = CostModel(c_gen=10, c_L0=1, c_L3=5, c_ver=args.c_ver, reward=100)
     if hasattr(cost, "c_L2"):
         cost.c_L2 = 2
 

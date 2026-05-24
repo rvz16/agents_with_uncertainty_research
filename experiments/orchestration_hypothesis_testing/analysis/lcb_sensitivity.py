@@ -160,7 +160,7 @@ def main() -> None:
         }
 
         # D1: theta-sensitivity (default c_ver = 30)
-        cost_default = CostModel(c_gen=5, c_L0=1, c_L2=2, c_L3=5, c_ver=30, reward=100)
+        cost_default = CostModel(c_gen=10, c_L0=1, c_L2=2, c_L3=5, c_ver=30, reward=100)
         for label, frac, mode in perturb_grid:
             likes_p = perturb_likelihoods(likes_clean, frac, mode)
             res = run_policies(traj, likes_p, prior, cost_default, args.n_boot)
@@ -168,13 +168,13 @@ def main() -> None:
 
         # D2: c_ver sweep (clean likelihoods)
         for c_ver in c_ver_grid:
-            cost_v = CostModel(c_gen=5, c_L0=1, c_L2=2, c_L3=5, c_ver=c_ver, reward=100)
+            cost_v = CostModel(c_gen=10, c_L0=1, c_L2=2, c_L3=5, c_ver=c_ver, reward=100)
             res = run_policies(traj, likes_clean, prior, cost_v, args.n_boot)
             results["D2_c_ver_sweep"][f"c_ver_{c_ver}"] = res
 
         # D4: reward sweep (clean likelihoods, c_ver fixed at 30)
         for reward in reward_grid:
-            cost_r = CostModel(c_gen=5, c_L0=1, c_L2=2, c_L3=5, c_ver=30, reward=reward)
+            cost_r = CostModel(c_gen=10, c_L0=1, c_L2=2, c_L3=5, c_ver=30, reward=reward)
             res = run_policies(traj, likes_clean, prior, cost_r, args.n_boot)
             results["D4_reward_sweep"][f"reward_{reward}"] = res
 

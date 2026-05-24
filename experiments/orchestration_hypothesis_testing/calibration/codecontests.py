@@ -382,6 +382,12 @@ def main() -> None:
     parser.add_argument("--n-instances", type=int, default=100)
     parser.add_argument("--n-patches", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--extend-existing", action="store_true",
+                        help="If <output-dir>/sample.json exists, keep its instance_ids "
+                             "at the head of the sampled list, then append new "
+                             "candidates from the full CodeContests pool to reach --n-instances. "
+                             "Resume logic in calibrate_one_generator skips already-"
+                             "completed (instance, patch) pairs.")
     parser.add_argument("--max-cost-usd-per-model", default="5.0",
                         help="single float OR key=val,key=val,...")
     args = parser.parse_args()
@@ -413,7 +419,30 @@ def main() -> None:
     else:
         cap_default = float(cap_str)
 
-    problems = load_codecontests(args.n_instances, args.seed)
+    all_problems = load_codecontests(0, args.seed)  # sentinel 0 = all
+    import random as _rng
+    _rng.Random(args.seed).shuffle(all_problems)
+    out_dir = args.output_dir.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sample_path = out_dir / "sample.json"
+    if args.extend_existing and sample_path.exists():
+        existing = json.loads(sample_path.read_text())
+        existing_ids = [str(s["name"]) for s in existing]
+        existing_set = set(existing_ids)
+        by_id = {str(p["name"]): p for p in all_problems}
+        head = [by_id[i] for i in existing_ids if i in by_id]
+        if len(head) != len(existing_ids):
+            missing = [i for i in existing_ids if i not in by_id]
+            log.warning("%d existing IDs not in current CodeContests pool. Examples: %s",
+                          len(missing), missing[:3])
+        tail = [p for p in all_problems if str(p["name"]) not in existing_set]
+        all_problems = head + tail
+        log.info("extend-existing: %d existing + %d new (target n=%d)",
+                 len(head), len(tail), args.n_instances)
+    problems = all_problems[: args.n_instances]
+    sample_path.write_text(json.dumps(
+        [{"name": p["name"]} for p in problems], indent=2))
+    log.info("sampled %d instances (seed=%d) → sample.json", len(problems), args.seed)
     out_dir = args.output_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 

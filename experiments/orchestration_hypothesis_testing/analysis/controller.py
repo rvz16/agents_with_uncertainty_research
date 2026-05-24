@@ -18,7 +18,7 @@ Policies compared:
   - Bayesian controller — backward induction
 
 Cost model (declared, simple):
-  c_gen=5, c_L0=1, c_L3=5, c_ver=30, reward=100
+  c_gen=10, c_L0=1, c_L3=5, c_ver=30, reward=100
 
 Output: <gen>/policy_comparison.json with utility / pass-rate / cost
 per policy.

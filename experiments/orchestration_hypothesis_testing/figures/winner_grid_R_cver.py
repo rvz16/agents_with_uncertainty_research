@@ -110,7 +110,7 @@ def main():
             # Default per-critic costs (c_L0=1, c_L2=2, c_L3=5). Slide 51
             # uses the same defaults at (R=100, c_ver=30), so the matching
             # panel of this grid reproduces it cell-by-cell.
-            cost = CostModel(c_gen=5, c_L0=1, c_L2=2, c_L3=5, c_ver=cv, reward=R)
+            cost = CostModel(c_gen=10, c_L0=1, c_L2=2, c_L3=5, c_ver=cv, reward=R)
             w_map: dict[tuple[str, str], str] = {}
             for (b, g), (traj, likes, prior) in cells.items():
                 try:
