@@ -412,7 +412,7 @@ def main() -> None:
     else:
         cap_default = float(cap_str)
 
-        # Load FULL MBPP+ pool then shuffle with seed (so we can rearrange
+    # Load FULL MBPP+ pool then shuffle with seed (so we can rearrange
     # for --extend-existing before truncating to --n-instances).
     all_problems = load_mbpp_plus(0, seed=args.seed)  # sentinel 0 = all
     import random as _rng

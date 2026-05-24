@@ -443,8 +443,6 @@ def main() -> None:
     sample_path.write_text(json.dumps(
         [{"name": p["name"]} for p in problems], indent=2))
     log.info("sampled %d instances (seed=%d) → sample.json", len(problems), args.seed)
-    out_dir = args.output_dir.resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     for gen in [g.strip() for g in args.generators.split(",") if g.strip()]:
         cap = cap_map.get(gen, cap_default)
