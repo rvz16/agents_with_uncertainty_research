@@ -6,6 +6,65 @@ edit. Keep entries terse: file, what, why.
 
 ---
 
+## 2026-05-25 — EMNLP paper Results section rewrite + figure-asset reorg
+
+**Notebook (`analysis.ipynb`).** Cell 1 now also creates
+`FIGURES_OUT/main/` and `FIGURES_OUT/cver_sweep/`. Six master-figure
+cells (34/36/38/42/77/79) and the c\_ver-sweep grid cell (91) moved
+their `savefig` calls from top-level `CACHE/` to `FIGURES_OUT/main/`
+and `FIGURES_OUT/cver_sweep/<bench>_grid.png` respectively. Cells
+36/38 also gained `bbox_to_anchor=(0.5, -0.08)` on `fig.legend(...)`
+to push the figure-level legend below the supxlabel (was overlapping
+on the 3×3 grid). Existing PNGs were physically moved on disk to
+match.
+
+**Paper repo (`emnlp2026/initial/`).** Full Results section rewrite
+in `results.tex`: reorganised into seven subsections (regime
+characterisation → policy comparison on eval → critic
+informativeness → DP-vs-greedy → published-baseline comparison →
+cost-vector sensitivity → robustness), every claim resolves to a
+figure or table reference. New main-paper Fig 2 added
+(`policies_per_model_main.png` = SWE-Lite/sonnet45 eval). New
+*Critic Informativeness* subsection pointing to the appendix
+critic-grid. Two `\theo{TODO ...}` placeholders remain (DP-vs-greedy
+scatter, Self-Refine/Reflexion table).
+
+**Paper repo — figure refresh.** Legacy `regime_map.png`,
+`three_regimes_populated.png`, `headline.png` replaced/dropped.
+Refreshed `critics/`, `generator_locations/`, `per_strategy_grid/`,
+`cver_sweep/` from the current notebook cache; per-bench coverage
+extended from 7 benchmarks to 9 (added CodeContests, HumanEvalFix).
+Dropped gpt-oss-20b name-variant duplicates (`gpt-oss-20b.png` and
+`gpt_oss_20b_local.png`) in `cver_sweep/`, kept only the canonical
+`gpt_oss_20b.png`. Four composite master grids
+(`fig8_winner_grid_R_cver.png`, `fig7_per_strategy_grid.png`,
+`fig7b_generator_locations.png`, `fig_regime_grid_cver_R.png`) now
+shipped under `figures/main/`. The 9 per-benchmark eval rollups
+under `figures/policies_per_model/<bench>_eval.png` are also
+shipped. Total assets: 103 PNGs.
+
+**Paper repo — appendix.** `appendix_figures.tex` rewritten to
+match the refreshed asset inventory: 3×3 subfigure grids for
+generator-locations and per-strategy-grid (was 3×2+blanks), new
+*Held-out eval policy comparison* subsection
+(`appendix:policies_per_model`), new *Composite master grids*
+subsection. The four appendix subsections now reference exactly the
+asset categories shipped in §3 of `emnlp2026/notes/results_revision_plan.md`.
+`appendix_setup.tex` gained an `\label{appendix:setup}` alias for
+forward-references from Results.
+
+**Build status.** `pdflatex` (TeX Live 2025) produces a clean
+29-page PDF. Remaining undefined references are the two known
+TODOs (`fig:dp_vs_greedy_scatter`, `tab:selfrefine_reflexion`) plus
+pre-existing labels in commented-out sections.
+
+**Plan document.** New
+`emnlp2026/notes/results_revision_plan.md` records the 6 design
+decisions (Fig 2/3 choices, three legacy assets dropped, k-sensitivity
+panels dropped, CodeContests/HumanEvalFix kernel TODO).
+
+---
+
 ## 2026-05-24 — bayesian_DP kernel source: switch to selfrefine, drop on miss
 
 Adopted selfrefine iter trajectories as the uniform source for `KERN_MEAS`

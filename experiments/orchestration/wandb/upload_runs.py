@@ -73,6 +73,8 @@ ORCH_CALIBRATION_BENCHMARKS = [
     ("lcb_easy",     "lcb_calibration_easy"),
     ("mbpp",         "mbpp_calibration"),
     ("humaneval",    "humaneval_calibration"),
+    ("humanevalfix", "humanevalfix_calibration"),
+    ("codecontests", "codecontests_calibration"),
     ("swe_lite",     "swebench_lite"),
     ("swe_verified", "swebench_verified"),
 ]
@@ -86,11 +88,26 @@ ORCH_ITER_BENCHMARKS = [
 ]
 
 ORCH_REALBASELINES_BENCHMARKS = [
+    # Legacy "<bench>_calibration_*_realbaselines" / "swebench_*_realbaselines"
+    # subdir convention (used by earlier SR/Rfx runs that lived inside the
+    # calibration trees).
     ("lcb_hard",     "lcb_calibration_hard_realbaselines"),
     ("lcb_medium",   "lcb_calibration_medium_realbaselines"),
     ("lcb_easy",     "lcb_calibration_easy_realbaselines"),
     ("swe_lite",     "swebench_lite_realbaselines"),
     ("swe_verified", "swebench_verified_realbaselines"),
+    # New "<bench>_iter/<gen>/<method>/" convention written by
+    # refine.py + prep_cell.py (May 2026 iter-fill batch). Same per-method
+    # schema (transition_kernel.json + iter_records.jsonl), so the existing
+    # upload_iter_orch realbaselines loop handles it transparently;
+    # tk.exists() filters out the duplicate-key path that has no data.
+    ("lcb_hard",     "lcb_hard_iter"),
+    ("lcb_medium",   "lcb_medium_iter"),
+    ("lcb_easy",     "lcb_easy_iter"),
+    ("mbpp",         "mbpp_iter"),
+    ("humaneval",    "humaneval_iter"),
+    ("humanevalfix", "humanevalfix_iter"),
+    ("codecontests", "codecontests_iter"),
 ]
 
 POLICY_NAMES = [

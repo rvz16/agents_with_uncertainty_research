@@ -174,8 +174,17 @@ class BayesianController:
 # Policy simulators
 # ---------------------------------------------------------------------------
 
-def simulate_policy(traj: list[dict], policy_fn, cost: CostModel) -> dict:
-    """Run a stateful policy on a trajectory. Returns (reward, cost, actions)."""
+def simulate_policy(traj: list[dict], policy_fn, cost: CostModel,
+                    *, max_actions: int = 64) -> dict:
+    """Run a stateful policy on a trajectory. Returns (reward, cost, actions).
+
+    Critic actions (L0/L2/L3) don't advance step/patch_idx and don't terminate;
+    a degenerate policy that keeps recommending the same critic can stall the
+    loop. This happens at extreme cost ratios (e.g. c_ver >> reward) where the
+    Bayesian DP finds critics weakly positive while every advancing/terminal
+    action is negative. To stay robust without changing normal-regime behavior
+    we cap total actions per simulation and force `give_up` if hit.
+    """
     state = {
         "step": 0,
         "patch_idx": 0,
@@ -187,6 +196,12 @@ def simulate_policy(traj: list[dict], policy_fn, cost: CostModel) -> dict:
     cum_cost = 0.0
     reward = 0.0
     while not (state["verified"] or state["given_up"]) and state["step"] < len(traj):
+        if len(state["actions"]) >= max_actions:
+            # Hit the safety cap (almost certainly a critic-cycle in a degenerate
+            # cost regime). Force give_up — caller still gets a finite utility.
+            state["given_up"] = True
+            state["actions"].append("give_up_cap")
+            break
         rec = traj[state["patch_idx"]]
         action = policy_fn(state, rec)
         state["actions"].append(action)
