@@ -38,7 +38,7 @@ pip install openai datasets evalplus python-dotenv numpy scipy \
             matplotlib pyarrow wandb pytest
 
 # 2) Put OPENROUTER_API_KEY in <repo-root>/.env
-echo "OPENROUTER_API_KEY=sk-or-v1-..." > ../../.env
+echo "OPENROUTER_API_KEY=<OPENROUTER_API_KEY>" > ../../.env
 
 # 3) MBPP+ smoke calibration (~30s, ~$0.02)
 python -m calibration.mbpp \
@@ -238,4 +238,3 @@ comparisons across generators line up.
 - For paper-side questions: see `../../emnlp2026/initial/` for the
 current draft and `EXPERIMENTAL_LOG.md` for what each Table 1 cell
 was produced from.
-

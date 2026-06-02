@@ -41,6 +41,14 @@ from calibration.lcb import (  # noqa: E402
     cost_for_call, GENERATORS,
 )
 from _common.cost import CostTracker  # noqa: E402
+from _common.logprobs import (  # noqa: E402
+    extract_completion_logprobs,
+    logprob_summary_fields,
+    make_chat_completion_kwargs,
+    should_request_vllm_logprobs,
+    top_logprobs_from_env,
+    write_logprob_sidecar,
+)
 import time as _time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
@@ -185,6 +193,8 @@ def calibrate_one_generator(
     model_id, label, _base_url = GENERATORS[gen_key]
     # Per-generator generation client: vLLM for qwen25_32b, OpenRouter otherwise.
     gen_client = _make_client(gen_key) if _base_url else client
+    request_logprobs = should_request_vllm_logprobs(_base_url)
+    top_logprobs = top_logprobs_from_env()
     log.info("=== %s (%s) — cap $%.2f ===", gen_key, model_id, max_cost_usd)
     gen_dir = out_dir / gen_key
     gen_dir.mkdir(parents=True, exist_ok=True)
@@ -224,18 +234,25 @@ def calibrate_one_generator(
                     continue
                 try:
                     _t0 = _time.perf_counter()
-                    resp = gen_client.chat.completions.create(
+                    prompt = build_prompt(inst)
+                    resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                         model=model_id,
-                        messages=[{"role": "user", "content": build_prompt(inst)}],
+                        messages=[{"role": "user", "content": prompt}],
                         temperature=0.7, max_tokens=4000,
-                    )
+                        request_logprobs=request_logprobs,
+                        top_logprobs=top_logprobs,
+                    ))
                     _gen_dt = _time.perf_counter() - _t0
                     text = resp.choices[0].message.content or ""
+                    generation_logprobs = extract_completion_logprobs(
+                        resp, requested=request_logprobs)
                     usage = resp.usage
                     c = cost_for_call(model_id, usage.prompt_tokens, usage.completion_tokens)
                     cost.record(c, prompt_tokens=usage.prompt_tokens,
                                 completion_tokens=usage.completion_tokens,
-                                instance_id=inst_id, patch_id=pid)
+                                instance_id=inst_id, patch_id=pid,
+                                extra=logprob_summary_fields(generation_logprobs)
+                                if request_logprobs else None)
                     tele.record(instance_id=inst_id, patch_id=pid,
                                 action_type="generate", runtime_s=_gen_dt,
                                 api_cost_usd=c)
@@ -244,6 +261,10 @@ def calibrate_one_generator(
                     continue
                 safe_id = inst_id.replace("/", "_")
                 (raw_dir / f"{safe_id}_p{pid}.txt").write_text(text)
+                if request_logprobs:
+                    write_logprob_sidecar(raw_dir, f"{safe_id}_p{pid}",
+                                          generation_logprobs,
+                                          model=model_id, prompt=prompt)
                 code = extract_code(text)
                 # L2 = base inputs only (visible)
                 # Y = base + plus inputs (full PLUS test suite)

@@ -42,6 +42,7 @@ import random
 import re
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -60,8 +61,11 @@ from openai import (
     RateLimitError,
 )
 
-# Project root (the worktree we're running from)
+# Project root (the worktree we're running from) plus the orchestration package
+# root that contains _common/, calibration/, and iter/.
 ROOT = Path(__file__).resolve().parents[3]
+ORCH_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ORCH_ROOT))
 sys.path.insert(0, str(ROOT))
 
 # Local import: thread-safe cost ledger
@@ -69,6 +73,13 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from _common.cost import CostTracker, extract_usage, project_cost  # noqa: E402
+from _common.logprobs import (  # noqa: E402
+    extract_completion_logprobs,
+    logprob_summary_fields,
+    should_request_vllm_logprobs,
+    top_logprobs_from_env,
+    write_logprob_sidecar,
+)
 
 # Provider exceptions that should NOT be retried; we abort immediately.
 # A wrong API key won't fix itself by retrying 599 more times.
@@ -125,10 +136,11 @@ GENERATORS: dict[str, tuple[str, str | None, bool | None]] = {
     "sonnet45":          ("anthropic/claude-sonnet-4.5", None,                         None),
     "qwen3_coder":       ("qwen/qwen3-coder",           None,                          None),
     "gpt5_mini":         ("openai/gpt-5-mini",          None,                          None),
-    "qwen25_7b":         ("Qwen/Qwen2.5-7B-Instruct",   "http://127.0.0.1:8001/v1",   None),
-    "qwen3_8b":          ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   False),
-    "qwen3_8b_thinking": ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   True),
-    "qwen25_32b":        ("Qwen/Qwen2.5-Coder-32B-Instruct", "http://127.0.0.1:8003/v1",   None),
+    "qwen25_7b":         ("Qwen/Qwen2.5-7B-Instruct",   os.environ.get("QWEN25_7B_BASE_URL", "http://127.0.0.1:8001/v1"),   None),
+    "qwen3_8b":          ("Qwen/Qwen3-8B",              os.environ.get("QWEN3_8B_BASE_URL", "http://127.0.0.1:8002/v1"),    False),
+    "qwen3_8b_thinking": ("Qwen/Qwen3-8B",              os.environ.get("QWEN3_8B_BASE_URL", "http://127.0.0.1:8002/v1"),    True),
+    "qwen25_32b":        ("Qwen/Qwen2.5-Coder-32B-Instruct", os.environ.get("QWEN25_32B_BASE_URL", "http://127.0.0.1:8003/v1"), None),
+    "gpt_oss_20b_local": ("openai/gpt-oss-20b",         os.environ.get("GPT_OSS_20B_BASE_URL", "http://127.0.0.1:8000/v1"), None),
 }
 
 # Per-model cost cap (USD) — used by --max-cost-usd-per-model when not given a
@@ -145,6 +157,7 @@ DEFAULT_COST_CAPS_USD: dict[str, float] = {
     "qwen25_32b": 1000.0,
     "qwen3_8b":   1000.0,
     "qwen3_8b_thinking": 1000.0,
+    "gpt_oss_20b_local": 1000.0,
 }
 
 DEFAULT_N_INSTANCES = 20
@@ -827,7 +840,9 @@ def generate_one(
     seed: int,
     enable_thinking: bool | None = None,
     max_tokens: int | None = None,
-) -> tuple[str, float, int, int]:
+    request_logprobs: bool = False,
+    top_logprobs: int = 0,
+) -> tuple[str, float, int, int, dict]:
     """Single chat completion call.
 
     Returns (response_text, cost_usd, prompt_tokens, completion_tokens).
@@ -847,18 +862,25 @@ def generate_one(
             "chat_template_kwargs": {"enable_thinking": enable_thinking}
         }
 
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-        seed=seed,
-        max_tokens=max_tokens,
-        timeout=LLM_TIMEOUT_S,
+    kwargs = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "seed": seed,
+        "max_tokens": max_tokens,
+        "timeout": LLM_TIMEOUT_S,
         **extra,
-    )
+    }
+    if request_logprobs:
+        kwargs["logprobs"] = True
+        if top_logprobs > 0:
+            kwargs["top_logprobs"] = top_logprobs
+    resp = client.chat.completions.create(**kwargs)
     text = resp.choices[0].message.content or ""
     cost, prompt_tok, completion_tok = extract_usage(resp)
-    return text, cost, prompt_tok, completion_tok
+    generation_logprobs = extract_completion_logprobs(
+        resp, requested=request_logprobs)
+    return text, cost, prompt_tok, completion_tok, generation_logprobs
 
 
 def strip_think_blocks(text: str) -> str:
@@ -920,7 +942,7 @@ def parse_full_file_blocks(response: str) -> dict[str, str]:
 def sample_instances(seed: int, n: int,
                      dataset_name: str = "princeton-nlp/SWE-bench_Lite",
                      language_filter: str | None = None) -> list[dict]:
-    """Sample n instances from a SWE-bench dataset.
+    """Sample n instances from a SWE-bench dataset; n=0 means all.
 
     language_filter: when set (e.g., 'python'), keep only instances where
         repo_language matches. Required for SWE-bench Pro (multi-language).
@@ -933,7 +955,7 @@ def sample_instances(seed: int, n: int,
                    if (ds[i].get("repo_language") or "").lower() == wanted]
     rng = random.Random(seed)
     rng.shuffle(indices)
-    chosen = indices[:n]
+    chosen = indices[:n] if n and n > 0 else indices
     return [dict(ds[i]) for i in sorted(chosen)]
 
 
@@ -1029,6 +1051,8 @@ def generate_for_generator(
                 continue
 
     client = make_client(base_url)
+    request_logprobs = should_request_vllm_logprobs(base_url)
+    top_logprobs = top_logprobs_from_env()
 
     log.info("[%s] fetching oracle files for %d instances", generator_key, len(instances))
     oracle_per_instance: dict[str, dict[str, str]] = {}
@@ -1082,9 +1106,11 @@ def generate_for_generator(
         oracle_files = oracle_per_instance[inst["instance_id"]]
         prompt = make_prompt(inst, oracle_files)
         try:
-            response, cost_usd, p_tok, c_tok = generate_one(
+            response, cost_usd, p_tok, c_tok, generation_logprobs = generate_one(
                 client, generator_model, prompt, temperature, seed,
                 enable_thinking=enable_thinking,
+                request_logprobs=request_logprobs,
+                top_logprobs=top_logprobs,
             )
         except FATAL_API_EXCEPTIONS as exc:
             # Mark tracker as capped so siblings stop, but raise so the
@@ -1123,17 +1149,20 @@ def generate_for_generator(
         )
 
         # Record cost AFTER we know the outcome so the audit log has full context
-        if cost_tracker is not None and cost_usd > 0:
+        if cost_tracker is not None and (cost_usd > 0 or request_logprobs):
+            extra = {
+                "extraction_path": extraction_path,
+                "diff_chars": len(diff),
+            }
+            if request_logprobs:
+                extra.update(logprob_summary_fields(generation_logprobs))
             cost_tracker.record(
                 cost_usd=cost_usd,
                 prompt_tokens=p_tok,
                 completion_tokens=c_tok,
                 instance_id=inst["instance_id"],
                 patch_id=pid,
-                extra={
-                    "extraction_path": extraction_path,
-                    "diff_chars": len(diff),
-                },
+                extra=extra,
             )
 
         err = "" if diff else (
@@ -1143,6 +1172,10 @@ def generate_for_generator(
         if not diff:
             rp = raw_responses_dir / f"{inst['instance_id']}_p{pid}.txt"
             rp.write_text(response)
+        if request_logprobs:
+            write_logprob_sidecar(raw_responses_dir, f"{inst['instance_id']}_p{pid}",
+                                  generation_logprobs,
+                                  model=generator_model, prompt=prompt)
 
         return GenerationRecord(
             generator_key=generator_key,
@@ -1207,36 +1240,145 @@ def generate_for_generator(
 # ---------------------------------------------------------------------------
 
 PODMAN_COMPAT_SHIM = '''
-"""Monkeypatch docker SDK so SWE-bench harness can run against podman 3.4.4.
+"""Podman/Docker-SDK compatibility for SWE-bench evaluation.
 
-Podman 3.4.4 reports Docker compat API 1.40; the harness passes
-`platform=` to client.containers.create() and client.images.build(),
-which the SDK only allows on API >= 1.41. We strip `platform` from the
-config dict before the SDK can complain.
-
-Auto-no-ops on real Docker (where the platform kwarg is fine).
+SWE-bench's CLI does not expose the TestSpec architecture knob. Clariden jobs
+can run on aarch64 nodes, where x86_64 images fail without binfmt/qemu, so this
+shim can force native arm64 TestSpecs and normalizes Docker platform strings for
+podman's Docker API.
 """
 import os
+import sys
+
 if "podman" in os.environ.get("DOCKER_HOST", "").lower() or os.environ.get("SWEBENCH_PODMAN_COMPAT"):
     import docker
-    from docker.api import container as _container_api
     from docker.api import build as _build_api
+    from docker.api import container as _container_api
+    from docker.models import containers as _containers_model
+    from docker.models import images as _images_model
+    from swebench.harness import dockerfiles as _dockerfiles
+    from swebench.harness.dockerfiles import python as _python_dockerfiles
+    from swebench.harness.test_spec import test_spec as _test_spec
+
+    _FORCED_ARCH = os.environ.get("SWEBENCH_ARCH")
+    if _FORCED_ARCH == "aarch64":
+        _FORCED_ARCH = "arm64"
+    _DEFAULT_PLATFORM = os.environ.get(
+        "SWEBENCH_DOCKER_PLATFORM",
+        "linux/arm64/v8" if _FORCED_ARCH == "arm64" else "linux/amd64",
+    )
+    _UBUNTU_IMAGE = os.environ.get("SWEBENCH_UBUNTU_IMAGE")
+    if _UBUNTU_IMAGE:
+        _python_dockerfiles._DOCKERFILE_BASE_PY = (
+            _python_dockerfiles._DOCKERFILE_BASE_PY
+            .replace("ubuntu:{ubuntu_version}", _UBUNTU_IMAGE)
+        )
+        _dockerfiles._DOCKERFILE_BASE["py"] = _python_dockerfiles._DOCKERFILE_BASE_PY
+
+    def _normalize_platform(platform):
+        platform = platform or _DEFAULT_PLATFORM
+        if platform in {"linux/x86_64", "linux/x64"}:
+            return _DEFAULT_PLATFORM if _FORCED_ARCH == "arm64" else "linux/amd64"
+        if platform in {"linux/aarch64", "linux/arm64"}:
+            return "linux/arm64/v8"
+        return platform
+
+    if _FORCED_ARCH:
+        _orig_make_test_spec = _test_spec.make_test_spec
+        def _patched_make_test_spec(
+            instance,
+            namespace=None,
+            base_image_tag="latest",
+            env_image_tag="latest",
+            instance_image_tag="latest",
+            arch="x86_64",
+        ):
+            return _orig_make_test_spec(
+                instance,
+                namespace=namespace,
+                base_image_tag=base_image_tag,
+                env_image_tag=env_image_tag,
+                instance_image_tag=instance_image_tag,
+                arch=_FORCED_ARCH,
+            )
+        _test_spec.make_test_spec = _patched_make_test_spec  # type: ignore[assignment]
+        for _module_name in (
+            "swebench.harness.docker_build",
+            "swebench.harness.prepare_images",
+            "swebench.harness.reporting",
+            "swebench.harness.run_evaluation",
+        ):
+            _module = sys.modules.get(_module_name)
+            if _module is not None and hasattr(_module, "make_test_spec"):
+                setattr(_module, "make_test_spec", _patched_make_test_spec)
+
+    def _is_platform_error(exc):
+        msg = str(exc).lower()
+        return "platform" in msg and (
+            "unexpected" in msg
+            or "unsupported" in msg
+            or "invalid" in msg
+            or "client is newer than server" in msg
+        )
+
+    _orig_pull = _images_model.ImageCollection.pull
+    def _patched_pull(self, repository, tag=None, all_tags=False, **kwargs):
+        kwargs["platform"] = _normalize_platform(kwargs.get("platform"))
+        try:
+            return _orig_pull(self, repository, tag=tag, all_tags=all_tags, **kwargs)
+        except Exception as exc:
+            if not _is_platform_error(exc):
+                raise
+            kwargs.pop("platform", None)
+            return _orig_pull(self, repository, tag=tag, all_tags=all_tags, **kwargs)
+    _images_model.ImageCollection.pull = _patched_pull  # type: ignore[assignment]
 
     _orig_create = _container_api.ContainerApiMixin.create_container_from_config
-    def _patched_create(self, config, name=None, platform=None):  # noqa: ARG001
+    def _patched_create(self, config, name=None, platform=None):
+        platform = _normalize_platform(platform or config.get("platform"))
         config.pop("platform", None)
         host_cfg = config.get("HostConfig")
         if isinstance(host_cfg, dict):
             host_cfg.pop("Platform", None)
-        # Drop the explicit platform kwarg too — podman 3.4.4 reports API 1.40
-        # which the SDK refuses to accept platform for.
-        return _orig_create(self, config, name, None)
+        try:
+            return _orig_create(self, config, name, platform)
+        except Exception as exc:
+            if not _is_platform_error(exc):
+                raise
+            config.pop("platform", None)
+            if isinstance(host_cfg, dict):
+                host_cfg.pop("Platform", None)
+            return _orig_create(self, config, name, None)
     _container_api.ContainerApiMixin.create_container_from_config = _patched_create  # type: ignore[assignment]
+
+    _orig_model_create = _containers_model.ContainerCollection.create
+    def _patched_model_create(self, *args, **kwargs):
+        name = str(kwargs.get("name") or "")
+        disable_network = os.environ.get("SWEBENCH_DISABLE_EVAL_NETWORK", "1") == "1"
+        if disable_network and name.startswith("sweb.eval."):
+            kwargs.setdefault("network_mode", "none")
+        return _orig_model_create(self, *args, **kwargs)
+    _containers_model.ContainerCollection.create = _patched_model_create  # type: ignore[assignment]
+
+    _orig_container_stop = _containers_model.Container.stop
+    def _patched_container_stop(self, **kwargs):
+        name = str(getattr(self, "name", "") or "")
+        if name.startswith("sweb.eval."):
+            timeout = int(os.environ.get("SWEBENCH_EVAL_STOP_TIMEOUT", "2"))
+            kwargs["timeout"] = min(int(kwargs.get("timeout", timeout)), timeout)
+        return _orig_container_stop(self, **kwargs)
+    _containers_model.Container.stop = _patched_container_stop  # type: ignore[assignment]
 
     _orig_build = _build_api.BuildApiMixin.build
     def _patched_build(self, *args, **kwargs):
-        kwargs.pop("platform", None)
-        return _orig_build(self, *args, **kwargs)
+        kwargs["platform"] = _normalize_platform(kwargs.get("platform"))
+        try:
+            return _orig_build(self, *args, **kwargs)
+        except Exception as exc:
+            if not _is_platform_error(exc):
+                raise
+            kwargs.pop("platform", None)
+            return _orig_build(self, *args, **kwargs)
     _build_api.BuildApiMixin.build = _patched_build  # type: ignore[assignment]
 '''
 
@@ -1249,6 +1391,89 @@ def _write_podman_shim(target_dir: Path) -> Path:
     site = target_dir / "sitecustomize.py"
     site.write_text("import podman_compat_shim  # noqa: F401\n")
     return target_dir
+
+
+def _fmt_mtime(ts: float | None) -> str:
+    if ts is None:
+        return "-"
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _latest_direct_file_mtime(paths: Iterable[Path]) -> float | None:
+    latest: float | None = None
+    for path in paths:
+        try:
+            if not path.is_file():
+                continue
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if latest is None or mtime > latest:
+            latest = mtime
+    return latest
+
+
+def _count_named_files(instance_dirs: list[Path], name: str) -> int:
+    return sum(1 for instance_dir in instance_dirs if (instance_dir / name).exists())
+
+
+def _swe_eval_dir(work_dir: Path) -> Path:
+    if (work_dir / "logs" / "run_evaluation").exists():
+        return work_dir
+    if (work_dir / "eval" / "logs" / "run_evaluation").exists():
+        return work_dir / "eval"
+    if work_dir.name == "eval":
+        return work_dir
+    return work_dir / "eval"
+
+
+def _swe_build_progress(work_dir: Path) -> str:
+    eval_dir = _swe_eval_dir(work_dir)
+    build_root = eval_dir / "logs" / "build_images"
+    env_logs = list((build_root / "env").glob("*/build_image.log"))
+    instance_logs = list((build_root / "instances").glob("*/build_image.log"))
+    latest = _latest_direct_file_mtime([*env_logs, *instance_logs])
+    return (
+        f"build_env_logs={len(env_logs)} "
+        f"build_instance_logs={len(instance_logs)} "
+        f"latest_build={_fmt_mtime(latest)}"
+    )
+
+
+def _swe_eval_progress_snapshot(work_dir: Path, run_id: str) -> str:
+    """Summarize SWE-bench harness artifacts created for a run_id."""
+    eval_dir = _swe_eval_dir(work_dir)
+    run_root = eval_dir / "logs" / "run_evaluation" / run_id
+    aggregate = "yes" if list(eval_dir.glob(f"*.{run_id}.json")) else "no"
+    if not run_root.exists():
+        return f"run_id={run_id} launched_dirs=0 aggregate={aggregate} {_swe_build_progress(work_dir)}"
+
+    model_dirs = sorted(path for path in run_root.iterdir() if path.is_dir())
+    if not model_dirs:
+        return f"run_id={run_id} launched_dirs=0 aggregate={aggregate} {_swe_build_progress(work_dir)}"
+
+    chunks: list[str] = []
+    for model_dir in model_dirs:
+        instance_dirs = sorted(path for path in model_dir.iterdir() if path.is_dir())
+        direct_files: list[Path] = []
+        for instance_dir in instance_dirs:
+            try:
+                direct_files.extend(path for path in instance_dir.iterdir() if path.is_file())
+            except OSError:
+                continue
+        latest = _latest_direct_file_mtime(direct_files)
+        chunks.append(
+            f"{model_dir.name}: "
+            f"launched_dirs={len(instance_dirs)} "
+            f"run_logs={_count_named_files(instance_dirs, 'run_instance.log')} "
+            f"patch_diff={_count_named_files(instance_dirs, 'patch.diff')} "
+            f"eval_sh={_count_named_files(instance_dirs, 'eval.sh')} "
+            f"test_output={_count_named_files(instance_dirs, 'test_output.txt')} "
+            f"reports={_count_named_files(instance_dirs, 'report.json')} "
+            f"aggregate={aggregate} "
+            f"latest_file={_fmt_mtime(latest)}"
+        )
+    return " | ".join([f"run_id={run_id}", _swe_build_progress(work_dir), *chunks])
 
 
 def run_swebench_eval(
@@ -1278,6 +1503,11 @@ def run_swebench_eval(
         env["PYTHONPATH"] = (
             str(shim_dir) + os.pathsep + env.get("PYTHONPATH", "")
         )
+        env.setdefault("SWEBENCH_DOCKER_PLATFORM", "linux/amd64")
+        local_tmpdir = env.get("SWEBENCH_LOCAL_TMPDIR") or env.get("PODMAN_TMPDIR")
+        if local_tmpdir:
+            Path(local_tmpdir).mkdir(parents=True, exist_ok=True)
+            env["TMPDIR"] = local_tmpdir
 
     cmd = [
         sys.executable, "-m", "swebench.harness.run_evaluation",
@@ -1285,14 +1515,45 @@ def run_swebench_eval(
         "--predictions_path", str(predictions_path),
         "--max_workers", str(max_workers),
         "--run_id", run_id,
+        # The harness default namespace ("swebench") treats instance images as
+        # remote images and tries to pull per-instance tags from Docker Hub.
+        # Those tags are not published for all sampled instances, so build them
+        # locally under podman instead.
+        "--namespace", "none",
         # cache_level=instance: keep instance images across pid runs; same
         # instance_id with patch_id 0/1/2 reuses one built image.
         "--cache_level", "instance",
     ]
     log.info("eval: %s", " ".join(cmd))
-    proc = subprocess.run(
-        cmd, cwd=work_dir, env=env, capture_output=True, text=True,
-    )
+    try:
+        progress_interval = float(env.get("SWE_PROGRESS_INTERVAL", "60"))
+    except ValueError:
+        progress_interval = 60.0
+    stop_progress = threading.Event()
+    progress_thread: threading.Thread | None = None
+    if progress_interval > 0:
+        log.info("swe progress initial: %s", _swe_eval_progress_snapshot(work_dir, run_id))
+
+        def _log_progress() -> None:
+            while not stop_progress.wait(progress_interval):
+                log.info("swe progress: %s", _swe_eval_progress_snapshot(work_dir, run_id))
+
+        progress_thread = threading.Thread(
+            target=_log_progress,
+            name=f"swe-progress-{run_id}",
+            daemon=True,
+        )
+        progress_thread.start()
+    try:
+        proc = subprocess.run(
+            cmd, cwd=work_dir, env=env, capture_output=True, text=True,
+        )
+    finally:
+        stop_progress.set()
+        if progress_thread is not None:
+            progress_thread.join(timeout=2)
+        if progress_interval > 0:
+            log.info("swe progress final: %s", _swe_eval_progress_snapshot(work_dir, run_id))
     # Persist full stdout/stderr per run so we can root-cause harness/Docker
     # issues without re-running. The in-process log only keeps a 2K tail.
     eval_logs_dir = work_dir / "eval_logs"
@@ -1314,6 +1575,19 @@ def run_swebench_eval(
 
 def load_report(report_path: Path) -> dict:
     return json.loads(report_path.read_text())
+
+
+def is_infra_failed_swebench_report(report_path: Path) -> bool:
+    """True for reports where harness infra failed before any test completed."""
+    try:
+        report = load_report(report_path)
+    except Exception:
+        return True
+    return (
+        int(report.get("submitted_instances") or 0) > 0
+        and int(report.get("completed_instances") or 0) == 0
+        and int(report.get("error_instances") or 0) > 0
+    )
 
 
 def parse_resolved(report: dict) -> set[str]:
@@ -1848,8 +2122,15 @@ def main() -> None:
                 run_id = f"{key}_p{pid}"
                 report_glob = list(eval_dir.glob(f"*.{run_id}.json"))
                 if report_glob:
-                    log.info("[%s] pid=%d already evaluated, skipping", key, pid)
-                    continue
+                    latest_report = sorted(report_glob)[-1]
+                    if not is_infra_failed_swebench_report(latest_report):
+                        log.info("[%s] pid=%d already evaluated, skipping", key, pid)
+                        continue
+                    log.warning(
+                        "[%s] pid=%d existing report looks like harness infra "
+                        "failure (%s); re-running eval",
+                        key, pid, latest_report,
+                    )
                 log.info("=== eval: %s pid=%d ===", key, pid)
                 run_swebench_eval(
                     predictions_path=path,

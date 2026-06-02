@@ -36,7 +36,7 @@ def cost_for_call(model_id: str, prompt_tokens: int, completion_tokens: int) -> 
     """Approximate per-call cost (USD).
 
     Per-model pricing is hardcoded from OpenRouter rates as of Q2 2025.
-    Open-weight local models (Qwen2.5-Coder, gpt-oss-20b) return 0.
+    Open-weight local models (Qwen2.5-Coder, gpt-oss) return 0.
     Unknown model_id falls back to the Claude Haiku rate (1/5 USD per 1M
     prompt/completion tokens) as a conservative default.
     """
@@ -53,6 +53,8 @@ def cost_for_call(model_id: str, prompt_tokens: int, completion_tokens: int) -> 
     if "claude-sonnet" in model_id:
         return (prompt_tokens / 1_000_000) * 3.0 + (completion_tokens / 1_000_000) * 15.0
     if "gpt-oss-20b" in model_id:
+        return 0.0
+    if "gpt-oss-120b" in model_id:
         return 0.0
     return (prompt_tokens / 1_000_000) * 1.0 + (completion_tokens / 1_000_000) * 5.0
 

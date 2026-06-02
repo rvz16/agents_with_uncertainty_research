@@ -90,7 +90,7 @@ def compute_transition_kernel(records: list[dict], gen: str, benchmark: str,
 
 
 def process_one_generator(src_dir: Path, gen: str, benchmark: str,
-                          alpha: float, beta: float) -> None:
+                          alpha: float, beta: float, split_scope: str) -> None:
     gen_dir = src_dir / gen
     cr_path = gen_dir / "critic_results.jsonl"
     if not cr_path.exists():
@@ -108,6 +108,16 @@ def process_one_generator(src_dir: Path, gen: str, benchmark: str,
     if not records:
         log.warning("[%s] empty critic_results — skipping", gen)
         return
+
+    if split_scope != "all":
+        split_path = gen_dir / "split.json"
+        if not split_path.exists():
+            raise SystemExit(f"[{gen}] --split-scope {split_scope!r} requires {split_path}")
+        split = json.loads(split_path.read_text())
+        ids = {str(x) for x in split.get(f"{split_scope}_ids", [])}
+        records = [r for r in records if instance_id_of(r) in ids]
+        log.info("[%s] split-scope=%s: using %d records from %d ids",
+                 gen, split_scope, len(records), len(ids))
 
     # Check that we have multiple patches per instance (otherwise no transitions)
     by_inst = defaultdict(int)
@@ -142,6 +152,9 @@ def main() -> None:
     p.add_argument("--benchmark", default="",
                    help="Optional benchmark label for the kernel metadata "
                         "(defaults to basename of --src-dir)")
+    p.add_argument("--split-scope", choices=["all", "train", "test"], default="all",
+                   help="Which split ids from <gen>/split.json to use. "
+                        "Default: all critic_results records.")
     p.add_argument("--alpha", type=float, default=1.0,
                    help="Beta prior alpha (default 1.0 = Laplace)")
     p.add_argument("--beta", type=float, default=1.0,
@@ -155,7 +168,7 @@ def main() -> None:
 
     generators = [g.strip() for g in args.generators.split(",") if g.strip()]
     for gen in generators:
-        process_one_generator(src_dir, gen, bench, args.alpha, args.beta)
+        process_one_generator(src_dir, gen, bench, args.alpha, args.beta, args.split_scope)
 
 
 if __name__ == "__main__":

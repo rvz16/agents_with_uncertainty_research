@@ -46,6 +46,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,11 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import spot_check_generators as scg  # noqa: E402
+from _common.logprobs import (  # noqa: E402
+    extract_completion_logprobs,
+    logprob_summary_fields,
+    make_chat_completion_kwargs,
+)
 
 logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(message)s",
@@ -148,6 +154,48 @@ def append_jsonl(path: Path, record: dict) -> None:
         os.fsync(f.fileno())
 
 
+def load_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    if not path.exists():
+        return rows
+    with path.open(errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                log.warning("skipping malformed jsonl row in %s", path)
+    return rows
+
+
+def group_records_by_instance(rows: list[dict]) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        inst = row.get("instance_id")
+        if inst is not None:
+            grouped[str(inst)].append(row)
+    for inst_rows in grouped.values():
+        inst_rows.sort(key=lambda row: int(row.get("step") or 0))
+    return grouped
+
+
+def instance_is_complete(rows: list[dict], steps: int) -> bool:
+    if not rows:
+        return False
+    if any(row.get("stop_decision") is True for row in rows):
+        return True
+    return max(int(row.get("step") or 0) for row in rows) >= steps - 1
+
+
+def rewrite_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as f:
+        for row in rows:
+            f.write(json.dumps(row) + "\n")
+
+
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
@@ -177,7 +225,8 @@ class CallLogger:
     def log_call(self, *, instance_id: str, step: int, purpose: str,
                   model: str, prompt: str, response: str,
                   prompt_tokens: int, completion_tokens: int,
-                  cost_usd: float) -> None:
+                  cost_usd: float,
+                  extra: dict | None = None) -> None:
         with self.lock:
             self.cumulative_cost += cost_usd
             cumulative = self.cumulative_cost
@@ -189,8 +238,9 @@ class CallLogger:
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "cost_usd": cost_usd,
+            "extra": extra or {},
         })
-        append_jsonl(self.cost_log_path, {
+        cost_row = {
             "ts": now_iso(),
             "instance_id": instance_id, "step": step, "purpose": purpose,
             "model": model,
@@ -200,7 +250,12 @@ class CallLogger:
             "cumulative_usd": cumulative,
             "prompt_hash": sha256_str(prompt),
             "response_hash": sha256_str(response),
-        })
+        }
+        if extra:
+            cost_row.update(logprob_summary_fields(
+                extra.get("generation_logprobs") or extra.get("logprobs")
+            ))
+        append_jsonl(self.cost_log_path, cost_row)
 
 
 # ============================================================================
@@ -208,6 +263,8 @@ class CallLogger:
 # ============================================================================
 
 def _cost_for(model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
+    if "Qwen/Qwen2.5" in model_id or "gpt-oss" in model_id:
+        return 0.0
     if "gpt-5-mini" in model_id:
         return (prompt_tokens / 1_000_000) * 0.25 + (completion_tokens / 1_000_000) * 2.0
     if "qwen" in model_id.lower():
@@ -229,7 +286,9 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                       steps: int, temperature: float, client,
                       call_logger: CallLogger,
                       cost_lock: threading.Lock, cost_counter: dict,
-                      cap_usd: float, gen_client=None) -> dict:
+                      cap_usd: float, gen_client=None,
+                      request_logprobs: bool = False,
+                      top_logprobs: int | None = None) -> dict:
     if gen_client is None:
         gen_client = client
     """Run one SWE instance's N-step trajectory under Self-Refine or
@@ -281,11 +340,16 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
             critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
                 issue_text=issue_text, prev_diff=prev_diff[:3000])
             try:
-                resp = gen_client.chat.completions.create(
+                resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                     model=model_id,
                     messages=[{"role": "user", "content": critique_prompt}],
-                    temperature=temperature, max_tokens=1500)
+                    temperature=temperature, max_tokens=1500,
+                    request_logprobs=request_logprobs,
+                    top_logprobs=top_logprobs,
+                ))
                 critique_text = resp.choices[0].message.content or ""
+                generation_logprobs = extract_completion_logprobs(
+                    resp, requested=request_logprobs)
                 u = resp.usage
                 cost = _cost_for(model_id, u.prompt_tokens, u.completion_tokens)
             except Exception as e:
@@ -301,7 +365,9 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 instance_id=inst, step=t, purpose="critique",
                 model=model_id, prompt=critique_prompt, response=critique_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-                cost_usd=cost)
+                cost_usd=cost,
+                extra={"generation_logprobs": generation_logprobs}
+                if request_logprobs else None)
             method_specific["critique_text"] = critique_text
             if "CRITIQUE_OK" in critique_text.upper():
                 stop_reason = "selfrefine_ok"
@@ -349,11 +415,16 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 issue_text=issue_text, prev_diff=prev_diff[:3000],
                 feedback=feedback_text)
             try:
-                resp = gen_client.chat.completions.create(
+                resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                     model=model_id,
                     messages=[{"role": "user", "content": reflect_prompt}],
-                    temperature=temperature, max_tokens=500)
+                    temperature=temperature, max_tokens=500,
+                    request_logprobs=request_logprobs,
+                    top_logprobs=top_logprobs,
+                ))
                 reflection_text = resp.choices[0].message.content or ""
+                generation_logprobs = extract_completion_logprobs(
+                    resp, requested=request_logprobs)
                 u = resp.usage
                 cost = _cost_for(model_id, u.prompt_tokens, u.completion_tokens)
             except Exception as e:
@@ -369,7 +440,9 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 instance_id=inst, step=t, purpose="reflect",
                 model=model_id, prompt=reflect_prompt, response=reflection_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-                cost_usd=cost)
+                cost_usd=cost,
+                extra={"generation_logprobs": generation_logprobs}
+                if request_logprobs else None)
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -387,11 +460,16 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
                 reflections_section=refl_section[:3000])
 
         try:
-            resp = gen_client.chat.completions.create(
+            resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                 model=model_id,
                 messages=[{"role": "user", "content": refine_prompt}],
-                temperature=temperature, max_tokens=4000)
+                temperature=temperature, max_tokens=4000,
+                request_logprobs=request_logprobs,
+                top_logprobs=top_logprobs,
+            ))
             text = resp.choices[0].message.content or ""
+            generation_logprobs = extract_completion_logprobs(
+                resp, requested=request_logprobs)
             u = resp.usage
             cost = _cost_for(model_id, u.prompt_tokens, u.completion_tokens)
         except Exception as e:
@@ -407,7 +485,9 @@ def run_one_instance(*, inst: str, row: dict, oracle: dict[str, str],
             instance_id=inst, step=t, purpose="refine",
             model=model_id, prompt=refine_prompt, response=text,
             prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-            cost_usd=cost)
+            cost_usd=cost,
+            extra={"generation_logprobs": generation_logprobs}
+            if request_logprobs else None)
 
         # Parse new diff
         blocks = scg.parse_change_blocks(text)
@@ -486,6 +566,14 @@ def main() -> None:
                         help="float OR key=val,key=val,...")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--max-workers", type=int, default=6)
+    parser.add_argument("--request-logprobs", action="store_true",
+                        help="Request and persist token logprobs for generation calls.")
+    parser.add_argument("--top-logprobs", type=int, default=0,
+                        help="Optional top_logprobs value when --request-logprobs is set.")
+    parser.add_argument("--extend-existing", action="store_true",
+                        help=("Skip completed instance_ids already present in "
+                              "iter_records.jsonl. Partial existing trajectories "
+                              "are dropped and rerun from step 0."))
     args = parser.parse_args()
 
     out_root = args.output_dir.resolve()
@@ -534,6 +622,7 @@ def main() -> None:
 
         gen_out = out_root / gen / args.method
         gen_out.mkdir(parents=True, exist_ok=True)
+        records_path = gen_out / "iter_records.jsonl"
 
         # Run config
         write_json(gen_out / "RUN_CONFIG.json", {
@@ -543,6 +632,8 @@ def main() -> None:
             "n_instances": args.n_instances, "steps": args.steps,
             "seed": args.seed, "temperature": args.temperature,
             "max_workers": args.max_workers,
+            "request_logprobs": bool(args.request_logprobs),
+            "top_logprobs": int(args.top_logprobs or 0),
             "cap_usd": cap_usd,
             "src_dir": str(args.src_dir),
             "output_dir": str(out_root),
@@ -579,11 +670,41 @@ def main() -> None:
                 r = json.loads(line)
                 diff_by_inst[r["instance_id"]] = r.get("model_patch", "") or ""
 
-        candidate = [k for k in crit_by_inst if k in inst_to_row and k in diff_by_inst][:args.n_instances]
+        candidate = [k for k in crit_by_inst if k in inst_to_row and k in diff_by_inst]
+        if args.n_instances and args.n_instances > 0:
+            candidate = candidate[:args.n_instances]
+
+        existing_rows: list[dict] = []
+        completed_existing: set[str] = set()
+        if args.extend_existing and records_path.exists():
+            existing_rows = load_jsonl(records_path)
+            existing_by_inst = group_records_by_instance(existing_rows)
+            completed_existing = {
+                inst for inst, rows in existing_by_inst.items()
+                if instance_is_complete(rows, args.steps)
+            }
+            partial_existing = set(existing_by_inst) - completed_existing
+            if partial_existing:
+                backup_path = records_path.with_suffix(".jsonl.pre_extend_existing.bak")
+                if not backup_path.exists():
+                    backup_path.write_text(records_path.read_text())
+                existing_rows = [
+                    row for row in existing_rows
+                    if str(row.get("instance_id")) in completed_existing
+                ]
+                rewrite_jsonl(records_path, existing_rows)
+                log.info("[%s/%s] --extend-existing: dropped %d partial "
+                         "instance trajectories for rerun",
+                         gen, args.method, len(partial_existing))
+            before = len(candidate)
+            candidate = [inst for inst in candidate if inst not in completed_existing]
+            log.info("[%s/%s] --extend-existing: %d completed existing, "
+                     "%d -> %d new instances",
+                     gen, args.method, len(completed_existing),
+                     before, len(candidate))
+
         log.info("[%s/%s] %d eligible instances (cap $%.1f)",
                  gen, args.method, len(candidate), cap_usd)
-        if not candidate:
-            continue
 
         # Pre-fetch oracles
         oracle_cache: dict[str, dict] = {}
@@ -593,9 +714,11 @@ def main() -> None:
             oracle_cache[inst] = scg.fetch_oracle_files(row["repo"], row["base_commit"], files)
 
         cost_lock = threading.Lock()
-        cost_counter = {"v": 0.0}
+        existing_cost = sum(float(row.get("step_cost_usd") or 0.0)
+                            for row in existing_rows)
+        cost_counter = {"v": existing_cost}
         call_logger = CallLogger(gen_out)
-        records_path = gen_out / "iter_records.jsonl"
+        call_logger.cumulative_cost = existing_cost
 
         all_results: list[dict] = []
         with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
@@ -611,7 +734,9 @@ def main() -> None:
                     steps=args.steps, temperature=args.temperature,
                     client=client, gen_client=gen_client, call_logger=call_logger,
                     cost_lock=cost_lock, cost_counter=cost_counter,
-                    cap_usd=cap_usd)
+                    cap_usd=cap_usd,
+                    request_logprobs=args.request_logprobs,
+                    top_logprobs=args.top_logprobs)
                 futures[fut] = inst
             for fut in as_completed(futures):
                 inst = futures[fut]
@@ -624,22 +749,53 @@ def main() -> None:
                 for row in result["trajectory"]:
                     append_jsonl(records_path, row)
 
+        final_rows = load_jsonl(records_path)
+        final_by_inst = group_records_by_instance(final_rows)
+        completed_final_by_inst = {
+            inst: rows for inst, rows in final_by_inst.items()
+            if instance_is_complete(rows, args.steps)
+        }
+        new_result_meta = {r["instance_id"]: r for r in all_results}
+
+        def stop_distribution_entry(inst: str, rows: list[dict]) -> dict:
+            meta = new_result_meta.get(inst)
+            if meta is not None:
+                return {
+                    "instance_id": inst,
+                    "stop_step": meta["stop_step"],
+                    "stop_reason": meta["stop_reason"],
+                    "n_reflections": meta["n_reflections"],
+                }
+            return {
+                "instance_id": inst,
+                "stop_step": next(
+                    (int(row.get("step") or 0) for row in rows
+                     if row.get("stop_decision") is True),
+                    max(int(row.get("step") or 0) for row in rows),
+                ),
+                "stop_reason": (
+                    "stop_decision"
+                    if any(row.get("stop_decision") is True for row in rows)
+                    else "max_steps"
+                ),
+                "n_reflections": max(int(row.get("step") or 0) for row in rows),
+            }
+
         # Stop distribution
         write_json(gen_out / "stop_distribution.json", {
-            "n_instances": len(all_results),
-            "instances": [{
-                "instance_id": r["instance_id"],
-                "stop_step": r["stop_step"],
-                "stop_reason": r["stop_reason"],
-                "n_reflections": r["n_reflections"],
-            } for r in all_results],
+            "n_instances": len(completed_final_by_inst),
+            "instances": [
+                stop_distribution_entry(inst, rows)
+                for inst, rows in completed_final_by_inst.items()
+            ],
         })
 
         # Cost summary
-        total_cost = cost_counter["v"]
+        total_cost = sum(float(row.get("step_cost_usd") or 0.0)
+                         for row in final_rows)
         write_json(gen_out / "cost_summary.json", {
             "generator": gen, "method": args.method,
-            "n_instances_completed": len(all_results),
+            "n_instances_completed": len(completed_final_by_inst),
             "total_cost_usd": total_cost,
             "cap_usd": cap_usd, "cap_hit": total_cost >= cap_usd,
         })
@@ -648,19 +804,26 @@ def main() -> None:
         for step in range(1, args.steps):
             pred_step_path = gen_out / f"predictions_iter_step{step}.jsonl"
             with open(pred_step_path, "w") as f:
-                for r in all_results:
-                    for row in r["trajectory"]:
-                        if row["step"] == step and row.get("diff"):
-                            f.write(json.dumps({
-                                "instance_id": row["instance_id"],
-                                "model_patch": row["diff"],
-                                "model_name_or_path": f"{gen}_{args.method}_iter_step{step}",
-                            }) + "\n")
+                for inst, rows in completed_final_by_inst.items():
+                    step_rows = [
+                        row for row in rows
+                        if int(row.get("step") or 0) == step and row.get("diff")
+                    ]
+                    if not step_rows:
+                        continue
+                    row = step_rows[-1]
+                    f.write(json.dumps({
+                        "instance_id": inst,
+                        "model_patch": row["diff"],
+                        "model_name_or_path": f"{gen}_{args.method}_iter_step{step}",
+                    }) + "\n")
 
-        log.info("[%s/%s] done: %d instances, $%.3f spent (cap $%.2f)",
-                 gen, args.method, len(all_results), total_cost, cap_usd)
+        log.info("[%s/%s] done: %d new instances, %d total completed, "
+                 "$%.3f spent (cap $%.2f)",
+                 gen, args.method, len(all_results),
+                 len(completed_final_by_inst), total_cost, cap_usd)
         summary_per_gen[gen] = {
-            "n_instances": len(all_results),
+            "n_instances": len(completed_final_by_inst),
             "total_cost_usd": total_cost,
             "cap_hit": total_cost >= cap_usd,
         }

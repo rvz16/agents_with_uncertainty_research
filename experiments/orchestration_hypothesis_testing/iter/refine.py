@@ -91,6 +91,11 @@ from _common.kernel import (  # noqa: E402
     pairs_from_trajectories,
     resolve_kernel,
 )
+from _common.logprobs import (  # noqa: E402
+    extract_completion_logprobs,
+    logprob_summary_fields,
+    make_chat_completion_kwargs,
+)
 
 logging.basicConfig(level=logging.INFO,
                      format="%(asctime)s [%(levelname)s] %(message)s",
@@ -262,7 +267,7 @@ class CallLogger:
         write_json(raw_path, raw_record)
 
         # Compact audit row
-        append_jsonl(self.cost_log_path, {
+        cost_row = {
             "ts": now_iso(),
             "instance_id": instance_id, "step": step, "purpose": purpose,
             "model": model,
@@ -273,7 +278,12 @@ class CallLogger:
             "latency_ms": latency_ms,
             "prompt_hash": sha256_str(prompt),
             "response_hash": sha256_str(response),
-        })
+        }
+        if extra:
+            cost_row.update(logprob_summary_fields(
+                extra.get("generation_logprobs") or extra.get("logprobs")
+            ))
+        append_jsonl(self.cost_log_path, cost_row)
 
 
 # ============================================================================
@@ -516,7 +526,9 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                            gen_client=None,
                            call_logger: CallLogger,
                            cost_lock: threading.Lock, cost_counter: dict,
-                           cap_usd: float, scg_helpers) -> dict:
+                           cap_usd: float, scg_helpers,
+                           request_logprobs: bool = False,
+                           top_logprobs: int | None = None) -> dict:
     if gen_client is None:
         gen_client = client
     """Run one LCB instance trajectory under Self-Refine or Reflexion.
@@ -576,11 +588,16 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
                 problem=problem_text, code=prev_code[:4000])
             try:
-                resp = gen_client.chat.completions.create(
+                resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                     model=model_id,
                     messages=[{"role": "user", "content": critique_prompt}],
-                    temperature=temperature, max_tokens=1500)
+                    temperature=temperature, max_tokens=1500,
+                    request_logprobs=request_logprobs,
+                    top_logprobs=top_logprobs,
+                ))
                 critique_text = resp.choices[0].message.content or ""
+                generation_logprobs = extract_completion_logprobs(
+                    resp, requested=request_logprobs)
                 u = resp.usage
                 cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
             except Exception as e:
@@ -595,7 +612,9 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 instance_id=inst_id, step=t, purpose="critique",
                 model=model_id, prompt=critique_prompt, response=critique_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-                cost_usd=cost)
+                cost_usd=cost,
+                extra={"generation_logprobs": generation_logprobs}
+                if request_logprobs else None)
             method_specific["critique_text"] = critique_text
             # Stop check: "CRITIQUE_OK" substring
             if "CRITIQUE_OK" in critique_text.upper():
@@ -651,11 +670,16 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 problem=problem_text, prev_code=prev_code[:4000],
                 test_feedback=test_feedback_text)
             try:
-                resp = gen_client.chat.completions.create(
+                resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                     model=model_id,
                     messages=[{"role": "user", "content": reflect_prompt}],
-                    temperature=temperature, max_tokens=500)
+                    temperature=temperature, max_tokens=500,
+                    request_logprobs=request_logprobs,
+                    top_logprobs=top_logprobs,
+                ))
                 reflection_text = resp.choices[0].message.content or ""
+                generation_logprobs = extract_completion_logprobs(
+                    resp, requested=request_logprobs)
                 u = resp.usage
                 cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
             except Exception as e:
@@ -670,7 +694,9 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
                 instance_id=inst_id, step=t, purpose="reflect",
                 model=model_id, prompt=reflect_prompt, response=reflection_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-                cost_usd=cost)
+                cost_usd=cost,
+                extra={"generation_logprobs": generation_logprobs}
+                if request_logprobs else None)
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -693,11 +719,16 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             raise ValueError(method)
 
         try:
-            resp = gen_client.chat.completions.create(
+            resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                 model=model_id,
                 messages=[{"role": "user", "content": refine_prompt}],
-                temperature=temperature, max_tokens=4000)
+                temperature=temperature, max_tokens=4000,
+                request_logprobs=request_logprobs,
+                top_logprobs=top_logprobs,
+            ))
             text = resp.choices[0].message.content or ""
+            generation_logprobs = extract_completion_logprobs(
+                resp, requested=request_logprobs)
             u = resp.usage
             cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
         except Exception as e:
@@ -712,7 +743,9 @@ def _run_lcb_one_instance(*, inst: dict, step0_code: str, step0_record: dict,
             instance_id=inst_id, step=t, purpose="refine",
             model=model_id, prompt=refine_prompt, response=text,
             prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-            cost_usd=cost)
+            cost_usd=cost,
+            extra={"generation_logprobs": generation_logprobs}
+            if request_logprobs else None)
 
         code = extract_code(text)
 
@@ -793,7 +826,9 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                                 gen_client=None,
                                 call_logger: CallLogger,
                                 cost_lock: threading.Lock, cost_counter: dict,
-                                cap_usd: float) -> dict:
+                                cap_usd: float,
+                                request_logprobs: bool = False,
+                                top_logprobs: int | None = None) -> dict:
     """SR/Rfx trajectory for the new variants. See _run_lcb_one_instance for
     the canonical version this is patterned after."""
     if gen_client is None:
@@ -840,11 +875,16 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             critique_prompt = SELFREFINE_CRITIQUE_PROMPT.format(
                 problem=problem_text, code=prev_code[:4000])
             try:
-                resp = gen_client.chat.completions.create(
+                resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                     model=model_id,
                     messages=[{"role": "user", "content": critique_prompt}],
-                    temperature=temperature, max_tokens=1500)
+                    temperature=temperature, max_tokens=1500,
+                    request_logprobs=request_logprobs,
+                    top_logprobs=top_logprobs,
+                ))
                 critique_text = resp.choices[0].message.content or ""
+                generation_logprobs = extract_completion_logprobs(
+                    resp, requested=request_logprobs)
                 u = resp.usage
                 cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
             except Exception as e:
@@ -856,7 +896,9 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                 instance_id=inst_id, step=t, purpose="critique", model=model_id,
                 prompt=critique_prompt, response=critique_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-                cost_usd=cost)
+                cost_usd=cost,
+                extra={"generation_logprobs": generation_logprobs}
+                if request_logprobs else None)
             method_specific["critique_text"] = critique_text
             if "CRITIQUE_OK" in critique_text.upper():
                 stop_reason = "selfrefine_ok"; stop_step = t
@@ -904,11 +946,16 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                 problem=problem_text, prev_code=prev_code[:4000],
                 test_feedback=test_feedback_text)
             try:
-                resp = gen_client.chat.completions.create(
+                resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                     model=model_id,
                     messages=[{"role": "user", "content": reflect_prompt}],
-                    temperature=temperature, max_tokens=500)
+                    temperature=temperature, max_tokens=500,
+                    request_logprobs=request_logprobs,
+                    top_logprobs=top_logprobs,
+                ))
                 reflection_text = resp.choices[0].message.content or ""
+                generation_logprobs = extract_completion_logprobs(
+                    resp, requested=request_logprobs)
                 u = resp.usage
                 cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
             except Exception as e:
@@ -920,7 +967,9 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                 instance_id=inst_id, step=t, purpose="reflect", model=model_id,
                 prompt=reflect_prompt, response=reflection_text,
                 prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-                cost_usd=cost)
+                cost_usd=cost,
+                extra={"generation_logprobs": generation_logprobs}
+                if request_logprobs else None)
             reflections.append(reflection_text)
             method_specific["reflection_text"] = reflection_text
             method_specific["memory_size"] = len(reflections)
@@ -939,11 +988,16 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
                 problem=problem_text, reflections_section=refl_section[:3000])
 
         try:
-            resp = gen_client.chat.completions.create(
+            resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                 model=model_id,
                 messages=[{"role": "user", "content": refine_prompt}],
-                temperature=temperature, max_tokens=4000)
+                temperature=temperature, max_tokens=4000,
+                request_logprobs=request_logprobs,
+                top_logprobs=top_logprobs,
+            ))
             text = resp.choices[0].message.content or ""
+            generation_logprobs = extract_completion_logprobs(
+                resp, requested=request_logprobs)
             u = resp.usage
             cost = cost_for_call(model_id, u.prompt_tokens, u.completion_tokens)
         except Exception as e:
@@ -955,7 +1009,9 @@ def _run_generic_one_instance(*, inst: dict, step0_code: str, step0_record: dict
             instance_id=inst_id, step=t, purpose="refine", model=model_id,
             prompt=refine_prompt, response=text,
             prompt_tokens=u.prompt_tokens, completion_tokens=u.completion_tokens,
-            cost_usd=cost)
+            cost_usd=cost,
+            extra={"generation_logprobs": generation_logprobs}
+            if request_logprobs else None)
 
         code = extract_code(text)
 
@@ -1251,7 +1307,8 @@ def main() -> None:
                         help="dir with <gen>/critic_results.jsonl + raw_responses/")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--generators", required=True)
-    parser.add_argument("--n-instances", type=int, default=30)
+    parser.add_argument("--n-instances", type=int, default=30,
+                        help="Number of instances to run; 0 means all eligible.")
     parser.add_argument("--steps", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-workers", type=int, default=4)
@@ -1259,6 +1316,10 @@ def main() -> None:
                         help="Either a single float (applies to all generators) "
                              "or 'key=val,key=val,...' for per-model overrides.")
     parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--request-logprobs", action="store_true",
+                        help="Request and persist token logprobs for generation calls.")
+    parser.add_argument("--top-logprobs", type=int, default=0,
+                        help="Optional top_logprobs value when --request-logprobs is set.")
     parser.add_argument("--difficulty", default="hard", help="LCB only")
     parser.add_argument("--platform", default="leetcode", help="LCB only")
     parser.add_argument("--dataset", default=None, help="SWE only")
@@ -1375,6 +1436,8 @@ def main() -> None:
             "seed": args.seed, "temperature": args.temperature,
             "max_workers": args.max_workers,
             "max_cost_usd_per_model": args.max_cost_usd_per_model,
+            "request_logprobs": bool(args.request_logprobs),
+            "top_logprobs": int(args.top_logprobs or 0),
             "src_dir": str(args.src_dir),
             "output_dir": str(out_root),
             "prompt_template_hashes": {
@@ -1437,7 +1500,9 @@ def main() -> None:
         else:
             inst_to_problem = {p["instance_id"]: p for p in problems}
         eligible = [iid for iid, code in step0_code.items()
-                    if code and iid in inst_to_problem][: args.n_instances]
+                    if code and iid in inst_to_problem]
+        if args.n_instances and args.n_instances > 0:
+            eligible = eligible[: args.n_instances]
         log.info("[%s/%s] %d eligible instances", gen, args.method, len(eligible))
 
         # Cost tracking
@@ -1487,6 +1552,8 @@ def main() -> None:
                             call_logger=call_logger,
                             cost_lock=cost_lock, cost_counter=cost_counter,
                             cap_usd=cap_usd, scg_helpers=scg_helpers,
+                            request_logprobs=args.request_logprobs,
+                            top_logprobs=args.top_logprobs,
                         )
                     else:
                         fut = ex.submit(
@@ -1500,6 +1567,8 @@ def main() -> None:
                             call_logger=call_logger,
                             cost_lock=cost_lock, cost_counter=cost_counter,
                             cap_usd=cap_usd,
+                            request_logprobs=args.request_logprobs,
+                            top_logprobs=args.top_logprobs,
                         )
                     futures[fut] = inst_id
                 stop_distribution = []

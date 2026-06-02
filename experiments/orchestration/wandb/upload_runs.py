@@ -63,7 +63,10 @@ _LOCAL_DATA = EXPERIMENT_ROOT / "data"
 DATA_ROOT = _ARCHIVE_DATA if _ARCHIVE_DATA.exists() else _LOCAL_DATA
 ABBO_RESULTS = REPO_ROOT / "bayesian_optimization_for_code_testing" / "agent-bugfix-bayes" / "sim_results"
 
-GENERATORS = ["gpt5_mini", "qwen3_coder", "haiku45", "sonnet45", "qwen25_32b"]
+GENERATORS = [
+    "gpt5_mini", "qwen3_coder", "haiku45", "sonnet45",
+    "qwen25_32b", "gpt_oss_20b_local",
+]
 ABBO_GENERATORS = ["gpt_oss_20b"]
 
 # (benchmark_key, data_subdir)
@@ -73,6 +76,8 @@ ORCH_CALIBRATION_BENCHMARKS = [
     ("lcb_easy",     "lcb_calibration_easy"),
     ("mbpp",         "mbpp_calibration"),
     ("humaneval",    "humaneval_calibration"),
+    ("humanevalfix", "humanevalfix_calibration"),
+    ("codecontests", "codecontests_calibration"),
     ("swe_lite",     "swebench_lite"),
     ("swe_verified", "swebench_verified"),
 ]
@@ -89,6 +94,10 @@ ORCH_REALBASELINES_BENCHMARKS = [
     ("lcb_hard",     "lcb_calibration_hard_realbaselines"),
     ("lcb_medium",   "lcb_calibration_medium_realbaselines"),
     ("lcb_easy",     "lcb_calibration_easy_realbaselines"),
+    ("mbpp",         "mbpp_realbaselines"),
+    ("humaneval",    "humaneval_realbaselines"),
+    ("humanevalfix", "humanevalfix_realbaselines"),
+    ("codecontests", "codecontests_realbaselines"),
     ("swe_lite",     "swebench_lite_realbaselines"),
     ("swe_verified", "swebench_verified_realbaselines"),
 ]

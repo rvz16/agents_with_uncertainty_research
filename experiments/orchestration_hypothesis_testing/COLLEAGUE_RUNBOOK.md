@@ -32,7 +32,7 @@ Python ≥ 3.10. Verified locally on 3.13.
 ### 0.2 Secrets — put these in `<repo-root>/.env`
 
 ```
-OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_API_KEY=<OPENROUTER_API_KEY>
 ```
 
 All four entry scripts (`calibration/lcb.py`, `calibration/mbpp.py`,

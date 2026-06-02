@@ -68,6 +68,14 @@ from _common.extract import extract_code  # noqa: E402, F401
 from _common.cost import (  # noqa: E402, F401
     cost_for_call, CostTracker, extract_usage, project_cost,
 )
+from _common.logprobs import (  # noqa: E402
+    extract_completion_logprobs,
+    logprob_summary_fields,
+    make_chat_completion_kwargs,
+    should_request_vllm_logprobs,
+    top_logprobs_from_env,
+    write_logprob_sidecar,
+)
 # === end refactor bootstrap ===
 
 from _common.cost import CostTracker  # noqa: E402
@@ -374,7 +382,11 @@ def calibrate_one_generator(
     gen_client = _make_client(gen_key)
     reviewer_client = _make_client(None)
     model_id, label, _base_url = GENERATORS[gen_key]
+    request_logprobs = should_request_vllm_logprobs(_base_url)
+    top_logprobs = top_logprobs_from_env()
+    max_tokens = int(os.environ.get("LCB_MAX_TOKENS", "4000"))
     log.info("=== %s (%s) — cap $%.2f ===", gen_key, model_id, max_cost_usd)
+    log.info("[%s] generation max_tokens=%d", gen_key, max_tokens)
     gen_dir = out_dir / gen_key
     gen_dir.mkdir(parents=True, exist_ok=True)
     cost = CostTracker(name=gen_key, cap_usd=max_cost_usd, log_path=gen_dir / "cost_log.jsonl")
@@ -423,24 +435,35 @@ def calibrate_one_generator(
                     continue
                 try:
                     _t0 = time.perf_counter()
-                    resp = gen_client.chat.completions.create(
+                    prompt = build_prompt(inst)
+                    resp = gen_client.chat.completions.create(**make_chat_completion_kwargs(
                         model=model_id,
-                        messages=[{"role": "user", "content": build_prompt(inst)}],
-                        temperature=0.7, max_tokens=4000,
-                    )
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7, max_tokens=max_tokens,
+                        request_logprobs=request_logprobs,
+                        top_logprobs=top_logprobs,
+                    ))
                     _gen_rt = time.perf_counter() - _t0
                     text = resp.choices[0].message.content or ""
+                    generation_logprobs = extract_completion_logprobs(
+                        resp, requested=request_logprobs)
                     usage = resp.usage
                     c = cost_for_call(model_id, usage.prompt_tokens, usage.completion_tokens)
                     cost.record(c, prompt_tokens=usage.prompt_tokens,
                                 completion_tokens=usage.completion_tokens,
-                                instance_id=inst_id, patch_id=pid)
+                                instance_id=inst_id, patch_id=pid,
+                                extra=logprob_summary_fields(generation_logprobs)
+                                if request_logprobs else None)
                     tele.record(instance_id=inst_id, patch_id=pid, action_type="generate",
                                 runtime_s=_gen_rt, api_cost_usd=c)
                 except Exception as e:
                     log.warning("[%s] gen failed for %s: %s", gen_key, inst_id, e)
                     continue
                 (raw_path / f"{inst_id}_p{pid}.txt").write_text(text)
+                if request_logprobs:
+                    write_logprob_sidecar(raw_path, f"{inst_id}_p{pid}",
+                                          generation_logprobs,
+                                          model=model_id, prompt=prompt)
                 code = extract_code(text)
                 starter = inst.get("starter_code", "") or ""
                 # Critic eval — wrap each so a single bad subprocess doesn't tank the run
@@ -593,12 +616,14 @@ def main() -> None:
     # Load LCB
     problems = load_lcb(difficulty=args.difficulty, platform=args.platform,
                         lcb_version=args.lcb_version)
-    import random
-    random.seed(args.seed)
-    random.shuffle(problems)
+    should_sample = bool(args.n_instances and args.n_instances > 0)
+    if should_sample:
+        import random
+        random.seed(args.seed)
+        random.shuffle(problems)
 
     sample_path = out_dir / "sample.json"
-    if args.extend_existing and sample_path.exists():
+    if should_sample and args.extend_existing and sample_path.exists():
         # Preserve continuity: keep the existing sampled IDs as the FRONT of the
         # list (in their original order), then append shuffled new candidates
         # until we reach n_instances.
@@ -617,8 +642,14 @@ def main() -> None:
         problems = head + tail
         log.info("extend-existing: %d existing + %d new candidates available "
                  "(target n=%d)", len(head), len(tail), args.n_instances)
-    problems = problems[: args.n_instances]
-    log.info("sampled %d problems", len(problems))
+    elif args.extend_existing and sample_path.exists():
+        log.info("extend-existing ignored because n_instances=0; using full filtered LCB pool")
+
+    if should_sample:
+        problems = problems[: args.n_instances]
+        log.info("sampled %d problems (n_instances=%d)", len(problems), args.n_instances)
+    else:
+        log.info("selected %d problems (no sampling; n_instances=0)", len(problems))
 
     # Save sample manifest
     (out_dir / "sample.json").write_text(json.dumps([

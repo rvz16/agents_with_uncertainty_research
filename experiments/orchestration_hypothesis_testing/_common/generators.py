@@ -20,8 +20,10 @@ GENERATORS: dict[str, tuple[str, str, Optional[str]]] = {
     "qwen3_coder": ("qwen/qwen3-coder",                 "Qwen3 Coder",                                None),
     "haiku45":     ("anthropic/claude-haiku-4.5",       "Claude Haiku 4.5",                           None),
     "sonnet45":    ("anthropic/claude-sonnet-4.5",      "Claude Sonnet 4.5",                          None),
-    "qwen25_7b":   ("Qwen/Qwen2.5-Coder-7B-Instruct",   "Qwen2.5-Coder-7B (open-weight, local vLLM)", "http://127.0.0.1:8001/v1"),
-    "qwen25_32b":  ("Qwen/Qwen2.5-Coder-32B-Instruct",  "Qwen2.5-Coder-32B (open-weight, local vLLM)", "http://127.0.0.1:8003/v1"),
+    "qwen25_7b":   ("Qwen/Qwen2.5-Coder-7B-Instruct",   "Qwen2.5-Coder-7B (open-weight, local vLLM)", os.environ.get("QWEN25_7B_BASE_URL", "http://127.0.0.1:8001/v1")),
+    "qwen25_32b":  ("Qwen/Qwen2.5-Coder-32B-Instruct",  "Qwen2.5-Coder-32B (open-weight, local vLLM)", os.environ.get("QWEN25_32B_BASE_URL", "http://127.0.0.1:8003/v1")),
+    "gpt_oss_20b_local": ("openai/gpt-oss-20b",         "gpt-oss-20b (open-weight, local vLLM)",       os.environ.get("GPT_OSS_20B_BASE_URL", "http://127.0.0.1:8000/v1")),
+    "gpt_oss_120b_local": ("openai/gpt-oss-120b",       "gpt-oss-120b (open-weight, local vLLM)",      os.environ.get("GPT_OSS_120B_BASE_URL", "http://127.0.0.1:8000/v1")),
     "gpt_oss_20b": ("openai/gpt-oss-20b:free",          "gpt-oss-20b",                                None),
 }
 
