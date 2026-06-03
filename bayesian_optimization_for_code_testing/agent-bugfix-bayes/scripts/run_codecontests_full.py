@@ -52,7 +52,7 @@ DEFAULT_LLM_MODEL = "openai/gpt-oss-20b:free"
 # Backward compat for scripts that import LLM_MODEL from this module
 LLM_MODEL = DEFAULT_LLM_MODEL
 
-DEFAULT_VARIANTS = ("simple", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
+DEFAULT_VARIANTS = ("simple", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted", "sage")
 
 # Cached fitted theta from the n=146 CodeContests calibration run
 FITTED_THETA = {
@@ -251,6 +251,120 @@ def run_greedy(task_id, theta, label, llm_cfg, costs, max_gen=3, prior=0.5):
     return res
 
 
+# ---- Sage variant: TTS majority-vote policy over our action space ----
+SAGE_ACTION_SPACE = ("verify", "generate", "bail") + tuple(f"critic:{c}" for c in CC_CRITIC_NAMES)
+
+SAGE_DECISION_PROMPT_TEMPLATE = """You are an automated bug-fixing agent. Choose ONE next action.
+
+State:
+- Step: {step}/16
+- Remaining: gen={gen_left}, verifies={ver_left}, critics_used={crit_used}
+- Recent observation: {last_obs}
+
+Available actions: {actions}
+
+Reply with EXACTLY one action name (no explanation, no markdown)."""
+
+
+def _sage_decide(state_dict, llm_cfg, n_samples=5, temperature=0.7):
+    """Draw N LLM samples for next action, return majority vote."""
+    from collections import Counter
+    prompt = SAGE_DECISION_PROMPT_TEMPLATE.format(**state_dict)
+    actions = []
+    for _ in range(n_samples):
+        try:
+            r = call_llm_or_raise(prompt, llm_cfg)
+            txt = (r.text or "").strip().lower().split("\n")[0].strip()
+            chosen = None
+            for a in SAGE_ACTION_SPACE:
+                if a.lower() in txt:
+                    chosen = a; break
+            if chosen is None and "verify" in txt: chosen = "verify"
+            if chosen is None and "bail" in txt: chosen = "bail"
+            if chosen is None and "gen" in txt: chosen = "generate"
+            if chosen is None: chosen = "verify"  # default
+            actions.append(chosen)
+        except Exception:
+            actions.append("bail")
+    return Counter(actions).most_common(1)[0][0], dict(Counter(actions))
+
+
+def run_sage(task_id, llm_cfg, costs, max_gen=3, max_ver=2,
+             n_samples=5, temperature=0.7):
+    """TTS-majority-vote policy over the same actions BDP sees."""
+    res = Result(task_id=task_id, variant="sage",
+                 cf_rating=get_metadata(task_id).get("cf_rating"))
+    start = time.perf_counter()
+    incorrect = get_solution_pool(task_id, "incorrect")
+    if not incorrect:
+        res.final_action = "no_buggy_seed"
+        res.wall_clock = time.perf_counter() - start
+        return res
+    buggy = incorrect[0]
+    with tempfile.TemporaryDirectory() as tmp:
+        wd = Path(tmp); sol = wd / "solution.py"
+        sol.write_text(buggy); current = buggy
+        gen_left = max_gen; ver_left = max_ver
+        crit_used: set[str] = set(); step = 0
+        last_obs = "buggy seed; nothing observed yet"
+        while step < 16:
+            avail = ["bail"]
+            if ver_left > 0: avail.append("verify")
+            if gen_left > 0: avail.append("generate")
+            for c in CC_CRITIC_NAMES:
+                if c not in crit_used: avail.append(f"critic:{c}")
+            action, vote = _sage_decide({
+                "step": step, "gen_left": gen_left, "ver_left": ver_left,
+                "crit_used": sorted(crit_used) or "none",
+                "last_obs": last_obs[:200],
+                "actions": ", ".join(avail),
+            }, llm_cfg, n_samples=n_samples, temperature=temperature)
+            res.n_llm_calls += n_samples
+            res.total_cost += n_samples * costs.c_llm_call * 0.2  # decision call cheaper
+            if action not in avail:
+                action = "bail"
+            if action == "bail":
+                res.final_action = "bail"
+                res.actions.append({"step": step, "action": "bail", "vote": vote}); break
+            if action == "verify":
+                ok, info = run_full_test(wd, task_id)
+                res.n_full_tests += 1; res.total_cost += costs.c_full_test
+                ver_left -= 1
+                last_obs = f"verify result: {'pass' if ok else f'fail ({info})'}"
+                res.actions.append({"step": step, "action": "verify", "ok": ok, "vote": vote})
+                if ok:
+                    res.fixed = True; res.final_action = "verify_pass"; break
+            elif action.startswith("critic:"):
+                cn = action.split(":", 1)[1]
+                passed, info = run_critic(wd, cn, task_id)
+                res.n_critic_runs += 1; res.total_cost += costs.c_critic_test
+                crit_used.add(cn)
+                last_obs = f"{cn} result: {'pass' if passed else 'fail'}"
+                res.actions.append({"step": step, "action": action,
+                                    "passed": passed, "vote": vote})
+            elif action == "generate":
+                test_out = get_test_output(wd, task_id)
+                prompt = PROMPT_TEMPLATE.format(
+                    source_code=current,
+                    test_examples=format_test_examples(task_id),
+                    test_output=test_out,
+                )
+                r = call_llm_or_raise(prompt, llm_cfg)
+                res.n_llm_calls += 1; res.total_cost += costs.c_llm_call
+                res.completion_tokens += r.completion_tokens
+                current = extract_code(r.text, current)
+                sol.write_text(current)
+                gen_left -= 1
+                crit_used = set()
+                last_obs = "new generation produced; not yet verified"
+                res.actions.append({"step": step, "action": "generate", "vote": vote})
+            step += 1
+        if not res.fixed and not res.final_action:
+            res.final_action = "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
 def run_dp(task_id, theta, label, llm_cfg, costs, planner,
            max_gen=3, max_ver=2, prior=0.5):
     res = Result(task_id=task_id, variant=f"dp_{label}",
@@ -355,8 +469,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--variants",
         default=",".join(DEFAULT_VARIANTS),
-        help="Comma-separated subset of: simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted",
+        help="Comma-separated subset of: simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted,sage",
     )
+    p.add_argument("--n-tasks", type=int, default=None,
+                   help="Limit test set to first N tasks (default: all).")
     return p.parse_args()
 
 
@@ -374,6 +490,8 @@ def main():
     rng.shuffle(all_ids)
     train_ids = all_ids[:N_TRAIN]
     test_ids = all_ids[N_TRAIN:]
+    if args.n_tasks is not None:
+        test_ids = test_ids[:args.n_tasks]
     print(f"Train: {len(train_ids)}  Held-out: {len(test_ids)}")
 
     state = load_existing(results_path)
@@ -431,6 +549,10 @@ def main():
                     r = run_dp(tid, FITTED_THETA, "fitted",
                                llm_cfg, costs, dp_fitted,
                                MAX_GENERATORS, MAX_VERIFICATIONS, PRIOR)
+                elif v == "sage":
+                    r = run_sage(tid, llm_cfg, costs,
+                                  MAX_GENERATORS, MAX_VERIFICATIONS,
+                                  n_samples=5, temperature=0.7)
                 else:
                     continue
             except Exception as e:
