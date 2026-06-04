@@ -55,6 +55,7 @@ from run_codecontests_full import (
     extract_code, format_test_examples, get_test_output,
     load_existing, save_progress, serialize,
 )
+from experiment_logger import ExperimentLogger
 
 
 # ----------------------------------------------------------------------
@@ -141,6 +142,7 @@ def run_dp_kshot(
     max_gen: int = MAX_GENERATORS,
     max_ver: int = MAX_VERIFICATIONS,
     prior: float = PRIOR,
+    logger: ExperimentLogger | None = None,
 ) -> Result:
     """DP episode with optional forced refine-on-bail (first K bails in cell)."""
     variant = f"kshot_K{kshot_state.K}_{'online' if kshot_state.online else 'offline'}"
@@ -197,12 +199,20 @@ def run_dp_kshot(
                 current = extract_code(r.text, current)
                 sol.write_text(current)
                 gen_left = max(0, gen_left - 1)  # don't go negative
+                belief_before_gen = belief
                 belief = belief * 0.95 + (1 - belief) * 0.50
                 crit_used = frozenset()
                 res.actions.append({
                     "step": step, "action": "generate_on_bail", "b": belief,
                     "forced": True,
                 })
+                if logger:
+                    logger.llm_usage(getattr(r, "prompt_tokens", 0),
+                                     r.completion_tokens)
+                    logger.action(step=step, action="generate_on_bail",
+                                  belief_before=belief_before_gen,
+                                  belief_after=belief,
+                                  reason="K-shot intercept (forced)")
                 step += 1
 
                 # Forced verify
@@ -214,8 +224,13 @@ def run_dp_kshot(
                     "step": step, "action": "verify_on_bail", "ok": ok,
                     "forced": True,
                 })
+                if logger:
+                    logger.action(step=step, action="verify_on_bail", ok=ok,
+                                  belief_before=belief)
 
                 # Log the (Y_t=0, Y_{t+1}) pair and update Beta if online
+                alpha_before, beta_before = kshot_state.alpha_fix, kshot_state.beta_fix
+                p_fix_before = kshot_state.p_fix_mean
                 kshot_state.update(
                     y_t1=int(ok),
                     instance_id=task_id,
@@ -223,6 +238,17 @@ def run_dp_kshot(
                     gen_left=gen_left_pre,
                     ver_left=ver_left_pre,
                 )
+                if logger:
+                    logger.forced_refine(
+                        catch=bool(ok),
+                        belief_at_bail=belief_at_bail,
+                        alpha_before=alpha_before, beta_before=beta_before,
+                        alpha_after=kshot_state.alpha_fix,
+                        beta_after=kshot_state.beta_fix,
+                        p_fix_before=p_fix_before,
+                        p_fix_after=kshot_state.p_fix_mean,
+                        n_forced=kshot_state.n_forced, K=kshot_state.K,
+                    )
 
                 if ok:
                     res.fixed = True
@@ -235,6 +261,14 @@ def run_dp_kshot(
                         theta_lk, kshot_state.p_fix_mean,
                         kshot_state.p_break, costs,
                     )
+                    if logger and abs(kshot_state.p_fix_mean - p_fix_before) > 1e-6:
+                        logger.kernel_update(
+                            p_fix_before=p_fix_before,
+                            p_fix_after=kshot_state.p_fix_mean,
+                            delta=kshot_state.p_fix_mean - p_fix_before,
+                            alpha=kshot_state.alpha_fix,
+                            beta=kshot_state.beta_fix,
+                        )
 
                 belief = 0.05  # verify failed → low belief
                 forced_done = True
@@ -245,25 +279,41 @@ def run_dp_kshot(
 
             if action == "bail_out":
                 res.final_action = "bail"
+                if logger:
+                    logger.action(step=step, action="bail_out",
+                                  belief_before=belief)
                 break
 
             if action == "verify":
+                belief_before = belief
                 ok, _ = run_full_test(wd, task_id)
                 res.n_full_tests += 1; res.total_cost += costs.c_full_test
                 ver_left -= 1
                 res.actions.append({"step": step, "action": "verify", "ok": ok})
+                if logger:
+                    logger.action(step=step, action="verify", ok=ok,
+                                  belief_before=belief_before,
+                                  belief_after=(1.0 if ok else 0.05))
                 if ok:
                     res.fixed = True; res.final_action = "verify_pass"; break
                 belief = 0.05
 
             elif action.startswith("critic:"):
                 cn = action.split(":", 1)[1]
+                belief_before = belief
                 passed, _ = run_critic(wd, cn, task_id)
                 res.n_critic_runs += 1; res.total_cost += costs.c_critic_test
                 belief = bayes_update(belief, cn, passed, likelihoods=theta_lk)
                 crit_used = crit_used | frozenset([cn])
                 res.actions.append({"step": step, "action": action,
                                     "passed": passed, "b": belief})
+                if logger:
+                    lk = theta_lk.get(cn, {})
+                    logger.action(step=step, action=action, passed=passed,
+                                  belief_before=belief_before,
+                                  belief_after=belief,
+                                  likelihood_y1=lk.get("p_pass_y1"),
+                                  likelihood_y0=lk.get("p_pass_y0"))
 
             elif action.startswith("generate:"):
                 test_out = get_test_output(wd, task_id)
@@ -278,9 +328,16 @@ def run_dp_kshot(
                 current = extract_code(r.text, current)
                 sol.write_text(current)
                 gen_left -= 1
+                belief_before = belief
                 belief = belief * 0.95 + (1 - belief) * 0.50
                 crit_used = frozenset()
                 res.actions.append({"step": step, "action": "generate", "b": belief})
+                if logger:
+                    logger.llm_usage(getattr(r, "prompt_tokens", 0),
+                                     r.completion_tokens)
+                    logger.action(step=step, action=action,
+                                  belief_before=belief_before,
+                                  belief_after=belief)
 
             step += 1
 
@@ -322,7 +379,6 @@ def main() -> None:
     all_ids = list_task_ids()
     rng.shuffle(all_ids)
     test_ids = all_ids[N_TRAIN:N_TRAIN + args.n_tasks]
-    print(f"Test tasks: {len(test_ids)}")
 
     state = load_existing(args.results)
     results = state.setdefault("results", {})
@@ -338,7 +394,6 @@ def main() -> None:
     )
     if args.model:
         llm_cfg.model = args.model.strip()
-    print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model}")
 
     # Cell-level K-shot state (persists across instances within one cell)
     online = (args.mode == "online")
@@ -352,13 +407,9 @@ def main() -> None:
         rec = results.get(key)
         if not rec:
             continue
-        # Replay forced obs from this record's actions
         acts = rec.get("actions", [])
         for i, a in enumerate(acts):
             if a.get("action") == "verify_on_bail":
-                # The preceding generate_on_bail told us belief_at_bail
-                # but for resume we just need to update Beta posterior +
-                # n_forced counter.
                 kshot_state.update(
                     y_t1=int(a.get("ok", False)),
                     instance_id=tid,
@@ -366,34 +417,47 @@ def main() -> None:
                     gen_left=0, ver_left=0,
                 )
 
-    print(f"Cell state on resume: n_forced={kshot_state.n_forced} "
-          f"α={kshot_state.alpha_fix:.1f} β={kshot_state.beta_fix:.1f} "
-          f"p_fix_mean={kshot_state.p_fix_mean:.3f}")
+    # Set up ExperimentLogger: events JSONL goes next to the results JSON
+    logger = ExperimentLogger(
+        name=variant_name, model=llm_cfg.model,
+        output_dir=args.results.parent / "events",
+        n_total=len(test_ids),
+    )
+    logger.boot({
+        "K": K, "mode": args.mode,
+        "initial_p_fix": args.initial_p_fix,
+        "n_train": N_TRAIN, "split_seed": SPLIT_SEED,
+        "max_generators": MAX_GENERATORS, "max_verifications": MAX_VERIFICATIONS,
+        "prior": PRIOR, "costs": str(costs),
+        "resume_n_forced": kshot_state.n_forced,
+        "resume_alpha": kshot_state.alpha_fix,
+        "resume_beta": kshot_state.beta_fix,
+        "resume_p_fix_mean": kshot_state.p_fix_mean,
+        "results_path": str(args.results),
+    })
 
-    started = time.time()
     for i, tid in enumerate(test_ids):
         key = f"{tid}|{variant_name}"
         if results.get(key):
             continue
         m = get_metadata(tid)
-        elapsed = time.time() - started
-        rate = max(1, sum(1 for t in test_ids[:i+1] if results.get(f"{t}|{variant_name}")))
-        eta_min = (len(test_ids) - i - 1) * (elapsed / max(0.01, rate)) / 60
-        print(f"\n[{i+1}/{len(test_ids)}] task={tid} cf={m.get('cf_rating')} "
-              f"diff={m.get('difficulty')} elapsed={elapsed/60:.1f}min ETA={eta_min:.1f}min "
-              f"n_forced={kshot_state.n_forced}/{K} p_fix_mean={kshot_state.p_fix_mean:.3f}")
+        logger.instance_start(i, tid, meta={
+            "cf_rating": m.get("cf_rating"),
+            "difficulty": m.get("difficulty"),
+            "n_forced_in": kshot_state.n_forced,
+            "K": K,
+            "p_fix_mean_in": round(kshot_state.p_fix_mean, 3),
+        })
 
         try:
-            r = run_dp_kshot(tid, FITTED_THETA, llm_cfg, costs, kshot_state)
+            r = run_dp_kshot(tid, FITTED_THETA, llm_cfg, costs, kshot_state,
+                             logger=logger)
         except Exception as e:
-            print(f"  EXCEPTION: {e}")
+            logger.exception(str(e))
             continue
 
         results[key] = serialize(r)
-        tag = "OK" if r.fixed else "no"
-        print(f"  {variant_name:<22} fix={tag} cost={r.total_cost:5.1f} "
-              f"llm={r.n_llm_calls} crit={r.n_critic_runs} toks={r.completion_tokens} "
-              f"wc={r.wall_clock:.1f}s final={r.final_action}")
+        logger.instance_done(results[key])
 
         # Persist progress + kshot_state
         state["kshot_state"] = {
@@ -410,24 +474,21 @@ def main() -> None:
         state["n_test"] = len(test_ids)
         save_progress(args.results, state)
 
-    # Final aggregate
-    print("\n=== Final aggregate ===")
-    R = 100
+    # Final aggregate via logger
     rs = [r for r in results.values() if r.get("variant") == variant_name]
-    if rs:
-        n = len(rs)
-        fix = sum(1 for r in rs if r["fixed"]) / n * 100
-        c = sum(r["total_cost"] for r in rs) / n
-        u = sum((R if r["fixed"] else 0) - r["total_cost"] for r in rs) / n
-        n_forced_obs = sum(1 for r in rs for a in r.get("actions", [])
-                           if a.get("action") == "verify_on_bail")
-        n_fixed_by_forced = sum(1 for r in rs if r.get("final_action") == "verify_on_bail_pass")
-        print(f"variant={variant_name}  n={n}")
-        print(f"  fix%={fix:.1f}  cost={c:.2f}  Ū={u:+.2f}")
-        print(f"  forced refines triggered: {n_forced_obs} (of which {n_fixed_by_forced} fixed)")
-        print(f"  final Beta posterior: α={kshot_state.alpha_fix:.1f} "
-              f"β={kshot_state.beta_fix:.1f} → mean={kshot_state.p_fix_mean:.3f}")
-    print(f"\nSaved: {args.results}")
+    n_forced_obs = sum(1 for r in rs for a in r.get("actions", [])
+                       if a.get("action") == "verify_on_bail")
+    n_fixed_by_forced = sum(1 for r in rs
+                            if r.get("final_action") == "verify_on_bail_pass")
+    logger.cell_done(extras={
+        "variant": variant_name,
+        "forced_refines": f"{n_forced_obs} (of which {n_fixed_by_forced} caught)",
+        "beta_alpha": f"{kshot_state.alpha_fix:.2f}",
+        "beta_beta": f"{kshot_state.beta_fix:.2f}",
+        "beta_mean": f"{kshot_state.p_fix_mean:.3f}",
+        "results_json": str(args.results),
+    })
+    logger.close()
 
 
 if __name__ == "__main__":
