@@ -106,6 +106,58 @@ def parse_args() -> argparse.Namespace:
         default=",".join(DEFAULT_VARIANTS),
         help="Comma-separated subset of: simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted",
     )
+    p.add_argument(
+        "--n-tasks",
+        type=int,
+        default=None,
+        help="Limit number of held-out tasks (default: all).",
+    )
+    p.add_argument(
+        "--kernel-mode",
+        choices=["measured", "online", "hardcoded", "thompson",
+                  "conditional", "conditional_online"],
+        default="measured",
+        help="dp_fitted transition kernel mode. 'online' updates via "
+             "Beta-Binomial after every verify (DP re-solves). "
+             "'thompson' samples kernel from Beta posterior per instance, "
+             "anchored by train raw_counts. 'conditional' uses a frozen "
+             "ConditionalKernel fit from iter_records (per-critic-signature). "
+             "'conditional_online' updates per-z buckets live.",
+    )
+    p.add_argument(
+        "--conditional-records",
+        type=Path,
+        action="append",
+        default=None,
+        help="Path(s) to iter_records.jsonl used to fit ConditionalKernel.",
+    )
+    p.add_argument(
+        "--kernel-seed-dir",
+        type=Path,
+        default=None,
+        help="Dir containing transition_kernel.json used as seed for online mode "
+             "or as the frozen kernel for measured mode.",
+    )
+    p.add_argument(
+        "--epsilon-explore",
+        type=float,
+        default=0.0,
+        help="With probability epsilon, override DP 'bail_out' with a forced "
+             "generate action so the online estimator can observe (Y_t, Y_{t+1}) "
+             "transitions. 0 = pure DP (current behavior).",
+    )
+    p.add_argument(
+        "--explore-seed",
+        type=int,
+        default=12345,
+        help="Seed for epsilon-greedy override RNG (deterministic exploration).",
+    )
+    p.add_argument(
+        "--thompson-seed",
+        type=int,
+        default=12345,
+        help="Seed for Thompson sampling RNG.",
+    )
     return p.parse_args()
 
 
@@ -121,9 +173,19 @@ def main() -> None:
     rng = random.Random(SPLIT_SEED)
     all_ids = list_task_ids()
     rng.shuffle(all_ids)
+    explore_rng = random.Random(args.explore_seed) if args.epsilon_explore > 0 else None
+    if args.epsilon_explore > 0:
+        print(f"ε-greedy bail override: epsilon={args.epsilon_explore} "
+              f"seed={args.explore_seed}")
+    thompson_rng = random.Random(args.thompson_seed) if args.kernel_mode == "thompson" else None
+    if thompson_rng is not None:
+        print(f"Thompson sampling enabled (seed={args.thompson_seed})")
     train_ids = all_ids[:N_TRAIN_FOR_THETA]
     test_ids = all_ids[N_TRAIN_FOR_THETA:]
+    if args.n_tasks is not None:
+        test_ids = test_ids[:args.n_tasks]
     print(f"Train: {len(train_ids)}  Held-out: {len(test_ids)}")
+    print(f"Kernel mode: {args.kernel_mode}  Seed dir: {args.kernel_seed_dir}")
 
     state = load_existing(results_path)
 
@@ -137,13 +199,87 @@ def main() -> None:
         print(f"  fitted theta: {json.dumps(fitted_lk, indent=2)}")
     fitted_theta = state["fitted_theta"]
 
+    # Resolve transition kernel for dp_fitted via kernel-mode.
+    from abbo.realworld.agents.kernel_helpers import resolve_kernel, OnlineKernelCalibration
+    base_mode = args.kernel_mode
+    if base_mode in {"conditional", "conditional_online"}:
+        base_mode = "measured"
+    if args.kernel_seed_dir is not None:
+        active_kernel, kernel_src, online_kernel_obj = resolve_kernel(
+            args.kernel_seed_dir, mode=base_mode)
+    elif base_mode == "online":
+        active_kernel = {"p_fix_broken": 0.5, "p_break_correct": 0.05}
+        kernel_src = "hardcoded (no seed dir)"
+        online_kernel_obj = OnlineKernelCalibration(init_kernel=active_kernel)
+    else:
+        active_kernel = None
+        kernel_src = "default planner kernel"
+        online_kernel_obj = None
+    print(f"dp_fitted kernel source: {kernel_src}")
+    if active_kernel is not None:
+        print(f"  initial kernel: {active_kernel}")
+
+    # Conditional kernel: load from iter_records.jsonl
+    conditional_kernel_seed = None
+    if args.kernel_mode in {"conditional", "conditional_online"}:
+        rec_paths = args.conditional_records or (
+            [args.kernel_seed_dir / "iter_records.jsonl"]
+            if args.kernel_seed_dir else [])
+        if not rec_paths:
+            raise SystemExit("--kernel-mode conditional requires --conditional-records or --kernel-seed-dir")
+        # Import from _common (synthesis side) using sys.path
+        import sys as _sys
+        _common_path = ROOT.parent.parent / "experiments" / "orchestration_hypothesis_testing"
+        if not (_common_path / "_common").exists():
+            raise SystemExit(f"_common dir not found at {_common_path}")
+        _sys.path.insert(0, str(_common_path))
+        from _common.kernel import (ConditionalKernel,
+                                      conditional_pairs_from_trajectories,
+                                      CRITIC_FIELDS_DEFAULT)
+        from collections import defaultdict
+        by_inst: dict[str, list[dict]] = defaultdict(list)
+        n_loaded = 0
+        for rp in rec_paths:
+            if not Path(rp).exists():
+                raise SystemExit(f"missing {rp}")
+            for line in Path(rp).read_text().splitlines():
+                line = line.strip()
+                if not line: continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                iid = r.get("instance_id")
+                if iid is None: continue
+                by_inst[iid].append(r)
+                n_loaded += 1
+        for iid in by_inst:
+            by_inst[iid].sort(key=lambda r: int(r.get("step", r.get("patch_id", 0))))
+        # Use train_ids if they exist in iter_records, else all
+        train_in_records = [i for i in train_ids if i in by_inst] or list(by_inst.keys())
+        train_trajs = [by_inst[i] for i in train_in_records]
+        triples = conditional_pairs_from_trajectories(
+            train_trajs, critic_fields=CRITIC_FIELDS_DEFAULT)
+        seed_marginal = active_kernel or {"p_fix_broken": 0.5, "p_break_correct": 0.05}
+        conditional_kernel_seed = ConditionalKernel.from_triples(
+            triples, critic_fields=CRITIC_FIELDS_DEFAULT,
+            init_kernel=seed_marginal, min_obs=3,
+        )
+        print(f"ConditionalKernel: loaded {n_loaded} records, {len(train_trajs)} train trajectories, "
+              f"{len(conditional_kernel_seed.counts)} buckets, {len(triples)} triples")
+
     # Pre-solve DP planners
     costs = AgentCostConfig()
     dp_hand = DPPlanner(costs, MAX_GENERATORS, MAX_VERIFICATIONS,
                         critic_likelihoods=HE_CRITIC_LIKELIHOODS)
     dp_hand.solve()
+    dp_fitted_kwargs = {
+        "critic_likelihoods": fitted_theta,
+    }
+    if active_kernel is not None:
+        dp_fitted_kwargs["transition_kernel"] = active_kernel
     dp_fitted = DPPlanner(costs, MAX_GENERATORS, MAX_VERIFICATIONS,
-                          critic_likelihoods=fitted_theta)
+                          **dp_fitted_kwargs)
     dp_fitted.solve()
 
     llm_cfg = build_llm_config_from_env(
@@ -188,9 +324,32 @@ def main() -> None:
                                llm_cfg, costs, MAX_GENERATORS, MAX_VERIFICATIONS,
                                PRIOR, planner=dp_hand)
                 elif v == "dp_fitted":
+                    # Thompson: sample kernel for THIS instance, re-solve DP
+                    inst_planner = dp_fitted
+                    if thompson_rng is not None and online_kernel_obj is not None:
+                        sampled = online_kernel_obj.sample(thompson_rng)
+                        inst_planner = DPPlanner(
+                            costs, MAX_GENERATORS, MAX_VERIFICATIONS,
+                            critic_likelihoods=fitted_theta,
+                            transition_kernel=sampled,
+                        )
+                        inst_planner.solve()
+                        print(f"  [thompson] p_fix={sampled['p_fix_broken']:.3f} "
+                              f"p_break={sampled['p_break_correct']:.3f}")
+                    # Conditional kernel per-instance
+                    cond_kernel = None
+                    if args.kernel_mode == "conditional":
+                        import copy
+                        cond_kernel = copy.deepcopy(conditional_kernel_seed)
+                    elif args.kernel_mode == "conditional_online":
+                        cond_kernel = conditional_kernel_seed
                     r = run_dp(tid, fitted_theta, "fitted",
                                llm_cfg, costs, MAX_GENERATORS, MAX_VERIFICATIONS,
-                               PRIOR, planner=dp_fitted)
+                               PRIOR, planner=inst_planner,
+                               online_kernel=online_kernel_obj,
+                               epsilon_explore=args.epsilon_explore,
+                               explore_rng=explore_rng,
+                               conditional_kernel=cond_kernel)
                 else:
                     continue
             except Exception as e:

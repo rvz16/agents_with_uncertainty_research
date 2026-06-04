@@ -28,6 +28,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from abbo.realworld.agents.kernel_helpers import (
+    DEFAULT_KERNEL, kernel_update, OnlineKernelCalibration,
+)
 from abbo.realworld.agents.bayes_agent import (
     DPPlanner,
     bayes_update,
@@ -43,6 +46,7 @@ from abbo.realworld.agents.humaneval_fix import (
 )
 from abbo.realworld.agents.llm_provider import LLMConfig, call_llm_or_raise
 from abbo.realworld.agents.simple_agent import AgentCostConfig
+from abbo.realworld.telemetry import TelemetryLogger, write_action
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +199,8 @@ def run_simple(
     llm_config: LLMConfig,
     cost_config: AgentCostConfig,
     n_retries: int = 3,
+    logger: TelemetryLogger | None = None,
+    run_id: str | None = None,
 ) -> AgentRunResult:
     res = AgentRunResult(task_id=task_id, variant="simple", fixed=False,
                          total_cost=0.0, wall_clock=0.0,
@@ -216,7 +222,12 @@ def run_simple(
                 test_output=test_out,
                 test_code=get_full_test_script(task_id),
             )
+            t0 = time.perf_counter()
             resp = call_llm_or_raise(prompt, llm_config)
+            write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                         instance_id=task_id, action_type="generate",
+                         runtime_s=time.perf_counter() - t0,
+                         model_name=llm_config.model)
             res.n_llm_calls += 1
             res.total_cost += cost_config.c_llm_call
             res.prompt_tokens += resp.prompt_tokens
@@ -224,7 +235,11 @@ def run_simple(
             current = extract_code(resp.text, current)
             sol.write_text(current)
 
+            t0 = time.perf_counter()
             ok, _ = run_full_test(workdir, task_id)
+            write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                         instance_id=task_id, action_type="verify",
+                         runtime_s=time.perf_counter() - t0, passed=ok)
             res.n_full_tests += 1
             res.total_cost += cost_config.c_full_test
             res.actions.append({"step": attempt, "arm": arm, "verify_pass": ok})
@@ -291,7 +306,16 @@ def run_greedy(
     cost_config: AgentCostConfig,
     max_generators: int = 3,
     prior: float = 0.5,
+    logger: TelemetryLogger | None = None,
+    run_id: str | None = None,
+    kernel: dict | None = None,
+    online_kernel: OnlineKernelCalibration | None = None,
 ) -> AgentRunResult:
+    """kernel: transition kernel dict {p_fix_broken, p_break_correct}. If None,
+    falls back to DEFAULT_KERNEL.
+    online_kernel: if provided, updates kernel from observed (Y_t, Y_{t+1}) transitions."""
+    if kernel is None:
+        kernel = DEFAULT_KERNEL
     res = AgentRunResult(task_id=task_id, variant=f"greedy_{theta_label}",
                          fixed=False, total_cost=0.0, wall_clock=0.0,
                          n_llm_calls=0, n_critic_runs=0, n_full_tests=0)
@@ -308,6 +332,7 @@ def run_greedy(
         crit_used: set[str] = set()
         step = 0
         max_steps = 12
+        prev_Y = 0  # HumanEvalFix seed is buggy by construction
 
         while step < max_steps:
             action, _q = _greedy_pick_action(
@@ -318,11 +343,20 @@ def run_greedy(
                 res.actions.append({"step": step, "action": "bail", "belief": belief})
                 break
             if action == "verify":
+                t0 = time.perf_counter()
                 ok, _ = run_full_test(workdir, task_id)
+                write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                             instance_id=task_id, action_type="verify",
+                             runtime_s=time.perf_counter() - t0, passed=ok,
+                             belief_before=belief)
                 res.n_full_tests += 1
                 res.total_cost += cost_config.c_full_test
                 res.actions.append({"step": step, "action": "verify",
                                     "belief": belief, "result": ok})
+                y_now = 1 if ok else 0
+                if online_kernel is not None and prev_Y is not None:
+                    online_kernel.update(prev_Y, y_now)
+                prev_Y = y_now
                 if ok:
                     res.fixed = True
                     res.final_action = "verify_pass"
@@ -331,7 +365,12 @@ def run_greedy(
                 belief = 0.05
             elif action.startswith("critic:"):
                 cn = action.split(":", 1)[1]
+                t0 = time.perf_counter()
                 passed, _ = run_critic(workdir, cn, task_id)
+                write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                             instance_id=task_id, action_type=cn,
+                             runtime_s=time.perf_counter() - t0, passed=passed,
+                             belief_before=belief)
                 res.n_critic_runs += 1
                 res.total_cost += cost_config.c_critic_test
                 belief = bayes_update(belief, cn, passed, likelihoods=theta)
@@ -345,7 +384,12 @@ def run_greedy(
                     source_code=current, test_output=test_out,
                     test_code=get_full_test_script(task_id),
                 )
+                t0 = time.perf_counter()
                 resp = call_llm_or_raise(prompt, llm_config)
+                write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                             instance_id=task_id, action_type="generate",
+                             runtime_s=time.perf_counter() - t0,
+                             model_name=llm_config.model, belief_before=belief)
                 res.n_llm_calls += 1
                 res.total_cost += cost_config.c_llm_call
                 res.prompt_tokens += resp.prompt_tokens
@@ -353,7 +397,8 @@ def run_greedy(
                 current = extract_code(resp.text, current)
                 sol.write_text(current)
                 gen_left -= 1
-                belief = belief * 0.95 + (1 - belief) * 0.50  # informed by arm
+                active_kernel = online_kernel.get() if online_kernel is not None else kernel
+                belief = kernel_update(belief, active_kernel)
                 crit_used = set()  # reset critic memory after new patch
                 res.actions.append({"step": step, "action": action,
                                     "belief": belief, "tokens": resp.completion_tokens})
@@ -380,19 +425,39 @@ def run_dp(
     max_verifications: int = 2,
     prior: float = 0.5,
     planner: DPPlanner | None = None,
+    logger: TelemetryLogger | None = None,
+    run_id: str | None = None,
+    kernel: dict | None = None,
+    online_kernel: OnlineKernelCalibration | None = None,
+    make_planner=None,
+    epsilon_explore: float = 0.0,
+    explore_rng=None,
+    conditional_kernel=None,
+    critic_fields=("L0_syntax", "L2_public_tests", "L3_llm_review"),
 ) -> AgentRunResult:
+    """make_planner: optional callable(critic_likelihoods, transition_kernel) -> DPPlanner.
+    If provided, used instead of pre-solved `planner`; also re-called when online_kernel updates.
+    kernel: transition kernel dict {p_fix_broken, p_break_correct}. Default = DEFAULT_KERNEL.
+    online_kernel: if provided, kernel updates via Beta-Binomial after each verify."""
+    if kernel is None:
+        kernel = DEFAULT_KERNEL
     res = AgentRunResult(task_id=task_id, variant=f"dp_{theta_label}",
                          fixed=False, total_cost=0.0, wall_clock=0.0,
                          n_llm_calls=0, n_critic_runs=0, n_full_tests=0)
     start = time.perf_counter()
     buggy = get_buggy_source(task_id)
 
-    if planner is None:
+    # Resolve initial planner
+    active_kernel = online_kernel.get() if online_kernel is not None else kernel
+    if make_planner is not None:
+        planner = make_planner(theta, active_kernel)
+    elif planner is None:
         planner = DPPlanner(
             costs=cost_config,
             max_generators=max_generators,
             max_verifications=max_verifications,
             critic_likelihoods=theta,
+            transition_kernel=active_kernel,
         )
         planner.solve()
 
@@ -407,6 +472,9 @@ def run_dp(
         crit_used: frozenset[str] = frozenset()
         step = 0
         max_steps = 16
+        prev_Y = 0  # HumanEvalFix seed is buggy by construction
+        z_obs: dict[str, int] = {}
+        z_at_prev_gen: tuple | None = None
 
         while step < max_steps:
             action, _q = planner.choose_action(
@@ -414,16 +482,40 @@ def run_dp(
                 crit_used=crit_used, ver_left=ver_left,
             )
             if action == "bail_out":
+                if epsilon_explore > 0 and gen_left > 0 and ver_left > 0:
+                    r = (explore_rng.random() if explore_rng is not None
+                         else random.random())
+                    if r < epsilon_explore:
+                        action = f"generate:{ARM_SEQUENCE[0]}"
+                        res.actions.append({"step": step,
+                                            "action": "epsilon_explore_override",
+                                            "belief": belief,
+                                            "epsilon": epsilon_explore})
+            if action == "bail_out":
                 res.final_action = "bail"
                 res.actions.append({"step": step, "action": "bail", "belief": belief})
                 break
             if action == "verify":
+                t0 = time.perf_counter()
                 ok, _ = run_full_test(workdir, task_id)
+                write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                             instance_id=task_id, action_type="verify",
+                             runtime_s=time.perf_counter() - t0, passed=ok,
+                             belief_before=belief)
                 res.n_full_tests += 1
                 res.total_cost += cost_config.c_full_test
                 ver_left -= 1
                 res.actions.append({"step": step, "action": "verify",
                                     "belief": belief, "result": ok})
+                y_now = 1 if ok else 0
+                if online_kernel is not None and prev_Y is not None:
+                    online_kernel.update(prev_Y, y_now)
+                    if make_planner is not None:
+                        planner = make_planner(theta, online_kernel.get())
+                if (conditional_kernel is not None and prev_Y is not None
+                        and z_at_prev_gen is not None):
+                    conditional_kernel.update(prev_Y, z_at_prev_gen, y_now)
+                prev_Y = y_now
                 if ok:
                     res.fixed = True
                     res.final_action = "verify_pass"
@@ -431,11 +523,17 @@ def run_dp(
                 belief = 0.05
             elif action.startswith("critic:"):
                 cn = action.split(":", 1)[1]
+                t0 = time.perf_counter()
                 passed, _ = run_critic(workdir, cn, task_id)
+                write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                             instance_id=task_id, action_type=cn,
+                             runtime_s=time.perf_counter() - t0, passed=passed,
+                             belief_before=belief)
                 res.n_critic_runs += 1
                 res.total_cost += cost_config.c_critic_test
                 belief = bayes_update(belief, cn, passed, likelihoods=theta)
                 crit_used = crit_used | frozenset([cn])
+                z_obs[cn] = 1 if passed else 0
                 res.actions.append({"step": step, "action": action,
                                     "passed": passed, "belief": belief})
             elif action.startswith("generate:"):
@@ -447,7 +545,12 @@ def run_dp(
                     source_code=current, test_output=test_out,
                     test_code=get_full_test_script(task_id),
                 )
+                t0 = time.perf_counter()
                 resp = call_llm_or_raise(prompt, llm_config)
+                write_action(logger, run_id=run_id or task_id, dataset="humaneval",
+                             instance_id=task_id, action_type="generate",
+                             runtime_s=time.perf_counter() - t0,
+                             model_name=llm_config.model, belief_before=belief)
                 res.n_llm_calls += 1
                 res.total_cost += cost_config.c_llm_call
                 res.prompt_tokens += resp.prompt_tokens
@@ -455,9 +558,14 @@ def run_dp(
                 current = extract_code(resp.text, current)
                 sol.write_text(current)
                 gen_left -= 1
-                t = GENERATOR_TRANSITIONS.get(arm, {"p01": 0.4, "p10": 0.05})
-                belief = belief * (1 - t["p10"]) + (1 - belief) * t["p01"]
+                if conditional_kernel is not None:
+                    z_at_prev_gen = tuple(int(z_obs.get(f, 0)) for f in critic_fields)
+                    active_kernel = conditional_kernel.kernel_for(z_at_prev_gen)
+                else:
+                    active_kernel = online_kernel.get() if online_kernel is not None else kernel
+                belief = kernel_update(belief, active_kernel)
                 crit_used = frozenset()  # new patch — reset critic memory
+                z_obs = {}
                 res.actions.append({"step": step, "action": action,
                                     "belief": belief,
                                     "tokens": resp.completion_tokens})

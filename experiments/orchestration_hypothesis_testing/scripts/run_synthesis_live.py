@@ -51,9 +51,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # Shared kernel utilities (Beta-Binomial online estimator + DEFAULT_KERNEL +
 # kernel_update belief propagation + resolve_kernel mode dispatch).
 from _common.kernel import (  # noqa: E402
+    CRITIC_FIELDS_DEFAULT,
+    ConditionalKernel,
     DEFAULT_KERNEL,
     OnlineKernelCalibration,
+    compute_transition_kernel_from_pairs,
+    conditional_pairs_from_trajectories,
     kernel_update,
+    pairs_from_trajectories,
     resolve_kernel,
 )
 
@@ -179,6 +184,13 @@ def _lcb_adapter(benchmark: str):
         out["L1_lint"] = lcb.critic_L1_lint(code)
         # L2: public tests = first k from problem
         pub_tests = problem.get("public_test_cases", []) or []
+        # LCB encodes public_test_cases as a JSON string — decode if needed.
+        if isinstance(pub_tests, str):
+            try:
+                import json as _json
+                pub_tests = _json.loads(pub_tests)
+            except Exception:
+                pub_tests = []
         if pub_tests:
             n_pass, n_total = lcb.check_tests(code, pub_tests[:3],
                                               starter_code=problem.get("starter_code", ""))
@@ -553,7 +565,11 @@ def run_dp(task_id, problem, prompt_fn, critics_fn, verify_fn, client, costs,
            planner_factory, theta: dict, label: str, kernel: dict,
            prior: float = PRIOR, max_gen: int = MAX_GENERATORS,
            max_ver: int = MAX_VERIFICATIONS,
-           online_kernel: "OnlineKernelCalibration | None" = None) -> Result:
+           online_kernel: "OnlineKernelCalibration | None" = None,
+           epsilon_explore: float = 0.0,
+           explore_rng=None,
+           conditional_kernel: "ConditionalKernel | None" = None,
+           critic_fields: tuple = CRITIC_FIELDS_DEFAULT) -> Result:
     """planner_factory: callable() -> DPPlanner. Called each time we need to
     re-solve (e.g. after online_kernel update). If online_kernel is None,
     only called once at the start of the episode.
@@ -568,16 +584,30 @@ def run_dp(task_id, problem, prompt_fn, critics_fn, verify_fn, client, costs,
     feedback: str | None = None
     step = 0
     prev_Y: int | None = None
+    z_obs: dict[str, int] = {}  # accumulated critic outcomes (name -> 1/0)
+    z_at_prev_gen: tuple | None = None  # critic signature at most recent generate
 
     planner = planner_factory()  # initial solve
 
     while step < 16:
-        active_kernel = online_kernel.get() if online_kernel is not None else kernel
+        if conditional_kernel is not None:
+            z_now = tuple(int(z_obs.get(f, 0)) for f in critic_fields)
+            active_kernel = conditional_kernel.kernel_for(z_now)
+        else:
+            active_kernel = online_kernel.get() if online_kernel is not None else kernel
 
         if code is None:
             action = "generate:initial"
         else:
             action, _q = planner.choose_action(belief, gen_left, crit_used, ver_left)
+
+        if action == "bail_out" and epsilon_explore > 0 and gen_left > 0 and ver_left > 0:
+            r_eps = (explore_rng.random() if explore_rng is not None
+                     else random.random())
+            if r_eps < epsilon_explore:
+                action = "generate:exploration"
+                res.actions.append({"step": step, "action": "epsilon_explore_override",
+                                    "belief": belief, "epsilon": epsilon_explore})
 
         if action == "bail_out":
             res.final_action = "bail"; break
@@ -588,6 +618,9 @@ def run_dp(task_id, problem, prompt_fn, critics_fn, verify_fn, client, costs,
             if online_kernel is not None and prev_Y is not None:
                 online_kernel.update(prev_Y, y_now)
                 planner = planner_factory()  # re-solve with updated kernel
+            if (conditional_kernel is not None and prev_Y is not None
+                    and z_at_prev_gen is not None):
+                conditional_kernel.update(prev_Y, z_at_prev_gen, y_now)
             prev_Y = y_now
             res.n_full_tests += 1; res.total_cost += costs.c_ver
             ver_left -= 1
@@ -604,6 +637,7 @@ def run_dp(task_id, problem, prompt_fn, critics_fn, verify_fn, client, costs,
             res.n_critic_runs += 1; res.total_cost += costs.c_critic
             belief = bayes_update(belief, cn, passed, likelihoods=theta)
             crit_used = crit_used | frozenset([cn])
+            z_obs[cn] = 1 if passed else 0
             res.actions.append({"step": step, "action": action,
                                 "passed": passed, "b": belief})
         elif action.startswith("generate"):
@@ -612,9 +646,12 @@ def run_dp(task_id, problem, prompt_fn, critics_fn, verify_fn, client, costs,
             res.n_llm_calls += 1; res.completion_tokens += ct; res.api_cost_usd += dollar
             res.total_cost += costs.c_gen
             gen_left -= 1
+            if conditional_kernel is not None:
+                z_at_prev_gen = tuple(int(z_obs.get(f, 0)) for f in critic_fields)
             belief = kernel_update(belief, active_kernel)
             crit_used = frozenset()
             cached_critics = {}
+            z_obs = {}
             res.actions.append({"step": step, "action": "generate", "b": belief})
         step += 1
 
@@ -668,14 +705,42 @@ def main() -> None:
                    help="Optional cap on number of test instances (0 = all).")
     p.add_argument("--hand-theta-from", default="")
     p.add_argument("--kernel-mode", default="measured",
-                   choices=["measured", "online", "hardcoded"],
+                   choices=["measured", "online", "hardcoded", "conditional",
+                             "conditional_online", "thompson"],
                    help="Transition kernel source. "
                         "'measured' (default): load <gen>/transition_kernel.json if exists, "
                         "else fall back to hardcoded. "
                         "'online': start from measured (or hardcoded) and update via "
                         "Beta-Binomial after each verify. "
-                        "'hardcoded': always use the abbo default (0.50, 0.05).")
+                        "'hardcoded': always use the abbo default (0.50, 0.05). "
+                        "'conditional': frozen ConditionalKernel fit from train slice of "
+                        "iter_records.jsonl (uses critic signature z_t at last generate). "
+                        "'conditional_online': same as conditional but updates per-z buckets "
+                        "live after each verify. "
+                        "'thompson': sample kernel from Beta posterior per instance, "
+                        "anchored by train raw_counts; DP re-solved.")
+    p.add_argument("--epsilon-explore", type=float, default=0.0,
+                   help="With probability epsilon, override DP 'bail_out' with a "
+                        "forced generate. 0 = pure DP.")
+    p.add_argument("--explore-seed", type=int, default=12345)
+    p.add_argument("--thompson-seed", type=int, default=12345,
+                   help="Seed for Thompson sampling RNG.")
+    p.add_argument("--conditional-records", type=Path, action="append",
+                   default=None,
+                   help="Path(s) to iter_records.jsonl used to fit "
+                        "ConditionalKernel for --kernel-mode conditional[_online]. "
+                        "Can be passed multiple times to combine sources. "
+                        "Default: <src-dir>/<gen>/iter_records.jsonl.")
     args = p.parse_args()
+    explore_rng = (random.Random(args.explore_seed)
+                   if args.epsilon_explore > 0 else None)
+    if args.epsilon_explore > 0:
+        log.info("ε-greedy override: epsilon=%.3f seed=%d",
+                 args.epsilon_explore, args.explore_seed)
+    thompson_rng = (random.Random(args.thompson_seed)
+                    if args.kernel_mode == "thompson" else None)
+    if thompson_rng is not None:
+        log.info("Thompson sampling enabled (seed=%d)", args.thompson_seed)
 
     gen_dir = (args.src_dir / args.generator).resolve()
     train_ids, test_ids = load_split(gen_dir)
@@ -724,13 +789,70 @@ def main() -> None:
             if k in prob:
                 by_id[str(prob[k])] = prob; break
 
-    # Resolve transition kernel via _common.kernel. The third return value
-    # (the OnlineKernelCalibration instance) is discarded here because each
-    # per-variant branch below builds its own per-task estimator — preserving
-    # the existing reset-per-task semantics.
-    kernel, kernel_src, _ = resolve_kernel(gen_dir, args.kernel_mode)
+    # Resolve transition kernel via _common.kernel. Conditional modes use
+    # 'measured' as the base marginal kernel + fit a ConditionalKernel from
+    # train-slice iter_records (see below).
+    base_mode = args.kernel_mode
+    if base_mode in {"conditional", "conditional_online"}:
+        base_mode = "measured"
+    kernel, kernel_src, _ = resolve_kernel(gen_dir, base_mode)
     log.info("transition kernel: source=%s, p_fix=%.3f, p_break=%.3f",
              kernel_src, kernel["p_fix_broken"], kernel["p_break_correct"])
+
+    # Thompson sampling: load raw_counts from transition_kernel.json and
+    # build a per-instance sampler (OnlineKernelCalibration with prior_counts).
+    thompson_sampler = None
+    if args.kernel_mode == "thompson":
+        kpath = gen_dir / "transition_kernel.json"
+        raw_counts = {}
+        if kpath.exists():
+            kj = json.loads(kpath.read_text())
+            raw_counts = dict(kj.get("kernel_all", kj).get("raw_counts", {}))
+        thompson_sampler = OnlineKernelCalibration(
+            init_kernel=kernel, prior_counts=raw_counts)
+        log.info("Thompson prior counts: %s", raw_counts)
+
+    # If conditional mode: fit ConditionalKernel from train slice of
+    # iter_records.jsonl. For 'conditional' the kernel is frozen across
+    # test instances; for 'conditional_online' it accumulates per-z updates.
+    conditional_kernel_seed = None
+    if args.kernel_mode in {"conditional", "conditional_online"}:
+        rec_paths = args.conditional_records or [gen_dir / "iter_records.jsonl"]
+        from collections import defaultdict
+        by_inst: dict[str, list[dict]] = defaultdict(list)
+        n_loaded = 0
+        for rp in rec_paths:
+            if not rp.exists():
+                raise SystemExit(
+                    f"--kernel-mode {args.kernel_mode}: missing {rp}")
+            for line in rp.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                iid = r.get("instance_id")
+                if iid is None:
+                    continue
+                by_inst[iid].append(r)
+                n_loaded += 1
+        for iid in by_inst:
+            by_inst[iid].sort(key=lambda r: int(r.get("step", r.get("patch_id", 0))))
+        train_trajs = [by_inst[i] for i in train_ids if i in by_inst]
+        triples = conditional_pairs_from_trajectories(
+            train_trajs, critic_fields=CRITIC_FIELDS_DEFAULT)
+        conditional_kernel_seed = ConditionalKernel.from_triples(
+            triples, critic_fields=CRITIC_FIELDS_DEFAULT,
+            init_kernel=kernel, min_obs=3,
+        )
+        n_buckets = len(conditional_kernel_seed.counts)
+        log.info("ConditionalKernel sources: %s",
+                  [str(p) for p in rec_paths])
+        log.info("ConditionalKernel: loaded %d records, "
+                  "%d train trajectories, %d (Y_t, z_t) buckets, %d triples",
+                  n_loaded, len(train_trajs), n_buckets, len(triples))
 
     # Pre-solve DP planners (DPPlanner expects abbo's AgentCostConfig)
     costs = Costs()
@@ -819,11 +941,30 @@ def main() -> None:
                 elif v_name == "dp_fitted":
                     ok_kernel = (OnlineKernelCalibration(init_kernel=kernel)
                                   if args.kernel_mode == "online" else None)
-                    def _factory_fitted(k=kernel, ok=ok_kernel):
+                    # conditional: fresh deepcopy per instance (frozen across runs).
+                    # conditional_online: shared single instance, accumulates updates.
+                    cond_kernel = None
+                    if args.kernel_mode == "conditional":
+                        import copy
+                        cond_kernel = copy.deepcopy(conditional_kernel_seed)
+                    elif args.kernel_mode == "conditional_online":
+                        cond_kernel = conditional_kernel_seed  # shared
+                    # Thompson: sample fresh kernel for THIS instance
+                    inst_kernel = kernel
+                    if thompson_sampler is not None:
+                        inst_kernel = thompson_sampler.sample(thompson_rng)
+                        log.info("  [thompson] p_fix=%.3f p_break=%.3f",
+                                 inst_kernel["p_fix_broken"],
+                                 inst_kernel["p_break_correct"])
+                    def _factory_fitted(k=inst_kernel, ok=ok_kernel):
                         return _make_dp(fitted_theta, ok.get() if ok else k)
                     r = run_dp(tid, prob, prompt_fn, critics_fn, verify_fn, client, costs,
-                               _factory_fitted, fitted_theta, "fitted", kernel,
-                               online_kernel=ok_kernel)
+                               _factory_fitted, fitted_theta, "fitted", inst_kernel,
+                               online_kernel=ok_kernel,
+                               epsilon_explore=args.epsilon_explore,
+                               explore_rng=explore_rng,
+                               conditional_kernel=cond_kernel,
+                               critic_fields=CRITIC_FIELDS_DEFAULT)
                 else:
                     log.warning("unknown variant: %s", v_name); continue
                 state["results"][key] = r.to_dict()
@@ -832,7 +973,8 @@ def main() -> None:
                 log.info("  %-16s fix=%s cost=%.1f llm=%d crit=%d wc=N/A",
                          v_name, r.fixed, r.total_cost, r.n_llm_calls, r.n_critic_runs)
             except Exception as e:
-                log.error("variant %s failed on %s: %s", v_name, tid, e)
+                import traceback
+                log.error("variant %s failed on %s: %s\n%s", v_name, tid, e, traceback.format_exc())
                 continue
 
     # Aggregate per variant
