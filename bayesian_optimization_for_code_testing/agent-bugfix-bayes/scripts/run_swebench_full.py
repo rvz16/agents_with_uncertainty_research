@@ -437,10 +437,19 @@ def _parse_args():
              "Overrides SWE_BENCH_DATASET env var. Default (env unset): verified.",
     )
     p.add_argument(
+        "--model", default=None,
+        help="OpenAI-compatible model id (overrides ABBO_LLM_MODEL for this "
+             "run). Example: openai/gpt-5-mini, anthropic/claude-haiku-4.5.",
+    )
+    p.add_argument(
         "--results", type=Path, default=None,
         help="Output JSON path (default depends on --dataset + model).",
     )
     return p.parse_args()
+
+
+def _model_slug_for(model_id: str) -> str:
+    return model_id.split("/")[-1].replace(":", "_").replace(".", "_")
 
 
 def main():
@@ -449,11 +458,15 @@ def main():
         os.environ["SWE_BENCH_DATASET"] = args.dataset
     dataset_tag = os.environ.get("SWE_BENCH_DATASET", "verified").lower()
 
-    # Bind results path to (dataset, model) so Lite and Verified runs don't
-    # overwrite each other on disk.
+    # Resolve model: CLI > env > default
+    llm_model = (args.model or "").strip() or LLM_MODEL
+    model_slug = _model_slug_for(llm_model)
+
+    # Bind results path to (dataset, model) so Lite and Verified runs (and
+    # different models) don't overwrite each other on disk.
     results_path = args.results or (
         ROOT / "sim_results"
-        / f"swebench_full_endtoend__{dataset_tag}__{_model_slug}.json"
+        / f"swebench_full_endtoend__{dataset_tag}__{model_slug}.json"
     )
 
     rng = random.Random(SPLIT_SEED)
@@ -476,12 +489,15 @@ def main():
 
     llm_cfg = build_llm_config_from_env(
         default_provider="openrouter",
-        default_model=LLM_MODEL,
+        default_model=llm_model,
         default_base_url="https://openrouter.ai/api",
         default_temperature=0.1,
         default_max_tokens=MAX_OUTPUT_TOKENS,
         default_timeout=180,
     )
+    # CLI --model takes precedence over any env-supplied model in llm_cfg
+    if args.model:
+        llm_cfg.model = args.model.strip()
     print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} "
           f"base_url={llm_cfg.base_url} max_tokens={llm_cfg.max_tokens}")
 
@@ -574,7 +590,7 @@ def main():
         d = u - baseline
         print(f"{v:<16} {n:>3} {fix:>5.1f}% {c:>7.2f} {u:>+8.2f} {d:>+8.2f}")
 
-    state["llm_model"] = LLM_MODEL
+    state["llm_model"] = llm_cfg.model
     state["fitted_theta"] = FITTED_THETA
     state["n_train"] = N_TRAIN
     state["n_test"] = len(test_ids)
