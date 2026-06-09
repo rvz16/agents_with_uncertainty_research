@@ -132,9 +132,15 @@ def _apply_unified_diff(cname: str, diff_text: str) -> bool:
     return r.returncode == 0
 
 
-def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 6000) -> str:
+def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 32000) -> str:
     """Cat the files touched by the gold patch (we tell the LLM which files
-    to look at — that's a fair scaffolding, not the answer)."""
+    to look at — that's a fair scaffolding, not the answer).
+
+    Two earlier defaults were bugs:
+    - `head -200` lost code past line 200 (Django models.py, pandas frame.py).
+    - `max_chars_per_file=6000` truncated files even within the 200-line view.
+    Both are now 32k chars (≈ 800-1000 lines of typical Python).
+    """
     try:
         paths = changed_files_from_patch(instance.get("patch") or "")[:3]
     except Exception:
@@ -144,7 +150,7 @@ def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 6000) 
         if not isinstance(p, str) or not p:
             continue
         try:
-            r = _exec(cname, f"cat /testbed/{p} 2>&1 | head -200", timeout=30)
+            r = _exec(cname, f"cat /testbed/{p} 2>&1", timeout=30)
             body = (r.stdout or "")[:max_chars_per_file]
             parts.append(f"### {p}\n```python\n{body}\n```")
         except Exception:

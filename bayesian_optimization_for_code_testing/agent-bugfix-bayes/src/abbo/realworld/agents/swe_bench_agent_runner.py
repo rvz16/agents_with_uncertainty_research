@@ -57,6 +57,12 @@ from abbo.realworld.agents.swe_bench import (
 )
 
 
+# Knobs (must mirror scripts/run_swebench_full.py for fair comparison).
+ISSUE_CHAR_CAP = 32000   # was 4000 — long issues lost the bug-relevant section
+FILE_CHAR_CAP  = 32000   # was 6000 — large files (e.g. Django models.py) were
+                         # shown to the LLM only partially, breaking patches.
+
+
 # ---------------------------------------------------------------------------
 # Prompt + patch format  (SEARCH/REPLACE — same as scripts/run_swebench_full.py)
 # ---------------------------------------------------------------------------
@@ -119,7 +125,7 @@ class SWEAgentRunResult:
 # Docker helpers
 # ---------------------------------------------------------------------------
 
-def get_files_block(cname: str, instance: dict, max_chars: int = 6000) -> str:
+def get_files_block(cname: str, instance: dict, max_chars: int = FILE_CHAR_CAP) -> str:
     """Read files touched by the gold patch (scaffolding, not the answer —
     localization step tells the LLM *which* files are relevant)."""
     try:
@@ -130,7 +136,10 @@ def get_files_block(cname: str, instance: dict, max_chars: int = 6000) -> str:
     for p in paths:
         if not p:
             continue
-        r = _exec(cname, f"cat /testbed/{p} 2>&1 | head -200", timeout=30)
+        # NB: was `head -200` (~20K chars on 100-char lines). For files where
+        # the bug lives past line 200 (Django models.py, pandas frame.py)
+        # the LLM never saw the relevant code. Rely on FILE_CHAR_CAP instead.
+        r = _exec(cname, f"cat /testbed/{p} 2>&1", timeout=30)
         body = (r.stdout or "")[:max_chars]
         parts.append(f"### {p}\n```python\n{body}\n```")
     return "\n\n".join(parts) if parts else "(no files identified)"
@@ -192,7 +201,7 @@ def run_simple(
     res = SWEAgentRunResult(instance_id=instance_id, variant="simple")
     start = time.perf_counter()
     inst = get_instance(instance_id)
-    issue = inst["problem_statement"][:4000]
+    issue = inst["problem_statement"][:ISSUE_CHAR_CAP]
 
     pull_image(instance_id, verbose=True)
     cname = start_container(instance_id)
@@ -258,7 +267,7 @@ def run_greedy(
     res = SWEAgentRunResult(instance_id=instance_id, variant=f"greedy_{theta_label}")
     start = time.perf_counter()
     inst = get_instance(instance_id)
-    issue = inst["problem_statement"][:4000]
+    issue = inst["problem_statement"][:ISSUE_CHAR_CAP]
 
     pull_image(instance_id, verbose=True)
     cname = start_container(instance_id)
@@ -360,7 +369,7 @@ def run_dp(
     res = SWEAgentRunResult(instance_id=instance_id, variant=f"dp_{theta_label}")
     start = time.perf_counter()
     inst = get_instance(instance_id)
-    issue = inst["problem_statement"][:4000]
+    issue = inst["problem_statement"][:ISSUE_CHAR_CAP]
 
     if planner is None:
         planner = DPPlanner(cost_config, max_generators, max_verifications,

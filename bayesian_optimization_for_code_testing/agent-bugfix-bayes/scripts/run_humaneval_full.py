@@ -151,7 +151,7 @@ def main() -> None:
         default_model=llm_model,
         default_base_url="https://openrouter.ai/api",
         default_temperature=0.1,
-        default_max_tokens=2048,
+        default_max_tokens=8192,  # was 2048; HumanEvalFix patches got truncated
         default_timeout=120,
     )
     if args.model:
