@@ -123,11 +123,66 @@ def _container_name(instance_id: str) -> str:
     return f"swe_abbo_{instance_id.replace('__', '_')}"
 
 
+# Harness stability knobs. Tuned so transient Docker/containerd hiccups
+# (image-pull stalls, containerd metadata races during concurrent runs,
+# Hub rate limits) get retried instead of marked as instance failures.
+PULL_TIMEOUT_S        = 3600   # was 1800. Sympy/Django images can exceed 30 min
+                               # on cold cache + slow link.
+START_TIMEOUT_S       = 120    # was 60. Startup is bursty under concurrent runs.
+PULL_RETRY_ATTEMPTS   = 3      # 1 attempt + 2 retries
+START_RETRY_ATTEMPTS  = 3
+RETRY_BACKOFF_S       = (10, 30)  # backoff sequence between attempts
+
+
 def _sh(cmd: list[str] | str, timeout: int = 600, check: bool = False):
-    return subprocess.run(
-        cmd, shell=isinstance(cmd, str), capture_output=True, text=True,
-        timeout=timeout, check=check,
-    )
+    """Run a shell command. Converts subprocess.TimeoutExpired into a fake
+    completed result with returncode=-1 so callers can treat it the same way
+    as a non-zero exit (retryable). Previously, a TimeoutExpired bubbled all
+    the way up and aborted the whole sweep on one slow image pull."""
+    try:
+        return subprocess.run(
+            cmd, shell=isinstance(cmd, str), capture_output=True, text=True,
+            timeout=timeout, check=check,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Synthesise a CompletedProcess-shaped object that returncode-based
+        # logic can recognise as failure.
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=-1,
+            stdout=(e.stdout or b"").decode("utf-8", errors="replace")
+                if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or ""),
+            stderr=f"timeout after {timeout}s: " + (
+                (e.stderr or b"").decode("utf-8", errors="replace")
+                if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or "")
+            ),
+        )
+
+
+def _retry(
+    attempt_fn,
+    attempts: int,
+    backoff_s: tuple[int, ...] = RETRY_BACKOFF_S,
+    label: str = "op",
+    verbose: bool = True,
+):
+    """Run attempt_fn() up to `attempts` times. attempt_fn returns the
+    subprocess.CompletedProcess; we retry while returncode != 0. Returns the
+    final result (success or last failure). Sleeps backoff_s[i-1] between
+    attempts i and i+1 (clamped to the last entry once we run out)."""
+    last = None
+    for i in range(attempts):
+        last = attempt_fn()
+        if last.returncode == 0:
+            return last
+        if i + 1 < attempts:
+            wait = backoff_s[min(i, len(backoff_s) - 1)]
+            if verbose:
+                tail = (last.stderr or "")[-200:].replace("\n", " | ")
+                print(f"  {label} attempt {i+1}/{attempts} failed (rc={last.returncode}): {tail}",
+                      flush=True)
+                print(f"  retrying in {wait}s ...", flush=True)
+            time.sleep(wait)
+    return last
 
 
 def pull_image(instance_id: str, verbose: bool = True) -> None:
@@ -137,26 +192,41 @@ def pull_image(instance_id: str, verbose: bool = True) -> None:
         return
     if verbose:
         print(f"  pulling {img} ...", flush=True)
-    r = _sh(["docker", "pull", "--platform", "linux/amd64", img], timeout=1800)
-    if r.returncode != 0:
-        raise RuntimeError(f"pull failed: {r.stderr[-400:]}")
-
-
-def start_container(instance_id: str) -> str:
-    cname = _container_name(instance_id)
-    _sh(["docker", "rm", "-f", cname], timeout=30)
-    r = _sh(
-        [
-            "docker", "run", "-d", "--platform", "linux/amd64",
-            "--name", cname,
-            "--entrypoint", "/bin/bash",
-            _image(instance_id),
-            "-c", f"sleep {CONTAINER_LIFETIME}",
-        ],
-        timeout=60,
+    r = _retry(
+        lambda: _sh(
+            ["docker", "pull", "--platform", "linux/amd64", img],
+            timeout=PULL_TIMEOUT_S,
+        ),
+        attempts=PULL_RETRY_ATTEMPTS,
+        label=f"pull {img}",
+        verbose=verbose,
     )
     if r.returncode != 0:
-        raise RuntimeError(f"start failed: {r.stderr[-400:]}")
+        raise RuntimeError(f"pull failed after {PULL_RETRY_ATTEMPTS} attempts: "
+                           f"{(r.stderr or '')[-400:]}")
+
+
+def start_container(instance_id: str, verbose: bool = True) -> str:
+    cname = _container_name(instance_id)
+    _sh(["docker", "rm", "-f", cname], timeout=30)
+    r = _retry(
+        lambda: _sh(
+            [
+                "docker", "run", "-d", "--platform", "linux/amd64",
+                "--name", cname,
+                "--entrypoint", "/bin/bash",
+                _image(instance_id),
+                "-c", f"sleep {CONTAINER_LIFETIME}",
+            ],
+            timeout=START_TIMEOUT_S,
+        ),
+        attempts=START_RETRY_ATTEMPTS,
+        label=f"start {cname}",
+        verbose=verbose,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"start failed after {START_RETRY_ATTEMPTS} attempts: "
+                           f"{(r.stderr or '')[-400:]}")
     return cname
 
 
