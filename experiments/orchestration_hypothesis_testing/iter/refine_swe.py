@@ -523,7 +523,13 @@ def main() -> None:
     parser.add_argument("--max-cost-usd-per-model", default="5.0",
                         help="float OR key=val,key=val,...")
     parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument("--max-workers", type=int, default=6)
+    parser.add_argument("--max-workers", type=int, default=1,
+                        help="default 1 — concurrent SWE-bench eval workers "
+                             "race on containerd image-pull metadata. The "
+                             "race produces silent Docker API timeout "
+                             "failures (we observed ~178 of 300 on swe_lite "
+                             "with default=6). Bump explicitly only when "
+                             "host has been hardened.")
     args = parser.parse_args()
 
     out_root = args.output_dir.resolve()

@@ -37,7 +37,11 @@ def main() -> None:
     parser.add_argument("--dataset", default="princeton-nlp/SWE-bench_Verified")
     parser.add_argument("--generators", required=True)
     parser.add_argument("--steps", default="1,2,3,4")
-    parser.add_argument("--max-workers", type=int, default=4)
+    parser.add_argument("--max-workers", type=int, default=1,
+                        help="default 1 — multi-worker eval races on "
+                             "containerd image-pull metadata, producing "
+                             "silent 'Docker API timeout' failures. Bump "
+                             "explicitly only when host has been hardened.")
     args = parser.parse_args()
 
     iter_dir = args.iter_dir.resolve()
