@@ -596,6 +596,13 @@ def _parse_args():
         "--results", type=Path, default=None,
         help="Output JSON path (default depends on --dataset + model).",
     )
+    p.add_argument(
+        "--variants", default=",".join(VARIANTS),
+        help="Comma-separated subset of policies to run. Default = all 10. "
+             "Use to skip expensive baselines, e.g. "
+             "'--variants simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted' "
+             "for simple + BG + BDP only.",
+    )
     return p.parse_args()
 
 
@@ -652,15 +659,25 @@ def main():
     print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} "
           f"base_url={llm_cfg.base_url} max_tokens={llm_cfg.max_tokens}")
 
-    total = len(test_ids) * len(VARIANTS)
-    done = sum(1 for tid in test_ids for v in VARIANTS if results.get(f"{tid}|{v}"))
+    # Resolve --variants subset (default = all 10). Fail loudly on unknown
+    # names so a typo doesn't silently skip a policy.
+    variants = tuple(v.strip() for v in args.variants.split(",") if v.strip())
+    unknown = [v for v in variants if v not in VARIANTS]
+    if unknown:
+        raise SystemExit(
+            f"Unknown variants: {unknown}. Allowed: {list(VARIANTS)}"
+        )
+    print(f"Variants this run ({len(variants)}/{len(VARIANTS)}): {list(variants)}")
+
+    total = len(test_ids) * len(variants)
+    done = sum(1 for tid in test_ids for v in variants if results.get(f"{tid}|{v}"))
     print(f"\nResume: {done}/{total} pairs already done.\n")
 
     started = time.time()
     for i, tid in enumerate(test_ids):
-        # Skip if all variants done for this instance
-        if all(results.get(f"{tid}|{v}") for v in VARIANTS):
-            print(f"\n[{i+1}/{len(test_ids)}] {tid}: all variants done, skipping")
+        # Skip if all selected variants done for this instance
+        if all(results.get(f"{tid}|{v}") for v in variants):
+            print(f"\n[{i+1}/{len(test_ids)}] {tid}: all selected variants done, skipping")
             continue
 
         elapsed = time.time() - started
@@ -674,7 +691,7 @@ def main():
 
         try:
             instance = get_instance(tid)
-            for v in VARIANTS:
+            for v in variants:
                 key = f"{tid}|{v}"
                 if results.get(key):
                     continue
@@ -744,7 +761,9 @@ def main():
                        for r in by_v["simple"]) / len(by_v["simple"])
     else:
         baseline = 0.0
-    for v in VARIANTS:
+    # Show only the variants that ran this session (others may be from
+    # earlier runs and aren't relevant to the live aggregate print).
+    for v in variants:
         rs = by_v.get(v, [])
         if not rs: continue
         n = len(rs)
