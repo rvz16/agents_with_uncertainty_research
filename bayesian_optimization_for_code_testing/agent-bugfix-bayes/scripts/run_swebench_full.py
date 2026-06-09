@@ -56,7 +56,24 @@ _model_slug = LLM_MODEL.split("/")[-1].replace(":", "_").replace(".", "_")
 # Output JSON path is bound to (dataset, model) inside main(); see
 # results_path computation there.
 
-VARIANTS = ("simple", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
+VARIANTS = ("simple",
+            "best_of_3",
+            "threshold_L0", "threshold_L2", "threshold_L3",
+            "fixed_pipeline",
+            "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
+
+# Stateless-baseline critic cascades. SWE-Bench has 4 critics:
+#   critic_syntax (L0), critic_lint (L1-ish), critic_early (L2 = first
+#   FAIL_TO_PASS test passes), critic_mid (all FAIL_TO_PASS tests pass).
+# threshold_L3 in the paper uses an LLM-judge critic which SWE-Bench does
+# not have; we use critic_mid (full FAIL_TO_PASS pass) as the strongest
+# critic-stack stand-in for that level.
+THRESHOLD_L0_CRITICS = ["critic_syntax"]
+THRESHOLD_L2_CRITICS = ["critic_syntax", "critic_lint", "critic_early"]
+THRESHOLD_L3_CRITICS = ["critic_syntax", "critic_lint", "critic_early", "critic_mid"]
+
+# best_of_3 generates this many candidate patches before giving up.
+BEST_OF_N = 3
 
 # Cached fitted theta from the SWE calibration run (allure artifact 9e7fd0d7)
 FITTED_THETA = {
@@ -268,6 +285,134 @@ def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
     return res
 
 
+# --------------------------------------------------------------------------
+# Stateless paper baselines
+# --------------------------------------------------------------------------
+
+def _generate_patch_into_container(instance, cname, llm_cfg, costs, res, step: int):
+    """Common: build prompt, LLM call, apply patch. Mutates res (counters,
+    actions, completion_tokens). Returns (applied, n_blocks, n_ok)."""
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
+    files = get_files_block(cname, instance)
+    prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+    r = call_llm_or_raise(prompt, llm_cfg)
+    res.n_llm_calls += 1
+    res.total_cost += costs.c_llm_call
+    res.completion_tokens += r.completion_tokens
+    applied, n_blocks, n_ok = apply_llm_patch(cname, r.text)
+    if not applied:
+        res.n_patch_apply_fails += 1
+    res.actions.append({
+        "step": step, "action": "generate",
+        "n_blocks": n_blocks, "n_applied": n_ok, "applied": applied,
+    })
+    return applied, n_blocks, n_ok
+
+
+def run_best_of_3(instance, cname, llm_cfg, costs, n: int = BEST_OF_N):
+    """Generate N independent patches, verify each. fixed=True if ANY passes.
+
+    Paper convention (slide 10): cost = N·C_gen + N·C_ver per instance.
+    Reset between attempts so each generation is independent (the LLM sees the
+    same starting state, like best-of-N sampling)."""
+    res = Result(instance_id=instance["instance_id"], variant="best_of_3")
+    start = time.perf_counter()
+    for i in range(n):
+        # Fresh state per sample
+        reset_repo_for_variant(cname, instance)
+        applied, _, _ = _generate_patch_into_container(
+            instance, cname, llm_cfg, costs, res, step=2 * i,
+        )
+        if not applied:
+            continue
+        ok, _ = run_full_test(cname, instance)
+        res.n_full_tests += 1
+        res.total_cost += costs.c_full_test
+        res.actions.append({"step": 2 * i + 1, "action": "verify", "ok": ok})
+        if ok:
+            res.fixed = True
+            res.final_action = "verify_pass"
+            break
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_threshold(instance, cname, llm_cfg, costs,
+                  critic_names: list[str], label: str):
+    """Generate → run critics in cascade order, bail on first FAIL → if all
+    pass, verify. Paper's "gate(Cr_*)" stateless baseline.
+
+    Per-instance budget: 1 LLM call + up to len(critic_names) critics + 0/1
+    verify (verify happens only if all critics passed)."""
+    res = Result(instance_id=instance["instance_id"], variant=label)
+    start = time.perf_counter()
+    reset_repo_for_variant(cname, instance)
+    applied, _, _ = _generate_patch_into_container(
+        instance, cname, llm_cfg, costs, res, step=0,
+    )
+    if not applied:
+        res.final_action = "no_patch"
+        res.wall_clock = time.perf_counter() - start
+        return res
+    for k, cn in enumerate(critic_names, start=1):
+        passed, _ = run_critic(cname, cn, instance)
+        res.n_critic_runs += 1
+        res.total_cost += costs.c_critic_test
+        res.actions.append({"step": k, "action": f"critic:{cn}", "passed": passed})
+        if not passed:
+            res.final_action = "critic_reject"
+            res.wall_clock = time.perf_counter() - start
+            return res
+    # All critics passed → verify
+    ok, _ = run_full_test(cname, instance)
+    res.n_full_tests += 1
+    res.total_cost += costs.c_full_test
+    res.actions.append({"step": len(critic_names) + 1, "action": "verify", "ok": ok})
+    res.fixed = ok
+    res.final_action = "verify_pass" if ok else "verify_fail"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_fixed_pipeline(instance, cname, llm_cfg, costs):
+    """Generate → run ALL critics (NOT for gating, just for cost accounting) →
+    verify regardless of critic outcomes. Paper's "FP" baseline.
+
+    The point of FP is to show what happens if you naively chain every critic
+    you have and ALWAYS pay for verify on top — typically loses to selective
+    gating (threshold_L*) and to Bayesian planners."""
+    res = Result(instance_id=instance["instance_id"], variant="fixed_pipeline")
+    start = time.perf_counter()
+    reset_repo_for_variant(cname, instance)
+    applied, _, _ = _generate_patch_into_container(
+        instance, cname, llm_cfg, costs, res, step=0,
+    )
+    if not applied:
+        res.final_action = "no_patch"
+        res.wall_clock = time.perf_counter() - start
+        return res
+    for k, cn in enumerate(SWE_CRITIC_NAMES, start=1):
+        passed, _ = run_critic(cname, cn, instance)
+        res.n_critic_runs += 1
+        res.total_cost += costs.c_critic_test
+        res.actions.append({"step": k, "action": f"critic:{cn}", "passed": passed})
+    # Always verify, regardless of critic results
+    ok, _ = run_full_test(cname, instance)
+    res.n_full_tests += 1
+    res.total_cost += costs.c_full_test
+    res.actions.append({"step": len(SWE_CRITIC_NAMES) + 1, "action": "verify", "ok": ok})
+    res.fixed = ok
+    res.final_action = "verify_pass" if ok else "verify_fail"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+# --------------------------------------------------------------------------
+# Bayesian-greedy / DP planners
+# --------------------------------------------------------------------------
+
 def _q_one_step_critic(b, c, theta, costs):
     lk = theta[c]
     p = lk["p_pass_y1"] * b + lk["p_pass_y0"] * (1 - b)
@@ -451,6 +596,13 @@ def _parse_args():
         "--results", type=Path, default=None,
         help="Output JSON path (default depends on --dataset + model).",
     )
+    p.add_argument(
+        "--variants", default=",".join(VARIANTS),
+        help="Comma-separated subset of policies to run. Default = all 10. "
+             "Use to skip expensive baselines, e.g. "
+             "'--variants simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted' "
+             "for simple + BG + BDP only.",
+    )
     return p.parse_args()
 
 
@@ -507,15 +659,25 @@ def main():
     print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} "
           f"base_url={llm_cfg.base_url} max_tokens={llm_cfg.max_tokens}")
 
-    total = len(test_ids) * len(VARIANTS)
-    done = sum(1 for tid in test_ids for v in VARIANTS if results.get(f"{tid}|{v}"))
+    # Resolve --variants subset (default = all 10). Fail loudly on unknown
+    # names so a typo doesn't silently skip a policy.
+    variants = tuple(v.strip() for v in args.variants.split(",") if v.strip())
+    unknown = [v for v in variants if v not in VARIANTS]
+    if unknown:
+        raise SystemExit(
+            f"Unknown variants: {unknown}. Allowed: {list(VARIANTS)}"
+        )
+    print(f"Variants this run ({len(variants)}/{len(VARIANTS)}): {list(variants)}")
+
+    total = len(test_ids) * len(variants)
+    done = sum(1 for tid in test_ids for v in variants if results.get(f"{tid}|{v}"))
     print(f"\nResume: {done}/{total} pairs already done.\n")
 
     started = time.time()
     for i, tid in enumerate(test_ids):
-        # Skip if all variants done for this instance
-        if all(results.get(f"{tid}|{v}") for v in VARIANTS):
-            print(f"\n[{i+1}/{len(test_ids)}] {tid}: all variants done, skipping")
+        # Skip if all selected variants done for this instance
+        if all(results.get(f"{tid}|{v}") for v in variants):
+            print(f"\n[{i+1}/{len(test_ids)}] {tid}: all selected variants done, skipping")
             continue
 
         elapsed = time.time() - started
@@ -529,7 +691,7 @@ def main():
 
         try:
             instance = get_instance(tid)
-            for v in VARIANTS:
+            for v in variants:
                 key = f"{tid}|{v}"
                 if results.get(key):
                     continue
@@ -543,6 +705,19 @@ def main():
                 try:
                     if v == "simple":
                         r = run_simple(instance, cname, llm_cfg, costs)
+                    elif v == "best_of_3":
+                        r = run_best_of_3(instance, cname, llm_cfg, costs)
+                    elif v == "threshold_L0":
+                        r = run_threshold(instance, cname, llm_cfg, costs,
+                                          THRESHOLD_L0_CRITICS, "threshold_L0")
+                    elif v == "threshold_L2":
+                        r = run_threshold(instance, cname, llm_cfg, costs,
+                                          THRESHOLD_L2_CRITICS, "threshold_L2")
+                    elif v == "threshold_L3":
+                        r = run_threshold(instance, cname, llm_cfg, costs,
+                                          THRESHOLD_L3_CRITICS, "threshold_L3")
+                    elif v == "fixed_pipeline":
+                        r = run_fixed_pipeline(instance, cname, llm_cfg, costs)
                     elif v == "greedy_hand":
                         r = run_greedy(instance, cname, SWE_CRITIC_LIKELIHOODS, "hand",
                                        llm_cfg, costs, MAX_GENERATORS, PRIOR)
@@ -586,7 +761,9 @@ def main():
                        for r in by_v["simple"]) / len(by_v["simple"])
     else:
         baseline = 0.0
-    for v in VARIANTS:
+    # Show only the variants that ran this session (others may be from
+    # earlier runs and aren't relevant to the live aggregate print).
+    for v in variants:
         rs = by_v.get(v, [])
         if not rs: continue
         n = len(rs)
