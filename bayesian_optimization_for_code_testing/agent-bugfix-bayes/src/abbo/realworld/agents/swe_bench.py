@@ -18,6 +18,7 @@ Critics:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -61,15 +62,47 @@ CONTAINER_LIFETIME = 7200    # 2 hr; covers 5 variants under amd64 emulation
 # Dataset — cached
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=1)
-def _dataset() -> list[dict]:
-    ds = load_dataset("princeton-nlp/SWE-bench_Lite", split="test")
+# SWE-Bench dataset selection. Two upstream variants are supported:
+#   - "SWE-bench_Lite"     (300 instances, the original lightweight subset)
+#   - "SWE-bench_Verified" (~500 instances, the hand-verified set)
+# Pick via env var SWE_BENCH_DATASET (default: Verified). The runner CLI
+# (run_swebench_full.py --dataset {lite,verified}) sets this for the
+# duration of the run.
+_DATASET_NAME_MAP = {
+    "lite":     "SWE-bench_Lite",
+    "verified": "SWE-bench_Verified",
+}
+
+
+def _dataset_id(name: str | None = None) -> str:
+    if name is None:
+        name = os.environ.get("SWE_BENCH_DATASET", "verified")
+    name = name.strip().lower()
+    if name not in _DATASET_NAME_MAP:
+        raise ValueError(
+            f"Unknown SWE_BENCH_DATASET={name!r}; expected one of "
+            f"{sorted(_DATASET_NAME_MAP)}"
+        )
+    return f"princeton-nlp/{_DATASET_NAME_MAP[name]}"
+
+
+@lru_cache(maxsize=2)
+def _dataset_for(dataset_id: str) -> list[dict]:
+    ds = load_dataset(dataset_id, split="test")
     return list(ds)
 
 
-@lru_cache(maxsize=1)
+def _dataset() -> list[dict]:
+    return _dataset_for(_dataset_id())
+
+
+@lru_cache(maxsize=2)
+def _by_id_for(dataset_id: str) -> dict[str, dict]:
+    return {ex["instance_id"]: ex for ex in _dataset_for(dataset_id)}
+
+
 def _by_id() -> dict[str, dict]:
-    return {ex["instance_id"]: ex for ex in _dataset()}
+    return _by_id_for(_dataset_id())
 
 
 def list_instance_ids() -> list[str]:

@@ -47,9 +47,14 @@ N_TRAIN = 7              # same as test_swebench_calibration.py
 PRIOR = 0.5
 MAX_GENERATORS = 2       # SWE patches are big — keep budget small
 MAX_VERIFICATIONS = 1
+ISSUE_CHAR_CAP = 32000   # raise from 4000 — long issues were truncated
+                         # below the bug-relevant section and the planner
+                         # received noise; this is char count, not tokens.
+MAX_OUTPUT_TOKENS = 8192 # SWE patches can run long; 2048 truncated some.
 LLM_MODEL = os.environ.get("ABBO_LLM_MODEL", "openai/gpt-oss-20b:free")
 _model_slug = LLM_MODEL.split("/")[-1].replace(":", "_").replace(".", "_")
-RESULTS_PATH = ROOT / "sim_results" / f"swebench_full_endtoend__{_model_slug}.json"
+# Output JSON path is bound to (dataset, model) inside main(); see
+# results_path computation there.
 
 VARIANTS = ("simple", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
 
@@ -223,7 +228,7 @@ class Result:
 def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
     res = Result(instance_id=instance["instance_id"], variant="simple")
     start = time.perf_counter()
-    issue = instance["problem_statement"][:4000]
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
     for attempt in range(n_retries):
         files = get_files_block(cname, instance)
         prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
@@ -270,7 +275,7 @@ def _q_one_step_critic(b, c, theta, costs):
 def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0.5):
     res = Result(instance_id=instance["instance_id"], variant=f"greedy_{label}")
     start = time.perf_counter()
-    issue = instance["problem_statement"][:4000]
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
     belief = prior; gen_left = max_gen
     crit_used: set[str] = set(); step = 0
     has_patch = False
@@ -340,7 +345,7 @@ def run_dp(instance, cname, theta, label, llm_cfg, costs, planner,
            max_gen=2, max_ver=1, prior=0.5):
     res = Result(instance_id=instance["instance_id"], variant=f"dp_{label}")
     start = time.perf_counter()
-    issue = instance["problem_statement"][:4000]
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
     belief = prior; gen_left = max_gen; ver_left = max_ver
     crit_used: frozenset[str] = frozenset(); step = 0
     has_patch = False
@@ -423,16 +428,57 @@ def serialize(r):
     }
 
 
+def _parse_args():
+    import argparse
+    p = argparse.ArgumentParser(description="SWE-Bench held-out agent comparison.")
+    p.add_argument(
+        "--dataset", choices=["lite", "verified"], default=None,
+        help="Which SWE-Bench upstream split to evaluate against. "
+             "Overrides SWE_BENCH_DATASET env var. Default (env unset): verified.",
+    )
+    p.add_argument(
+        "--model", default=None,
+        help="OpenAI-compatible model id (overrides ABBO_LLM_MODEL for this "
+             "run). Example: openai/gpt-5-mini, anthropic/claude-haiku-4.5.",
+    )
+    p.add_argument(
+        "--results", type=Path, default=None,
+        help="Output JSON path (default depends on --dataset + model).",
+    )
+    return p.parse_args()
+
+
+def _model_slug_for(model_id: str) -> str:
+    return model_id.split("/")[-1].replace(":", "_").replace(".", "_")
+
+
 def main():
+    args = _parse_args()
+    if args.dataset:
+        os.environ["SWE_BENCH_DATASET"] = args.dataset
+    dataset_tag = os.environ.get("SWE_BENCH_DATASET", "verified").lower()
+
+    # Resolve model: CLI > env > default
+    llm_model = (args.model or "").strip() or LLM_MODEL
+    model_slug = _model_slug_for(llm_model)
+
+    # Bind results path to (dataset, model) so Lite and Verified runs (and
+    # different models) don't overwrite each other on disk.
+    results_path = args.results or (
+        ROOT / "sim_results"
+        / f"swebench_full_endtoend__{dataset_tag}__{model_slug}.json"
+    )
+
     rng = random.Random(SPLIT_SEED)
     all_ids = SWE_INSTANCE_POOL[:]   # 11 small-deps instances
     rng.shuffle(all_ids)
     test_ids = all_ids[N_TRAIN:]
-    print(f"Held-out: {len(test_ids)} instances")
+    print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
+          f"Held-out: {len(test_ids)} instances  Results: {results_path}")
     for tid in test_ids:
         print(f"  {tid}")
 
-    state = load_existing(RESULTS_PATH)
+    state = load_existing(results_path)
     results = state.setdefault("results", {})
 
     costs = AgentCostConfig()
@@ -443,13 +489,17 @@ def main():
 
     llm_cfg = build_llm_config_from_env(
         default_provider="openrouter",
-        default_model=LLM_MODEL,
+        default_model=llm_model,
         default_base_url="https://openrouter.ai/api",
         default_temperature=0.1,
-        default_max_tokens=2048,
+        default_max_tokens=MAX_OUTPUT_TOKENS,
         default_timeout=180,
     )
-    print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} base_url={llm_cfg.base_url}")
+    # CLI --model takes precedence over any env-supplied model in llm_cfg
+    if args.model:
+        llm_cfg.model = args.model.strip()
+    print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} "
+          f"base_url={llm_cfg.base_url} max_tokens={llm_cfg.max_tokens}")
 
     total = len(test_ids) * len(VARIANTS)
     done = sum(1 for tid in test_ids for v in VARIANTS if results.get(f"{tid}|{v}"))
@@ -512,7 +562,7 @@ def main():
                       f"llm={r.n_llm_calls}  crit={r.n_critic_runs}  "
                       f"toks={r.completion_tokens}  apply_fail={r.n_patch_apply_fails}  "
                       f"wc={r.wall_clock:.1f}s  final={r.final_action}")
-                save_progress(RESULTS_PATH, state)
+                save_progress(results_path, state)
         finally:
             stop_container(cname)
 
@@ -540,12 +590,12 @@ def main():
         d = u - baseline
         print(f"{v:<16} {n:>3} {fix:>5.1f}% {c:>7.2f} {u:>+8.2f} {d:>+8.2f}")
 
-    state["llm_model"] = LLM_MODEL
+    state["llm_model"] = llm_cfg.model
     state["fitted_theta"] = FITTED_THETA
     state["n_train"] = N_TRAIN
     state["n_test"] = len(test_ids)
-    save_progress(RESULTS_PATH, state)
-    print(f"\nSaved: {RESULTS_PATH}")
+    save_progress(results_path, state)
+    print(f"\nSaved: {results_path}")
 
 
 if __name__ == "__main__":
