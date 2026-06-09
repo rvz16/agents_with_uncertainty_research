@@ -38,8 +38,13 @@ PYTHON3_LANG = 3
 N_EARLY = 3
 N_MID = 10
 MAX_FULL_TESTS = 40       # oracle depth; deeper = more reliable Y labels
-PER_TEST_TIMEOUT = 4      # seconds; Codeforces time limits are typically 1–2 s,
-                          #          Python is 2× slower, 4 s leaves margin.
+PER_TEST_TIMEOUT = 10     # seconds; was 4, but correct solutions on hard
+                          # problems (CF time limit ≈ 2 s, Python ≈ 2-3× slower)
+                          # were exceeding it during cold-start + scheduler
+                          # jitter — causing false-negative `fixed=False` for
+                          # patches that ran fine but missed the wall.
+                          # 10 s is comfortably above CF's worst-case Python
+                          # judge limit and reduces verify noise.
 MAX_SEARCH_POOL = 8       # max submissions to scan when finding a Y=1/Y=0 example
 
 

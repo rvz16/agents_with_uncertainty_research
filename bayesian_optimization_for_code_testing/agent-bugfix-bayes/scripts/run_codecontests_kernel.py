@@ -74,7 +74,7 @@ def main():
         default_model=LLM_MODEL,
         default_base_url="https://openrouter.ai/api",
         default_temperature=0.1,
-        default_max_tokens=2048,
+        default_max_tokens=8192,  # was 2048; CC patches with CoT got truncated
         default_timeout=120,
     )
     print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} base_url={llm_cfg.base_url}")
