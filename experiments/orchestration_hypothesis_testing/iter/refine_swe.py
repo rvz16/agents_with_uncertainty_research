@@ -530,6 +530,12 @@ def main() -> None:
                              "failures (we observed ~178 of 300 on swe_lite "
                              "with default=6). Bump explicitly only when "
                              "host has been hardened.")
+    parser.add_argument("--instance-ids-file", type=Path, default=None,
+                        help="JSON file with a list of instance_ids to keep. "
+                             "When set, only those instances are processed "
+                             "(plus the --n-instances cap on top). Use with "
+                             "extract_swe_failed_instances.py output to "
+                             "rerun only the not-yet-solved subset.")
     args = parser.parse_args()
 
     out_root = args.output_dir.resolve()
@@ -623,7 +629,21 @@ def main() -> None:
                 r = json.loads(line)
                 diff_by_inst[r["instance_id"]] = r.get("model_patch", "") or ""
 
-        candidate = [k for k in crit_by_inst if k in inst_to_row and k in diff_by_inst][:args.n_instances]
+        candidate = [k for k in crit_by_inst if k in inst_to_row and k in diff_by_inst]
+        # Optional --instance-ids-file filter: keeps only the listed instance_ids.
+        # Useful to rerun only the not-yet-solved set produced by
+        # extract_swe_failed_instances.py.
+        if args.instance_ids_file:
+            try:
+                wanted = set(json.loads(Path(args.instance_ids_file).read_text()))
+            except Exception as e:
+                log.error("[%s] failed to read --instance-ids-file %s: %s",
+                          gen, args.instance_ids_file, e); continue
+            before = len(candidate)
+            candidate = [k for k in candidate if k in wanted]
+            log.info("[%s/%s] instance-ids filter: %d → %d eligible",
+                     gen, args.method, before, len(candidate))
+        candidate = candidate[:args.n_instances]
         log.info("[%s/%s] %d eligible instances (cap $%.1f)",
                  gen, args.method, len(candidate), cap_usd)
         if not candidate:
