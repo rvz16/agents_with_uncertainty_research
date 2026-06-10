@@ -603,6 +603,13 @@ def _parse_args():
              "'--variants simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted' "
              "for simple + BG + BDP only.",
     )
+    p.add_argument(
+        "--instance-ids-file", type=Path, default=None,
+        help="Path to a JSON file containing a list of SWE-Bench instance_ids "
+             "to run. Overrides the default SWE_INSTANCE_POOL[N_TRAIN:] split. "
+             "Use with the output of extract_swe_failed_instances.py to rerun "
+             "only the instances no prior method has solved.",
+    )
     return p.parse_args()
 
 
@@ -627,12 +634,27 @@ def main():
         / f"swebench_full_endtoend__{dataset_tag}__{model_slug}.json"
     )
 
-    rng = random.Random(SPLIT_SEED)
-    all_ids = SWE_INSTANCE_POOL[:]   # 11 small-deps instances
-    rng.shuffle(all_ids)
-    test_ids = all_ids[N_TRAIN:]
-    print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
-          f"Held-out: {len(test_ids)} instances  Results: {results_path}")
+    if args.instance_ids_file:
+        # External instance list (e.g. extract_swe_failed_instances.py output).
+        # Filter to those that actually exist in the chosen SWE-Bench split
+        # so a Lite list passed against --dataset verified doesn't silently
+        # try unknown ids (it will raise inside get_instance() instead).
+        try:
+            test_ids = json.loads(args.instance_ids_file.read_text())
+        except Exception as e:
+            raise SystemExit(f"failed to read {args.instance_ids_file}: {e}")
+        if not isinstance(test_ids, list) or not all(isinstance(x, str) for x in test_ids):
+            raise SystemExit("--instance-ids-file must be a JSON list of strings")
+        print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
+              f"Instance list: {args.instance_ids_file}  "
+              f"({len(test_ids)} instances)  Results: {results_path}")
+    else:
+        rng = random.Random(SPLIT_SEED)
+        all_ids = SWE_INSTANCE_POOL[:]   # 11 small-deps instances
+        rng.shuffle(all_ids)
+        test_ids = all_ids[N_TRAIN:]
+        print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
+              f"Held-out: {len(test_ids)} instances  Results: {results_path}")
     for tid in test_ids:
         print(f"  {tid}")
 
