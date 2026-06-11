@@ -124,7 +124,7 @@ def main() -> None:
     parser.add_argument("--n-boot", type=int, default=1000)
     args = parser.parse_args()
 
-    cost = CostModel(c_gen=5, c_L0=1, c_L2=2, c_L3=5, c_ver=args.c_ver, reward=100)
+    cost = CostModel(c_gen=10, c_L0=1, c_L2=2, c_L3=5, c_ver=args.c_ver, reward=100)
     out_dir = args.output_dir.resolve()
 
     for gen in [g.strip() for g in args.generators.split(",") if g.strip()]:

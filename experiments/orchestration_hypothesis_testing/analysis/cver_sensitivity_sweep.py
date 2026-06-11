@@ -42,7 +42,7 @@ def run_sweep(out_dir: Path, generators: list[str], c_ver_values: list[float]) -
 
         per_cver: dict[str, dict] = {}
         for c_ver in c_ver_values:
-            cost = CostModel(c_gen=5, c_L0=1, c_L3=5, c_ver=c_ver, reward=100)
+            cost = CostModel(c_gen=10, c_L0=1, c_L3=5, c_ver=c_ver, reward=100)
             controller = BayesianController(prior, likes, kernel, cost)
             policies = {
                 "always_verify": policy_always_verify,

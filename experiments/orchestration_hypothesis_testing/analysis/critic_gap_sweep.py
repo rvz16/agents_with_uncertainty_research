@@ -59,7 +59,7 @@ def evaluate_gap(prior: float, c_ver: float, p_y1: float, p_y0: float,
                  n_trajs: int = 1000, horizon: int = 5,
                  seed: int = 42) -> dict[str, float]:
     likelihoods = make_likelihoods(p_y1, p_y0)
-    cost = CostModel(c_gen=5, c_L0=1, c_L3=5, c_ver=c_ver, reward=100)
+    cost = CostModel(c_gen=10, c_L0=1, c_L3=5, c_ver=c_ver, reward=100)
     kernel = {"kernel_all": {"P_fix_given_broken": prior,
                              "P_break_given_correct": 1 - prior}}
     controller = BayesianController(prior, {"critic_likelihoods": likelihoods},

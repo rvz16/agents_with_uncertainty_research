@@ -47,11 +47,33 @@ N_TRAIN = 7              # same as test_swebench_calibration.py
 PRIOR = 0.5
 MAX_GENERATORS = 2       # SWE patches are big — keep budget small
 MAX_VERIFICATIONS = 1
+ISSUE_CHAR_CAP = 32000   # raise from 4000 — long issues were truncated
+                         # below the bug-relevant section and the planner
+                         # received noise; this is char count, not tokens.
+MAX_OUTPUT_TOKENS = 8192 # SWE patches can run long; 2048 truncated some.
 LLM_MODEL = os.environ.get("ABBO_LLM_MODEL", "openai/gpt-oss-20b:free")
 _model_slug = LLM_MODEL.split("/")[-1].replace(":", "_").replace(".", "_")
-RESULTS_PATH = ROOT / "sim_results" / f"swebench_full_endtoend__{_model_slug}.json"
+# Output JSON path is bound to (dataset, model) inside main(); see
+# results_path computation there.
 
-VARIANTS = ("simple", "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
+VARIANTS = ("simple",
+            "best_of_3",
+            "threshold_L0", "threshold_L2", "threshold_L3",
+            "fixed_pipeline",
+            "greedy_hand", "greedy_fitted", "dp_hand", "dp_fitted")
+
+# Stateless-baseline critic cascades. SWE-Bench has 4 critics:
+#   critic_syntax (L0), critic_lint (L1-ish), critic_early (L2 = first
+#   FAIL_TO_PASS test passes), critic_mid (all FAIL_TO_PASS tests pass).
+# threshold_L3 in the paper uses an LLM-judge critic which SWE-Bench does
+# not have; we use critic_mid (full FAIL_TO_PASS pass) as the strongest
+# critic-stack stand-in for that level.
+THRESHOLD_L0_CRITICS = ["critic_syntax"]
+THRESHOLD_L2_CRITICS = ["critic_syntax", "critic_lint", "critic_early"]
+THRESHOLD_L3_CRITICS = ["critic_syntax", "critic_lint", "critic_early", "critic_mid"]
+
+# best_of_3 generates this many candidate patches before giving up.
+BEST_OF_N = 3
 
 # Cached fitted theta from the SWE calibration run (allure artifact 9e7fd0d7)
 FITTED_THETA = {
@@ -127,9 +149,15 @@ def _apply_unified_diff(cname: str, diff_text: str) -> bool:
     return r.returncode == 0
 
 
-def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 6000) -> str:
+def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 32000) -> str:
     """Cat the files touched by the gold patch (we tell the LLM which files
-    to look at — that's a fair scaffolding, not the answer)."""
+    to look at — that's a fair scaffolding, not the answer).
+
+    Two earlier defaults were bugs:
+    - `head -200` lost code past line 200 (Django models.py, pandas frame.py).
+    - `max_chars_per_file=6000` truncated files even within the 200-line view.
+    Both are now 32k chars (≈ 800-1000 lines of typical Python).
+    """
     try:
         paths = changed_files_from_patch(instance.get("patch") or "")[:3]
     except Exception:
@@ -139,7 +167,7 @@ def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 6000) 
         if not isinstance(p, str) or not p:
             continue
         try:
-            r = _exec(cname, f"cat /testbed/{p} 2>&1 | head -200", timeout=30)
+            r = _exec(cname, f"cat /testbed/{p} 2>&1", timeout=30)
             body = (r.stdout or "")[:max_chars_per_file]
             parts.append(f"### {p}\n```python\n{body}\n```")
         except Exception:
@@ -223,7 +251,7 @@ class Result:
 def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
     res = Result(instance_id=instance["instance_id"], variant="simple")
     start = time.perf_counter()
-    issue = instance["problem_statement"][:4000]
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
     for attempt in range(n_retries):
         files = get_files_block(cname, instance)
         prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
@@ -257,6 +285,134 @@ def run_simple(instance, cname, llm_cfg, costs, n_retries=2):
     return res
 
 
+# --------------------------------------------------------------------------
+# Stateless paper baselines
+# --------------------------------------------------------------------------
+
+def _generate_patch_into_container(instance, cname, llm_cfg, costs, res, step: int):
+    """Common: build prompt, LLM call, apply patch. Mutates res (counters,
+    actions, completion_tokens). Returns (applied, n_blocks, n_ok)."""
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
+    files = get_files_block(cname, instance)
+    prompt = PROMPT_TEMPLATE.format(issue=issue, files_block=files)
+    r = call_llm_or_raise(prompt, llm_cfg)
+    res.n_llm_calls += 1
+    res.total_cost += costs.c_llm_call
+    res.completion_tokens += r.completion_tokens
+    applied, n_blocks, n_ok = apply_llm_patch(cname, r.text)
+    if not applied:
+        res.n_patch_apply_fails += 1
+    res.actions.append({
+        "step": step, "action": "generate",
+        "n_blocks": n_blocks, "n_applied": n_ok, "applied": applied,
+    })
+    return applied, n_blocks, n_ok
+
+
+def run_best_of_3(instance, cname, llm_cfg, costs, n: int = BEST_OF_N):
+    """Generate N independent patches, verify each. fixed=True if ANY passes.
+
+    Paper convention (slide 10): cost = N·C_gen + N·C_ver per instance.
+    Reset between attempts so each generation is independent (the LLM sees the
+    same starting state, like best-of-N sampling)."""
+    res = Result(instance_id=instance["instance_id"], variant="best_of_3")
+    start = time.perf_counter()
+    for i in range(n):
+        # Fresh state per sample
+        reset_repo_for_variant(cname, instance)
+        applied, _, _ = _generate_patch_into_container(
+            instance, cname, llm_cfg, costs, res, step=2 * i,
+        )
+        if not applied:
+            continue
+        ok, _ = run_full_test(cname, instance)
+        res.n_full_tests += 1
+        res.total_cost += costs.c_full_test
+        res.actions.append({"step": 2 * i + 1, "action": "verify", "ok": ok})
+        if ok:
+            res.fixed = True
+            res.final_action = "verify_pass"
+            break
+    if not res.fixed:
+        res.final_action = res.final_action or "exhausted"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_threshold(instance, cname, llm_cfg, costs,
+                  critic_names: list[str], label: str):
+    """Generate → run critics in cascade order, bail on first FAIL → if all
+    pass, verify. Paper's "gate(Cr_*)" stateless baseline.
+
+    Per-instance budget: 1 LLM call + up to len(critic_names) critics + 0/1
+    verify (verify happens only if all critics passed)."""
+    res = Result(instance_id=instance["instance_id"], variant=label)
+    start = time.perf_counter()
+    reset_repo_for_variant(cname, instance)
+    applied, _, _ = _generate_patch_into_container(
+        instance, cname, llm_cfg, costs, res, step=0,
+    )
+    if not applied:
+        res.final_action = "no_patch"
+        res.wall_clock = time.perf_counter() - start
+        return res
+    for k, cn in enumerate(critic_names, start=1):
+        passed, _ = run_critic(cname, cn, instance)
+        res.n_critic_runs += 1
+        res.total_cost += costs.c_critic_test
+        res.actions.append({"step": k, "action": f"critic:{cn}", "passed": passed})
+        if not passed:
+            res.final_action = "critic_reject"
+            res.wall_clock = time.perf_counter() - start
+            return res
+    # All critics passed → verify
+    ok, _ = run_full_test(cname, instance)
+    res.n_full_tests += 1
+    res.total_cost += costs.c_full_test
+    res.actions.append({"step": len(critic_names) + 1, "action": "verify", "ok": ok})
+    res.fixed = ok
+    res.final_action = "verify_pass" if ok else "verify_fail"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+def run_fixed_pipeline(instance, cname, llm_cfg, costs):
+    """Generate → run ALL critics (NOT for gating, just for cost accounting) →
+    verify regardless of critic outcomes. Paper's "FP" baseline.
+
+    The point of FP is to show what happens if you naively chain every critic
+    you have and ALWAYS pay for verify on top — typically loses to selective
+    gating (threshold_L*) and to Bayesian planners."""
+    res = Result(instance_id=instance["instance_id"], variant="fixed_pipeline")
+    start = time.perf_counter()
+    reset_repo_for_variant(cname, instance)
+    applied, _, _ = _generate_patch_into_container(
+        instance, cname, llm_cfg, costs, res, step=0,
+    )
+    if not applied:
+        res.final_action = "no_patch"
+        res.wall_clock = time.perf_counter() - start
+        return res
+    for k, cn in enumerate(SWE_CRITIC_NAMES, start=1):
+        passed, _ = run_critic(cname, cn, instance)
+        res.n_critic_runs += 1
+        res.total_cost += costs.c_critic_test
+        res.actions.append({"step": k, "action": f"critic:{cn}", "passed": passed})
+    # Always verify, regardless of critic results
+    ok, _ = run_full_test(cname, instance)
+    res.n_full_tests += 1
+    res.total_cost += costs.c_full_test
+    res.actions.append({"step": len(SWE_CRITIC_NAMES) + 1, "action": "verify", "ok": ok})
+    res.fixed = ok
+    res.final_action = "verify_pass" if ok else "verify_fail"
+    res.wall_clock = time.perf_counter() - start
+    return res
+
+
+# --------------------------------------------------------------------------
+# Bayesian-greedy / DP planners
+# --------------------------------------------------------------------------
+
 def _q_one_step_critic(b, c, theta, costs):
     lk = theta[c]
     p = lk["p_pass_y1"] * b + lk["p_pass_y0"] * (1 - b)
@@ -270,7 +426,7 @@ def _q_one_step_critic(b, c, theta, costs):
 def run_greedy(instance, cname, theta, label, llm_cfg, costs, max_gen=2, prior=0.5):
     res = Result(instance_id=instance["instance_id"], variant=f"greedy_{label}")
     start = time.perf_counter()
-    issue = instance["problem_statement"][:4000]
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
     belief = prior; gen_left = max_gen
     crit_used: set[str] = set(); step = 0
     has_patch = False
@@ -340,7 +496,7 @@ def run_dp(instance, cname, theta, label, llm_cfg, costs, planner,
            max_gen=2, max_ver=1, prior=0.5):
     res = Result(instance_id=instance["instance_id"], variant=f"dp_{label}")
     start = time.perf_counter()
-    issue = instance["problem_statement"][:4000]
+    issue = instance["problem_statement"][:ISSUE_CHAR_CAP]
     belief = prior; gen_left = max_gen; ver_left = max_ver
     crit_used: frozenset[str] = frozenset(); step = 0
     has_patch = False
@@ -423,16 +579,86 @@ def serialize(r):
     }
 
 
+def _parse_args():
+    import argparse
+    p = argparse.ArgumentParser(description="SWE-Bench held-out agent comparison.")
+    p.add_argument(
+        "--dataset", choices=["lite", "verified"], default=None,
+        help="Which SWE-Bench upstream split to evaluate against. "
+             "Overrides SWE_BENCH_DATASET env var. Default (env unset): verified.",
+    )
+    p.add_argument(
+        "--model", default=None,
+        help="OpenAI-compatible model id (overrides ABBO_LLM_MODEL for this "
+             "run). Example: openai/gpt-5-mini, anthropic/claude-haiku-4.5.",
+    )
+    p.add_argument(
+        "--results", type=Path, default=None,
+        help="Output JSON path (default depends on --dataset + model).",
+    )
+    p.add_argument(
+        "--variants", default=",".join(VARIANTS),
+        help="Comma-separated subset of policies to run. Default = all 10. "
+             "Use to skip expensive baselines, e.g. "
+             "'--variants simple,greedy_hand,greedy_fitted,dp_hand,dp_fitted' "
+             "for simple + BG + BDP only.",
+    )
+    p.add_argument(
+        "--instance-ids-file", type=Path, default=None,
+        help="Path to a JSON file containing a list of SWE-Bench instance_ids "
+             "to run. Overrides the default SWE_INSTANCE_POOL[N_TRAIN:] split. "
+             "Use with the output of extract_swe_failed_instances.py to rerun "
+             "only the instances no prior method has solved.",
+    )
+    return p.parse_args()
+
+
+def _model_slug_for(model_id: str) -> str:
+    return model_id.split("/")[-1].replace(":", "_").replace(".", "_")
+
+
 def main():
-    rng = random.Random(SPLIT_SEED)
-    all_ids = SWE_INSTANCE_POOL[:]   # 11 small-deps instances
-    rng.shuffle(all_ids)
-    test_ids = all_ids[N_TRAIN:]
-    print(f"Held-out: {len(test_ids)} instances")
+    args = _parse_args()
+    if args.dataset:
+        os.environ["SWE_BENCH_DATASET"] = args.dataset
+    dataset_tag = os.environ.get("SWE_BENCH_DATASET", "verified").lower()
+
+    # Resolve model: CLI > env > default
+    llm_model = (args.model or "").strip() or LLM_MODEL
+    model_slug = _model_slug_for(llm_model)
+
+    # Bind results path to (dataset, model) so Lite and Verified runs (and
+    # different models) don't overwrite each other on disk.
+    results_path = args.results or (
+        ROOT / "sim_results"
+        / f"swebench_full_endtoend__{dataset_tag}__{model_slug}.json"
+    )
+
+    if args.instance_ids_file:
+        # External instance list (e.g. extract_swe_failed_instances.py output).
+        # Filter to those that actually exist in the chosen SWE-Bench split
+        # so a Lite list passed against --dataset verified doesn't silently
+        # try unknown ids (it will raise inside get_instance() instead).
+        try:
+            test_ids = json.loads(args.instance_ids_file.read_text())
+        except Exception as e:
+            raise SystemExit(f"failed to read {args.instance_ids_file}: {e}")
+        if not isinstance(test_ids, list) or not all(isinstance(x, str) for x in test_ids):
+            raise SystemExit("--instance-ids-file must be a JSON list of strings")
+        print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
+              f"Instance list: {args.instance_ids_file}  "
+              f"({len(test_ids)} instances)  Results: {results_path}")
+    else:
+        rng = random.Random(SPLIT_SEED)
+        all_ids = SWE_INSTANCE_POOL[:]   # 11 small-deps instances
+        rng.shuffle(all_ids)
+        test_ids = all_ids[N_TRAIN:]
+        print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
+              f"Held-out: {len(test_ids)} instances  Results: {results_path}")
     for tid in test_ids:
         print(f"  {tid}")
 
-    state = load_existing(RESULTS_PATH)
+    state = load_existing(results_path)
     results = state.setdefault("results", {})
 
     costs = AgentCostConfig()
@@ -443,23 +669,37 @@ def main():
 
     llm_cfg = build_llm_config_from_env(
         default_provider="openrouter",
-        default_model=LLM_MODEL,
+        default_model=llm_model,
         default_base_url="https://openrouter.ai/api",
         default_temperature=0.1,
-        default_max_tokens=2048,
+        default_max_tokens=MAX_OUTPUT_TOKENS,
         default_timeout=180,
     )
-    print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} base_url={llm_cfg.base_url}")
+    # CLI --model takes precedence over any env-supplied model in llm_cfg
+    if args.model:
+        llm_cfg.model = args.model.strip()
+    print(f"LLM provider={llm_cfg.provider} model={llm_cfg.model} "
+          f"base_url={llm_cfg.base_url} max_tokens={llm_cfg.max_tokens}")
 
-    total = len(test_ids) * len(VARIANTS)
-    done = sum(1 for tid in test_ids for v in VARIANTS if results.get(f"{tid}|{v}"))
+    # Resolve --variants subset (default = all 10). Fail loudly on unknown
+    # names so a typo doesn't silently skip a policy.
+    variants = tuple(v.strip() for v in args.variants.split(",") if v.strip())
+    unknown = [v for v in variants if v not in VARIANTS]
+    if unknown:
+        raise SystemExit(
+            f"Unknown variants: {unknown}. Allowed: {list(VARIANTS)}"
+        )
+    print(f"Variants this run ({len(variants)}/{len(VARIANTS)}): {list(variants)}")
+
+    total = len(test_ids) * len(variants)
+    done = sum(1 for tid in test_ids for v in variants if results.get(f"{tid}|{v}"))
     print(f"\nResume: {done}/{total} pairs already done.\n")
 
     started = time.time()
     for i, tid in enumerate(test_ids):
-        # Skip if all variants done for this instance
-        if all(results.get(f"{tid}|{v}") for v in VARIANTS):
-            print(f"\n[{i+1}/{len(test_ids)}] {tid}: all variants done, skipping")
+        # Skip if all selected variants done for this instance
+        if all(results.get(f"{tid}|{v}") for v in variants):
+            print(f"\n[{i+1}/{len(test_ids)}] {tid}: all selected variants done, skipping")
             continue
 
         elapsed = time.time() - started
@@ -473,7 +713,7 @@ def main():
 
         try:
             instance = get_instance(tid)
-            for v in VARIANTS:
+            for v in variants:
                 key = f"{tid}|{v}"
                 if results.get(key):
                     continue
@@ -487,6 +727,19 @@ def main():
                 try:
                     if v == "simple":
                         r = run_simple(instance, cname, llm_cfg, costs)
+                    elif v == "best_of_3":
+                        r = run_best_of_3(instance, cname, llm_cfg, costs)
+                    elif v == "threshold_L0":
+                        r = run_threshold(instance, cname, llm_cfg, costs,
+                                          THRESHOLD_L0_CRITICS, "threshold_L0")
+                    elif v == "threshold_L2":
+                        r = run_threshold(instance, cname, llm_cfg, costs,
+                                          THRESHOLD_L2_CRITICS, "threshold_L2")
+                    elif v == "threshold_L3":
+                        r = run_threshold(instance, cname, llm_cfg, costs,
+                                          THRESHOLD_L3_CRITICS, "threshold_L3")
+                    elif v == "fixed_pipeline":
+                        r = run_fixed_pipeline(instance, cname, llm_cfg, costs)
                     elif v == "greedy_hand":
                         r = run_greedy(instance, cname, SWE_CRITIC_LIKELIHOODS, "hand",
                                        llm_cfg, costs, MAX_GENERATORS, PRIOR)
@@ -512,7 +765,7 @@ def main():
                       f"llm={r.n_llm_calls}  crit={r.n_critic_runs}  "
                       f"toks={r.completion_tokens}  apply_fail={r.n_patch_apply_fails}  "
                       f"wc={r.wall_clock:.1f}s  final={r.final_action}")
-                save_progress(RESULTS_PATH, state)
+                save_progress(results_path, state)
         finally:
             stop_container(cname)
 
@@ -530,7 +783,9 @@ def main():
                        for r in by_v["simple"]) / len(by_v["simple"])
     else:
         baseline = 0.0
-    for v in VARIANTS:
+    # Show only the variants that ran this session (others may be from
+    # earlier runs and aren't relevant to the live aggregate print).
+    for v in variants:
         rs = by_v.get(v, [])
         if not rs: continue
         n = len(rs)
@@ -540,12 +795,12 @@ def main():
         d = u - baseline
         print(f"{v:<16} {n:>3} {fix:>5.1f}% {c:>7.2f} {u:>+8.2f} {d:>+8.2f}")
 
-    state["llm_model"] = LLM_MODEL
+    state["llm_model"] = llm_cfg.model
     state["fitted_theta"] = FITTED_THETA
     state["n_train"] = N_TRAIN
     state["n_test"] = len(test_ids)
-    save_progress(RESULTS_PATH, state)
-    print(f"\nSaved: {RESULTS_PATH}")
+    save_progress(results_path, state)
+    print(f"\nSaved: {results_path}")
 
 
 if __name__ == "__main__":

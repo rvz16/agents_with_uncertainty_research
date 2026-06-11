@@ -18,6 +18,7 @@ Critics:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -61,15 +62,47 @@ CONTAINER_LIFETIME = 7200    # 2 hr; covers 5 variants under amd64 emulation
 # Dataset — cached
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=1)
-def _dataset() -> list[dict]:
-    ds = load_dataset("princeton-nlp/SWE-bench_Lite", split="test")
+# SWE-Bench dataset selection. Two upstream variants are supported:
+#   - "SWE-bench_Lite"     (300 instances, the original lightweight subset)
+#   - "SWE-bench_Verified" (~500 instances, the hand-verified set)
+# Pick via env var SWE_BENCH_DATASET (default: Verified). The runner CLI
+# (run_swebench_full.py --dataset {lite,verified}) sets this for the
+# duration of the run.
+_DATASET_NAME_MAP = {
+    "lite":     "SWE-bench_Lite",
+    "verified": "SWE-bench_Verified",
+}
+
+
+def _dataset_id(name: str | None = None) -> str:
+    if name is None:
+        name = os.environ.get("SWE_BENCH_DATASET", "verified")
+    name = name.strip().lower()
+    if name not in _DATASET_NAME_MAP:
+        raise ValueError(
+            f"Unknown SWE_BENCH_DATASET={name!r}; expected one of "
+            f"{sorted(_DATASET_NAME_MAP)}"
+        )
+    return f"princeton-nlp/{_DATASET_NAME_MAP[name]}"
+
+
+@lru_cache(maxsize=2)
+def _dataset_for(dataset_id: str) -> list[dict]:
+    ds = load_dataset(dataset_id, split="test")
     return list(ds)
 
 
-@lru_cache(maxsize=1)
+def _dataset() -> list[dict]:
+    return _dataset_for(_dataset_id())
+
+
+@lru_cache(maxsize=2)
+def _by_id_for(dataset_id: str) -> dict[str, dict]:
+    return {ex["instance_id"]: ex for ex in _dataset_for(dataset_id)}
+
+
 def _by_id() -> dict[str, dict]:
-    return {ex["instance_id"]: ex for ex in _dataset()}
+    return _by_id_for(_dataset_id())
 
 
 def list_instance_ids() -> list[str]:
@@ -123,11 +156,66 @@ def _container_name(instance_id: str) -> str:
     return f"swe_abbo_{instance_id.replace('__', '_')}"
 
 
+# Harness stability knobs. Tuned so transient Docker/containerd hiccups
+# (image-pull stalls, containerd metadata races during concurrent runs,
+# Hub rate limits) get retried instead of marked as instance failures.
+PULL_TIMEOUT_S        = 3600   # was 1800. Sympy/Django images can exceed 30 min
+                               # on cold cache + slow link.
+START_TIMEOUT_S       = 120    # was 60. Startup is bursty under concurrent runs.
+PULL_RETRY_ATTEMPTS   = 3      # 1 attempt + 2 retries
+START_RETRY_ATTEMPTS  = 3
+RETRY_BACKOFF_S       = (10, 30)  # backoff sequence between attempts
+
+
 def _sh(cmd: list[str] | str, timeout: int = 600, check: bool = False):
-    return subprocess.run(
-        cmd, shell=isinstance(cmd, str), capture_output=True, text=True,
-        timeout=timeout, check=check,
-    )
+    """Run a shell command. Converts subprocess.TimeoutExpired into a fake
+    completed result with returncode=-1 so callers can treat it the same way
+    as a non-zero exit (retryable). Previously, a TimeoutExpired bubbled all
+    the way up and aborted the whole sweep on one slow image pull."""
+    try:
+        return subprocess.run(
+            cmd, shell=isinstance(cmd, str), capture_output=True, text=True,
+            timeout=timeout, check=check,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Synthesise a CompletedProcess-shaped object that returncode-based
+        # logic can recognise as failure.
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=-1,
+            stdout=(e.stdout or b"").decode("utf-8", errors="replace")
+                if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or ""),
+            stderr=f"timeout after {timeout}s: " + (
+                (e.stderr or b"").decode("utf-8", errors="replace")
+                if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or "")
+            ),
+        )
+
+
+def _retry(
+    attempt_fn,
+    attempts: int,
+    backoff_s: tuple[int, ...] = RETRY_BACKOFF_S,
+    label: str = "op",
+    verbose: bool = True,
+):
+    """Run attempt_fn() up to `attempts` times. attempt_fn returns the
+    subprocess.CompletedProcess; we retry while returncode != 0. Returns the
+    final result (success or last failure). Sleeps backoff_s[i-1] between
+    attempts i and i+1 (clamped to the last entry once we run out)."""
+    last = None
+    for i in range(attempts):
+        last = attempt_fn()
+        if last.returncode == 0:
+            return last
+        if i + 1 < attempts:
+            wait = backoff_s[min(i, len(backoff_s) - 1)]
+            if verbose:
+                tail = (last.stderr or "")[-200:].replace("\n", " | ")
+                print(f"  {label} attempt {i+1}/{attempts} failed (rc={last.returncode}): {tail}",
+                      flush=True)
+                print(f"  retrying in {wait}s ...", flush=True)
+            time.sleep(wait)
+    return last
 
 
 def pull_image(instance_id: str, verbose: bool = True) -> None:
@@ -137,26 +225,41 @@ def pull_image(instance_id: str, verbose: bool = True) -> None:
         return
     if verbose:
         print(f"  pulling {img} ...", flush=True)
-    r = _sh(["docker", "pull", "--platform", "linux/amd64", img], timeout=1800)
-    if r.returncode != 0:
-        raise RuntimeError(f"pull failed: {r.stderr[-400:]}")
-
-
-def start_container(instance_id: str) -> str:
-    cname = _container_name(instance_id)
-    _sh(["docker", "rm", "-f", cname], timeout=30)
-    r = _sh(
-        [
-            "docker", "run", "-d", "--platform", "linux/amd64",
-            "--name", cname,
-            "--entrypoint", "/bin/bash",
-            _image(instance_id),
-            "-c", f"sleep {CONTAINER_LIFETIME}",
-        ],
-        timeout=60,
+    r = _retry(
+        lambda: _sh(
+            ["docker", "pull", "--platform", "linux/amd64", img],
+            timeout=PULL_TIMEOUT_S,
+        ),
+        attempts=PULL_RETRY_ATTEMPTS,
+        label=f"pull {img}",
+        verbose=verbose,
     )
     if r.returncode != 0:
-        raise RuntimeError(f"start failed: {r.stderr[-400:]}")
+        raise RuntimeError(f"pull failed after {PULL_RETRY_ATTEMPTS} attempts: "
+                           f"{(r.stderr or '')[-400:]}")
+
+
+def start_container(instance_id: str, verbose: bool = True) -> str:
+    cname = _container_name(instance_id)
+    _sh(["docker", "rm", "-f", cname], timeout=30)
+    r = _retry(
+        lambda: _sh(
+            [
+                "docker", "run", "-d", "--platform", "linux/amd64",
+                "--name", cname,
+                "--entrypoint", "/bin/bash",
+                _image(instance_id),
+                "-c", f"sleep {CONTAINER_LIFETIME}",
+            ],
+            timeout=START_TIMEOUT_S,
+        ),
+        attempts=START_RETRY_ATTEMPTS,
+        label=f"start {cname}",
+        verbose=verbose,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"start failed after {START_RETRY_ATTEMPTS} attempts: "
+                           f"{(r.stderr or '')[-400:]}")
     return cname
 
 

@@ -106,10 +106,14 @@ def get_test_output(workdir, task_id):
     if not tests:
         return "(no test cases)"
     src = workdir / "solution.py"
+    # NB: timeout was 4s — Codeforces problems can have ≥2s time limits, and
+    # cold-start Python + macOS scheduler jitter pushed correct solutions past
+    # the 4s wall. Bumping to 10s reduces false-timeout noise in the LLM-facing
+    # error trace (the trace feeds back into the next generate prompt).
     try:
         r = subprocess.run(
             [sys.executable, str(src)], input=tests[0][0],
-            text=True, capture_output=True, timeout=4,
+            text=True, capture_output=True, timeout=10,
         )
         return f"stdout: {r.stdout[:300]}\nstderr: {r.stderr[:200]}\nexpected: {tests[0][1][:200]}"
     except Exception as e:
@@ -390,7 +394,7 @@ def main():
         default_model=llm_model,
         default_base_url="https://openrouter.ai/api",
         default_temperature=0.1,
-        default_max_tokens=2048,
+        default_max_tokens=8192,  # was 2048; CC patches with CoT got truncated
         default_timeout=120,
     )
     if args.model:

@@ -25,8 +25,14 @@ DATA = ROOT / "data" / "spot_check_n50"
 
 gen = sys.argv[1]
 n_steps = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+# Default max_workers=1 to avoid the containerd metadata race that produces
+# silent "Docker API timeout" failures on 100+ instances when 2+ workers
+# claim images concurrently. Override via SWE_EVAL_MAX_WORKERS=N env var.
+max_workers = int(os.environ.get("SWE_EVAL_MAX_WORKERS", "1"))
 work_dir = DATA / "eval"
 work_dir.mkdir(parents=True, exist_ok=True)
+
+print(f"eval config: gen={gen}  n_steps={n_steps}  max_workers={max_workers}")
 
 for step in range(1, n_steps):
     pred_path = DATA / gen / f"predictions_iter_step{step}.jsonl"
@@ -39,7 +45,7 @@ for step in range(1, n_steps):
         report_path = scg.run_swebench_eval(
             predictions_path=pred_path,
             run_id=run_id,
-            max_workers=4,
+            max_workers=max_workers,
             work_dir=work_dir,
         )
         print(f"  -> {report_path.name}")

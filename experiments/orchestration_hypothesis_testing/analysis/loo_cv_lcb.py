@@ -122,16 +122,17 @@ def run_loo_for_gen(src_dir: Path, gen: str, cost: CostModel, n_boot: int) -> di
             continue
         prior = like["prior_Y1"]
 
-        # Build controllers from out-of-fold likelihoods
-        try:
-            dp = BayesianController(prior=prior, like_tables=like, cost=cost)
-        except Exception:
-            # Fallback: BayesianController may need additional fields
-            dp = None
-        try:
-            greedy = GreedyController(prior=prior, like_tables=like, cost=cost)
-        except Exception:
-            greedy = None
+        # Build controllers from out-of-fold likelihoods. BayesianController
+        # requires a kernel; we don't have a measured transition kernel inside
+        # a calibration-only LOO loop, so we synthesise the IID kernel
+        # (post-regen belief = prior). This matches the kernel that
+        # run_policies builds for its bayesian_DP path when no measured
+        # kernel is available -- see lcb_sensitivity.run_policies line 78.
+        iid_kernel = {"kernel_all": {"P_fix_given_broken": prior,
+                                      "P_break_given_correct": 1 - prior}}
+        dp = BayesianController(prior=prior, like_tables=like,
+                                kernel=iid_kernel, cost=cost)
+        greedy = GreedyController(prior=prior, like_tables=like, cost=cost)
 
         traj = by_inst[held_out]
 
@@ -142,11 +143,9 @@ def run_loo_for_gen(src_dir: Path, gen: str, cost: CostModel, n_boot: int) -> di
             "threshold_L3": policy_threshold_L3,
             "fixed_pipeline": policy_fixed_pipeline,
             "best_of_3": policy_best_of_N(3),
+            "bayesian_DP": make_bayesian_policy(dp),
+            "bayesian_greedy": make_greedy_policy(greedy),
         }
-        if dp is not None:
-            policies["bayesian_DP"] = make_bayesian_policy(dp)
-        if greedy is not None:
-            policies["bayesian_greedy"] = make_greedy_policy(greedy)
 
         for name, fn in policies.items():
             try:
@@ -209,7 +208,7 @@ def main() -> None:
     parser.add_argument("--out-suffix", default="_loo")
     args = parser.parse_args()
 
-    cost = CostModel(c_gen=5, c_L0=1, c_L3=5, c_ver=args.c_ver, reward=100)
+    cost = CostModel(c_gen=10, c_L0=1, c_L3=5, c_ver=args.c_ver, reward=100)
     if hasattr(cost, "c_L2"):
         cost.c_L2 = 2
 

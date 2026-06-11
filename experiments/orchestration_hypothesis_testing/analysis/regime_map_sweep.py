@@ -77,7 +77,7 @@ def evaluate_cell(prior: float, c_ver: float, likelihoods: dict,
                   n_trajs: int = 500, horizon: int = 5,
                   seed: int = 42) -> dict[str, float]:
     """Run all policies at this (prior, c_ver), return mean utility per policy."""
-    cost = CostModel(c_gen=5, c_L0=1, c_L3=5, c_ver=c_ver, reward=100)
+    cost = CostModel(c_gen=10, c_L0=1, c_L3=5, c_ver=c_ver, reward=100)
     # Bayesian controller with IID kernel
     likes_with_prior = dict(likelihoods)
     likes_with_prior["prior_Y1"] = prior
