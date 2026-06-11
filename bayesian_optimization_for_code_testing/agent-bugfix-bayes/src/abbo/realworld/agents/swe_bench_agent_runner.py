@@ -76,19 +76,25 @@ Issue:
 Files you may need to modify (current contents shown below):
 {files_block}
 
-Produce one or more SEARCH/REPLACE blocks that fix the bug. Each block must be:
+Produce one or more SEARCH/REPLACE blocks that fix the bug. EACH BLOCK MUST
+use the ACTUAL FILE PATH (the same path shown in the "### " heading above the
+file content), not a placeholder like "path/to/file.py". For example, if the
+file shown is "### django/db/backends/base/schema.py", the block must say
+<<<<<<< SEARCH django/db/backends/base/schema.py — not <<<<<<< SEARCH
+path/to/file.py.
 
-```
-<<<<<<< SEARCH path/to/file.py
+The block format:
+
+<<<<<<< SEARCH <real file path here, e.g. django/db/backends/base/schema.py>
 exact lines to find
 (must match file contents byte-for-byte including indentation)
 =======
 exact replacement lines
 >>>>>>> REPLACE
-```
 
-Return ONLY the SEARCH/REPLACE blocks (no explanation, no markdown fence around the whole thing).
-Keep blocks small and targeted; one block per change-site."""
+Return ONLY the SEARCH/REPLACE blocks (no explanation, no markdown fence
+around the whole thing). Keep blocks small and targeted; one block per
+change-site."""
 
 
 SR_BLOCK_RE = re.compile(
