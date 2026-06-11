@@ -97,19 +97,25 @@ Issue:
 Files you may need to modify (current contents shown below):
 {files_block}
 
-Produce one or more SEARCH/REPLACE blocks that fix the bug. Each block must be:
+Produce one or more SEARCH/REPLACE blocks that fix the bug. EACH BLOCK MUST
+use the ACTUAL FILE PATH (the same path shown in the "### " heading above
+the file content), not a placeholder like "path/to/file.py". For example, if
+the file shown is "### django/db/backends/base/schema.py", the block must say
+<<<<<<< SEARCH django/db/backends/base/schema.py — not <<<<<<< SEARCH
+path/to/file.py.
 
-```
-<<<<<<< SEARCH path/to/file.py
+The block format:
+
+<<<<<<< SEARCH <real file path here, e.g. django/db/backends/base/schema.py>
 exact lines to find
 (must match file contents byte-for-byte including indentation)
 =======
 exact replacement lines
 >>>>>>> REPLACE
-```
 
-Return ONLY the SEARCH/REPLACE blocks (no explanation, no markdown fence around the whole thing).
-Keep blocks small and targeted; one block per change-site."""
+Return ONLY the SEARCH/REPLACE blocks (no explanation, no markdown fence
+around the whole thing). Keep blocks small and targeted; one block per
+change-site."""
 
 
 # SEARCH/REPLACE block parser — tolerates 5-7 angle-bracket chars and case variations
@@ -175,6 +181,59 @@ def get_files_block(cname: str, instance: dict, max_chars_per_file: int = 32000)
     return "\n\n".join(parts) if parts else "(no files identified)"
 
 
+_PLACEHOLDER_PATH_RE = re.compile(
+    r"^(?:path/to/|<|\.\./|/tmp/|\$|YOUR_|<your_|<insert_|<file)",
+    re.IGNORECASE,
+)
+
+
+def _resolve_placeholder_path(cname: str, search: str) -> str | None:
+    """When the LLM gives a placeholder like 'path/to/file.py', try to figure
+    out the real path inside /testbed by searching for a recognizable signature
+    of the SEARCH block.
+
+    Heuristic: take the first non-blank line of SEARCH that looks searchable
+    (>= 8 chars, no leading '#', no leading shell metas) and `git grep -l` it.
+    If exactly one .py file matches, use that. Otherwise give up.
+    """
+    if not search:
+        return None
+    # Pick a signature line from SEARCH. Prefer a line containing 'def ' or
+    # 'class ' (rare globally, so very specific); fall back to the first
+    # substantial non-trivial line.
+    needle = None
+    for line in search.splitlines():
+        s = line.strip()
+        if len(s) < 8:
+            continue
+        if "def " in s or "class " in s:
+            needle = s.rstrip(":")
+            break
+    if needle is None:
+        for line in search.splitlines():
+            s = line.strip()
+            if len(s) >= 12 and not s.startswith("#"):
+                needle = s
+                break
+    if not needle:
+        return None
+    # git grep is fast; escape quotes for the shell.
+    needle_esc = needle.replace("'", "'\\''")
+    r = _exec(
+        cname,
+        f"cd /testbed && git grep -l --max-count=1 -F -- '{needle_esc}' "
+        "-- '*.py' 2>/dev/null | head -5",
+        timeout=20,
+    )
+    if r.returncode != 0:
+        return None
+    candidates = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    candidates = [c for c in candidates if c.endswith(".py")]
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
 def apply_llm_patch(cname: str, llm_text: str) -> tuple[bool, int, int]:
     """Apply LLM patch to /testbed.
 
@@ -195,6 +254,13 @@ def apply_llm_patch(cname: str, llm_text: str) -> tuple[bool, int, int]:
     n_applied = 0
     for path, search, replace in blocks:
         try:
+            # Detect placeholder paths (smaller models copy 'path/to/file.py'
+            # verbatim from the prompt example) and try to resolve them by
+            # searching for a signature of the SEARCH block in /testbed.
+            if path and _PLACEHOLDER_PATH_RE.match(path):
+                resolved = _resolve_placeholder_path(cname, search)
+                if resolved:
+                    path = resolved
             if not path or not path.endswith(".py"):
                 continue
             r = _exec(cname, f"cat /testbed/{path}", timeout=20)
