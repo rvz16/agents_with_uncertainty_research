@@ -64,6 +64,12 @@ from openai import (
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+# orchestration_hypothesis_testing/ — needed so `_common.cost` is importable
+# regardless of cwd. parents[1] = orchestration_hypothesis_testing/.
+ORCH_ROOT = Path(__file__).resolve().parents[1]
+if str(ORCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(ORCH_ROOT))
+
 # Local import: thread-safe cost ledger
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
