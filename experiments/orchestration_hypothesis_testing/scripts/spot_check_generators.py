@@ -1291,16 +1291,30 @@ def run_swebench_eval(
         "--predictions_path", str(predictions_path),
         "--max_workers", str(max_workers),
         "--run_id", run_id,
-        # cache_level=instance: keep instance images across pid runs; same
-        # instance_id with patch_id 0/1/2 reuses one built image.
-        "--cache_level", "instance",
+        # cache_level=env: keep base + env images, rebuild instance images
+        # each invocation. Two reasons:
+        #   1. A previous run with a broken Dockerfile template leaves
+        #      stale instance images in podman storage that the harness
+        #      will reuse under `cache_level=instance`, so subsequent
+        #      template fixes never reach those instances. `env` forces a
+        #      fresh build every time so the current template is always
+        #      used.
+        #   2. Instance images accumulate across runs; podman's `images
+        #      list` API call exceeds the docker SDK's 60s read timeout
+        #      once the count grows past ~1000, causing the harness to
+        #      crash before evaluating anything. `env` keeps the count
+        #      bounded.
+        "--cache_level", "env",
         # namespace=none: build env+instance images locally instead of pulling
-        # from docker.io/swebench/*. The swebench team's Docker Hub uploads
-        # are incomplete (~28% of SWE-Bench Lite instances — astropy,
-        # matplotlib, recent django — have no published image). Local build
-        # works for every instance. REQUIRES: (a) scripts/patch_swebench_harness.py
-        # has been run against the active swebench install, and (b) TMPDIR/
-        # BUILDAH_TMPDIR are set to a path outside the root partition quota.
+        # from docker.io/swebench/*. The official `swebench` org has full
+        # SWE-Bench Lite coverage on Hub (verified 300/300 via manifest
+        # inspect), so colleagues without the patcher can use the default
+        # namespace. We use `none` because the patcher's fixes (TAR_OPTIONS,
+        # pip downgrade) only apply at instance-build time and are useful
+        # for runs on rootless podman 3.4.4. REQUIRES: (a) scripts/
+        # patch_swebench_harness.py has been run against the active swebench
+        # install, and (b) TMPDIR/BUILDAH_TMPDIR are set to a path outside
+        # the root partition quota.
         "--namespace", "none",
     ]
     log.info("eval: %s", " ".join(cmd))
