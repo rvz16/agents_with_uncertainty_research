@@ -1294,6 +1294,14 @@ def run_swebench_eval(
         # cache_level=instance: keep instance images across pid runs; same
         # instance_id with patch_id 0/1/2 reuses one built image.
         "--cache_level", "instance",
+        # namespace=none: build env+instance images locally instead of pulling
+        # from docker.io/swebench/*. The swebench team's Docker Hub uploads
+        # are incomplete (~28% of SWE-Bench Lite instances — astropy,
+        # matplotlib, recent django — have no published image). Local build
+        # works for every instance. REQUIRES: (a) scripts/patch_swebench_harness.py
+        # has been run against the active swebench install, and (b) TMPDIR/
+        # BUILDAH_TMPDIR are set to a path outside the root partition quota.
+        "--namespace", "none",
     ]
     log.info("eval: %s", " ".join(cmd))
     proc = subprocess.run(

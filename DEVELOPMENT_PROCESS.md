@@ -6,6 +6,52 @@ edit. Keep entries terse: file, what, why.
 
 ---
 
+## 2026-06-17 — SWE-Bench pipeline: local-build harness fix + reusable runner
+
+**Problem.** Running the SWE-Bench harness against rootless podman 3.4.4
+(no docker group on the cluster VMs) hits two bugs that make remote-pull
+mode error on 28% of SWE-Bench Lite instances (every astropy + matplotlib +
+recent django — the swebench team never uploaded their images to docker.io),
+and local-build mode (`--namespace none`) fails outright because:
+  1. The Docker SDK `client.api.build(pull=False)` is ignored by podman 3.4.4 —
+     buildah tries to pull the unqualified `sweb.base.py.x86_64:latest` base
+     image from docker.io, which doesn't exist there.
+  2. `client.containers.create(platform=...)` is rejected by podman's API
+     v1.40 (`InvalidVersion: platform is not supported for API version < 1.41`).
+
+**Fix.** Three artifacts now under `experiments/orchestration_hypothesis_testing/`:
+
+- **`scripts/patch_swebench_harness.py`** — idempotent patcher that locates
+  the installed `swebench/harness/docker_build.py` and replaces (1) the
+  `client.api.build(...)` call with a `podman build --pull=false` subprocess
+  and (2) the `platform=` kwarg in `containers.create(...)` with a comment.
+  Run once per swebench install before the first harness invocation.
+
+- **`scripts/spot_check_generators.py`** — `run_swebench_eval()` now passes
+  `--namespace none` to the harness so env+instance images build locally,
+  bypassing the missing-on-Docker-Hub instances entirely. Comment documents
+  the prerequisite (run `patch_swebench_harness.py` first; set TMPDIR/
+  BUILDAH_TMPDIR outside root quota).
+
+- **`scripts_pipeline/run_swebench_pipeline.sh`** — generic 14-step pipeline
+  (Cal Lite + Verified -> from_spotcheck -> SR refine+eval+backfill on both
+  benchmarks -> Rfx refine+eval+backfill on both benchmarks). Takes
+  `<generator> <lite_cost> <verified_cost>` as args; resumable
+  (LLM gen is skipped on re-run if predictions exist); sets up TMPDIR on
+  `/mnt/data` to avoid blowing through the 200 GB root quota on `/var/tmp`
+  during buildah layer commits.
+
+**Wall-clock.** Local builds are 5-15 min per first-build per env-image
+hash, then ~1-3 min per instance image. Full pipeline on one generator
+takes ~24-36 hours on a single rootless-podman host vs ~12-18 hours under
+remote pulls (but with 0% error rate vs 28%).
+
+**OpenRouter cost.** Cal LLM gen is ~$15-25 per benchmark for qwen3-coder
+(scales ~8× for claude-sonnet-4.5); the harness eval itself is free
+(no LLM). The from_spotcheck L3 LLM-review step is ~$5-10 per benchmark.
+
+---
+
 ## 2026-05-25 — EMNLP paper Results section rewrite + figure-asset reorg
 
 **Notebook (`analysis.ipynb`).** Cell 1 now also creates
