@@ -114,6 +114,10 @@ def patch_build_call(src: str) -> tuple[str, bool]:
     """
     if PATCH_MARKER_BUILD in src:
         return src, False
+    # Fallback: detect patched state by the patched output's signature (older
+    # patcher runs applied the rewrite without leaving a marker comment).
+    if "podman_cmd" in src and "subprocess.run(podman_cmd" in src:
+        return src, False
 
     lines = src.splitlines(keepends=True)
 
@@ -208,6 +212,10 @@ def patch_platform_kwarg(src: str) -> tuple[str, bool]:
     contains nested parens (e.g. `name=test_spec.get_instance_container_name(run_id)`).
     """
     if PATCH_MARKER_PLATFORM in src:
+        return src, False
+    # Fallback: detect patched state by the commented kwarg (older patcher
+    # runs applied the rewrite without leaving a marker comment).
+    if "# platform=test_spec.platform," in src:
         return src, False
 
     open_idx = src.find("client.containers.create(")
