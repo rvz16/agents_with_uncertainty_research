@@ -50,6 +50,38 @@ remote pulls (but with 0% error rate vs 28%).
 (scales ~8× for claude-sonnet-4.5); the harness eval itself is free
 (no LLM). The from_spotcheck L3 LLM-review step is ~$5-10 per benchmark.
 
+### 2026-06-17 (later, after codex review) — patcher + pipeline correctness
+
+A codex review on the diff above caught two [P1] bugs before merge:
+
+- **`scripts/patch_swebench_harness.py:patch_platform_kwarg`**. The original
+  regex used `[^)]*?` to span the body of `client.containers.create(...)`,
+  but that body contains `name=test_spec.get_instance_container_name(run_id)`
+  whose nested `)` terminated the match before `platform=test_spec.platform,`
+  was reached. `--dry-run` aborted with "Could not find platform=test_spec.
+  platform inside containers.create()". Replaced the regex with a paren-
+  depth scanner: locate `client.containers.create(`, walk forward counting
+  parens until depth returns to zero, then search that span for the kwarg
+  and comment it. Verified by re-running `--dry-run` against the installed
+  swebench v4.1.0 — both patches now apply (and `ast.parse` on the patched
+  source still succeeds).
+
+- **`scripts_pipeline/run_swebench_pipeline.sh` + `iter/eval_steps.py`**.
+  `refine_swe.py` writes per-step predictions to
+  `<out>/<gen>/<method>/predictions_iter_step{N}.jsonl`, but `eval_steps.py`
+  was hard-coded to read `<data-dir>/<gen>/predictions_iter_step{N}.jsonl`.
+  In the pipeline's SR/Rfx stages every step was therefore reported as
+  "skipped: file not found", `eval_steps` returned 0, `set -e` did not
+  fire, and the subsequent `swe_backfill_y` step saw no harness reports —
+  the pipeline would have completed with *zero* iterative SWE-Bench
+  results. Added an optional `--method` flag to `eval_steps`: when set,
+  predictions resolve under `<data-dir>/<gen>/<method>/`, `run_id` becomes
+  `<gen>_<method>_iter_step{N}` (the convention `swe_backfill_y` already
+  expects), and the default work-dir becomes `<cell_dir>/eval` so that
+  backfill can find the reports. Updated all four SR/Rfx eval calls in
+  `run_swebench_pipeline.sh` to pass `--method selfrefine` or `--method
+  reflexion`. Legacy invocations without `--method` are unchanged.
+
 ---
 
 ## 2026-05-25 — EMNLP paper Results section rewrite + figure-asset reorg

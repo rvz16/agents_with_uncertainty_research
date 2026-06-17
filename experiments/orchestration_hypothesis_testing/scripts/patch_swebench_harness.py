@@ -182,29 +182,59 @@ def patch_platform_kwarg(src: str) -> tuple[str, bool]:
     """Comment out `platform=test_spec.platform,` inside the build_container()
     call to containers.create(). Leave the SAME kwarg inside build_image()
     calls untouched (it's a positional arg there).
+
+    Uses a paren-depth scanner rather than a regex because the call body
+    contains nested parens (e.g. `name=test_spec.get_instance_container_name(run_id)`).
     """
     if PATCH_MARKER_PLATFORM in src:
         return src, False
 
-    # Find the line inside `def build_container` containing `platform=test_spec.platform,`.
-    # The `containers.create(` block uses the same kwarg, but so does the build_image()
-    # call inside build_instance_image. We need to ONLY patch the one near
-    # `client.containers.create(`.
-    pattern = re.compile(
-        r"(client\.containers\.create\([^)]*?)\n(\s*)platform=test_spec\.platform,\n",
-        re.DOTALL,
-    )
-    m = pattern.search(src)
-    if m is None:
+    open_idx = src.find("client.containers.create(")
+    if open_idx == -1:
         raise SystemExit(
-            "Could not find platform=test_spec.platform inside containers.create(). "
-            "The swebench version may have changed — inspect docker_build.py manually."
+            "Could not locate 'client.containers.create(' in docker_build.py. "
+            "The swebench version may have changed — inspect it manually."
         )
-    new_src = pattern.sub(
-        rf"\1\n\2{PATCH_MARKER_PLATFORM}\n\2# platform=test_spec.platform,\n",
-        src,
-        count=1,
+    paren_idx = src.index("(", open_idx)
+    depth = 1
+    i = paren_idx + 1
+    while i < len(src) and depth > 0:
+        ch = src[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        raise SystemExit(
+            "Could not find matching ')' for client.containers.create(. "
+            "The swebench version may have changed — inspect it manually."
+        )
+    close_idx = i  # one past the matching ')'
+
+    call_span = src[open_idx:close_idx]
+    needle = "platform=test_spec.platform,"
+    rel = call_span.find(needle)
+    if rel == -1:
+        raise SystemExit(
+            "Could not find 'platform=test_spec.platform,' inside the matched "
+            "containers.create(...) call. The swebench version may have changed."
+        )
+
+    line_start = src.rfind("\n", 0, open_idx + rel) + 1
+    indent = src[line_start:open_idx + rel]
+    if indent.strip():
+        raise SystemExit(
+            "Unexpected formatting: 'platform=...' is not at the start of its "
+            "own indent block — inspect docker_build.py manually."
+        )
+
+    replacement = (
+        f"{indent}{PATCH_MARKER_PLATFORM}\n"
+        f"{indent}# platform=test_spec.platform,"
     )
+    line_end = src.index("\n", open_idx + rel)
+    new_src = src[:line_start] + replacement + src[line_end:]
     return new_src, True
 
 

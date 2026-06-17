@@ -156,6 +156,7 @@ python iter/refine_swe.py --method selfrefine \
 log "4/14 Eval SR Lite"
 python iter/eval_steps.py \
     --gen "$GEN" \
+    --method selfrefine \
     --data-dir data/swebench_lite_realbaselines_selfrefine_full \
     --dataset princeton-nlp/SWE-bench_Lite \
     --n-steps $N_STEPS \
@@ -178,6 +179,7 @@ python iter/refine_swe.py --method selfrefine \
 log "6/14 Eval SR Verified"
 python iter/eval_steps.py \
     --gen "$GEN" \
+    --method selfrefine \
     --data-dir data/swebench_verified_realbaselines_selfrefine_full \
     --dataset princeton-nlp/SWE-bench_Verified \
     --n-steps $N_STEPS \
@@ -200,6 +202,7 @@ python iter/refine_swe.py --method reflexion \
 log "8/14 Eval Rfx Lite"
 python iter/eval_steps.py \
     --gen "$GEN" \
+    --method reflexion \
     --data-dir data/swebench_lite_realbaselines_reflexion_full \
     --dataset princeton-nlp/SWE-bench_Lite \
     --n-steps $N_STEPS \
@@ -222,6 +225,7 @@ python iter/refine_swe.py --method reflexion \
 log "10/14 Eval Rfx Verified"
 python iter/eval_steps.py \
     --gen "$GEN" \
+    --method reflexion \
     --data-dir data/swebench_verified_realbaselines_reflexion_full \
     --dataset princeton-nlp/SWE-bench_Verified \
     --n-steps $N_STEPS \
