@@ -1281,10 +1281,33 @@ def run_swebench_eval(
     in a predictable location; consequently every path we hand it must be
     absolute, otherwise the harness resolves relative paths against work_dir
     instead of the script's cwd.
+
+    When EVAL_SHARDS env var is set (comma-separated remote host aliases),
+    dispatch to sharded_swebench_eval.run_sharded which fans this single
+    eval call out across multiple hosts in parallel and merges the per-shard
+    harness reports back into one canonical report file. Activation is fully
+    backwards-compatible: empty/unset EVAL_SHARDS keeps the single-host path.
     """
     work_dir = work_dir.resolve()
     predictions_path = predictions_path.resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
+
+    shards_env = os.environ.get("EVAL_SHARDS", "")
+    if shards_env.strip():
+        # Late import so this module still loads on machines where the
+        # sharder file is older than the running pipeline checkout.
+        from sharded_swebench_eval import parse_shards_env, run_sharded
+        shards = parse_shards_env(shards_env)
+        if len(shards) > 1:
+            return run_sharded(
+                predictions_path=predictions_path,
+                run_id=run_id,
+                work_dir=work_dir,
+                dataset_name=dataset_name,
+                shards=shards,
+            )
+        # len(shards) == 1 means only local; fall through to the plain path
+        # below so we don't pay sharder overhead for a no-op shard.
 
     # Build env for the harness subprocess. If DOCKER_HOST points at podman,
     # inject our compat shim via PYTHONPATH (sitecustomize auto-imports it).

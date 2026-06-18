@@ -81,6 +81,16 @@ MAX_REFINE_WORKERS="${MAX_REFINE_WORKERS:-1}"
 VERIFIED_SUBSET="${VERIFIED_SUBSET:-}"
 VER_SUBSET_ARG=()
 
+# Optional: fan eval calls out across multiple SSH hosts to compress the
+# Docker-bound wall clock. Set EVAL_SHARDS=<host1>[,<host2>...] (comma list of
+# ssh aliases). The local host is always shard 0; each listed host becomes an
+# additional shard. Each remote host MUST already have the same git checkout,
+# patched swebench install, .env, podman socket, and TMPDIR configured. See
+# scripts/sharded_swebench_eval.py for details and the per-host bootstrap
+# checklist. Leave unset to run single-host (current default).
+EVAL_SHARDS="${EVAL_SHARDS:-}"
+export EVAL_SHARDS
+
 # Resolve the repo root from this script's location.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -146,6 +156,9 @@ PYEOF
     echo "VERIFIED_SUBSET active: $N_VER instances from '$VERIFIED_SUBSET'"
 fi
 
+if [ -n "$EVAL_SHARDS" ]; then
+    log "EVAL_SHARDS active: local + [$EVAL_SHARDS]"
+fi
 log "START: $GEN  cap_lite=\$$LITE_COST  cap_verified=\$$VER_COST"
 
 # ─── Step 1: Cal Lite (resumes LLM, evals with patched harness) ───────
