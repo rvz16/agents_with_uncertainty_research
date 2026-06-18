@@ -635,7 +635,10 @@ def main() -> None:
         # extract_swe_failed_instances.py.
         if args.instance_ids_file:
             try:
-                wanted = set(json.loads(Path(args.instance_ids_file).read_text()))
+                raw = json.loads(Path(args.instance_ids_file).read_text())
+                # Accept either a flat list of instance_ids OR a dict with an
+                # 'instance_ids' key (e.g. the rich verified_200_subset.json).
+                wanted = set(raw if isinstance(raw, list) else raw["instance_ids"])
             except Exception as e:
                 log.error("[%s] failed to read --instance-ids-file %s: %s",
                           gen, args.instance_ids_file, e); continue

@@ -50,6 +50,18 @@ N_VER=500
 N_PATCHES=3
 N_STEPS=5
 
+# Optional: pin all SWE-Bench Verified steps to a pre-chosen subset by setting
+# VERIFIED_SUBSET=/abs/path/to/<file>.json. The file MAY be either a flat
+# JSON array of instance_ids OR a dict with an 'instance_ids' key; the
+# script normalises both. When set, N_VER is also overridden so the cap
+# matches the subset size, and refine_swe.py / spot_check_generators both
+# receive --instance-ids-file. Leave unset to run all 500 Verified.
+#
+# Parsing of this file happens AFTER conda activation below, because tmux
+# non-interactive shells don't have `python` on PATH until conda is sourced.
+VERIFIED_SUBSET="${VERIFIED_SUBSET:-}"
+VER_SUBSET_ARG=()
+
 # Resolve the repo root from this script's location.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -90,6 +102,25 @@ export BUILDAH_TMPDIR="$SCRATCH_DIR"
 
 cd "$PIPE_DIR"
 
+# Subset parsing (deferred from config block so python is available).
+if [ -n "$VERIFIED_SUBSET" ]; then
+    if [ ! -f "$VERIFIED_SUBSET" ]; then
+        echo "ERROR: VERIFIED_SUBSET='$VERIFIED_SUBSET' does not exist" >&2
+        exit 1
+    fi
+    VER_SUBSET_ARG=(--instance-ids-file "$VERIFIED_SUBSET")
+    # Override Verified instance count to subset size. Handle both
+    # flat-list and dict-with-instance_ids-key JSON formats.
+    N_VER=$(python - "$VERIFIED_SUBSET" <<'PYEOF'
+import json, sys
+d = json.loads(open(sys.argv[1]).read())
+ids = d if isinstance(d, list) else d["instance_ids"]
+print(len(ids))
+PYEOF
+)
+    echo "VERIFIED_SUBSET active: $N_VER instances from '$VERIFIED_SUBSET'"
+fi
+
 log "START: $GEN  cap_lite=\$$LITE_COST  cap_verified=\$$VER_COST"
 
 # ─── Step 1: Cal Lite (resumes LLM, evals with patched harness) ───────
@@ -119,6 +150,7 @@ python scripts/spot_check_generators.py \
     --generators "$GEN" \
     --output-dir data/swebench_verified_calibration_full \
     --max-cost-usd-per-model "$GEN=$VER_COST" \
+    "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/02_cal_verified.log"
 
 # ─── Step 2b: from_spotcheck Verified ─────────────────────────────────
@@ -174,6 +206,7 @@ python iter/refine_swe.py --method selfrefine \
     --output-dir data/swebench_verified_realbaselines_selfrefine_full \
     --generators "$GEN" \
     --n-instances $N_VER --steps $N_STEPS --max-workers 1 \
+    "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/05_sr_verified.log"
 
 log "6/14 Eval SR Verified"
@@ -220,6 +253,7 @@ python iter/refine_swe.py --method reflexion \
     --output-dir data/swebench_verified_realbaselines_reflexion_full \
     --generators "$GEN" \
     --n-instances $N_VER --steps $N_STEPS --max-workers 1 \
+    "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/09_rfx_verified.log"
 
 log "10/14 Eval Rfx Verified"

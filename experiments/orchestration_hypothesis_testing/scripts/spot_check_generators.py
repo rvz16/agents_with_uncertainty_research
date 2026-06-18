@@ -925,11 +925,16 @@ def parse_full_file_blocks(response: str) -> dict[str, str]:
 
 def sample_instances(seed: int, n: int,
                      dataset_name: str = "princeton-nlp/SWE-bench_Lite",
-                     language_filter: str | None = None) -> list[dict]:
+                     language_filter: str | None = None,
+                     instance_ids_file: Path | None = None) -> list[dict]:
     """Sample n instances from a SWE-bench dataset.
 
     language_filter: when set (e.g., 'python'), keep only instances where
         repo_language matches. Required for SWE-bench Pro (multi-language).
+    instance_ids_file: when set, restrict the pool to instance_ids listed
+        in this JSON file (a flat list of strings, OR a dict with an
+        'instance_ids' key) BEFORE applying the n cap. Use to pin Cal to
+        a pre-chosen subset (e.g. SWE-Bench Verified-200).
     """
     ds = load_dataset(dataset_name, split="test")
     indices = list(range(len(ds)))
@@ -937,6 +942,12 @@ def sample_instances(seed: int, n: int,
         wanted = language_filter.lower()
         indices = [i for i in indices
                    if (ds[i].get("repo_language") or "").lower() == wanted]
+    if instance_ids_file is not None:
+        raw = json.loads(Path(instance_ids_file).read_text())
+        wanted_ids = set(raw if isinstance(raw, list) else raw["instance_ids"])
+        indices = [i for i in indices if ds[i]["instance_id"] in wanted_ids]
+        log.info("instance_ids filter: %d instances match %s",
+                 len(indices), instance_ids_file)
     rng = random.Random(seed)
     rng.shuffle(indices)
     chosen = indices[:n]
@@ -1732,6 +1743,19 @@ def main() -> None:
                         help="Filter instances by repo_language (e.g., 'python'). "
                              "Required for SWE-bench Pro (multi-language). "
                              "If unset, no filtering.")
+    parser.add_argument("--instance-ids-file", type=str, default=None,
+                        help="Path to JSON file with a list of instance_ids "
+                             "OR a dict with an 'instance_ids' key. When set, "
+                             "restrict the eligible pool to these IDs before "
+                             "sampling. Use to pin Cal to a pre-chosen subset "
+                             "(e.g. SWE-Bench Verified-200). Caveat: this "
+                             "only filters the NEW sample. If --output-dir "
+                             "already has a predictions.jsonl from a larger "
+                             "prior run, the downstream eval/spotcheck steps "
+                             "will still process every line in that file. "
+                             "Use a fresh --output-dir when switching to a "
+                             "subset. Kept as str (not Path) so vars(args) "
+                             "stays JSON-serializable for run_config dump.")
     parser.add_argument("--max-workers-gen", type=int, default=DEFAULT_MAX_WORKERS_GEN)
     parser.add_argument("--max-workers-eval", type=int, default=DEFAULT_MAX_WORKERS_EVAL)
     parser.add_argument("--generators", default=",".join(GENERATORS),
@@ -1774,7 +1798,8 @@ def main() -> None:
 
     instances = sample_instances(args.seed, args.n_instances,
                                   dataset_name=args.dataset,
-                                  language_filter=args.language_filter)
+                                  language_filter=args.language_filter,
+                                  instance_ids_file=args.instance_ids_file)
     log.info(
         "sampled %d instances; repos=%s",
         len(instances),
