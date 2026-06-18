@@ -76,11 +76,20 @@ def _parse_args() -> argparse.Namespace:
                    help="Generator slug, e.g. gpt5_mini / haiku45 / sonnet45 / "
                         "qwen3_coder / qwen25_coder_32b / gpt_oss_20b. Must "
                         "match the subdirectory name under --data-dir.")
+    p.add_argument("--method", default=None,
+                   help="Refinement method, e.g. selfrefine / reflexion. When "
+                        "set, predictions are read from "
+                        "<data-dir>/<gen>/<method>/predictions_iter_step{N}.jsonl "
+                        "(refine_swe.py layout), run_id becomes "
+                        "<gen>_<method>_iter_step{N}, and the default work-dir "
+                        "becomes <data-dir>/<gen>/<method>/eval so that "
+                        "swe_backfill_y can find the reports under the cell "
+                        "directory. Leave unset for legacy flat layouts.")
     p.add_argument("--data-dir", required=True, type=Path,
                    help="Directory containing <gen>/predictions_iter_step{1..N}"
-                        ".jsonl. Typically the --output-dir from a refine_swe."
-                        "py run, e.g. data/swebench_lite_realbaselines_"
-                        "selfrefine_rerun.")
+                        ".jsonl (or <gen>/<method>/... when --method is set). "
+                        "Typically the --output-dir from a refine_swe.py run, "
+                        "e.g. data/swebench_lite_realbaselines_selfrefine_full.")
     p.add_argument("--n-steps", type=int, default=5,
                    help="Iterate step in 1..N-1 (matches refine_swe.py default).")
     p.add_argument("--dataset", default="princeton-nlp/SWE-bench_Lite",
@@ -117,22 +126,32 @@ def main() -> int:
     if not data_dir.exists():
         print(f"ERROR: --data-dir does not exist: {data_dir}", file=sys.stderr)
         return 1
-    work_dir = (args.work_dir or (data_dir / "eval")).resolve()
+
+    if args.method:
+        cell_dir = data_dir / args.gen / args.method
+        default_work = cell_dir / "eval"
+        run_id_tag = f"{args.gen}_{args.method}"
+    else:
+        cell_dir = data_dir / args.gen
+        default_work = data_dir / "eval"
+        run_id_tag = args.gen
+    work_dir = (args.work_dir or default_work).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"eval config: gen={args.gen}  data-dir={data_dir}  "
-          f"n-steps={args.n_steps}  max-workers={args.max_workers}  "
-          f"dataset={args.dataset}  work-dir={work_dir}")
+    print(f"eval config: gen={args.gen}  method={args.method or '<none>'}  "
+          f"data-dir={data_dir}  cell-dir={cell_dir}  n-steps={args.n_steps}  "
+          f"max-workers={args.max_workers}  dataset={args.dataset}  "
+          f"work-dir={work_dir}")
 
     n_ok = n_skip = n_err = 0
     for step in range(1, args.n_steps):
-        pred_path = data_dir / args.gen / f"predictions_iter_step{step}.jsonl"
+        pred_path = cell_dir / f"predictions_iter_step{step}.jsonl"
         if not pred_path.exists():
             print(f"skip step {step}: {pred_path} not found")
             n_skip += 1
             continue
-        run_id = f"{args.gen}_iter_step{step}"
-        print(f"\n==== eval {args.gen} step {step} (run_id={run_id}) ====")
+        run_id = f"{run_id_tag}_iter_step{step}"
+        print(f"\n==== eval {run_id_tag} step {step} (run_id={run_id}) ====")
         try:
             report_path = scg.run_swebench_eval(
                 predictions_path=pred_path,

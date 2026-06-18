@@ -925,11 +925,16 @@ def parse_full_file_blocks(response: str) -> dict[str, str]:
 
 def sample_instances(seed: int, n: int,
                      dataset_name: str = "princeton-nlp/SWE-bench_Lite",
-                     language_filter: str | None = None) -> list[dict]:
+                     language_filter: str | None = None,
+                     instance_ids_file: Path | None = None) -> list[dict]:
     """Sample n instances from a SWE-bench dataset.
 
     language_filter: when set (e.g., 'python'), keep only instances where
         repo_language matches. Required for SWE-bench Pro (multi-language).
+    instance_ids_file: when set, restrict the pool to instance_ids listed
+        in this JSON file (a flat list of strings, OR a dict with an
+        'instance_ids' key) BEFORE applying the n cap. Use to pin Cal to
+        a pre-chosen subset (e.g. SWE-Bench Verified-200).
     """
     ds = load_dataset(dataset_name, split="test")
     indices = list(range(len(ds)))
@@ -937,6 +942,12 @@ def sample_instances(seed: int, n: int,
         wanted = language_filter.lower()
         indices = [i for i in indices
                    if (ds[i].get("repo_language") or "").lower() == wanted]
+    if instance_ids_file is not None:
+        raw = json.loads(Path(instance_ids_file).read_text())
+        wanted_ids = set(raw if isinstance(raw, list) else raw["instance_ids"])
+        indices = [i for i in indices if ds[i]["instance_id"] in wanted_ids]
+        log.info("instance_ids filter: %d instances match %s",
+                 len(indices), instance_ids_file)
     rng = random.Random(seed)
     rng.shuffle(indices)
     chosen = indices[:n]
@@ -1291,10 +1302,33 @@ def run_swebench_eval(
         "--predictions_path", str(predictions_path),
         "--max_workers", str(max_workers),
         "--run_id", run_id,
-        # cache_level=instance: keep instance images across pid runs; same
-        # instance_id with patch_id 0/1/2 reuses one built image.
-        "--cache_level", "instance",
+        # cache_level=env: keep base + env images, rebuild instance images
+        # each invocation. Two reasons:
+        #   1. A previous run with a broken Dockerfile template leaves
+        #      stale instance images in podman storage that the harness
+        #      will reuse under `cache_level=instance`, so subsequent
+        #      template fixes never reach those instances. `env` forces a
+        #      fresh build every time so the current template is always
+        #      used.
+        #   2. Instance images accumulate across runs; podman's `images
+        #      list` API call exceeds the docker SDK's 60s read timeout
+        #      once the count grows past ~1000, causing the harness to
+        #      crash before evaluating anything. `env` keeps the count
+        #      bounded.
+        "--cache_level", "env",
     ]
+    # namespace selection: opt-in via SWEBENCH_NAMESPACE env var. Unset (default)
+    # preserves the harness's own default (which pulls from docker.io/swebench/*).
+    # Setting SWEBENCH_NAMESPACE=none asks the harness to build env+instance
+    # images locally so the patcher's TAR_OPTIONS / pip-downgrade fixes can run
+    # at instance-build time; that is what run_swebench_pipeline.sh sets on
+    # rootless-podman hosts. SWEBENCH_NAMESPACE=none REQUIRES (a) scripts/
+    # patch_swebench_harness.py has been run against the active swebench
+    # install, and (b) TMPDIR/BUILDAH_TMPDIR point at a path outside the root
+    # partition quota. Non-patched hosts should leave SWEBENCH_NAMESPACE unset.
+    swebench_namespace = os.environ.get("SWEBENCH_NAMESPACE", "")
+    if swebench_namespace:
+        cmd += ["--namespace", swebench_namespace]
     log.info("eval: %s", " ".join(cmd))
     proc = subprocess.run(
         cmd, cwd=work_dir, env=env, capture_output=True, text=True,
@@ -1710,6 +1744,19 @@ def main() -> None:
                         help="Filter instances by repo_language (e.g., 'python'). "
                              "Required for SWE-bench Pro (multi-language). "
                              "If unset, no filtering.")
+    parser.add_argument("--instance-ids-file", type=str, default=None,
+                        help="Path to JSON file with a list of instance_ids "
+                             "OR a dict with an 'instance_ids' key. When set, "
+                             "restrict the eligible pool to these IDs before "
+                             "sampling. Use to pin Cal to a pre-chosen subset "
+                             "(e.g. SWE-Bench Verified-200). Caveat: this "
+                             "only filters the NEW sample. If --output-dir "
+                             "already has a predictions.jsonl from a larger "
+                             "prior run, the downstream eval/spotcheck steps "
+                             "will still process every line in that file. "
+                             "Use a fresh --output-dir when switching to a "
+                             "subset. Kept as str (not Path) so vars(args) "
+                             "stays JSON-serializable for run_config dump.")
     parser.add_argument("--max-workers-gen", type=int, default=DEFAULT_MAX_WORKERS_GEN)
     parser.add_argument("--max-workers-eval", type=int, default=DEFAULT_MAX_WORKERS_EVAL)
     parser.add_argument("--generators", default=",".join(GENERATORS),
@@ -1752,7 +1799,8 @@ def main() -> None:
 
     instances = sample_instances(args.seed, args.n_instances,
                                   dataset_name=args.dataset,
-                                  language_filter=args.language_filter)
+                                  language_filter=args.language_filter,
+                                  instance_ids_file=args.instance_ids_file)
     log.info(
         "sampled %d instances; repos=%s",
         len(instances),
