@@ -175,6 +175,7 @@ python calibration/from_spotcheck.py \
     --generators "$GEN" \
     --dataset princeton-nlp/SWE-bench_Verified \
     --max-cost-usd-per-model $SPOTCHECK_COST \
+    "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/02b_from_spotcheck_verified.log"
 
 # ─── Helper: backfill Y into iter_records.jsonl after each eval ───────

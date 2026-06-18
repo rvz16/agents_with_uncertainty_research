@@ -228,8 +228,10 @@ def main() -> int:
         os.environ["SWEBENCH_PODMAN_COMPAT"] = "1"
     # Honour the wrapper's namespace contract: SWEBENCH_NAMESPACE env var
     # controls whether scg.run_swebench_eval passes --namespace through.
-    if args.namespace:
-        os.environ["SWEBENCH_NAMESPACE"] = args.namespace
+    # Set unconditionally so --namespace '' from the caller actually clears
+    # any value inherited from the shell (otherwise the wrapper keeps
+    # using whatever was already exported, defeating the CLI override).
+    os.environ["SWEBENCH_NAMESPACE"] = args.namespace
     _maybe_setup_podman_shim()
 
     args.calibration_dir = args.calibration_dir.resolve()

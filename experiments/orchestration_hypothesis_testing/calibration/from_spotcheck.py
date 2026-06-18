@@ -218,7 +218,24 @@ def main() -> None:
     parser.add_argument("--max-cost-usd-per-model", type=float, default=5.0)
     parser.add_argument("--skip-l3", action="store_true",
                         help="Skip the paid LLM critic")
+    parser.add_argument("--instance-ids-file", type=str, default=None,
+                        help="Path to JSON file with a list of instance_ids "
+                             "OR a dict with an 'instance_ids' key. When set, "
+                             "skip predictions whose instance_id is not in "
+                             "this subset. Use to constrain critic runs to a "
+                             "pre-chosen subset (e.g. SWE-Bench Verified-200) "
+                             "when predictions.jsonl is larger than the "
+                             "intended evaluation set.")
     args = parser.parse_args()
+
+    # Optional subset filter — applied at both the oracle-cache warming pass
+    # AND the per-(instance, patch) critic loop below.
+    subset_ids: set[str] | None = None
+    if args.instance_ids_file:
+        raw = json.loads(Path(args.instance_ids_file).read_text())
+        subset_ids = set(raw if isinstance(raw, list) else raw["instance_ids"])
+        log.info("instance-ids subset: %d instances from %s",
+                 len(subset_ids), args.instance_ids_file)
 
     global _DATASET_NAME
     _DATASET_NAME = args.dataset
@@ -246,7 +263,8 @@ def main() -> None:
             sys.exit(1)
         client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
 
-    # Collect all unique instance_ids across all generators
+    # Collect all unique instance_ids across all generators (filtered by
+    # subset if --instance-ids-file was passed).
     all_instances: set[str] = set()
     for g in generators:
         gen_path = out_dir / g / "predictions.jsonl"
@@ -256,7 +274,10 @@ def main() -> None:
         with open(gen_path) as f:
             for line in f:
                 r = json.loads(line)
-                all_instances.add(r["instance_id"])
+                inst = r["instance_id"]
+                if subset_ids is not None and inst not in subset_ids:
+                    continue
+                all_instances.add(inst)
 
     log.info("warming oracle cache for %d unique instances...", len(all_instances))
     oracle_cache, inst_to_row = load_oracle_cache(sorted(all_instances))
@@ -293,6 +314,8 @@ def main() -> None:
                     for line in f:
                         r = json.loads(line)
                         inst = r["instance_id"]
+                        if subset_ids is not None and inst not in subset_ids:
+                            continue
                         diff = (r.get("model_patch") or "")
                         Y = 1 if inst in resolved_per_pid[pid] else 0
                         rec = {
