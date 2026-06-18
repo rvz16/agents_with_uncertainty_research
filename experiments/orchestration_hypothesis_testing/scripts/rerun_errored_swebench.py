@@ -216,9 +216,20 @@ def main() -> int:
                         "Required on Linux clusters where DOCKER_HOST points "
                         "at a podman.sock and the caller has not already "
                         "exported SWEBENCH_PODMAN_COMPAT. No-op otherwise.")
+    p.add_argument("--namespace", type=str, default="none",
+                   help="SWE-Bench harness --namespace. Default 'none' (build "
+                        "instance images locally so the patcher's fixes "
+                        "apply), since this script's purpose is to repair "
+                        "build-errored instances. Set to e.g. 'swebench' to "
+                        "fall back to docker.io/swebench/* pulls instead. "
+                        "Set to '' to use the harness's own default.")
     args = p.parse_args()
     if args.podman:
         os.environ["SWEBENCH_PODMAN_COMPAT"] = "1"
+    # Honour the wrapper's namespace contract: SWEBENCH_NAMESPACE env var
+    # controls whether scg.run_swebench_eval passes --namespace through.
+    if args.namespace:
+        os.environ["SWEBENCH_NAMESPACE"] = args.namespace
     _maybe_setup_podman_shim()
 
     args.calibration_dir = args.calibration_dir.resolve()

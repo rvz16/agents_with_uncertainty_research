@@ -1316,18 +1316,19 @@ def run_swebench_eval(
         #      crash before evaluating anything. `env` keeps the count
         #      bounded.
         "--cache_level", "env",
-        # namespace=none: build env+instance images locally instead of pulling
-        # from docker.io/swebench/*. The official `swebench` org has full
-        # SWE-Bench Lite coverage on Hub (verified 300/300 via manifest
-        # inspect), so colleagues without the patcher can use the default
-        # namespace. We use `none` because the patcher's fixes (TAR_OPTIONS,
-        # pip downgrade) only apply at instance-build time and are useful
-        # for runs on rootless podman 3.4.4. REQUIRES: (a) scripts/
-        # patch_swebench_harness.py has been run against the active swebench
-        # install, and (b) TMPDIR/BUILDAH_TMPDIR are set to a path outside
-        # the root partition quota.
-        "--namespace", "none",
     ]
+    # namespace selection: opt-in via SWEBENCH_NAMESPACE env var. Unset (default)
+    # preserves the harness's own default (which pulls from docker.io/swebench/*).
+    # Setting SWEBENCH_NAMESPACE=none asks the harness to build env+instance
+    # images locally so the patcher's TAR_OPTIONS / pip-downgrade fixes can run
+    # at instance-build time; that is what run_swebench_pipeline.sh sets on
+    # rootless-podman hosts. SWEBENCH_NAMESPACE=none REQUIRES (a) scripts/
+    # patch_swebench_harness.py has been run against the active swebench
+    # install, and (b) TMPDIR/BUILDAH_TMPDIR point at a path outside the root
+    # partition quota. Non-patched hosts should leave SWEBENCH_NAMESPACE unset.
+    swebench_namespace = os.environ.get("SWEBENCH_NAMESPACE", "")
+    if swebench_namespace:
+        cmd += ["--namespace", swebench_namespace]
     log.info("eval: %s", " ".join(cmd))
     proc = subprocess.run(
         cmd, cwd=work_dir, env=env, capture_output=True, text=True,

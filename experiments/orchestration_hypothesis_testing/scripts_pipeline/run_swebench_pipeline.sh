@@ -50,6 +50,15 @@ N_VER=500
 N_PATCHES=3
 N_STEPS=5
 
+# Refinement cost caps (Self-Refine + Reflexion, per benchmark).
+# refine_swe.py defaults to $5 which is too low for 300/500-instance paid
+# runs and would stop trajectories early with stop_reason="cost_cap",
+# producing partial baselines. Default to the calibration caps (same
+# order of magnitude per benchmark) so the budget scales with generator
+# pricing. Override via env if needed.
+REFINE_LITE_COST="${REFINE_LITE_COST:-$LITE_COST}"
+REFINE_VER_COST="${REFINE_VER_COST:-$VER_COST}"
+
 # Optional: pin all SWE-Bench Verified steps to a pre-chosen subset by setting
 # VERIFIED_SUBSET=/abs/path/to/<file>.json. The file MAY be either a flat
 # JSON array of instance_ids OR a dict with an 'instance_ids' key; the
@@ -92,6 +101,12 @@ fi
 # Rootless podman socket.
 export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
 export SWEBENCH_PODMAN_COMPAT=1
+
+# Force local image builds so the patcher's TAR_OPTIONS / pip-downgrade fixes
+# take effect at instance-build time. Without this the harness pulls from
+# docker.io/swebench/* and ignores the patches. The wrapper in
+# scripts/spot_check_generators.py:run_swebench_eval() honours this env var.
+export SWEBENCH_NAMESPACE=none
 
 # Buildah layer-commit scratch -> /mnt/data so we don't hit the root quota.
 # (Override BUILDAH_SCRATCH_DIR via env if /mnt/data isn't appropriate on your host.)
@@ -183,6 +198,7 @@ python iter/refine_swe.py --method selfrefine \
     --output-dir data/swebench_lite_realbaselines_selfrefine_full \
     --generators "$GEN" \
     --n-instances $N_LITE --steps $N_STEPS --max-workers 1 \
+    --max-cost-usd-per-model "$GEN=$REFINE_LITE_COST" \
     2>&1 | tee "$LOG_DIR/03_sr_lite.log"
 
 log "4/14 Eval SR Lite"
@@ -206,6 +222,7 @@ python iter/refine_swe.py --method selfrefine \
     --output-dir data/swebench_verified_realbaselines_selfrefine_full \
     --generators "$GEN" \
     --n-instances $N_VER --steps $N_STEPS --max-workers 1 \
+    --max-cost-usd-per-model "$GEN=$REFINE_VER_COST" \
     "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/05_sr_verified.log"
 
@@ -230,6 +247,7 @@ python iter/refine_swe.py --method reflexion \
     --output-dir data/swebench_lite_realbaselines_reflexion_full \
     --generators "$GEN" \
     --n-instances $N_LITE --steps $N_STEPS --max-workers 1 \
+    --max-cost-usd-per-model "$GEN=$REFINE_LITE_COST" \
     2>&1 | tee "$LOG_DIR/07_rfx_lite.log"
 
 log "8/14 Eval Rfx Lite"
@@ -253,6 +271,7 @@ python iter/refine_swe.py --method reflexion \
     --output-dir data/swebench_verified_realbaselines_reflexion_full \
     --generators "$GEN" \
     --n-instances $N_VER --steps $N_STEPS --max-workers 1 \
+    --max-cost-usd-per-model "$GEN=$REFINE_VER_COST" \
     "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/09_rfx_verified.log"
 
