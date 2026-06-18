@@ -59,6 +59,16 @@ N_STEPS=5
 REFINE_LITE_COST="${REFINE_LITE_COST:-$LITE_COST}"
 REFINE_VER_COST="${REFINE_VER_COST:-$VER_COST}"
 
+# Refinement concurrency. Default 1 (serial) because refine_swe.py's
+# per-model --max-cost-usd-per-model cap is only checked at step
+# boundaries: with N>1 workers, all N can pass the cap check before
+# any of them debits their spend, leading to a worst-case overrun of
+# ~N×cost_per_step. Override via MAX_REFINE_WORKERS=4 (or higher) when
+# the budget cap has comfortable headroom and you want the ~Nx wall-
+# clock speedup. The refinement loop itself is pure LLM and tolerates
+# concurrency fine — the only concern is the cap-check race.
+MAX_REFINE_WORKERS="${MAX_REFINE_WORKERS:-1}"
+
 # Optional: pin all SWE-Bench Verified steps to a pre-chosen subset by setting
 # VERIFIED_SUBSET=/abs/path/to/<file>.json. The file MAY be either a flat
 # JSON array of instance_ids OR a dict with an 'instance_ids' key; the
@@ -198,7 +208,7 @@ python iter/refine_swe.py --method selfrefine \
     --src-dir data/swebench_lite_calibration_full \
     --output-dir data/swebench_lite_realbaselines_selfrefine_full \
     --generators "$GEN" \
-    --n-instances $N_LITE --steps $N_STEPS --max-workers 1 \
+    --n-instances $N_LITE --steps $N_STEPS --max-workers $MAX_REFINE_WORKERS \
     --max-cost-usd-per-model "$GEN=$REFINE_LITE_COST" \
     2>&1 | tee "$LOG_DIR/03_sr_lite.log"
 
@@ -222,7 +232,7 @@ python iter/refine_swe.py --method selfrefine \
     --src-dir data/swebench_verified_calibration_full \
     --output-dir data/swebench_verified_realbaselines_selfrefine_full \
     --generators "$GEN" \
-    --n-instances $N_VER --steps $N_STEPS --max-workers 1 \
+    --n-instances $N_VER --steps $N_STEPS --max-workers $MAX_REFINE_WORKERS \
     --max-cost-usd-per-model "$GEN=$REFINE_VER_COST" \
     "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/05_sr_verified.log"
@@ -247,7 +257,7 @@ python iter/refine_swe.py --method reflexion \
     --src-dir data/swebench_lite_calibration_full \
     --output-dir data/swebench_lite_realbaselines_reflexion_full \
     --generators "$GEN" \
-    --n-instances $N_LITE --steps $N_STEPS --max-workers 1 \
+    --n-instances $N_LITE --steps $N_STEPS --max-workers $MAX_REFINE_WORKERS \
     --max-cost-usd-per-model "$GEN=$REFINE_LITE_COST" \
     2>&1 | tee "$LOG_DIR/07_rfx_lite.log"
 
@@ -271,7 +281,7 @@ python iter/refine_swe.py --method reflexion \
     --src-dir data/swebench_verified_calibration_full \
     --output-dir data/swebench_verified_realbaselines_reflexion_full \
     --generators "$GEN" \
-    --n-instances $N_VER --steps $N_STEPS --max-workers 1 \
+    --n-instances $N_VER --steps $N_STEPS --max-workers $MAX_REFINE_WORKERS \
     --max-cost-usd-per-model "$GEN=$REFINE_VER_COST" \
     "${VER_SUBSET_ARG[@]}" \
     2>&1 | tee "$LOG_DIR/09_rfx_verified.log"
