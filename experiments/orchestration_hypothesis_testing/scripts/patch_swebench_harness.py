@@ -68,6 +68,12 @@ from pathlib import Path
 
 PATCH_MARKER_BUILD = "# PATCH(podman-3.4.4): use podman CLI with --pull=false"
 PATCH_MARKER_PLATFORM = "# PATCH(podman-3.4.4): platform kwarg disabled"
+PATCH_MARKER_TAR = "# PATCH(rootless-podman): TAR_OPTIONS skips chown failures"
+PATCH_MARKER_PIP = "# PATCH(rootless-podman): conditional pip<23.1 in testbed env (v2)"
+# Old marker from the v1 sed-rewrite implementation of patch 4.
+# Detected so re-applying the patcher on top of a v1-patched python.py
+# strips the v1 block before adding the v2 (current) block.
+PATCH_MARKER_PIP_V1 = "# PATCH(rootless-podman): pip compat for setup_repo.sh"
 
 
 def locate_docker_build() -> Path:
@@ -82,6 +88,21 @@ def locate_docker_build() -> Path:
     candidate = root / "harness" / "docker_build.py"
     if not candidate.exists():
         raise SystemExit(f"docker_build.py not found at {candidate}")
+    return candidate
+
+
+def locate_dockerfile_python() -> Path:
+    """Find dockerfiles/python.py inside the installed swebench package."""
+    spec = importlib.util.find_spec("swebench")
+    if spec is None or spec.origin is None:
+        raise SystemExit(
+            "swebench not importable in this Python. Activate the env that runs "
+            "the harness, then re-run."
+        )
+    root = Path(spec.origin).parent
+    candidate = root / "harness" / "dockerfiles" / "python.py"
+    if not candidate.exists():
+        raise SystemExit(f"dockerfiles/python.py not found at {candidate}")
     return candidate
 
 
@@ -238,6 +259,146 @@ def patch_platform_kwarg(src: str) -> tuple[str, bool]:
     return new_src, True
 
 
+def patch_dockerfile_tar_options(src: str) -> tuple[str, bool]:
+    """Inject `ENV TAR_OPTIONS="--no-same-owner"` into the python instance
+    Dockerfile template (_DOCKERFILE_INSTANCE_PY in dockerfiles/python.py).
+
+    Without this, setup_repo.sh's `tar -xvzf` calls (e.g. matplotlib's qhull
+    extract) fail because the tarball preserves UIDs/GIDs that fall outside
+    rootless podman's id-mapping range, so chown returns EINVAL and tar exits
+    non-zero, breaking the whole RUN step. `TAR_OPTIONS=--no-same-owner` tells
+    GNU tar to skip the chown step entirely; files end up owned by root
+    (the user inside the container), which is what setup scripts expect.
+    """
+    if PATCH_MARKER_TAR in src:
+        return src, False
+
+    anchor = "\nCOPY ./setup_repo.sh /root/\n"
+    if anchor not in src:
+        raise SystemExit(
+            "Could not find 'COPY ./setup_repo.sh /root/' in dockerfiles/python.py — "
+            "the swebench template may have changed; inspect it manually."
+        )
+    replacement = (
+        f"\n{PATCH_MARKER_TAR}\n"
+        f'ENV TAR_OPTIONS="--no-same-owner"\n'
+        f"{anchor}"
+    )
+    return src.replace(anchor, replacement, 1), True
+
+
+def patch_dockerfile_pip_compat(src: str) -> tuple[str, bool]:
+    """Inject a pip-downgrade RUN step into the python instance Dockerfile
+    template (_DOCKERFILE_INSTANCE_PY in dockerfiles/python.py).
+
+    Modern pip (>=23.1) requires PEP 660 hooks for editable installs and
+    rejected the legacy `--no-use-pep517` flag. Both patterns appear in
+    SWE-Bench setup_repo.sh content:
+
+      - pylint instances run `pip install -e .` with a build backend that
+        has zero PEP 660 hooks. Even `--config-settings editable_mode=compat`
+        is rejected because pip checks for `build_editable` before falling
+        back. Old pip (<23.1) skips the check and uses the legacy egg-info
+        editable path that pylint's backend does support.
+      - scikit-learn instances run `pip install --no-use-pep517 -e .`. Old
+        pip recognises the flag and succeeds.
+      - django instances with an already-old pip in the env image are
+        unaffected (the downgrade is a no-op when pip is already <23.1).
+
+    The downgrade targets the testbed conda env created by setup_env.sh
+    (already present at instance-image build time). Failure is silenced
+    with `|| true` so env images without the expected testbed layout fall
+    through to the original behaviour rather than breaking outright.
+
+    This replaces a prior sed-rewrite approach that injected
+    `--config-settings editable_mode=compat`. That sed both failed for
+    pylint (pip rejects before compat fallback) AND regressed django-12470
+    (its already-old pip didn't recognise `--config-settings`).
+    """
+    if PATCH_MARKER_PIP in src:
+        return src, False
+
+    # If v1 (sed-rewrite) is already applied, strip the v1 block first so
+    # the v2 (this) block can replace it cleanly. The v1 block is the v1
+    # marker + the next non-empty line (the `RUN sed -i ...` that was
+    # written alongside the marker).
+    if PATCH_MARKER_PIP_V1 in src:
+        lines = src.splitlines(keepends=True)
+        out_lines = []
+        i = 0
+        while i < len(lines):
+            if lines[i].strip() == PATCH_MARKER_PIP_V1:
+                # Skip the marker line and the following RUN line.
+                # The v1 block is exactly two lines: marker + RUN-sed.
+                if i + 1 < len(lines) and lines[i + 1].lstrip().startswith("RUN sed"):
+                    i += 2
+                    continue
+                # Fall back: only skip the marker if next line is unrelated.
+                i += 1
+                continue
+            out_lines.append(lines[i])
+            i += 1
+        src = "".join(out_lines)
+
+    anchor = "RUN /bin/bash /root/setup_repo.sh\n"
+    if anchor not in src:
+        raise SystemExit(
+            "Could not find 'RUN /bin/bash /root/setup_repo.sh' in dockerfiles/python.py "
+            "— the swebench template may have changed; inspect it manually."
+        )
+    # The shell snippet downgrades pip ONLY if the current pip is >=23.1.
+    # Old pip (21.x/22.x) is preserved (avoids accidentally upgrading legacy
+    # envs to pip 23.0.1, which would still differ from their original).
+    # The whole thing trails `|| true` so env images without the testbed
+    # layout fall through to the original setup_repo.sh behaviour.
+    py = "/opt/miniconda3/envs/testbed/bin/python"
+    needs_downgrade = (
+        f'{py} -c "import pip,sys; v=tuple(int(x) for x in pip.__version__.split(\\".\\")[:2]); '
+        f'sys.exit(0 if v >= (23,1) else 1)" 2>/dev/null'
+    )
+    pip_install = (
+        f'{py} -m pip install "pip<23.1" --quiet --disable-pip-version-check '
+        f"> /dev/null 2>&1"
+    )
+    replacement = (
+        f"{PATCH_MARKER_PIP}\n"
+        f"RUN {needs_downgrade} && {pip_install} || true\n"
+        f"{anchor}"
+    )
+    return src.replace(anchor, replacement, 1), True
+
+
+def _apply_and_write(target: Path, patches: list, dry_run: bool) -> int:
+    """Apply a list of (name, fn) patches to target, syntax-check, write."""
+    src = target.read_text()
+    original = src
+    n_changes = 0
+    for name, fn in patches:
+        src, changed = fn(src)
+        if changed:
+            n_changes += 1
+            print(f"  applied: {name}")
+        else:
+            print(f"  skipped: {name} (already present)")
+    if n_changes == 0:
+        return 0
+    try:
+        ast.parse(src)
+    except SyntaxError as e:
+        print(f"ERROR: patched {target.name} has SyntaxError: {e}", file=sys.stderr)
+        return 1
+    if dry_run:
+        print(f"--dry-run: would write {len(src)} chars to {target}")
+        return 0
+    backup = target.with_suffix(".py.preharnesspatch")
+    if not backup.exists():
+        backup.write_text(original)
+        print(f"backup: {backup}")
+    target.write_text(src)
+    print(f"wrote: {target}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -247,48 +408,36 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    target = locate_docker_build()
-    print(f"target: {target}")
+    targets = [
+        (
+            locate_docker_build(),
+            [
+                ("podman CLI build (1/4)", patch_build_call),
+                ("platform kwarg disabled in containers.create (2/4)", patch_platform_kwarg),
+            ],
+        ),
+        (
+            locate_dockerfile_python(),
+            [
+                ("TAR_OPTIONS=--no-same-owner in instance Dockerfile (3/4)",
+                 patch_dockerfile_tar_options),
+                ("pip downgrade to <23.1 in testbed env (4/4)",
+                 patch_dockerfile_pip_compat),
+            ],
+        ),
+    ]
 
-    src = target.read_text()
-    original = src
-    n_changes = 0
-
-    src, c1 = patch_build_call(src)
-    if c1:
-        n_changes += 1
-        print("  applied: podman CLI build (patch 1/2)")
-    else:
-        print("  skipped: podman CLI build patch already present")
-
-    src, c2 = patch_platform_kwarg(src)
-    if c2:
-        n_changes += 1
-        print("  applied: platform kwarg disabled in containers.create (patch 2/2)")
-    else:
-        print("  skipped: platform kwarg patch already present")
-
-    if n_changes == 0:
+    any_change = False
+    for target, patches in targets:
+        print(f"target: {target}")
+        before = target.read_text()
+        rc = _apply_and_write(target, patches, args.dry_run)
+        if rc != 0:
+            return rc
+        if target.read_text() != before or args.dry_run:
+            any_change = True
+    if not any_change:
         print("Already patched. Nothing to do.")
-        return 0
-
-    # Syntax check before writing
-    try:
-        ast.parse(src)
-    except SyntaxError as e:
-        print(f"ERROR: patched source has SyntaxError: {e}", file=sys.stderr)
-        return 1
-
-    if args.dry_run:
-        print(f"--dry-run: would write {len(src)} chars to {target}")
-        return 0
-
-    backup = target.with_suffix(".py.preharnesspatch")
-    if not backup.exists():
-        backup.write_text(original)
-        print(f"backup: {backup}")
-    target.write_text(src)
-    print(f"wrote: {target}")
     return 0
 
 
