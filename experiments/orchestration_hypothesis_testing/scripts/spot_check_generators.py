@@ -1292,6 +1292,17 @@ def run_swebench_eval(
     predictions_path = predictions_path.resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resume short-circuit: if a canonical report for this run_id already
+    # exists, skip the eval entirely. Without this the sharded path
+    # (different per-instance log location vs the previous unsharded run)
+    # would re-evaluate every instance from scratch on a pipeline relaunch,
+    # because the harness's per-instance skip-via-log check finds nothing
+    # under the new shard work dirs. Set EVAL_FORCE=1 to override.
+    existing = sorted(work_dir.glob(f"*.{run_id}.json"))
+    if existing and not os.environ.get("EVAL_FORCE", "").strip():
+        log.info("skip eval %s: report exists at %s", run_id, existing[-1].name)
+        return existing[-1]
+
     shards_env = os.environ.get("EVAL_SHARDS", "")
     if shards_env.strip():
         # Late import so this module still loads on machines where the
