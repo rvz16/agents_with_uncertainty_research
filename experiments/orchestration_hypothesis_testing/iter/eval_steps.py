@@ -150,6 +150,15 @@ def main() -> int:
             print(f"skip step {step}: {pred_path} not found")
             n_skip += 1
             continue
+        # Skip empty predictions files. Refinement methods with critic-based
+        # early-stop (e.g. Self-Refine on a generator the critic rarely rejects)
+        # can produce 0-line predictions for late trajectory steps. The harness
+        # then crashes with IndexError when given an empty predictions JSONL
+        # because make_run_report tries to read predictions[0]["model"].
+        if pred_path.stat().st_size == 0:
+            print(f"skip step {step}: {pred_path.name} is empty (early-stop trim)")
+            n_skip += 1
+            continue
         run_id = f"{run_id_tag}_iter_step{step}"
         print(f"\n==== eval {run_id_tag} step {step} (run_id={run_id}) ====")
         try:
