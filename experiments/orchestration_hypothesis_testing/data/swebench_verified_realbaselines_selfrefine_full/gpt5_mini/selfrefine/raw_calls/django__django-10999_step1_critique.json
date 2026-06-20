@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:13:17.241697+00:00",
+  "instance_id": "django__django-10999",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nFix parse_duration() for some negative durations\nDescription\n\t\nThe \u200bhttps://docs.djangoproject.com/en/2.1/_modules/django/utils/dateparse/ defines:\nstandard_duration_re = re.compile(\n\tr'^'\n\tr'(?:(?P<days>-?\\d+) (days?, )?)?'\n\tr'((?:(?P<hours>-?\\d+):)(?=\\d+:\\d+))?'\n\tr'(?:(?P<minutes>-?\\d+):)?'\n\tr'(?P<seconds>-?\\d+)'\n\tr'(?:\\.(?P<microseconds>\\d{1,6})\\d{0,6})?'\n\tr'$'\n)\nthat doesn't match to negative durations, because of the <hours> definition final (lookahead) part does not have '-?' in it. The following will work:\n\tr'((?:(?P<hours>-?\\d+):)(?=-?\\d+:-?\\d+))?'\n(Thanks to Konstantin Senichev for finding the fix.)\n\n\n## Your previous patch (diff format)\n```\n--- a/django/utils/dateparse.py\n+++ b/django/utils/dateparse.py\n@@ -28,10 +28,11 @@\n \n standard_duration_re = re.compile(\n     r'^'\n-    r'(?:(?P<days>-?\\d+) (days?, )?)?'\n-    r'((?:(?P<hours>-?\\d+):)(?=\\d+:\\d+))?'\n-    r'(?:(?P<minutes>-?\\d+):)?'\n-    r'(?P<seconds>-?\\d+)'\n+    r'(?P<sign>[-+]?)'\n+    r'(?:(?P<days>\\d+) (days?, )?)?'\n+    r'((?:(?P<hours>\\d+):)(?=\\d+:\\d+))?'\n+    r'(?:(?P<minutes>\\d+):)?'\n+    r'(?P<seconds>\\d+)'\n     r'(?:\\.(?P<microseconds>\\d{1,6})\\d{0,6})?'\n     r'$'\n )\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 587,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00309075
+}

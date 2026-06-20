@@ -1,0 +1,38 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -558,11 +558,34 @@
+             dependencies = [
+                 (app_label, model_name, None, False),
+             ]
+-            # Depend on all bases
++            # Depend on all bases. If a base previously had any of the fields
++            # we're defining on this new model, depend on the removal of that
++            # field from the base so the CreateModel doesn't clash with a
++            # RemoveField for the same column on the base class.
+             for base in model_state.bases:
+                 if isinstance(base, str) and "." in base:
+                     base_app_label, base_name = base.split(".", 1)
+                     dependencies.append((base_app_label, base_name, None, True))
++                    # Check the previous (from_state) definition of the base
++                    # model to see if any of the fields we're defining here
++                    # used to belong to that base. If so, require their
++                    # removal first.
++                    try:
++                        old_base_state = self.from_state.models[base_app_label, base_name]
++                    except KeyError:
++                        old_base_state = None
++                    if old_base_state:
++                        for fname, _ in model_state.fields.items():
++                            if fname in old_base_state.fields:
++                                dependencies.append((base_app_label, base_name, fname, False))
++                    # Dedupe while preserving order.
++                    seen = set()
++                    deduped = []
++                    for d in dependencies:
++                        if d not in seen:
++                            seen.add(d)
++                            deduped.append(d)
++                    dependencies = deduped
+             # Depend on the other end of the primary key if it's a relation
+             if primary_key_rel:
+                 dependencies.append((

@@ -1,0 +1,21 @@
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1297,6 +1297,18 @@
+ 
+     @classmethod
+     def _check_default_pk(cls):
++        # Don't warn for auto-created primary keys that are parent links for
++        # multi-table inheritance. In that case the primary key type was
++        # explicitly defined on the parent model, so the child shouldn't get
++        # a DEFAULT_AUTO_FIELD warning.
++        pk = cls._meta.pk
++        # Some fields might not have the attributes if weird custom fields are used,
++        # so use getattr safely.
++        if getattr(pk, 'auto_created', False):
++            remote_field = getattr(pk, 'remote_field', None)
++            if remote_field is not None and getattr(remote_field, 'parent_link', False):
++                return []
++
+         if (
+             cls._meta.pk.auto_created and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and

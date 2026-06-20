@@ -1,0 +1,24 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -168,6 +168,21 @@
+                     options=options,
+                     bases=self.bases,
+                     managers=self.managers,
++                ),
++            ]
++        elif (
++            isinstance(operation, AlterModelManagers)
++            and self.name_lower == operation.name_lower
++        ):
++            # Merge AlterModelManagers into CreateModel by replacing the
++            # managers with the ones from the AlterModelManagers operation.
++            return [
++                CreateModel(
++                    self.name,
++                    fields=self.fields,
++                    options=self.options,
++                    bases=self.bases,
++                    managers=operation.managers,
+                 ),
+             ]
+         elif (

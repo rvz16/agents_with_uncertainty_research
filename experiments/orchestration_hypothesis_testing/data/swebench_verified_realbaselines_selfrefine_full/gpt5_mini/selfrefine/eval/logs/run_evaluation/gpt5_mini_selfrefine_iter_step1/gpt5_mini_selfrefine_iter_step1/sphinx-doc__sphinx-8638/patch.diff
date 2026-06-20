@@ -1,0 +1,46 @@
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -1161,19 +1161,31 @@
+                                    if oname.endswith(searchname) and
+                                    self.objects[oname].objtype in objtypes]
+         else:
+-            # NOTE: searching for exact match, object type is not considered
+-            if name in self.objects:
+-                newname = name
+-            elif type == 'mod':
++            # NOTE: searching for exact match, object type is not considered.
++            # Prefer more specific (module + class + name) and class-scoped names
++            # over unqualified/bare names. This avoids linking instance/class
++            # attributes to unrelated module-level objects with the same name.
++            if type == 'mod':
+                 # only exact matches allowed for modules
+-                return []
+-            elif classname and classname + '.' + name in self.objects:
+-                newname = classname + '.' + name
+-            elif modname and modname + '.' + name in self.objects:
+-                newname = modname + '.' + name
+-            elif modname and classname and \
+-                    modname + '.' + classname + '.' + name in self.objects:
+-                newname = modname + '.' + classname + '.' + name
++                if name in self.objects:
++                    newname = name
++                else:
++                    return []
++            else:
++                # Prefer most specific qualification first:
++                # 1. modname.classname.name
++                # 2. classname.name
++                # 3. modname.name
++                # 4. name (bare)
++                if modname and classname and \
++                        (modname + '.' + classname + '.' + name) in self.objects:
++                    newname = modname + '.' + classname + '.' + name
++                elif classname and (classname + '.' + name) in self.objects:
++                    newname = classname + '.' + name
++                elif modname and (modname + '.' + name) in self.objects:
++                    newname = modname + '.' + name
++                elif name in self.objects:
++                    newname = name
+         if newname is not None:
+             matches.append((newname, self.objects[newname]))
+         return matches

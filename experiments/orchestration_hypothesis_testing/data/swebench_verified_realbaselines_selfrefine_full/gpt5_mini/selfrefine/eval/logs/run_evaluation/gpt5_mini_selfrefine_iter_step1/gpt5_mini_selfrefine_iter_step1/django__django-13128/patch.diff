@@ -1,0 +1,53 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -429,6 +429,50 @@
+         self.connector = connector
+         self.lhs = lhs
+         self.rhs = rhs
++
++    def _resolve_output_field(self):
++        """
++        Resolve the output field for combined expressions, handling common
++        temporal/duration combinations:
++
++        - datetime - datetime -> DurationField
++        - temporal (+|-) duration -> temporal
++        - duration + duration -> DurationField
++
++        For other cases, fall back to the generic BaseExpression resolution,
++        which enforces matching source types or raises FieldError.
++        """
++        lhs_field = self.lhs._output_field_or_none
++        rhs_field = self.rhs._output_field_or_none
++
++        # If neither side can resolve, fall back to generic resolution.
++        if lhs_field is None and rhs_field is None:
++            return super()._resolve_output_field()
++
++        # Helpers to detect temporal/duration types.
++        datetime_field_classes = (fields.DateField, fields.DateTimeField, fields.TimeField)
++        lhs_is_datetime = isinstance(lhs_field, datetime_field_classes) if lhs_field is not None else False
++        rhs_is_datetime = isinstance(rhs_field, datetime_field_classes) if rhs_field is not None else False
++        lhs_is_duration = isinstance(lhs_field, fields.DurationField) if lhs_field is not None else False
++        rhs_is_duration = isinstance(rhs_field, fields.DurationField) if rhs_field is not None else False
++
++        # duration op duration -> DurationField
++        if lhs_is_duration and rhs_is_duration:
++            return fields.DurationField()
++
++        # datetime - datetime -> DurationField
++        if self.connector == self.SUB and lhs_is_datetime and rhs_is_datetime:
++            return fields.DurationField()
++
++        # temporal +/- duration -> temporal (preserve the temporal type)
++        if lhs_is_datetime and rhs_is_duration:
++            return lhs_field
++        if rhs_is_datetime and lhs_is_duration and self.connector in (self.ADD, self.SUB):
++            return rhs_field
++
++        # Otherwise, defer to the base implementation, which will validate
++        # and either return a matching type or raise FieldError.
++        return super()._resolve_output_field()
+ 
+     def __repr__(self):
+         return "<{}: {}>".format(self.__class__.__name__, self)

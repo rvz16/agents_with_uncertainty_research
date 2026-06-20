@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-17T15:39:08.535933+00:00",
+  "instance_id": "django__django-12276",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nFileInput shouldn't display required attribute when initial data exists.\nDescription\n\t \n\t\t(last modified by thenewguy)\n\t \nI think that ClearableFileInput.use_required_attribute() (\u200bhttps://github.com/django/django/blob/e703b93a656b78b9b444bb3a9980e305ed002a70/django/forms/widgets.py#L454) should be moved to FileInput.use_required_attribute() so that required is not output on the html input element that represents FileInput when a file is already set (e.g. already saved on a model instance that is being edited).\nMaybe I am overlooking a use case where this is not desirable? I can not think of one.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/forms/widgets.py\n+++ b/django/forms/widgets.py\n@@ -386,6 +386,13 @@\n \n     def value_omitted_from_data(self, data, files, name):\n         return name not in files\n+\n+    def use_required_attribute(self, initial):\n+        \"\"\"\n+        Don't render the 'required' attribute for file inputs if an initial\n+        value is provided (e.g. when editing an instance with an existing file).\n+        \"\"\"\n+        return super().use_required_attribute(initial) and not initial\n \n \n FILE_INPUT_CONTRADICTION = object()\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 403,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00304475
+}

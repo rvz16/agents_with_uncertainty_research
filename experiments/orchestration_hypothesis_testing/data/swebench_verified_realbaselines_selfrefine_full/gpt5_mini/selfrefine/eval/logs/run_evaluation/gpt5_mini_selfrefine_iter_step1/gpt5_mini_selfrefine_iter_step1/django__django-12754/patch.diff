@@ -1,0 +1,28 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -563,6 +563,25 @@
+                 if isinstance(base, str) and "." in base:
+                     base_app_label, base_name = base.split(".", 1)
+                     dependencies.append((base_app_label, base_name, None, True))
++                    # If the base model previously defined fields that are now defined
++                    # on this subclass (i.e. the field was moved from the base to
++                    # the subclass in the same change), ensure the creation of this
++                    # model depends on the removal of those fields from the base.
++                    # This guarantees the RemoveField runs before CreateModel and
++                    # avoids Local field clashes (see #31827).
++                    try:
++                        old_base_state = self.from_state.models[base_app_label, base_name]
++                    except Exception:
++                        old_base_state = None
++                    try:
++                        new_base_state = self.to_state.models[base_app_label, base_name]
++                    except Exception:
++                        new_base_state = None
++                    if old_base_state:
++                        for fname in old_base_state.fields:
++                            # If this field is now on the new model and no longer on the base...
++                            if fname in model_state.fields and not (new_base_state and fname in new_base_state.fields):
++                                dependencies.append((base_app_label, base_name, fname, False))
+             # Depend on the other end of the primary key if it's a relation
+             if primary_key_rel:
+                 dependencies.append((

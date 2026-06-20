@@ -1,0 +1,29 @@
+--- a/sklearn/feature_selection/_sequential.py
++++ b/sklearn/feature_selection/_sequential.py
+@@ -259,6 +259,26 @@
+         if self.tol is not None and self.tol < 0 and self.direction == "forward":
+             raise ValueError("tol must be positive when doing forward selection")
+ 
++        # If `cv` is an iterator (for example a generator produced by
++        # `cv.split(X, y, groups)`), it will be exhausted after the first use.
++        # The sequential feature selector calls the cross-validation routine
++        # multiple times while evaluating different candidate features. To
++        # ensure the provided `cv` can be reused across these calls, convert
++        # iterators into a list of splits.
++        #
++        # We avoid converting integer inputs (number of folds) by checking for
++        # Integral. If `cv` is a cross-validator object (not an iterator) the
++        # call to iter(...) will raise TypeError and we simply keep it as-is.
++        if self.cv is not None and not isinstance(self.cv, Integral):
++            try:
++                if iter(self.cv) is self.cv:
++                    # `self.cv` is an iterator (e.g. a generator); materialize it.
++                    self.cv = list(self.cv)
++            except TypeError:
++                # Not an iterable that returns an iterator (e.g. a CV splitter
++                # object). Leave as-is.
++                pass
++
+         cloned_estimator = clone(self.estimator)
+ 
+         # the current mask corresponds to the set of features:

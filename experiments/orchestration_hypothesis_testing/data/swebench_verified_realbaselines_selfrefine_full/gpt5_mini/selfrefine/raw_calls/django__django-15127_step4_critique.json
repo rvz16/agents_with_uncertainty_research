@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:37:04.071234+00:00",
+  "instance_id": "django__django-15127",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nLEVEL_TAGS not updated when using @override_settings\nDescription\n\t\nWhen reading messages inside tests, new message tags created using @override_settings is not updated.\nThat causes the django.contrib.messages.storage.base.Message.level_tag property results to be an empty string and not know the new tags.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/contrib/messages/apps.py\n+++ b/django/contrib/messages/apps.py\n@@ -5,3 +5,23 @@\n class MessagesConfig(AppConfig):\n     name = 'django.contrib.messages'\n     verbose_name = _(\"Messages\")\n+\n+    def ready(self):\n+        # Update the module-level LEVEL_TAGS in the messages storage whenever\n+        # the MESSAGE_TAGS setting is changed (for example during tests using\n+        # override_settings). This mirrors other apps that react to\n+        # setting_changed so the in-memory constant matches the current settings.\n+        from django.conf import settings\n+        from django.test.signals import setting_changed\n+        from django.dispatch import receiver\n+        from django.contrib.messages.storage import base as storage_base\n+\n+        @receiver(setting_changed)\n+        def update_level_tags(**kwargs):\n+            if kwargs.get('setting') == 'MESSAGE_TAGS':\n+                # Use the setting if present, otherwise fall back to the\n+                # existing LEVEL_TAGS in the storage module.\n+                storage_base.LEVEL_TAGS = getattr(\n+                    settings, 'MESSAGE_TAGS',\n+                    getattr(storage_base, 'LEVEL_TAGS', {})\n+                )\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 442,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030545
+}

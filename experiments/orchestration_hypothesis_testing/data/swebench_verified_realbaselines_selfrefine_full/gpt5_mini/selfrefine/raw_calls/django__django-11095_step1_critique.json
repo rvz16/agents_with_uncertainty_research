@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-17T15:12:50.467720+00:00",
+  "instance_id": "django__django-11095",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nadd ModelAdmin.get_inlines() hook to allow set inlines based on the request or model instance.\nDescription\n\t\nadd ModelAdmin.get_inlines() hook to allow set inlines based on the request or model instance.\nCurrently, We can override the method get_inline_instances to do such a thing, but a for loop should be copied to my code. So I wished add a hook get_inlines(request, obj=None)\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty / no changes were made \u2014 the feature was not implemented.\n\nModelAdmin.get_inlines is not added to the codebase.\n\nget_inline_instances is not updated to call a new get_inlines hook, so existing behavior is unchanged.\n\nNo tests were added or updated to cover the new hook or its expected behaviors.\n\nNo documentation or docstrings added to describe the new hook's contract (signature, return type, defaults).\n\nNo handling shown for backwards compatibility/default behavior (e.g., returning list(self.inlines) when get_inlines is not overridden).\n\nEdge cases not addressed: self.inlines being None or not iterable, inline classes that are callables, or inline classes requiring parameters.\n\nNo consideration of permission/availability checks or other logic that get_inline_instances previously performed (ensuring the new hook integrates with existing checks).\n\nNo updates to any import, registration, or admin internals to ensure the hook is used across the admin UI.\n\nNo tests for request/user-specific or obj-specific inline selection, or for caching/instantiation behavior of inline instances.",
+  "prompt_tokens": 217,
+  "completion_tokens": 665,
+  "cost_usd": 0.00138425
+}

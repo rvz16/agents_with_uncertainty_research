@@ -1,0 +1,46 @@
+--- a/sympy/core/mod.py
++++ b/sympy/core/mod.py
+@@ -123,6 +123,27 @@
+             for arg in p.args:
+                 both_l[isinstance(arg, cls)].append(arg)
+ 
++            # If there are integer factors among the non-mod arguments and q is an
++            # integer and there are no existing Mod factors in the product, reduce
++            # those integer factors modulo q.  This handles cases like
++            # Mod(3*i, 2) -> Mod(i, 2) but avoids incorrect simplification when
++            # non-integer factors (e.g. e/2) are present.
++            if (not mod_l) and q.is_Integer:
++                int_factors = [f for f in non_mod_l if f.is_Integer]
++                if int_factors:
++                    int_prod = Mul(*int_factors)
++                    rem_factors = [f for f in non_mod_l if not f.is_Integer]
++                    k = int_prod % q
++                    # If the integer part is divisible by q the whole product is 0.
++                    if k == 0:
++                        return S.Zero
++                    # Rebuild the non-mod part with the reduced integer remainder.
++                    if rem_factors:
++                        new_non = Mul(k, *rem_factors)
++                    else:
++                        new_non = k
++                    return cls(new_non, q)
++
+             if mod_l and all(inner.args[1] == q for inner in mod_l):
+                 # finding distributive term
+                 non_mod_l = [cls(x, q) for x in non_mod_l]
+@@ -130,14 +151,7 @@
+                 non_mod = []
+                 for j in non_mod_l:
+                     if isinstance(j, cls):
+-                        mod.append(j.args[0])
+-                    else:
+-                        non_mod.append(j)
+-                prod_mod = Mul(*mod)
+-                prod_non_mod = Mul(*non_mod)
+-                prod_mod1 = Mul(*[i.args[0] for i in mod_l])
+-                net = prod_mod1*prod_mod
+-                return prod_non_mod*cls(net, q)
++                        mod.append(j.args
+ 
+         # XXX other possibilities?
+ 

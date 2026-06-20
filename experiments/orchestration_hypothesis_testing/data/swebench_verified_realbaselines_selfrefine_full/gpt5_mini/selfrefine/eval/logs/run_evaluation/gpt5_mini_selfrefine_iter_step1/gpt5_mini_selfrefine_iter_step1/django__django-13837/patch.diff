@@ -1,0 +1,25 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -221,7 +221,21 @@
+     py_script = Path(sys.argv[0])
+ 
+     args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions]
+-    if py_script == django_main_path:
++
++    # Detect execution with -m <package> by inspecting the top-level
++    # __main__.__spec__.parent attribute. When Python is started with -m pkg
++    # this will be equal to "pkg". If __spec__ is not set (e.g. when running
++    # a script directly), fall back to the previous __file__-based check.
++    main_module = sys.modules.get('__main__')
++    main_spec = getattr(main_module, '__spec__', None)
++    if main_spec and getattr(main_spec, 'parent', None):
++        # Started with `python -m <package>`. Use that package name when
++        # re-spawning the child process so autoreload works for arbitrary
++        # -m entry points (not just `django`).
++        pkg = main_spec.parent
++        args += ['-m', pkg]
++        args += sys.argv[1:]
++    elif py_script == django_main_path:
+         # The server was started with `python -m django runserver`.
+         args += ['-m', 'django']
+         args += sys.argv[1:]

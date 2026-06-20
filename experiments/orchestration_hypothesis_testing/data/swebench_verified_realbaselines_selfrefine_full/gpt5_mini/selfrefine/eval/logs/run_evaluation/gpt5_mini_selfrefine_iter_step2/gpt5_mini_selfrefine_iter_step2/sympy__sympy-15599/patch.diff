@@ -1,0 +1,76 @@
+--- a/sympy/core/mod.py
++++ b/sympy/core/mod.py
+@@ -117,27 +117,53 @@
+                 net = Add(*non_mod_l) + Add(*[i.args[0] for i in mod_l])
+                 return cls(net, q)
+ 
+-        elif isinstance(p, Mul):
+-            # separating into modulus and non modulus
+-            both_l = non_mod_l, mod_l = [], []
+-            for arg in p.args:
+-                both_l[isinstance(arg, cls)].append(arg)
+-
+-            if mod_l and all(inner.args[1] == q for inner in mod_l):
+-                # finding distributive term
++                elif isinstance(p, Mul):
++        # separating into modulus and non modulus
++        both_l = non_mod_l, mod_l = [], []
++        for arg in p.args:
++            both_l[isinstance(arg, cls)].append(arg)
++
++        # Try to see if non-mod factors can be converted to Mod(..., q).
++        # Only do this when those factors have no denominator (i.e. are
++        # integer-valued as factors). This avoids incorrect evaluation
++        # for expressions like (e/2) where e is even: (e/2) may be integer
++        # but dividing by 2 means it could change parity and so should
++        # not be treated as a pure integer factor here.
++        was = non_mod_l[:]
++        attempt_wrap = True
++        for x in non_mod_l:
++            try:
++                _, denom = x.as_numer_denom()
++            except Exception:
++                denom = None
++            if denom is None or not denom.is_one:
++                attempt_wrap = False
++                break
++        if attempt_wrap:
++            non_mod_l = [cls(x, q) for x in non_mod_l]
++        changed = was != non_mod_l
++
++        # proceed only if we actually changed something by wrapping OR if
++        # there are already Mod factors with the same modulus q and we can
++        # safely distribute (wrapping was possible or there were no
++        # non-mod factors to worry about).
++        if (attempt_wrap and changed) or (mod_l and all(inner.args[1] == q for inner in mod_l) and not non_mod_l):
++            # finding distributive term
++            # ensure non_mod_l are wrapped if needed
++            if not changed and attempt_wrap:
+                 non_mod_l = [cls(x, q) for x in non_mod_l]
+-                mod = []
+-                non_mod = []
+-                for j in non_mod_l:
+-                    if isinstance(j, cls):
+-                        mod.append(j.args[0])
+-                    else:
+-                        non_mod.append(j)
+-                prod_mod = Mul(*mod)
+-                prod_non_mod = Mul(*non_mod)
+-                prod_mod1 = Mul(*[i.args[0] for i in mod_l])
+-                net = prod_mod1*prod_mod
+-                return prod_non_mod*cls(net, q)
++            mod = []
++            non_mod = []
++            for j in non_mod_l:
++                if isinstance(j, cls):
++                    mod.append(j.args[0])
++                else:
++                    non_mod.append(j)
++            prod_mod = Mul(*mod)
++            prod_non_mod = Mul(*non_mod)
++            prod_mod1 = Mul(*[i.args[0] for i in mod_l])
++            net = prod_mod1*prod_mod
++            return prod_non_mod*cls(net, q)
+ 
+         # XXX other possibilities?
+ 

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:34:17.503045+00:00",
+  "instance_id": "django__django-15127",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nLEVEL_TAGS not updated when using @override_settings\nDescription\n\t\nWhen reading messages inside tests, new message tags created using @override_settings is not updated.\nThat causes the django.contrib.messages.storage.base.Message.level_tag property results to be an empty string and not know the new tags.\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no changes were made, so the reported bug is not addressed.\nNo code hooks into Django's settings_changed signal to refresh LEVEL_TAGS when settings are overridden.\nNo logic to recompute/clear any cached LEVEL_TAGS mapping at runtime; import-time caching would still cause stale tags.\nNo unit tests were added or updated to reproduce the @override_settings failure or verify the fix.\nDoes not ensure thread/process safety when updating a global mapping (race conditions not considered).\nNo fallback behavior implemented for missing tags in an overridden LEVEL_TAGS (tests would still get empty strings).\nNo handling for partial overrides (e.g., when user overrides only some levels) \u2014 should merge with defaults.\nNo documentation or comments explaining intended behavior when settings change at runtime.\nNo changes target the likely relevant modules (message storage/message constants); patch does not indicate which files to modify.",
+  "prompt_tokens": 188,
+  "completion_tokens": 686,
+  "cost_usd": 0.001419
+}

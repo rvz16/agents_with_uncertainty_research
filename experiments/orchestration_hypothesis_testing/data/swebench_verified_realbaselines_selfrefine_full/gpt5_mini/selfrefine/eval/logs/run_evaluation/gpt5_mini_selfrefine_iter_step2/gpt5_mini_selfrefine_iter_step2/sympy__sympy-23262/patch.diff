@@ -1,0 +1,23 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -957,11 +957,18 @@
+     elif iterable(arg):
+         if isinstance(arg, list):
+             left, right = "[]"
++            inner = ', '.join(_recursive_to_string(doprint, e) for e in arg)
++            return left + inner + right
+         elif isinstance(arg, tuple):
+-            left, right = "()"
++            # For singleton tuples we must include a trailing comma so that
++            # Python's syntax represents a tuple and not just a parenthesized
++            # expression. e.g. (1,) not (1)
++            parts = [_recursive_to_string(doprint, e) for e in arg]
++            if len(parts) == 1:
++                return "(" + parts[0] + ",)"
++            return "(" + ', '.join(parts) + ")"
+         else:
+             raise NotImplementedError("unhandled type: %s, %s" % (type(arg), arg))
+-        return left +', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+     elif isinstance(arg, str):
+         return arg
+     else:

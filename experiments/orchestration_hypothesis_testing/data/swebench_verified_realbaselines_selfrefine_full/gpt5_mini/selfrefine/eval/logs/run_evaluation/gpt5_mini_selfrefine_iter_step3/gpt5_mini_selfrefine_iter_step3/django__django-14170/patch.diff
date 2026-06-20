@@ -1,0 +1,40 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -546,10 +546,36 @@
+             bounds = connection.ops.year_lookup_bounds_for_date_field(year)
+         return bounds
+ 
++    def _skip_iso_year_optimization(self):
++        """
++        Return True when the optimization that replaces an EXTRACT(...) = year
++        lookup with a BETWEEN range should be skipped.
++
++        The optimization is invalid for ISO year extraction because an ISO
++        year does not necessarily align with the calendar year (it can start
++        in the previous calendar year). If the lhs is an ISO-year extract
++        expression (e.g. ExtractIsoYear), we must not use BETWEEN bounds.
++        """
++        lhs = self.lhs
++        # Some extract/transforms expose a 'function' name (e.g. 'isoyear').
++        func = getattr(lhs, 'function', None)
++        if func in ('isoyear', 'iso_year'):
++            return True
++        # Fallback check for the explicit ExtractIsoYear class name to avoid
++        # importing the function here and creating circular imports.
++        if lhs.__class__.__name__ == 'ExtractIsoYear':
++            return True
++        # Some transforms may expose a lookup name.
++        if getattr(lhs, 'lookup_name', None) == 'iso_year':
++            return True
++        return False
++
+     def as_sql(self, compiler, connection):
+         # Avoid the extract operation if the rhs is a direct value to allow
+         # indexes to be used.
+-        if self.rhs_is_direct_value():
++        # However, do not apply the BETWEEN optimization for ISO year
++        # extraction, because ISO years don't align with calendar year bounds.
++        if self.rhs_is_direct_value() and not self._skip_iso_year_optimization():
+             # Skip the extract part by directly using the originating field,
+             # that is self.lhs.lhs.
+             lhs_sql, params = self.process_lhs(compiler, connection, self.lhs.lhs)

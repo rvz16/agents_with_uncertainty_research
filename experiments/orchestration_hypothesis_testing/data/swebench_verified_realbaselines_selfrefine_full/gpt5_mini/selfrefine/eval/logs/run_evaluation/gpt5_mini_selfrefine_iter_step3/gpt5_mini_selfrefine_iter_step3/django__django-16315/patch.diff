@@ -1,0 +1,32 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1722,11 +1722,27 @@
+ 
+         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
+ 
++        def _field_columns(field_list):
++            """
++            Return a list of column names for a given iterable of fields or
++            field names. Accept both Field objects (having .column) and
++            string field names (lookup via opts).
++            """
++            if not field_list:
++                return field_list
++            cols = []
++            for f in field_list:
++                if hasattr(f, "column"):
++                    cols.append(f.column)
++                else:
++                    cols.append(opts.get_field(f).column)
++            return cols
++
+         on_conflict_suffix_sql = self.connection.ops.on_conflict_suffix_sql(
+             fields,
+             self.query.on_conflict,
+-            self.query.update_fields,
+-            self.query.unique_fields,
++            _field_columns(self.query.update_fields),
++            _field_columns(self.query.unique_fields),
+         )
+         if (
+             self.returning_fields

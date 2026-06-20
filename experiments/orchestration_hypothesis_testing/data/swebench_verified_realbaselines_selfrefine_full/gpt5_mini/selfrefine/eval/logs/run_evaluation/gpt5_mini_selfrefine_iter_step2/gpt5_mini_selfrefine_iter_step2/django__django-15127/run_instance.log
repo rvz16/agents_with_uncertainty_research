@@ -1,0 +1,109 @@
+2026-06-19 03:41:13,350 - INFO - Creating container for django__django-15127...
+2026-06-19 03:41:13,588 - INFO - Container for django__django-15127 created: ab68d044d92fa2fcef0dc4374f7b229b5df008c5c26e117c194c1fa6d1df75f6
+2026-06-19 03:41:13,751 - INFO - Container for django__django-15127 started: ab68d044d92fa2fcef0dc4374f7b229b5df008c5c26e117c194c1fa6d1df75f6
+2026-06-19 03:41:13,752 - INFO - Intermediate patch for django__django-15127 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-15127/patch.diff, now applying to container...
+2026-06-19 03:41:13,852 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/messages/apps.py...
+Applied patch django/contrib/messages/apps.py cleanly.
+
+2026-06-19 03:41:15,163 - INFO - Git diff before:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..adf63a3761 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,39 @@
+ from django.apps import AppConfig
+ from django.utils.translation import gettext_lazy as _
++from django.conf import settings as django_settings
++from django.test.signals import setting_changed
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        """
++        Keep the storage.base.LEVEL_TAGS in sync with the MESSAGE_TAGS setting.
++        This ensures tests that use override_settings(MESSAGE_TAGS=...) get the
++        updated tags (see #16574).
++        """
++        # Import here to avoid importing message storage at module import time.
++        from django.contrib.messages import storage
++        from django.contrib.messages.storage import base
++
++        def update_level_tags(setting=None, **kwargs):
++            # Only care about changes to MESSAGE_TAGS
++            if setting != 'MESSAGE_TAGS':
++                return
++            # Rebuild LEVEL_TAGS from the module's DEFAULT_TAGS merged with the
++            # current MESSAGE_TAGS setting.
++            try:
++                default_tags = base.DEFAULT_TAGS.copy()
++            except AttributeError:
++                # If DEFAULT_TAGS isn't present for some reason, fall back to
++                # existing LEVEL_TAGS (if any).
++                default_tags = getattr(base, 'LEVEL_TAGS', {}).copy()
++            default_tags.update(getattr(django_settings, 'MESSAGE_TAGS', {}))
++            base.LEVEL_TAGS = default_tags
++
++        # Initialize LEVEL_TAGS with current settings at startup.
++        update_level_tags(setting='MESSAGE_TAGS')
++        # Listen for setting changes (used by override_settings in tests).
++        setting_changed.connect(update_level_tags, dispatch_uid='django.contrib.messages.update_level_tags')
+2026-06-19 03:41:15,164 - INFO - Eval script for django__django-15127 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-15127/eval.sh; copying to container...
+2026-06-19 03:41:39,719 - INFO - Test runtime: 24.50 seconds
+2026-06-19 03:41:39,721 - INFO - Test output for django__django-15127 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-15127/test_output.txt
+2026-06-19 03:41:39,817 - INFO - Git diff after:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..adf63a3761 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,39 @@
+ from django.apps import AppConfig
+ from django.utils.translation import gettext_lazy as _
++from django.conf import settings as django_settings
++from django.test.signals import setting_changed
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        """
++        Keep the storage.base.LEVEL_TAGS in sync with the MESSAGE_TAGS setting.
++        This ensures tests that use override_settings(MESSAGE_TAGS=...) get the
++        updated tags (see #16574).
++        """
++        # Import here to avoid importing message storage at module import time.
++        from django.contrib.messages import storage
++        from django.contrib.messages.storage import base
++
++        def update_level_tags(setting=None, **kwargs):
++            # Only care about changes to MESSAGE_TAGS
++            if setting != 'MESSAGE_TAGS':
++                return
++            # Rebuild LEVEL_TAGS from the module's DEFAULT_TAGS merged with the
++            # current MESSAGE_TAGS setting.
++            try:
++                default_tags = base.DEFAULT_TAGS.copy()
++            except AttributeError:
++                # If DEFAULT_TAGS isn't present for some reason, fall back to
++                # existing LEVEL_TAGS (if any).
++                default_tags = getattr(base, 'LEVEL_TAGS', {}).copy()
++            default_tags.update(getattr(django_settings, 'MESSAGE_TAGS', {}))
++            base.LEVEL_TAGS = default_tags
++
++        # Initialize LEVEL_TAGS with current settings at startup.
++        update_level_tags(setting='MESSAGE_TAGS')
++        # Listen for setting changes (used by override_settings in tests).
++        setting_changed.connect(update_level_tags, dispatch_uid='django.contrib.messages.update_level_tags')
+2026-06-19 03:41:39,818 - INFO - Grading answer for django__django-15127...
+2026-06-19 03:41:39,819 - INFO - report: {'django__django-15127': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_override_settings_level_tags (messages_tests.tests.TestLevelTags)']}, 'PASS_TO_PASS': {'success': ['test_eq (messages_tests.tests.MessageTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15127: resolved: False
+2026-06-19 03:41:39,820 - INFO - Attempting to stop container sweb.eval.django__django-15127.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 03:41:55,070 - INFO - Attempting to remove container sweb.eval.django__django-15127.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 03:41:55,094 - INFO - Container sweb.eval.django__django-15127.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 03:41:55,094 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15127:latest...
+2026-06-19 03:41:55,657 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15127:latest removed.

@@ -1,0 +1,111 @@
+2026-06-19 07:55:21,399 - INFO - Creating container for sympy__sympy-20916...
+2026-06-19 07:55:21,498 - INFO - Container for sympy__sympy-20916 created: 61903df72b19afd167d09f5e51ac013a2ad4327c116514c26be0f69ac96de478
+2026-06-19 07:55:21,660 - INFO - Container for sympy__sympy-20916 started: 61903df72b19afd167d09f5e51ac013a2ad4327c116514c26be0f69ac96de478
+2026-06-19 07:55:21,660 - INFO - Intermediate patch for sympy__sympy-20916 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-20916/patch.diff, now applying to container...
+2026-06-19 07:55:21,774 - INFO - >>>>> Applied Patch:
+Checking patch sympy/printing/conventions.py...
+Applied patch sympy/printing/conventions.py cleanly.
+
+2026-06-19 07:55:22,672 - INFO - Git diff before:
+diff --git a/sympy/printing/conventions.py b/sympy/printing/conventions.py
+index 9a3be6bbe9..dbba8f1496 100644
+--- a/sympy/printing/conventions.py
++++ b/sympy/printing/conventions.py
+@@ -7,7 +7,11 @@
+ from collections.abc import Iterable
+ from sympy import Derivative
+ 
+-_name_with_digits_p = re.compile(r'^([a-zA-Z]+)([0-9]+)$')
++# Previously this used an ASCII-only regex to detect names that end with
++# digits (e.g. "x1" -> ("x","1")). That failed for non-ASCII letters
++# (e.g. Greek letters like "ω0"). We don't rely on an ASCII regex here;
++# instead we perform a Unicode-aware check in split_super_sub below.
++_name_with_digits_p = None
+ 
+ 
+ def split_super_sub(text):
+@@ -61,11 +65,23 @@ def split_super_sub(text):
+             raise RuntimeError("This should never happen.")
+ 
+     # make a little exception when a name ends with digits, i.e. treat them
+-    # as a subscript too.
+-    m = _name_with_digits_p.match(name)
+-    if m:
+-        name, sub = m.groups()
+-        subs.insert(0, sub)
++    # as a subscript too. Use Unicode-aware checks: trailing characters that
++    # are digits (str.isdigit) are split off only if the prefix consists
++    # entirely of letters (str.isalpha), which handles Greek and other
++    # non-ASCII letters correctly.
++    if name:
++        # find length of trailing digit suffix
++        i = len(name)
++        while i > 0 and name[i - 1].isdigit():
++            i -= 1
++        if i < len(name):
++            prefix = name[:i]
++            suffix = name[i:]
++            # only treat as name+digits if the prefix is non-empty and
++            # consists entirely of alphabetic characters (Unicode-aware)
++            if prefix and all(ch.isalpha() for ch in prefix):
++                name = prefix
++                subs.insert(0, suffix)
+ 
+     return name, supers, subs
+2026-06-19 07:55:22,674 - INFO - Eval script for sympy__sympy-20916 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-20916/eval.sh; copying to container...
+2026-06-19 07:55:37,629 - INFO - Test runtime: 14.89 seconds
+2026-06-19 07:55:37,631 - INFO - Test output for sympy__sympy-20916 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-20916/test_output.txt
+2026-06-19 07:55:37,731 - INFO - Git diff after:
+diff --git a/sympy/printing/conventions.py b/sympy/printing/conventions.py
+index 9a3be6bbe9..dbba8f1496 100644
+--- a/sympy/printing/conventions.py
++++ b/sympy/printing/conventions.py
+@@ -7,7 +7,11 @@
+ from collections.abc import Iterable
+ from sympy import Derivative
+ 
+-_name_with_digits_p = re.compile(r'^([a-zA-Z]+)([0-9]+)$')
++# Previously this used an ASCII-only regex to detect names that end with
++# digits (e.g. "x1" -> ("x","1")). That failed for non-ASCII letters
++# (e.g. Greek letters like "ω0"). We don't rely on an ASCII regex here;
++# instead we perform a Unicode-aware check in split_super_sub below.
++_name_with_digits_p = None
+ 
+ 
+ def split_super_sub(text):
+@@ -61,11 +65,23 @@ def split_super_sub(text):
+             raise RuntimeError("This should never happen.")
+ 
+     # make a little exception when a name ends with digits, i.e. treat them
+-    # as a subscript too.
+-    m = _name_with_digits_p.match(name)
+-    if m:
+-        name, sub = m.groups()
+-        subs.insert(0, sub)
++    # as a subscript too. Use Unicode-aware checks: trailing characters that
++    # are digits (str.isdigit) are split off only if the prefix consists
++    # entirely of letters (str.isalpha), which handles Greek and other
++    # non-ASCII letters correctly.
++    if name:
++        # find length of trailing digit suffix
++        i = len(name)
++        while i > 0 and name[i - 1].isdigit():
++            i -= 1
++        if i < len(name):
++            prefix = name[:i]
++            suffix = name[i:]
++            # only treat as name+digits if the prefix is non-empty and
++            # consists entirely of alphabetic characters (Unicode-aware)
++            if prefix and all(ch.isalpha() for ch in prefix):
++                name = prefix
++                subs.insert(0, suffix)
+ 
+     return name, supers, subs
+2026-06-19 07:55:37,732 - INFO - Grading answer for sympy__sympy-20916...
+2026-06-19 07:55:37,733 - INFO - report: {'sympy__sympy-20916': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_super_sub'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_requires_partial'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-20916: resolved: True
+2026-06-19 07:55:37,734 - INFO - Attempting to stop container sweb.eval.sympy__sympy-20916.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:55:52,975 - INFO - Attempting to remove container sweb.eval.sympy__sympy-20916.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:55:52,993 - INFO - Container sweb.eval.sympy__sympy-20916.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 07:55:52,994 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-20916:latest...
+2026-06-19 07:55:53,333 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-20916:latest removed.

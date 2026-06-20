@@ -1,0 +1,91 @@
+2026-06-19 04:11:03,011 - INFO - Creating container for django__django-16661...
+2026-06-19 04:11:03,214 - INFO - Container for django__django-16661 created: 2ae455318a61fe11462a48cf404e64ebd2ede3cf3f656bb34ed09377af6075b1
+2026-06-19 04:11:03,370 - INFO - Container for django__django-16661 started: 2ae455318a61fe11462a48cf404e64ebd2ede3cf3f656bb34ed09377af6075b1
+2026-06-19 04:11:03,371 - INFO - Intermediate patch for django__django-16661 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-16661/patch.diff, now applying to container...
+2026-06-19 04:11:03,499 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/admin/options.py...
+Applied patch django/contrib/admin/options.py cleanly.
+
+2026-06-19 04:11:04,911 - INFO - Git diff before:
+diff --git a/django/contrib/admin/options.py b/django/contrib/admin/options.py
+index 5240b07cd6..072a539e67 100644
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -464,11 +464,26 @@ class BaseModelAdmin(metaclass=forms.MediaDefiningClass):
+             # It is allowed to filter on values that would be found from local
+             # model anyways. For example, if you filter on employee__department__id,
+             # then the id value would be found already from employee__department_id.
+-            if not prev_field or (
+-                prev_field.is_relation
+-                and field not in prev_field.path_infos[-1].target_fields
+-            ):
++            # However, if the target field(s) of the previous relation are themselves
++            # relational (for example, a FK/OneToOne used as the primary key), we
++            # must not treat the lookup as redundant because collapsing the path
++            # would change semantics.
++            if not prev_field:
+                 relation_parts.append(part)
++            else:
++                # prev_field is a relation: only consider the next part redundant
++                # if it matches the previous relation's target_fields and those
++                # target fields are not relational themselves.
++                if not prev_field.is_relation:
++                    relation_parts.append(part)
++                else:
++                    target_fields = prev_field.path_infos[-1].target_fields
++                    # If the next field isn't one of the target fields, or any of
++                    # the target fields are relational, we must keep the part.
++                    if field not in target_fields or any(
++                        getattr(tf, "is_relation", False) for tf in target_fields
++                    ):
++                        relation_parts.append(part)
+             if not getattr(field, "path_infos", None):
+                 # This is not a relational field, so further parts
+                 # must be transforms.
+2026-06-19 04:11:04,912 - INFO - Eval script for django__django-16661 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-16661/eval.sh; copying to container...
+2026-06-19 04:11:28,527 - INFO - Test runtime: 23.57 seconds
+2026-06-19 04:11:28,528 - INFO - Test output for django__django-16661 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-16661/test_output.txt
+2026-06-19 04:11:28,625 - INFO - Git diff after:
+diff --git a/django/contrib/admin/options.py b/django/contrib/admin/options.py
+index 5240b07cd6..072a539e67 100644
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -464,11 +464,26 @@ class BaseModelAdmin(metaclass=forms.MediaDefiningClass):
+             # It is allowed to filter on values that would be found from local
+             # model anyways. For example, if you filter on employee__department__id,
+             # then the id value would be found already from employee__department_id.
+-            if not prev_field or (
+-                prev_field.is_relation
+-                and field not in prev_field.path_infos[-1].target_fields
+-            ):
++            # However, if the target field(s) of the previous relation are themselves
++            # relational (for example, a FK/OneToOne used as the primary key), we
++            # must not treat the lookup as redundant because collapsing the path
++            # would change semantics.
++            if not prev_field:
+                 relation_parts.append(part)
++            else:
++                # prev_field is a relation: only consider the next part redundant
++                # if it matches the previous relation's target_fields and those
++                # target fields are not relational themselves.
++                if not prev_field.is_relation:
++                    relation_parts.append(part)
++                else:
++                    target_fields = prev_field.path_infos[-1].target_fields
++                    # If the next field isn't one of the target fields, or any of
++                    # the target fields are relational, we must keep the part.
++                    if field not in target_fields or any(
++                        getattr(tf, "is_relation", False) for tf in target_fields
++                    ):
++                        relation_parts.append(part)
+             if not getattr(field, "path_infos", None):
+                 # This is not a relational field, so further parts
+                 # must be transforms.
+2026-06-19 04:11:28,626 - INFO - Grading answer for django__django-16661...
+2026-06-19 04:11:28,628 - INFO - report: {'django__django-16661': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_lookup_allowed_foreign_primary (modeladmin.tests.ModelAdminTests.test_lookup_allowed_foreign_primary)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['has_add_permission returns True for users who can add objects and', 'has_change_permission returns True for users who can edit objects and', 'has_delete_permission returns True for users who can delete objects and', 'as_module_permission returns True for users who have any permission', 'has_view_permission() returns True for users who can view objects and', 'test_inline_has_add_permission_uses_obj (modeladmin.tests.ModelAdminPermissionTests.test_inline_has_add_permission_uses_obj)', "The custom ModelForm's `Meta.exclude` is overridden if", "The custom ModelForm's `Meta.exclude` is respected when used in", 'test_custom_form_validation (modeladmin.tests.ModelAdminTests.test_custom_form_validation)', 'test_custom_formfield_override_readonly (modeladmin.tests.ModelAdminTests.test_custom_formfield_override_readonly)', 'test_default_attributes (modeladmin.tests.ModelAdminTests.test_default_attributes)', 'test_default_fields (modeladmin.tests.ModelAdminTests.test_default_fields)', 'test_default_fieldsets (modeladmin.tests.ModelAdminTests.test_default_fieldsets)', 'test_default_foreign_key_widget (modeladmin.tests.ModelAdminTests.test_default_foreign_key_widget)', 'test_field_arguments (modeladmin.tests.ModelAdminTests.test_field_arguments)', 'test_field_arguments_restricted_on_form (modeladmin.tests.ModelAdminTests.test_field_arguments_restricted_on_form)', 'test_foreign_key_as_radio_field (modeladmin.tests.ModelAdminTests.test_foreign_key_as_radio_field)', 'The `exclude` kwarg passed to `ModelAdmin.get_form()` overrides all', 'The `exclude` kwarg passed to `InlineModelAdmin.get_formset()`', 'test_formset_overriding_get_exclude_with_form_exclude (modeladmin.tests.ModelAdminTests.test_formset_overriding_get_exclude_with_form_exclude)', 'test_formset_overriding_get_exclude_with_form_fields (modeladmin.tests.ModelAdminTests.test_formset_overriding_get_exclude_with_form_fields)', 'test_get_autocomplete_fields (modeladmin.tests.ModelAdminTests.test_get_autocomplete_fields)', 'test_get_deleted_objects (modeladmin.tests.ModelAdminTests.test_get_deleted_objects)', 'ModelAdmin.get_deleted_objects() uses ModelAdmin.has_delete_permission()', 'test_get_exclude_overrides_exclude (modeladmin.tests.ModelAdminTests.test_get_exclude_overrides_exclude)', 'test_get_exclude_takes_obj (modeladmin.tests.ModelAdminTests.test_get_exclude_takes_obj)', 'test_get_fieldsets (modeladmin.tests.ModelAdminTests.test_get_fieldsets)', 'test_log_actions (modeladmin.tests.ModelAdminTests.test_log_actions)', "A lookup_allowed allows a parameter whose field lookup doesn't exist.", 'test_lookup_allowed_onetoone (modeladmin.tests.ModelAdminTests.test_lookup_allowed_onetoone)', 'test_modeladmin_repr (modeladmin.tests.ModelAdminTests.test_modeladmin_repr)', 'test_modeladmin_str (modeladmin.tests.ModelAdminTests.test_modeladmin_str)', 'test_overriding_get_exclude (modeladmin.tests.ModelAdminTests.test_overriding_get_exclude)', 'test_queryset_override (modeladmin.tests.ModelAdminTests.test_queryset_override)', 'The autocomplete_fields, raw_id_fields, and radio_fields widgets may', '`obj` is passed from `InlineModelAdmin.get_fieldsets()` to'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16661: resolved: True
+2026-06-19 04:11:28,629 - INFO - Attempting to stop container sweb.eval.django__django-16661.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 04:11:43,902 - INFO - Attempting to remove container sweb.eval.django__django-16661.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 04:11:43,919 - INFO - Container sweb.eval.django__django-16661.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 04:11:43,919 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-16661:latest...
+2026-06-19 04:11:44,453 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-16661:latest removed.

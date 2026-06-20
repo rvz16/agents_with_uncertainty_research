@@ -1,0 +1,74 @@
+--- a/sphinx/builders/html/transforms.py
++++ b/sphinx/builders/html/transforms.py
+@@ -37,26 +37,55 @@
+     """
+     default_priority = 400
+     builders = ('html',)
+-    pattern = re.compile(r'(-|\+|\^|\s+)')
+ 
+-    def run(self, **kwargs: Any) -> None:
+-        matcher = NodeMatcher(nodes.literal, classes=["kbd"])
+-        for node in self.document.traverse(matcher):  # type: nodes.literal
+-            parts = self.pattern.split(node[-1].astext())
+-            if len(parts) == 1:
++    def _split_keys(self, text: str):
++        """Split a keyboard string into a sequence of ('key'|'sep', text) items.
++
++        Separators are whitespace sequences and the characters '-', '+' and '^'
++        when they appear between two non-space characters. If '-', '+', '^'
++        appear at the start or end (or adjacent to whitespace), they are treated
++        as part of a key (so a standalone '+' will be a single key).
++        """
++        sep_chars = set('-+^')
++        s = text
++        L = len(s)
++        i = 0
++        items = []
++
++        while i < L:
++            ch = s[i]
++            # whitespace separator (keep as-is)
++            if ch.isspace():
++                j = i + 1
++                while j < L and s[j].isspace():
++                    j += 1
++                items.append(('sep', s[i:j]))
++                i = j
+                 continue
+ 
+-            node.pop()
+-            while parts:
+-                key = parts.pop(0)
+-                node += nodes.literal('', key, classes=["kbd"])
++            # potential separator char (-, +, ^)
++            if ch in sep_chars:
++                left_nonspace = any(not c.isspace() for c in s[:i])
++                right_nonspace = any(not c.isspace() for c in s[i+1:])
++                # treat as separator only if there is a non-space character on both sides
++                if left_nonspace and right_nonspace:
++                    items.append(('sep', ch))
++                    i += 1
++                    continue
++                # otherwise fall through and treat as part of a key
+ 
+-                try:
+-                    # key separator (ex. -, +, ^)
+-                    sep = parts.pop(0)
+-                    node += nodes.Text(sep)
+-                except IndexError:
+-                    pass
++            # parse a key token: consume until whitespace or a separator char that qualifies
++            j = i + 1
++            while j < L:
++                if s[j].isspace():
++                    break
++                if s[j] in sep_chars:
++                    ln = any(not c.isspace() for c in s[:j])
++                    rn = any(not c.isspace() for c in s[j+1:])
++                    # if this sep char qualifies as a separator (between two non-space
++                    # characters), stop before it; otherwise include it as part of the key
++                    if ln and rn:
++                       
+ 
+ 
+ def setup(app: Sphinx) -> Dict[str, Any]:

@@ -1,0 +1,45 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -533,7 +533,21 @@
+         # Created uniques
+         for field_names in news.difference(olds):
+             fields = [model._meta.get_field(field) for field in field_names]
+-            self.execute(self._create_unique_sql(model, fields))
++            # Avoid creating a duplicate UNIQUE constraint if one already
++            # exists on these columns (for example, a single-column
++            # unique_together overlapping with a field's unique=True).
++            columns = [f.column for f in fields]
++            meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
++            meta_index_names = {constraint.name for constraint in model._meta.indexes}
++            existing = self._constraint_names(
++                model,
++                columns,
++                unique=True,
++                primary_key=False,
++                exclude=meta_constraint_names | meta_index_names,
++            )
++            if not existing:
++                self.execute(self._create_unique_sql(model, fields))
+ 
+     def alter_index_together(self, model, old_index_together, new_index_together):
+         """
+@@ -562,11 +576,18 @@
+         }
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
++        # If we're deleting a UNIQUE composed index, exclude primary key
++        # constraints from consideration so we don't attempt to drop the PK
++        # when a separate UNIQUE constraint exists on the same columns
++        # (e.g. unique_together = (('id',),) when the column is a PK).
++        kwargs = dict(constraint_kwargs)
++        if kwargs.get("unique") is True and "primary_key" not in kwargs:
++            kwargs["primary_key"] = False
+         constraint_names = self._constraint_names(
+             model,
+             columns,
+             exclude=meta_constraint_names | meta_index_names,
+-            **constraint_kwargs,
++            **kwargs,
+         )
+         if len(constraint_names) != 1:
+             raise ValueError(

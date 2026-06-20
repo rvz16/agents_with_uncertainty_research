@@ -1,0 +1,75 @@
+2026-06-19 00:14:16,031 - INFO - Creating container for scikit-learn__scikit-learn-10844...
+2026-06-19 00:14:16,206 - INFO - Container for scikit-learn__scikit-learn-10844 created: 033d3d16d2ed11e0f88d00de0c2f8f2b69537f5ba3f0afa08fc2e37151c8570f
+2026-06-19 00:14:16,335 - INFO - Container for scikit-learn__scikit-learn-10844 started: 033d3d16d2ed11e0f88d00de0c2f8f2b69537f5ba3f0afa08fc2e37151c8570f
+2026-06-19 00:14:16,336 - INFO - Intermediate patch for scikit-learn__scikit-learn-10844 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-10844/patch.diff, now applying to container...
+2026-06-19 00:14:16,447 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/metrics/cluster/supervised.py...
+Applied patch sklearn/metrics/cluster/supervised.py cleanly.
+
+2026-06-19 00:14:16,900 - INFO - Git diff before:
+diff --git a/sklearn/metrics/cluster/supervised.py b/sklearn/metrics/cluster/supervised.py
+index a987778ae..1481f58a2 100644
+--- a/sklearn/metrics/cluster/supervised.py
++++ b/sklearn/metrics/cluster/supervised.py
+@@ -853,10 +853,18 @@ def fowlkes_mallows_score(labels_true, labels_pred, sparse=False):
+     n_samples, = labels_true.shape
+ 
+     c = contingency_matrix(labels_true, labels_pred, sparse=True)
+-    tk = np.dot(c.data, c.data) - n_samples
+-    pk = np.sum(np.asarray(c.sum(axis=0)).ravel() ** 2) - n_samples
+-    qk = np.sum(np.asarray(c.sum(axis=1)).ravel() ** 2) - n_samples
+-    return tk / np.sqrt(pk * qk) if tk != 0. else 0.
++    # Perform intermediate integer computations in a wider integer dtype to
++    # avoid overflow for large counts (see issue #9515). Convert to float
++    # only for the final division/square-root to keep the result as a Python
++    # float while avoiding integer overflow when squaring/multiplying.
++    tk = np.dot(c.data.astype(np.int64), c.data.astype(np.int64)) - n_samples
++    pk = np.sum(np.asarray(c.sum(axis=0)).ravel().astype(np.int64) ** 2) - n_samples
++    qk = np.sum(np.asarray(c.sum(axis=1)).ravel().astype(np.int64) ** 2) - n_samples
++    if tk == 0:
++        return 0.0
++    # Compute as product of two square-roots of ratios in float to avoid
++    # overflow from pk * qk while preserving numerical stability.
++    return np.sqrt(float(tk) / float(pk)) * np.sqrt(float(tk) / float(qk))
+ 
+ 
+ def entropy(labels):
+2026-06-19 00:14:16,901 - INFO - Eval script for scikit-learn__scikit-learn-10844 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-10844/eval.sh; copying to container...
+2026-06-19 00:14:31,726 - INFO - Test runtime: 14.78 seconds
+2026-06-19 00:14:31,728 - INFO - Test output for scikit-learn__scikit-learn-10844 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-10844/test_output.txt
+2026-06-19 00:14:31,834 - INFO - Git diff after:
+diff --git a/sklearn/metrics/cluster/supervised.py b/sklearn/metrics/cluster/supervised.py
+index a987778ae..1481f58a2 100644
+--- a/sklearn/metrics/cluster/supervised.py
++++ b/sklearn/metrics/cluster/supervised.py
+@@ -853,10 +853,18 @@ def fowlkes_mallows_score(labels_true, labels_pred, sparse=False):
+     n_samples, = labels_true.shape
+ 
+     c = contingency_matrix(labels_true, labels_pred, sparse=True)
+-    tk = np.dot(c.data, c.data) - n_samples
+-    pk = np.sum(np.asarray(c.sum(axis=0)).ravel() ** 2) - n_samples
+-    qk = np.sum(np.asarray(c.sum(axis=1)).ravel() ** 2) - n_samples
+-    return tk / np.sqrt(pk * qk) if tk != 0. else 0.
++    # Perform intermediate integer computations in a wider integer dtype to
++    # avoid overflow for large counts (see issue #9515). Convert to float
++    # only for the final division/square-root to keep the result as a Python
++    # float while avoiding integer overflow when squaring/multiplying.
++    tk = np.dot(c.data.astype(np.int64), c.data.astype(np.int64)) - n_samples
++    pk = np.sum(np.asarray(c.sum(axis=0)).ravel().astype(np.int64) ** 2) - n_samples
++    qk = np.sum(np.asarray(c.sum(axis=1)).ravel().astype(np.int64) ** 2) - n_samples
++    if tk == 0:
++        return 0.0
++    # Compute as product of two square-roots of ratios in float to avoid
++    # overflow from pk * qk while preserving numerical stability.
++    return np.sqrt(float(tk) / float(pk)) * np.sqrt(float(tk) / float(qk))
+ 
+ 
+ def entropy(labels):
+2026-06-19 00:14:31,834 - INFO - Grading answer for scikit-learn__scikit-learn-10844...
+2026-06-19 00:14:31,837 - INFO - report: {'scikit-learn__scikit-learn-10844': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/metrics/cluster/tests/test_supervised.py::test_int_overflow_mutual_info_fowlkes_mallows_score'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/metrics/cluster/tests/test_supervised.py::test_error_messages_on_wrong_input', 'sklearn/metrics/cluster/tests/test_supervised.py::test_perfect_matches', 'sklearn/metrics/cluster/tests/test_supervised.py::test_homogeneous_but_not_complete_labeling', 'sklearn/metrics/cluster/tests/test_supervised.py::test_complete_but_not_homogeneous_labeling', 'sklearn/metrics/cluster/tests/test_supervised.py::test_not_complete_and_not_homogeneous_labeling', 'sklearn/metrics/cluster/tests/test_supervised.py::test_non_consicutive_labels', 'sklearn/metrics/cluster/tests/test_supervised.py::test_adjustment_for_chance', 'sklearn/metrics/cluster/tests/test_supervised.py::test_adjusted_mutual_info_score', 'sklearn/metrics/cluster/tests/test_supervised.py::test_expected_mutual_info_overflow', 'sklearn/metrics/cluster/tests/test_supervised.py::test_entropy', 'sklearn/metrics/cluster/tests/test_supervised.py::test_contingency_matrix', 'sklearn/metrics/cluster/tests/test_supervised.py::test_contingency_matrix_sparse', 'sklearn/metrics/cluster/tests/test_supervised.py::test_exactly_zero_info_score', 'sklearn/metrics/cluster/tests/test_supervised.py::test_v_measure_and_mutual_information', 'sklearn/metrics/cluster/tests/test_supervised.py::test_fowlkes_mallows_score', 'sklearn/metrics/cluster/tests/test_supervised.py::test_fowlkes_mallows_score_properties'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-10844: resolved: True
+2026-06-19 00:14:31,839 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-10844.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:14:47,038 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-10844.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:14:47,052 - INFO - Container sweb.eval.scikit-learn__scikit-learn-10844.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 00:14:47,053 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-10844:latest...
+2026-06-19 00:14:47,835 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-10844:latest removed.

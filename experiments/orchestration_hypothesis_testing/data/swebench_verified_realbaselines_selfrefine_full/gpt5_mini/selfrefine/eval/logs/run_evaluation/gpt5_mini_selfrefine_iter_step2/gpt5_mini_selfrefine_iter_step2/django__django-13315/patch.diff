@@ -1,0 +1,24 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1157,8 +1157,19 @@
+         queryset = self.queryset
+         # Can't use iterator() when queryset uses prefetch_related()
+         if not queryset._prefetch_related_lookups:
+-            queryset = queryset.iterator()
+-        for obj in queryset:
++            iterator = queryset.iterator()
++        else:
++            iterator = queryset
++        # Some complex filters (e.g. involving joins) can produce duplicate
++        # rows for the same object. Deduplicate in Python by primary key to
++        # avoid rendering duplicate options and to avoid database-side
++        # workarounds that may break custom fields/backends.
++        seen = set()
++        for obj in iterator:
++            pk = getattr(obj, 'pk', None)
++            if pk in seen:
++                continue
++            seen.add(pk)
+             yield self.choice(obj)
+ 
+     def __len__(self):

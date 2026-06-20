@@ -1,0 +1,21 @@
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -353,6 +353,18 @@
+         return '(0.0 if {e} == 0 else {f}(1, {e}))'.format(
+             f=self._module_format('math.copysign'), e=self._print(e.args[0]))
+ 
++    def _print_Indexed(self, expr):
++        """Print an indexed object like base[index0, index1, ...].
++
++        Uses the printer for the base and indices and parenthesizes the base
++        when necessary according to the precedence of the indexing operation.
++        """
++        PREC = precedence(expr)
++        base, *indices = expr.args
++        base_str = self.parenthesize(base, PREC)
++        idxs = ", ".join(self._print(ind) for ind in indices)
++        return "{base}[{idxs}]".format(base=base_str, idxs=idxs)
++
+     def _print_Not(self, expr):
+         PREC = precedence(expr)
+         return self._operators['not'] + self.parenthesize(expr.args[0], PREC)

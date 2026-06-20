@@ -1,0 +1,24 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -725,6 +725,21 @@
+             if isinstance(obj, ObjectMember) and obj.docstring:
+                 # hack for ClassDocumenter to inject docstring via ObjectMember
+                 doc = obj.docstring
++
++            # If analyzer provides attribute docs (from comments like
++            # "#: ..." or inline comments), consider them for metadata
++            # (e.g. :meta public:) as well.  Prefer to append analyzer
++            # docs so metadata from either source is honored.
++            if attr_docs and (namespace, membername) in attr_docs:
++                attr_doc = attr_docs[(namespace, membername)]
++                # attr_docs entries are lists of lines; join if needed.
++                if isinstance(attr_doc, (list, tuple)):
++                    attr_doc = '\n'.join(attr_doc)
++                if doc:
++                    # combine both sources so metadata in either is seen
++                    doc = doc + '\n' + attr_doc
++                else:
++                    doc = attr_doc
+ 
+             has_doc = bool(doc)
+ 

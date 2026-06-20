@@ -1,0 +1,37 @@
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -366,27 +366,14 @@
+ 
+         mname = self.dom.createElement('mml:mi')
+         mname.appendChild(self.dom.createTextNode(name))
++
++        # If there are no super/sub scripts, return a plain identifier element.
++        # If there are scripts, return the appropriate script element (msub, msup,
++        # msubsup) as the top-level node rather than wrapping it inside another
++        # identifier element. Wrapping the script element inside an <mi> (or <ci>)
++        # can cause rendering issues in some browsers (e.g. Safari).
+         if len(supers) == 0:
+-            if len(subs) == 0:
+-                ci.appendChild(self.dom.createTextNode(name))
+-            else:
+-                msub = self.dom.createElement('mml:msub')
+-                msub.appendChild(mname)
+-                msub.appendChild(join(subs))
+-                ci.appendChild(msub)
+-        else:
+-            if len(subs) == 0:
+-                msup = self.dom.createElement('mml:msup')
+-                msup.appendChild(mname)
+-                msup.appendChild(join(supers))
+-                ci.appendChild(msup)
+-            else:
+-                msubsup = self.dom.createElement('mml:msubsup')
+-                msubsup.appendChild(mname)
+-                msubsup.appendChild(join(subs))
+-                msubsup.appendChild(join(supers))
+-                ci.appendChild(msubsup)
+-        return ci
++            if len(subs)
+ 
+     _print_MatrixSymbol = _print_Symbol
+     _print_RandomSymbol = _print_Symbol

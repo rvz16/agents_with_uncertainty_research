@@ -1,0 +1,18 @@
+--- a/django/db/models/functions/math.py
++++ b/django/db/models/functions/math.py
+@@ -144,6 +144,15 @@
+ class Random(NumericOutputFieldMixin, Func):
+     function = 'RANDOM'
+     arity = 0
++    # Random doesn't reference any columns, so mark it accordingly to avoid
++    # being added to GROUP BY clauses as a grouping expression when used in
++    # order_by (e.g. order_by('?')).
++    contains_column_references = False
++
++    def get_source_expressions(self):
++        # Ensure no source expressions are reported for Random(), making it
++        # explicit that this expression doesn't reference any columns.
++        return []
+ 
+     def as_mysql(self, compiler, connection, **extra_context):
+         return super().as_sql(compiler, connection, function='RAND', **extra_context)

@@ -1,0 +1,28 @@
+--- a/django/utils/formats.py
++++ b/django/utils/formats.py
+@@ -7,6 +7,7 @@
+ 
+ from django.conf import settings
+ from django.utils import dateformat, numberformat
++from django.utils.encoding import force_str
+ from django.utils.functional import lazy
+ from django.utils.translation import check_for_language, get_language, to_locale
+ 
+@@ -113,6 +114,17 @@
+             use_l10n = settings.USE_L10N
+     if use_l10n and lang is None:
+         lang = get_language()
++
++    # Support lazy strings (Promise objects) for format_type (e.g. _('Y-m-d')).
++    # Coerce lazy translations to regular str so getattr() and the cache key
++    # use a plain string and don't raise TypeError.
++    try:
++        format_type = force_str(format_type)
++    except Exception:
++        # If coercion fails for some reason, fall back to the original value;
++        # getattr() will raise a clear error if it's an invalid attribute name.
++        pass
++
+     cache_key = (format_type, lang)
+     try:
+         return _format_cache[cache_key]

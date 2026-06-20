@@ -1,0 +1,23 @@
+--- a/sympy/physics/units/unitsystem.py
++++ b/sympy/physics/units/unitsystem.py
+@@ -190,10 +190,16 @@
+                 dim /= idim**count
+             return factor, dim
+         elif isinstance(expr, Function):
+-            fds = [self._collect_factor_and_dimension(
+-                arg) for arg in expr.args]
+-            return (expr.func(*(f[0] for f in fds)),
+-                    *(d[1] for d in fds))
++            fds = [self._collect_factor_and_dimension(arg) for arg in expr.args]
++            arg_factors = [f[0] for f in fds]
++            arg_dims = [f[1] for f in fds]
++            # If all arguments are dimensionless then the function result is
++            # dimensionless (e.g., exp(x) requires x to be dimensionless).
++            if all(self.get_dimension_system().is_dimensionless(d) for d in arg_dims):
++                return expr.func(*arg_factors), Dimension(1)
++            # Otherwise preserve the dimensional form by applying the function
++            # to the argument dimensions.
++            return expr.func(*arg_factors), expr.func(*arg_dims)
+         elif isinstance(expr, Dimension):
+             return S.One, expr
+         else:

@@ -1,0 +1,99 @@
+2026-06-19 03:48:30,236 - INFO - Creating container for django__django-15554...
+2026-06-19 03:48:31,504 - INFO - Container for django__django-15554 created: b852342a4f2c23790ee0da23164e66d849586943869cb857df6b2194ee4b56ea
+2026-06-19 03:48:31,641 - INFO - Container for django__django-15554 started: b852342a4f2c23790ee0da23164e66d849586943869cb857df6b2194ee4b56ea
+2026-06-19 03:48:31,642 - INFO - Intermediate patch for django__django-15554 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-15554/patch.diff, now applying to container...
+2026-06-19 03:48:31,747 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/sql/query.py...
+Applied patch django/db/models/sql/query.py cleanly.
+
+2026-06-19 03:48:33,105 - INFO - Git diff before:
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 54f3258eac..10a5a38c96 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1024,11 +1024,29 @@ class Query(BaseExpression):
+         sure chains like t1 LOUTER t2 INNER t3 aren't generated. All new
+         joins are created as LOUTER if the join is nullable.
+         """
+-        reuse_aliases = [
+-            a
+-            for a, j in self.alias_map.items()
+-            if (reuse is None or a in reuse) and j.equals(join)
+-        ]
++        reuse_aliases = []
++        for a, j in self.alias_map.items():
++            if not ((reuse is None) or (a in reuse)):
++                continue
++            if not j.equals(join):
++                continue
++            # If the join being created has a filtered_relation, only reuse an
++            # existing join if it has the same filtered_relation alias. This
++            # prevents different FilteredRelation annotations that target the
++            # same table path but have different filtering conditions from
++            # collapsing into a single SQL JOIN.
++            j_fr = getattr(j, "filtered_relation", None)
++            join_fr = getattr(join, "filtered_relation", None)
++            if (j_fr is None) and (join_fr is None):
++                reuse_aliases.append(a)
++            elif (j_fr is not None) and (join_fr is not None):
++                # Compare by alias which is assigned when the FilteredRelation
++                # is added to the query; this identifies distinct filtered
++                # relations even if other join attributes are identical.
++                if getattr(j_fr, "alias", None) == getattr(join_fr, "alias", None):
++                    reuse_aliases.append(a)
++            # Otherwise, one has a filtered_relation and the other doesn't -
++            # they are not equivalent and must not be reused.
+         if reuse_aliases:
+             if join.table_alias in reuse_aliases:
+                 reuse_alias = join.table_alias
+2026-06-19 03:48:33,106 - INFO - Eval script for django__django-15554 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-15554/eval.sh; copying to container...
+2026-06-19 03:48:58,399 - INFO - Test runtime: 25.25 seconds
+2026-06-19 03:48:58,401 - INFO - Test output for django__django-15554 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-15554/test_output.txt
+2026-06-19 03:48:58,494 - INFO - Git diff after:
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 54f3258eac..10a5a38c96 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1024,11 +1024,29 @@ class Query(BaseExpression):
+         sure chains like t1 LOUTER t2 INNER t3 aren't generated. All new
+         joins are created as LOUTER if the join is nullable.
+         """
+-        reuse_aliases = [
+-            a
+-            for a, j in self.alias_map.items()
+-            if (reuse is None or a in reuse) and j.equals(join)
+-        ]
++        reuse_aliases = []
++        for a, j in self.alias_map.items():
++            if not ((reuse is None) or (a in reuse)):
++                continue
++            if not j.equals(join):
++                continue
++            # If the join being created has a filtered_relation, only reuse an
++            # existing join if it has the same filtered_relation alias. This
++            # prevents different FilteredRelation annotations that target the
++            # same table path but have different filtering conditions from
++            # collapsing into a single SQL JOIN.
++            j_fr = getattr(j, "filtered_relation", None)
++            join_fr = getattr(join, "filtered_relation", None)
++            if (j_fr is None) and (join_fr is None):
++                reuse_aliases.append(a)
++            elif (j_fr is not None) and (join_fr is not None):
++                # Compare by alias which is assigned when the FilteredRelation
++                # is added to the query; this identifies distinct filtered
++                # relations even if other join attributes are identical.
++                if getattr(j_fr, "alias", None) == getattr(join_fr, "alias", None):
++                    reuse_aliases.append(a)
++            # Otherwise, one has a filtered_relation and the other doesn't -
++            # they are not equivalent and must not be reused.
+         if reuse_aliases:
+             if join.table_alias in reuse_aliases:
+                 reuse_alias = join.table_alias
+2026-06-19 03:48:58,494 - INFO - Grading answer for django__django-15554...
+2026-06-19 03:48:58,502 - INFO - report: {'django__django-15554': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_multiple (filtered_relation.tests.FilteredRelationTests)']}, 'PASS_TO_PASS': {'success': ['test_condition_deeper_relation_name (filtered_relation.tests.FilteredRelationTests)', 'test_condition_outside_relation_name (filtered_relation.tests.FilteredRelationTests)', 'test_deep_nested_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_eq (filtered_relation.tests.FilteredRelationTests)', 'test_internal_queryset_alias_mapping (filtered_relation.tests.FilteredRelationTests)', 'test_nested_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_nested_foreign_key_filtered_base_object (filtered_relation.tests.FilteredRelationTests)', 'test_nested_foreign_key_nested_field (filtered_relation.tests.FilteredRelationTests)', 'test_only_not_supported (filtered_relation.tests.FilteredRelationTests)', 'test_relation_name_lookup (filtered_relation.tests.FilteredRelationTests)', 'test_select_related (filtered_relation.tests.FilteredRelationTests)', 'test_select_related_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_select_related_multiple (filtered_relation.tests.FilteredRelationTests)', 'test_select_related_with_empty_relation (filtered_relation.tests.FilteredRelationTests)', 'test_with_condition_as_expression_error (filtered_relation.tests.FilteredRelationTests)', 'test_with_empty_relation_name_error (filtered_relation.tests.FilteredRelationTests)', 'test_with_m2m (filtered_relation.tests.FilteredRelationTests)', 'test_with_prefetch_related (filtered_relation.tests.FilteredRelationTests)', 'test_without_join (filtered_relation.tests.FilteredRelationTests)'], 'failure': ['filtered_relation() not only improves performance but also creates', 'test_aggregate (filtered_relation.tests.FilteredRelationAnalyticalAggregationTests)', 'test_as_subquery (filtered_relation.tests.FilteredRelationTests)', 'test_defer (filtered_relation.tests.FilteredRelationTests)', 'test_difference (filtered_relation.tests.FilteredRelationTests)', 'test_exclude_relation_with_join (filtered_relation.tests.FilteredRelationTests)', 'test_extra (filtered_relation.tests.FilteredRelationTests)', 'test_intersection (filtered_relation.tests.FilteredRelationTests)', 'test_multiple_times (filtered_relation.tests.FilteredRelationTests)', 'test_nested_chained_relations (filtered_relation.tests.FilteredRelationTests)', 'test_nested_m2m_filtered (filtered_relation.tests.FilteredRelationTests)', 'test_select_for_update (filtered_relation.tests.FilteredRelationTests)', 'test_union (filtered_relation.tests.FilteredRelationTests)', 'test_values (filtered_relation.tests.FilteredRelationTests)', 'test_values_list (filtered_relation.tests.FilteredRelationTests)', 'test_with_exclude (filtered_relation.tests.FilteredRelationTests)', 'test_with_generic_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_with_join (filtered_relation.tests.FilteredRelationTests)', 'test_with_join_and_complex_condition (filtered_relation.tests.FilteredRelationTests)', 'test_with_m2m_deep (filtered_relation.tests.FilteredRelationTests)', 'test_with_m2m_multijoin (filtered_relation.tests.FilteredRelationTests)', 'test_with_multiple_filter (filtered_relation.tests.FilteredRelationTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15554: resolved: False
+2026-06-19 03:48:58,503 - INFO - Attempting to stop container sweb.eval.django__django-15554.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 03:49:13,777 - INFO - Attempting to remove container sweb.eval.django__django-15554.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 03:49:13,798 - INFO - Container sweb.eval.django__django-15554.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 03:49:13,799 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15554:latest...
+2026-06-19 03:49:14,380 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15554:latest removed.

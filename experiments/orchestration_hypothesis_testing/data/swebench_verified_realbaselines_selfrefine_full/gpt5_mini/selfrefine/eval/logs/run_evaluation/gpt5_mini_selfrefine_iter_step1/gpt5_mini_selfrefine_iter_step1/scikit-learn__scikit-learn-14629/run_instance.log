@@ -1,0 +1,99 @@
+2026-06-19 00:29:11,514 - INFO - Creating container for scikit-learn__scikit-learn-14629...
+2026-06-19 00:29:11,796 - INFO - Container for scikit-learn__scikit-learn-14629 created: be2cd7d7064f574622a3c59ab3e09d90f8e1d889b15259e6ed5096e5c75bc882
+2026-06-19 00:29:12,029 - INFO - Container for scikit-learn__scikit-learn-14629 started: be2cd7d7064f574622a3c59ab3e09d90f8e1d889b15259e6ed5096e5c75bc882
+2026-06-19 00:29:12,031 - INFO - Intermediate patch for scikit-learn__scikit-learn-14629 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-14629/patch.diff, now applying to container...
+2026-06-19 00:29:12,150 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/multioutput.py...
+Applied patch sklearn/multioutput.py cleanly.
+
+2026-06-19 00:29:12,696 - INFO - Git diff before:
+diff --git a/sklearn/multioutput.py b/sklearn/multioutput.py
+index 463b72d40..9b5823b12 100644
+--- a/sklearn/multioutput.py
++++ b/sklearn/multioutput.py
+@@ -233,6 +233,34 @@ class MultiOutputRegressor(MultiOutputEstimator, RegressorMixin):
+     def __init__(self, estimator, n_jobs=None):
+         super().__init__(estimator, n_jobs)
+ 
++    @if_delegate_has_method('estimator')
++    def partial_fit(self, X, y, classes=None, sample_weight=None):
++        """Incrementally fit the model to data and set classes_ attribute.
++
++        Parameters
++        ----------
++        X : array-like, shape (n_samples, n_features)
++        y : array-like, shape (n_samples, n_outputs)
++        classes : list of arrays, optional
++            Classes for each output (required on first call to partial_fit).
++        sample_weight : array-like, optional
++        """
++        # Delegate to MultiOutputEstimator.partial_fit
++        super().partial_fit(X, y, classes=classes, sample_weight=sample_weight)
++        # Ensure classes_ attribute is set for compatibility with APIs
++        if classes is not None:
++            self.classes_ = [np.asarray(c) for c in classes]
++        else:
++            self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
++    def fit(self, X, y, sample_weight=None):
++        """Fit model and set classes_ attribute."""
++        super().fit(X, y, sample_weight=sample_weight)
++        # Set classes_ per estimator to be compatible with scikit-learn API
++        self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
+     @if_delegate_has_method('estimator')
+     def partial_fit(self, X, y, sample_weight=None):
+         """Incrementally fit the model to data.
+2026-06-19 00:29:12,697 - INFO - Eval script for scikit-learn__scikit-learn-14629 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-14629/eval.sh; copying to container...
+2026-06-19 00:29:48,447 - INFO - Test runtime: 35.69 seconds
+2026-06-19 00:29:48,449 - INFO - Test output for scikit-learn__scikit-learn-14629 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-14629/test_output.txt
+2026-06-19 00:29:48,571 - INFO - Git diff after:
+diff --git a/sklearn/multioutput.py b/sklearn/multioutput.py
+index 463b72d40..9b5823b12 100644
+--- a/sklearn/multioutput.py
++++ b/sklearn/multioutput.py
+@@ -233,6 +233,34 @@ class MultiOutputRegressor(MultiOutputEstimator, RegressorMixin):
+     def __init__(self, estimator, n_jobs=None):
+         super().__init__(estimator, n_jobs)
+ 
++    @if_delegate_has_method('estimator')
++    def partial_fit(self, X, y, classes=None, sample_weight=None):
++        """Incrementally fit the model to data and set classes_ attribute.
++
++        Parameters
++        ----------
++        X : array-like, shape (n_samples, n_features)
++        y : array-like, shape (n_samples, n_outputs)
++        classes : list of arrays, optional
++            Classes for each output (required on first call to partial_fit).
++        sample_weight : array-like, optional
++        """
++        # Delegate to MultiOutputEstimator.partial_fit
++        super().partial_fit(X, y, classes=classes, sample_weight=sample_weight)
++        # Ensure classes_ attribute is set for compatibility with APIs
++        if classes is not None:
++            self.classes_ = [np.asarray(c) for c in classes]
++        else:
++            self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
++    def fit(self, X, y, sample_weight=None):
++        """Fit model and set classes_ attribute."""
++        super().fit(X, y, sample_weight=sample_weight)
++        # Set classes_ per estimator to be compatible with scikit-learn API
++        self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
+     @if_delegate_has_method('estimator')
+     def partial_fit(self, X, y, sample_weight=None):
+         """Incrementally fit the model to data.
+2026-06-19 00:29:48,571 - INFO - Grading answer for scikit-learn__scikit-learn-14629...
+2026-06-19 00:29:48,574 - INFO - report: {'scikit-learn__scikit-learn-14629': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['sklearn/tests/test_multioutput.py::test_multi_output_classes_[estimator1]']}, 'PASS_TO_PASS': {'success': ['sklearn/tests/test_multioutput.py::test_multi_target_regression_partial_fit', 'sklearn/tests/test_multioutput.py::test_multi_target_regression_one_target', 'sklearn/tests/test_multioutput.py::test_multi_target_sample_weight_partial_fit', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit_parallelism', 'sklearn/tests/test_multioutput.py::test_multi_output_predict_proba', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit_no_first_classes_exception', 'sklearn/tests/test_multioutput.py::test_multi_output_classification', 'sklearn/tests/test_multioutput.py::test_multiclass_multioutput_estimator', 'sklearn/tests/test_multioutput.py::test_multiclass_multioutput_estimator_predict_proba', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_sample_weights', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit_sample_weights', 'sklearn/tests/test_multioutput.py::test_multi_output_exceptions', 'sklearn/tests/test_multioutput.py::test_classifier_chain_fit_and_predict_with_linear_svc', 'sklearn/tests/test_multioutput.py::test_classifier_chain_fit_and_predict_with_sparse_data', 'sklearn/tests/test_multioutput.py::test_classifier_chain_vs_independent_models', 'sklearn/tests/test_multioutput.py::test_base_chain_fit_and_predict', 'sklearn/tests/test_multioutput.py::test_base_chain_fit_and_predict_with_sparse_data_and_cv', 'sklearn/tests/test_multioutput.py::test_base_chain_random_order', 'sklearn/tests/test_multioutput.py::test_base_chain_crossval_fit_and_predict', 'sklearn/tests/test_multioutput.py::test_multi_output_classes_[estimator0]', 'sklearn/tests/test_multioutput.py::test_multi_output_classes_[estimator2]'], 'failure': ['sklearn/tests/test_multioutput.py::test_multi_target_regression', 'sklearn/tests/test_multioutput.py::test_multi_target_sparse_regression', 'sklearn/tests/test_multioutput.py::test_multi_target_sample_weights_api', 'sklearn/tests/test_multioutput.py::test_multi_target_sample_weights']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-14629: resolved: False
+2026-06-19 00:29:48,574 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-14629.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:30:03,797 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-14629.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:30:03,814 - INFO - Container sweb.eval.scikit-learn__scikit-learn-14629.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 00:30:03,814 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14629:latest...
+2026-06-19 00:30:04,861 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14629:latest removed.

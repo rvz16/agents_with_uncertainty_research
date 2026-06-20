@@ -1,0 +1,32 @@
+--- a/sklearn/tree/export.py
++++ b/sklearn/tree/export.py
+@@ -889,10 +889,26 @@
+     else:
+         value_fmt = "{}{} value: {}\n"
+ 
+-    if feature_names:
+-        feature_names_ = [feature_names[i] for i in tree_.feature]
++    if feature_names is not None:
++        # If the user provided feature names, map them to the features
++        # used at each node. Some nodes (leaves) have feature == TREE_UNDEFINED
++        # (e.g. -2). For those nodes we insert None as a placeholder so that
++        # indexing into feature_names is only done for defined features.
++        feature_names_ = []
++        for i in tree_.feature:
++            if i != _tree.TREE_UNDEFINED:
++                feature_names_.append(feature_names[i])
++            else:
++                feature_names_.append(None)
+     else:
+-        feature_names_ = ["feature_{}".format(i) for i in tree_.feature]
++        # No feature names provided: generate generic names for defined
++        # features and None for undefined (leaf) nodes.
++        feature_names_ = []
++        for i in tree_.feature:
++            if i != _tree.TREE_UNDEFINED:
++                feature_names_.append("feature_{}".format(i))
++            else:
++                feature_names_.append(None)
+ 
+     export_text.report = ""
+ 

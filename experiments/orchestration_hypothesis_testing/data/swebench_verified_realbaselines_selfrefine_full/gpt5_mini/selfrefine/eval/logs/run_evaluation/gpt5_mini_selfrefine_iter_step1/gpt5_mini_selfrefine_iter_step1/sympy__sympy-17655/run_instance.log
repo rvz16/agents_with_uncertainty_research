@@ -1,0 +1,63 @@
+2026-06-19 01:29:54,812 - INFO - Creating container for sympy__sympy-17655...
+2026-06-19 01:29:54,912 - INFO - Container for sympy__sympy-17655 created: f878cc037c60c47d1cb4eaa390d946b8e9baec3d6abcfa89cb23356155e703f0
+2026-06-19 01:29:55,070 - INFO - Container for sympy__sympy-17655 started: f878cc037c60c47d1cb4eaa390d946b8e9baec3d6abcfa89cb23356155e703f0
+2026-06-19 01:29:55,071 - INFO - Intermediate patch for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-17655/patch.diff, now applying to container...
+2026-06-19 01:29:55,198 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-19 01:29:56,044 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 7c978c47be..a4fc30c9db 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -278,6 +278,16 @@ def __mul__(self, factor):
+         coords = [simplify(x*factor) for x in self.args]
+         return Point(coords, evaluate=False)
+ 
++    def __rmul__(self, factor):
++        """Right-hand multiplication to support scalar * Point.
++
++        This allows expressions like `2 * Point(1, 1)` or
++        `sympify(2.0) * Point(1, 1)` to return a Point (rather than
++        a Mul of a scalar and a Point), making operations like
++        `Point(0, 0) + 2*Point(1, 1)` work as expected.
++        """
++        return self.__mul__(factor)
++
+     def __neg__(self):
+         """Negate the point."""
+         coords = [-x for x in self.args]
+2026-06-19 01:29:56,045 - INFO - Eval script for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-17655/eval.sh; copying to container...
+2026-06-19 01:30:59,997 - INFO - Test runtime: 63.90 seconds
+2026-06-19 01:31:00,001 - INFO - Test output for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-17655/test_output.txt
+2026-06-19 01:31:00,140 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 7c978c47be..a4fc30c9db 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -278,6 +278,16 @@ def __mul__(self, factor):
+         coords = [simplify(x*factor) for x in self.args]
+         return Point(coords, evaluate=False)
+ 
++    def __rmul__(self, factor):
++        """Right-hand multiplication to support scalar * Point.
++
++        This allows expressions like `2 * Point(1, 1)` or
++        `sympify(2.0) * Point(1, 1)` to return a Point (rather than
++        a Mul of a scalar and a Point), making operations like
++        `Point(0, 0) + 2*Point(1, 1)` work as expected.
++        """
++        return self.__mul__(factor)
++
+     def __neg__(self):
+         """Negate the point."""
+         coords = [-x for x in self.args]
+2026-06-19 01:31:00,140 - INFO - Grading answer for sympy__sympy-17655...
+2026-06-19 01:31:00,141 - INFO - report: {'sympy__sympy-17655': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_point', 'test_point3D'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_Point2D', 'test_issue_9214', 'test_issue_11617', 'test_transform', 'test_concyclic_doctest_bug', 'test_arguments', 'test_unit', 'test_dot', 'test__normalize_dimension'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-17655: resolved: True
+2026-06-19 01:31:00,142 - INFO - Attempting to stop container sweb.eval.sympy__sympy-17655.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 01:31:15,361 - INFO - Attempting to remove container sweb.eval.sympy__sympy-17655.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 01:31:15,383 - INFO - Container sweb.eval.sympy__sympy-17655.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 01:31:15,384 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-17655:latest...
+2026-06-19 01:31:15,746 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-17655:latest removed.

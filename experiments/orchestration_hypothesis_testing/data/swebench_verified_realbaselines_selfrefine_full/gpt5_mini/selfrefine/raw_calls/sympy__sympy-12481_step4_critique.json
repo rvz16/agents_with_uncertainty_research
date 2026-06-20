@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:16:42.885679+00:00",
+  "instance_id": "sympy__sympy-12481",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\n`Permutation` constructor fails with non-disjoint cycles\nCalling `Permutation([[0,1],[0,1]])` raises a `ValueError` instead of constructing the identity permutation.  If the cycles passed in are non-disjoint, they should be applied in left-to-right order and the resulting permutation should be returned.\r\n\r\nThis should be easy to compute.  I don't see a reason why non-disjoint cycles should be forbidden.\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/combinatorics/permutations.py\n+++ b/sympy/combinatorics/permutations.py\n@@ -893,14 +893,14 @@\n         # unless a cycle notation has been provided. A 0 will be added\n         # for convenience in case one wants to enter permutations where\n         # counting starts from 1.\n-\n+        #\n+        # Repeated elements are an error for array-form input, but for\n+        # cyclic-form input repeated elements indicate non-disjoint cycles.\n+        # In that case we allow them here and later apply the cycles\n+        # left-to-right to obtain the resulting permutation.\n         temp = flatten(args)\n-        if has_dups(temp):\n-            if is_cycle:\n-                raise ValueError('there were repeated elements; to resolve '\n-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))\n-            else:\n-                raise ValueError('there were repeated elements.')\n+        if has_dups(temp) and not is_cycle:\n+            raise ValueError('there were repeated elements.')\n         temp = set(temp)\n \n         if not is_cycle and \\\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 468,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003061
+}

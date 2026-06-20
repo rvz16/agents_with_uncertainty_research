@@ -1,0 +1,42 @@
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -3,6 +3,7 @@
+ import json
+ import re
+ from html.parser import HTMLParser
++from html import escape as _stdlib_html_escape
+ from urllib.parse import (
+     parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit,
+ )
+@@ -24,15 +25,6 @@
+ simple_url_re = re.compile(r'^https?://\[?\w', re.IGNORECASE)
+ simple_url_2_re = re.compile(r'^www\.|^(?!http)\w[^@]+\.(com|edu|gov|int|mil|net|org)($|/.*)$', re.IGNORECASE)
+ 
+-_html_escapes = {
+-    ord('&'): '&amp;',
+-    ord('<'): '&lt;',
+-    ord('>'): '&gt;',
+-    ord('"'): '&quot;',
+-    ord("'"): '&#39;',
+-}
+-
+-
+ @keep_lazy(str, SafeString)
+ def escape(text):
+     """
+@@ -42,8 +34,13 @@
+     Always escape input, even if it's already escaped and marked as such.
+     This may result in double-escaping. If this is a concern, use
+     conditional_escape() instead.
+-    """
+-    return mark_safe(str(text).translate(_html_escapes))
++
++    This implementation delegates to the Python stdlib html.escape() for
++    correctness and performance. Note that the stdlib implementation may
++    represent single quotes as '&#x27;' instead of '&#39;'; these are
++    equivalent in HTML.
++    """
++    return mark_safe(_stdlib_html_escape(str(text), quote=True))
+ 
+ 
+ _js_escapes = {

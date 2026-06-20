@@ -1,0 +1,60 @@
+--- a/sympy/sets/contains.py
++++ b/sympy/sets/contains.py
+@@ -3,6 +3,7 @@
+ from sympy.logic.boolalg import BooleanFunction
+ from sympy.utilities.misc import func_name
+ from .sets import Set
++from sympy.sets.conditionset import ConditionSet
+ 
+ 
+ class Contains(BooleanFunction):
+@@ -45,4 +46,48 @@
+             isinstance(i, (Eq, Ne))])
+ 
+     def as_set(self):
+-        raise NotImplementedError()
++        """
++        Return a Set corresponding to the free variable(s) for which this
++        Contains predicate holds.
++
++        Behavior:
++        - If the element is a single Symbol, return the underlying set `s`.
++        - If the element expression has one free symbol, return a ConditionSet
++          for that symbol with this Contains as the predicate.
++        - If the element expression has multiple free symbols, return a
++          ConditionSet over a Tuple of those symbols.
++        - If the element has no free symbols (concrete), try to evaluate
++          membership; return `s` if True, EmptySet if False, otherwise
++          a ConditionSet.
++        """
++        from sympy import Tuple as _Tuple
++
++        x, s = self.args
++
++        if not isinstance(s, Set):
++            raise TypeError('expecting Set, not %s' % func_name(s))
++
++        # If the element is a plain symbol, the set of values for which
++        # "symbol in s" holds is precisely s.
++        if x.is_Symbol:
++            return s
++
++        # If the element has no free symbols (concrete), try to evaluate.
++        if not x.free_symbols:
++            ret = s.contains(x)
++            if ret is S.true:
++                return s
++            if ret is S.false:
++                return S.EmptySet
++            # fall through to return a ConditionSet when unknown
++            return ConditionSet(x, self)
++
++        free = list(x.free_symbols)
++
++        # Single free symbol: return ConditionSet(var, Contains(expr, s))
++        if len(free) == 1:
++            return ConditionSet(free[0], self)
++
++        # Multiple free symbols: use a Tuple of symbols as the variable of the
++        # ConditionSet to represent tuples of values satisfying the predicate.
++        return ConditionSet(_Tuple(*free), self)

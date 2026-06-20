@@ -1,0 +1,105 @@
+2026-06-19 09:23:22,181 - INFO - Creating container for django__django-14170...
+2026-06-19 09:23:24,109 - INFO - Container for django__django-14170 created: d8518b67c5931bca0610afc43250a161c4e60343cd87222dc86f91c36303de86
+2026-06-19 09:23:24,255 - INFO - Container for django__django-14170 started: d8518b67c5931bca0610afc43250a161c4e60343cd87222dc86f91c36303de86
+2026-06-19 09:23:24,255 - INFO - Intermediate patch for django__django-14170 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-14170/patch.diff, now applying to container...
+2026-06-19 09:23:24,365 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/lookups.py...
+Applied patch django/db/models/lookups.py cleanly.
+
+2026-06-19 09:23:25,770 - INFO - Git diff before:
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 916478d075..e26db2e492 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -546,10 +546,36 @@ class YearLookup(Lookup):
+             bounds = connection.ops.year_lookup_bounds_for_date_field(year)
+         return bounds
+ 
++    def _skip_iso_year_optimization(self):
++        """
++        Return True when the optimization that replaces an EXTRACT(...) = year
++        lookup with a BETWEEN range should be skipped.
++
++        The optimization is invalid for ISO year extraction because an ISO
++        year does not necessarily align with the calendar year (it can start
++        in the previous calendar year). If the lhs is an ISO-year extract
++        expression (e.g. ExtractIsoYear), we must not use BETWEEN bounds.
++        """
++        lhs = self.lhs
++        # Some extract/transforms expose a 'function' name (e.g. 'isoyear').
++        func = getattr(lhs, 'function', None)
++        if func in ('isoyear', 'iso_year'):
++            return True
++        # Fallback check for the explicit ExtractIsoYear class name to avoid
++        # importing the function here and creating circular imports.
++        if lhs.__class__.__name__ == 'ExtractIsoYear':
++            return True
++        # Some transforms may expose a lookup name.
++        if getattr(lhs, 'lookup_name', None) == 'iso_year':
++            return True
++        return False
++
+     def as_sql(self, compiler, connection):
+         # Avoid the extract operation if the rhs is a direct value to allow
+         # indexes to be used.
+-        if self.rhs_is_direct_value():
++        # However, do not apply the BETWEEN optimization for ISO year
++        # extraction, because ISO years don't align with calendar year bounds.
++        if self.rhs_is_direct_value() and not self._skip_iso_year_optimization():
+             # Skip the extract part by directly using the originating field,
+             # that is self.lhs.lhs.
+             lhs_sql, params = self.process_lhs(compiler, connection, self.lhs.lhs)
+2026-06-19 09:23:25,770 - INFO - Eval script for django__django-14170 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-14170/eval.sh; copying to container...
+2026-06-19 09:23:51,491 - INFO - Test runtime: 25.67 seconds
+2026-06-19 09:23:51,493 - INFO - Test output for django__django-14170 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-14170/test_output.txt
+2026-06-19 09:23:51,602 - INFO - Git diff after:
+diff --git a/django/db/models/lookups.py b/django/db/models/lookups.py
+index 916478d075..e26db2e492 100644
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -546,10 +546,36 @@ class YearLookup(Lookup):
+             bounds = connection.ops.year_lookup_bounds_for_date_field(year)
+         return bounds
+ 
++    def _skip_iso_year_optimization(self):
++        """
++        Return True when the optimization that replaces an EXTRACT(...) = year
++        lookup with a BETWEEN range should be skipped.
++
++        The optimization is invalid for ISO year extraction because an ISO
++        year does not necessarily align with the calendar year (it can start
++        in the previous calendar year). If the lhs is an ISO-year extract
++        expression (e.g. ExtractIsoYear), we must not use BETWEEN bounds.
++        """
++        lhs = self.lhs
++        # Some extract/transforms expose a 'function' name (e.g. 'isoyear').
++        func = getattr(lhs, 'function', None)
++        if func in ('isoyear', 'iso_year'):
++            return True
++        # Fallback check for the explicit ExtractIsoYear class name to avoid
++        # importing the function here and creating circular imports.
++        if lhs.__class__.__name__ == 'ExtractIsoYear':
++            return True
++        # Some transforms may expose a lookup name.
++        if getattr(lhs, 'lookup_name', None) == 'iso_year':
++            return True
++        return False
++
+     def as_sql(self, compiler, connection):
+         # Avoid the extract operation if the rhs is a direct value to allow
+         # indexes to be used.
+-        if self.rhs_is_direct_value():
++        # However, do not apply the BETWEEN optimization for ISO year
++        # extraction, because ISO years don't align with calendar year bounds.
++        if self.rhs_is_direct_value() and not self._skip_iso_year_optimization():
+             # Skip the extract part by directly using the originating field,
+             # that is self.lhs.lhs.
+             lhs_sql, params = self.process_lhs(compiler, connection, self.lhs.lhs)
+2026-06-19 09:23:51,602 - INFO - Grading answer for django__django-14170...
+2026-06-19 09:23:51,607 - INFO - report: {'django__django-14170': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_extract_iso_year_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_iso_year_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_extract_day_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_duration_unsupported_lookups (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_duration_without_native_duration_field (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_hour_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_iso_weekday_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_iso_year_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_minute_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_month_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_none (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_quarter_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_quarter_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_second_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_week_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_week_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_weekday_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_date_none (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_day_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_hour_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_minute_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_month_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_none (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_quarter_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_second_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_subquery_with_parameters (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_time_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_time_none (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_week_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_year_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_day_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_duration_unsupported_lookups (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_duration_without_native_duration_field (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_func_explicit_timezone_priority (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_func_with_timezone (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_hour_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_invalid_field_with_timezone (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_iso_weekday_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_iso_year_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_minute_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_month_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_none (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_quarter_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_quarter_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_second_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_week_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_week_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_weekday_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_date_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_date_none (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_day_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'If the truncated datetime transitions to a different offset (daylight', 'test_trunc_hour_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_invalid_field_with_timezone (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_minute_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_month_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_none (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_quarter_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_second_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_subquery_with_parameters (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_time_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_time_none (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_timezone_applied_before_truncation (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_week_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_year_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)'], 'failure': ['Extract year uses a BETWEEN filter to compare the year to allow indexes', 'test_extract_year_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_year_greaterthan_lookup (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_year_lessthan_lookup (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_trunc_date_func (db_functions.datetime.test_extract_trunc.DateFunctionTests)', 'test_extract_year_func (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_year_greaterthan_lookup (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_extract_year_lessthan_lookup (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)', 'test_trunc_ambiguous_and_invalid_times (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14170: resolved: False
+2026-06-19 09:23:51,608 - INFO - Attempting to stop container sweb.eval.django__django-14170.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 09:24:06,903 - INFO - Attempting to remove container sweb.eval.django__django-14170.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 09:24:06,921 - INFO - Container sweb.eval.django__django-14170.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-19 09:24:06,921 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14170:latest...
+2026-06-19 09:24:07,571 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14170:latest removed.

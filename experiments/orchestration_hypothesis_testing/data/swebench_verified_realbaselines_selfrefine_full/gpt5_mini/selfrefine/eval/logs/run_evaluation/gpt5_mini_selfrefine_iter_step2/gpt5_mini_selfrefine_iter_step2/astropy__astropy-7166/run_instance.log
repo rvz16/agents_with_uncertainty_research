@@ -1,0 +1,75 @@
+2026-06-19 02:10:28,563 - INFO - Creating container for astropy__astropy-7166...
+2026-06-19 02:10:29,801 - INFO - Container for astropy__astropy-7166 created: 8dac78b1b95935c8ae2132c0c4637320e92d1c1ce6b51c5dab34104cee9ed0ca
+2026-06-19 02:10:29,960 - INFO - Container for astropy__astropy-7166 started: 8dac78b1b95935c8ae2132c0c4637320e92d1c1ce6b51c5dab34104cee9ed0ca
+2026-06-19 02:10:29,961 - INFO - Intermediate patch for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/astropy__astropy-7166/patch.diff, now applying to container...
+2026-06-19 02:10:30,066 - INFO - >>>>> Applied Patch:
+Checking patch astropy/utils/misc.py...
+Applied patch astropy/utils/misc.py cleanly.
+
+2026-06-19 02:10:30,897 - INFO - Git diff before:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..52ffadd29 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,13 +528,19 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
++            if ((inspect.isfunction(val) or inspect.isdatadescriptor(val)) and
+                 is_public_member(key) and
+-                val.__doc__ is None):
++                getattr(val, '__doc__', None) is None):
+                 for base in cls.__mro__[1:]:
+                     super_method = getattr(base, key, None)
+                     if super_method is not None:
+-                        val.__doc__ = super_method.__doc__
++                        doc = getattr(super_method, '__doc__', None)
++                        if doc:
++                            try:
++                                val.__doc__ = doc
++                            except Exception:
++                                # Some descriptor objects may not allow assigning to __doc__
++                                pass
+                         break
+ 
+         super().__init__(name, bases, dct)
+2026-06-19 02:10:30,898 - INFO - Eval script for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/astropy__astropy-7166/eval.sh; copying to container...
+2026-06-19 02:10:49,371 - INFO - Test runtime: 18.42 seconds
+2026-06-19 02:10:49,373 - INFO - Test output for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/astropy__astropy-7166/test_output.txt
+2026-06-19 02:10:49,689 - INFO - Git diff after:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..52ffadd29 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,13 +528,19 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
++            if ((inspect.isfunction(val) or inspect.isdatadescriptor(val)) and
+                 is_public_member(key) and
+-                val.__doc__ is None):
++                getattr(val, '__doc__', None) is None):
+                 for base in cls.__mro__[1:]:
+                     super_method = getattr(base, key, None)
+                     if super_method is not None:
+-                        val.__doc__ = super_method.__doc__
++                        doc = getattr(super_method, '__doc__', None)
++                        if doc:
++                            try:
++                                val.__doc__ = doc
++                            except Exception:
++                                # Some descriptor objects may not allow assigning to __doc__
++                                pass
+                         break
+ 
+         super().__init__(name, bases, dct)
+2026-06-19 02:10:49,690 - INFO - Grading answer for astropy__astropy-7166...
+2026-06-19 02:10:49,692 - INFO - report: {'astropy__astropy-7166': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_inherit_docstrings'], 'failure': []}, 'PASS_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_isiterable', 'astropy/utils/tests/test_misc.py::test_signal_number_to_name_no_failure', 'astropy/utils/tests/test_misc.py::test_skip_hidden', 'astropy/utils/tests/test_misc.py::test_JsonCustomEncoder', 'astropy/utils/tests/test_misc.py::test_check_broadcast', 'astropy/utils/tests/test_misc.py::test_dtype_bytes_or_chars'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-7166: resolved: True
+2026-06-19 02:10:49,692 - INFO - Attempting to stop container sweb.eval.astropy__astropy-7166.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 02:11:04,935 - INFO - Attempting to remove container sweb.eval.astropy__astropy-7166.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 02:11:04,947 - INFO - Container sweb.eval.astropy__astropy-7166.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 02:11:04,947 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest...
+2026-06-19 02:11:05,312 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest removed.

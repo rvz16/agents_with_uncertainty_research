@@ -1,0 +1,30 @@
+--- a/lib/matplotlib/dates.py
++++ b/lib/matplotlib/dates.py
+@@ -592,13 +592,20 @@
+ 
+ 
+ def _wrap_in_tex(text):
+-    p = r'([a-zA-Z]+)'
+-    ret_text = re.sub(p, r'}$\1$\\mathdefault{', text)
+-
+-    # Braces ensure dashes are not spaced like binary operators.
+-    ret_text = '$\\mathdefault{'+ret_text.replace('-', '{-}')+'}$'
+-    ret_text = ret_text.replace('$\\mathdefault{}$', '')
+-    return ret_text
++    """
++    Wrap date formatter text for usetex rendering.
++
++    Wrap the entire text in \mathdefault and protect characters that TeX would
++    otherwise treat as binary operators or add unwanted spacing (e.g., '-', ':'
++    and spaces). Return an empty string unchanged.
++    """
++    if not text:
++        return ''
++    # Protect hyphens and colons from math-mode spacing and give a small
++    # inter-word space for original spaces so components (e.g., date and
++    # month) don't run together.
++    text = text.replace('-', '{-}').replace(':', '{:}').replace(' ', r'\;')
++    return '$\\mathdefault{' + text + '}$'
+ 
+ 
+ ## date tickers and formatters ###

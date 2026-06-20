@@ -1,0 +1,81 @@
+2026-06-19 00:51:20,980 - INFO - Creating container for sphinx-doc__sphinx-7889...
+2026-06-19 00:51:21,043 - INFO - Container for sphinx-doc__sphinx-7889 created: ac48eb7da431c7b78f8adcf55295732742aa0728ece5a98ad429c0e5ea032a16
+2026-06-19 00:51:21,177 - INFO - Container for sphinx-doc__sphinx-7889 started: ac48eb7da431c7b78f8adcf55295732742aa0728ece5a98ad429c0e5ea032a16
+2026-06-19 00:51:21,178 - INFO - Intermediate patch for sphinx-doc__sphinx-7889 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-7889/patch.diff, now applying to container...
+2026-06-19 00:51:21,288 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/ext/autodoc/mock.py...
+Applied patch sphinx/ext/autodoc/mock.py cleanly.
+
+2026-06-19 00:51:21,722 - INFO - Git diff before:
+diff --git a/sphinx/ext/autodoc/mock.py b/sphinx/ext/autodoc/mock.py
+index 98a3a3a96..6f21023d7 100644
+--- a/sphinx/ext/autodoc/mock.py
++++ b/sphinx/ext/autodoc/mock.py
+@@ -68,12 +68,22 @@ class _MockObject:
+         return self.__display_name__
+ 
+ 
+-def _make_subclass(name: str, module: str, superclass: Any = _MockObject,
++def _make_subclass(name: Any, module: str, superclass: Any = _MockObject,
+                    attributes: Any = None) -> Any:
+-    attrs = {'__module__': module, '__display_name__': module + '.' + name}
++    # The `name` may sometimes be a typing object (TypeVar, GenericAlias, etc.)
++    # rather than a plain string. Ensure we always use a string for the class
++    # name and for display purposes to avoid TypeError when concatenating.
++    if isinstance(name, str):
++        safe_name = name
++    else:
++        # Prefer a __name__ attribute if present (common on TypeVar and similar),
++        # otherwise fall back to the string representation.
++        safe_name = getattr(name, '__name__', None) or str(name)
++
++    attrs = {'__module__': module, '__display_name__': module + '.' + safe_name}
+     attrs.update(attributes or {})
+ 
+-    return type(name, (superclass,), attrs)
++    return type(safe_name, (superclass,), attrs)
+ 
+ 
+ class _MockModule(ModuleType):
+2026-06-19 00:51:21,723 - INFO - Eval script for sphinx-doc__sphinx-7889 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-7889/eval.sh; copying to container...
+2026-06-19 00:51:34,430 - INFO - Test runtime: 12.64 seconds
+2026-06-19 00:51:34,432 - INFO - Test output for sphinx-doc__sphinx-7889 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-7889/test_output.txt
+2026-06-19 00:51:34,517 - INFO - Git diff after:
+diff --git a/sphinx/ext/autodoc/mock.py b/sphinx/ext/autodoc/mock.py
+index 98a3a3a96..6f21023d7 100644
+--- a/sphinx/ext/autodoc/mock.py
++++ b/sphinx/ext/autodoc/mock.py
+@@ -68,12 +68,22 @@ class _MockObject:
+         return self.__display_name__
+ 
+ 
+-def _make_subclass(name: str, module: str, superclass: Any = _MockObject,
++def _make_subclass(name: Any, module: str, superclass: Any = _MockObject,
+                    attributes: Any = None) -> Any:
+-    attrs = {'__module__': module, '__display_name__': module + '.' + name}
++    # The `name` may sometimes be a typing object (TypeVar, GenericAlias, etc.)
++    # rather than a plain string. Ensure we always use a string for the class
++    # name and for display purposes to avoid TypeError when concatenating.
++    if isinstance(name, str):
++        safe_name = name
++    else:
++        # Prefer a __name__ attribute if present (common on TypeVar and similar),
++        # otherwise fall back to the string representation.
++        safe_name = getattr(name, '__name__', None) or str(name)
++
++    attrs = {'__module__': module, '__display_name__': module + '.' + safe_name}
+     attrs.update(attributes or {})
+ 
+-    return type(name, (superclass,), attrs)
++    return type(safe_name, (superclass,), attrs)
+ 
+ 
+ class _MockModule(ModuleType):
+2026-06-19 00:51:34,517 - INFO - Grading answer for sphinx-doc__sphinx-7889...
+2026-06-19 00:51:34,518 - INFO - report: {'sphinx-doc__sphinx-7889': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/test_ext_autodoc_mock.py::test_MockObject'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_mock.py::test_MockModule', 'tests/test_ext_autodoc_mock.py::test_mock', 'tests/test_ext_autodoc_mock.py::test_mock_does_not_follow_upper_modules', 'tests/test_ext_autodoc_mock.py::test_abc_MockObject', 'tests/test_ext_autodoc_mock.py::test_mock_decorator'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-7889: resolved: True
+2026-06-19 00:51:34,519 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-7889.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:51:49,690 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-7889.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:51:49,706 - INFO - Container sweb.eval.sphinx-doc__sphinx-7889.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 00:51:49,706 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7889:latest...
+2026-06-19 00:51:50,127 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7889:latest removed.

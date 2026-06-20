@@ -1,0 +1,39 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -219,7 +219,25 @@
+     import __main__
+     py_script = Path(sys.argv[0])
+ 
+-    args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions]
++    def _xoptions_args():
++        """
++        Return a list of -X option arguments reflecting sys._xoptions for
++        CPython. sys._xoptions may not exist on other Python implementations.
++        """
++        xopts = getattr(sys, '_xoptions', None)
++        if not xopts:
++            return []
++        parts = []
++        # Sort for deterministic ordering.
++        for key, val in sorted(xopts.items()):
++            # Options without a value are represented as True (or possibly None).
++            if val is True or val is None:
++                parts.append(f'-X{key}')
++            else:
++                parts.append(f'-X{key}={val}')
++        return parts
++
++    args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions] + _xoptions_args()
+     # __spec__ is set when the server was started with the `-m` option,
+     # see https://docs.python.org/3/reference/import.html#main-spec
+     # __spec__ may not exist, e.g. when running in a Conda env.
+@@ -237,7 +255,8 @@
+         exe_entrypoint = py_script.with_suffix('.exe')
+         if exe_entrypoint.exists():
+             # Should be executed directly, ignoring sys.executable.
+-            return [exe_entrypoint, *sys.argv[1:]]
++            # Ensure -X options are preserved when executing the .exe directly.
++            return [exe_entrypoint, *(_xoptions_args()), *sys.argv[1:]]
+         script_entrypoint = py_script.with_name('%s-script.py' % py_script.name)
+         if script_entrypoint.exists():
+             # Should be executed as usual.

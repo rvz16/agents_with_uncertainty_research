@@ -1,0 +1,24 @@
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -496,6 +496,21 @@
+     with the results.
+     """
+     return [mark_safe(obj) for obj in value]
++
++
++@register.filter(is_safe=True)
++def escapeseq(value):
++    """
++    A filter for sequences that escapes each element in the sequence,
++    individually, and returns a list with the results.
++
++    Example usage:
++        {{ some_list|escapeseq|join:"," }}
++
++    This is useful when autoescape is off and you want each item escaped
++    before performing operations like join().
++    """
++    return [conditional_escape(obj) for obj in value]
+ 
+ 
+ @register.filter(is_safe=True)

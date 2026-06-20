@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:36:40.589568+00:00",
+  "instance_id": "django__django-15382",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nfilter on exists-subquery with empty queryset removes whole WHERE block\nDescription\n\t \n\t\t(last modified by Tobias Bengfort)\n\t \n>>> qs = MyModel.objects.filter(~models.Exists(MyModel.objects.none()), name='test')\n>>> qs\n<QuerySet []>\n>>> print(qs.query)\nEmptyResultSet\nWith django-debug-toolbar I can still see the query, but there WHERE block is missing completely.\nThis seems to be very similar to #33018.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/expressions.py\n+++ b/django/db/models/expressions.py\n@@ -1211,13 +1211,19 @@\n \n     def as_sql(self, compiler, connection, template=None, **extra_context):\n         query = self.query.exists(using=connection.alias)\n-        sql, params = super().as_sql(\n-            compiler,\n-            connection,\n-            template=template,\n-            query=query,\n-            **extra_context,\n-        )\n+        try:\n+            sql, params = super().as_sql(\n+                compiler,\n+                connection,\n+                template=template,\n+                query=query,\n+                **extra_context,\n+            )\n+        except EmptyResultSet:\n+            if self.negated:\n+                # NOT EXISTS on an empty queryset is always true.\n+                return '1 = 1', []\n+            raise\n         if self.negated:\n             sql = 'NOT {}'.format(sql)\n         return sql, params\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 432,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003052
+}

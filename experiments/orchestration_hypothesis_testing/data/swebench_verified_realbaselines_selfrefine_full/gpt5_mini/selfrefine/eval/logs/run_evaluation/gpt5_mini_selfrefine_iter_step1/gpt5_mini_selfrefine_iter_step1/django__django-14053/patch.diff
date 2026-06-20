@@ -1,0 +1,44 @@
+--- a/django/contrib/staticfiles/storage.py
++++ b/django/contrib/staticfiles/storage.py
+@@ -226,17 +226,38 @@
+             path for path in paths
+             if matches_patterns(path, self._patterns)
+         ]
++
++        # Track which original file names we've already yielded to avoid
++        # notifying collectstatic (and subclasses) multiple times for the
++        # same source file across multiple passes.
++        yielded = set()
++
+         # Do a single pass first. Post-process all files once, then repeat for
+-        # adjustable files.
++        # adjustable files. Only yield a name once: either when an exception
++        # occurs for it, or when it is actually processed (processed is True).
+         for name, hashed_name, processed, _ in self._post_process(paths, adjustable_paths, hashed_files):
+-            yield name, hashed_name, processed
++            # Only yield exceptions or files that were actually processed.
++            if name in yielded:
++                continue
++            if isinstance(processed, Exception) or processed:
++                yielded.add(name)
++                yield name, hashed_name, processed
+ 
+         paths = {path: paths[path] for path in adjustable_paths}
+ 
+         for i in range(self.max_post_process_passes):
+             substitutions = False
+             for name, hashed_name, processed, subst in self._post_process(paths, adjustable_paths, hashed_files):
+-                yield name, hashed_name, processed
++                # Only yield exceptions or files that were actually processed,
++                # and only once per original filename.
++                if name in yielded:
++                    # If we've already yielded this name (exception or processed),
++                    # skip further notifications.
++                    substitutions = substitutions or subst
++                    continue
++                if isinstance(processed, Exception) or processed:
++                    yielded.add(name)
++                    yield name, hashed_name, processed
+                 substitutions = substitutions or subst
+ 
+             if not substitutions:

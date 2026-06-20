@@ -1,0 +1,21 @@
+--- a/django/core/mail/utils.py
++++ b/django/core/mail/utils.py
+@@ -14,6 +14,18 @@
+     def get_fqdn(self):
+         if not hasattr(self, '_fqdn'):
+             self._fqdn = socket.getfqdn()
++            try:
++                # Ensure the cached FQDN is pure ASCII. If the system hostname
++                # contains non-ASCII characters, convert it to the IDNA (ACE)
++                # form (punycode) so it can safely be used in email headers.
++                self._fqdn.encode('ascii')
++            except UnicodeEncodeError:
++                try:
++                    self._fqdn = self._fqdn.encode('idna').decode('ascii')
++                except Exception:
++                    # If IDNA conversion fails for any reason, fall back to the
++                    # original value to avoid masking the underlying issue.
++                    pass
+         return self._fqdn
+ 
+ 

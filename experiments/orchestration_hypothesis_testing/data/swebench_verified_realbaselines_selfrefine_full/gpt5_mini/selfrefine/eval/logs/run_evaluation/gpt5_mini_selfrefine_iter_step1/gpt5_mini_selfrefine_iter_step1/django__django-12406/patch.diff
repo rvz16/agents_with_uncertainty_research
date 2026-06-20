@@ -1,0 +1,21 @@
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -975,6 +975,18 @@
+             raise ValueError("Cannot create form field for %r yet, because "
+                              "its related model %r has not been loaded yet" %
+                              (self.name, self.remote_field.model))
++        # If the widget provided is a RadioSelect (class or instance) and the
++        # model field does not allow blank values, avoid adding an empty
++        # choice. This prevents RadioSelect from rendering a "-------"
++        # option for required FK fields, which would otherwise appear as a
++        # pre-selected (checked) option on new forms.
++        widget = kwargs.get('widget')
++        is_radio = (
++            isinstance(widget, forms.RadioSelect) or
++            (isinstance(widget, type) and issubclass(widget, forms.RadioSelect))
++        )
++        if 'empty_label' not in kwargs and is_radio and not self.blank:
++            kwargs['empty_label'] = None
+         return super().formfield(**{
+             'form_class': forms.ModelChoiceField,
+             'queryset': self.remote_field.model._default_manager.using(using),

@@ -1,0 +1,89 @@
+--- a/lib/matplotlib/offsetbox.py
++++ b/lib/matplotlib/offsetbox.py
+@@ -1514,6 +1514,49 @@
+                 'button_release_event', self.on_release),
+         ]
+ 
++    def __getstate__(self):
++        """
++        Prepare state for pickling. Drop non-picklable/transient attributes
++        (canvas, connected callback ids, temporary interaction state).
++        """
++        state = self.__dict__.copy()
++        # canvas and callback ids are not picklable
++        state.pop('canvas', None)
++        state.pop('cids', None)
++        # transient interaction state
++        state.pop('background', None)
++        state.pop('_c1', None)
++        state.pop('got_artist', None)
++        state.pop('mouse_x', None)
++        state.pop('mouse_y', None)
++        return state
++
++    def __setstate__(self, state):
++        """
++        Restore state after unpickling. Reconnect callbacks if a canvas is
++        available via the referenced artist's figure.
++        """
++        self.__dict__.update(state)
++        # restore or initialize transient attributes
++        self.canvas = getattr(self.ref_artist.figure, 'canvas', None)
++        self.got_artist = False
++        # Re-evaluate blitting availability with the (possibly new) canvas.
++        self._use_blit = bool(getattr(self, "_use_blit", False)) and \
++                         bool(getattr(self.canvas, "supports_blit", False))
++        # Reconnect callbacks if possible.
++        self.cids = []
++        if self.canvas is not None:
++            try:
++                self.cids = [
++                    self.canvas.callbacks._connect_picklable(
++                        'pick_event', self.on_pick),
++                    self.canvas.callbacks._connect_picklable(
++                        'button_release_event', self.on_release),
++                ]
++            except Exception:
++                # If callbacks are not available for some reason, leave cids empty.
++                self.cids = []
++
+     def on_motion(self, evt):
+         if self._check_still_parented() and self.got_artist:
+             dx = evt.x - self.mouse_x
+@@ -1548,7 +1591,11 @@
+         if self._check_still_parented() and self.got_artist:
+             self.finalize_offset()
+             self.got_artist = False
+-            self.canvas.mpl_disconnect(self._c1)
++            # _c1 may not exist if pick/release sequence was interrupted
++            try:
++                self.canvas.mpl_disconnect(self._c1)
++            except Exception:
++                pass
+ 
+             if self._use_blit:
+                 self.ref_artist.set_animated(False)
+@@ -1562,14 +1609,20 @@
+ 
+     def disconnect(self):
+         """Disconnect the callbacks."""
+-        for cid in self.cids:
+-            self.canvas.mpl_disconnect(cid)
++        for cid in getattr(self, "cids", []):
++            try:
++                self.canvas.mpl_disconnect(cid)
++            except Exception:
++                pass
+         try:
+             c1 = self._c1
+         except AttributeError:
+             pass
+         else:
+-            self.canvas.mpl_disconnect(c1)
++            try:
++                self.canvas.mpl_disconnect(c1)
++            except Exception:
++                pass
+ 
+     def save_offset(self):
+         pass

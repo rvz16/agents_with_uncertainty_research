@@ -1,0 +1,73 @@
+2026-06-18 19:54:25,288 - INFO - Creating container for django__django-12155...
+2026-06-18 19:54:25,391 - INFO - Container for django__django-12155 created: 6d489811a8a0d311ed8b0cbdd8aad18ee648b3faf8d772cf7325c5ce6df85853
+2026-06-18 19:54:25,501 - INFO - Container for django__django-12155 started: 6d489811a8a0d311ed8b0cbdd8aad18ee648b3faf8d772cf7325c5ce6df85853
+2026-06-18 19:54:25,502 - INFO - Intermediate patch for django__django-12155 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-12155/patch.diff, now applying to container...
+2026-06-18 19:54:25,594 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/admindocs/utils.py...
+Applied patch django/contrib/admindocs/utils.py cleanly.
+
+2026-06-18 19:54:26,769 - INFO - Git diff before:
+diff --git a/django/contrib/admindocs/utils.py b/django/contrib/admindocs/utils.py
+index 4c0e7e2a56..ac395a10f5 100644
+--- a/django/contrib/admindocs/utils.py
++++ b/django/contrib/admindocs/utils.py
+@@ -1,6 +1,7 @@
+ "Misc. utility functions/classes for admin documentation generator."
+ 
+ import re
++import inspect
+ from email.errors import HeaderParseError
+ from email.parser import HeaderParser
+ 
+@@ -32,11 +33,8 @@ def trim_docstring(docstring):
+     """
+     if not docstring or not docstring.strip():
+         return ''
+-    # Convert tabs to spaces and split into lines
+-    lines = docstring.expandtabs().splitlines()
+-    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())
+-    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]
+-    return "\n".join(trimmed).strip()
++    # Use inspect.cleandoc which implements the algorithm defined in PEP 257.
++    return inspect.cleandoc(docstring).strip()
+ 
+ 
+ def parse_docstring(docstring):
+2026-06-18 19:54:26,771 - INFO - Eval script for django__django-12155 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-12155/eval.sh; copying to container...
+2026-06-18 19:54:48,840 - INFO - Test runtime: 22.02 seconds
+2026-06-18 19:54:48,842 - INFO - Test output for django__django-12155 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-12155/test_output.txt
+2026-06-18 19:54:48,939 - INFO - Git diff after:
+diff --git a/django/contrib/admindocs/utils.py b/django/contrib/admindocs/utils.py
+index 4c0e7e2a56..ac395a10f5 100644
+--- a/django/contrib/admindocs/utils.py
++++ b/django/contrib/admindocs/utils.py
+@@ -1,6 +1,7 @@
+ "Misc. utility functions/classes for admin documentation generator."
+ 
+ import re
++import inspect
+ from email.errors import HeaderParseError
+ from email.parser import HeaderParser
+ 
+@@ -32,11 +33,8 @@ def trim_docstring(docstring):
+     """
+     if not docstring or not docstring.strip():
+         return ''
+-    # Convert tabs to spaces and split into lines
+-    lines = docstring.expandtabs().splitlines()
+-    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())
+-    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]
+-    return "\n".join(trimmed).strip()
++    # Use inspect.cleandoc which implements the algorithm defined in PEP 257.
++    return inspect.cleandoc(docstring).strip()
+ 
+ 
+ def parse_docstring(docstring):
+2026-06-18 19:54:48,939 - INFO - Grading answer for django__django-12155...
+2026-06-18 19:54:48,940 - INFO - report: {'django__django-12155': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_parse_rst_with_docstring_no_leading_line_feed (admin_docs.test_utils.TestUtils)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_description_output (admin_docs.test_utils.TestUtils)', 'test_initial_header_level (admin_docs.test_utils.TestUtils)', 'test_parse_docstring (admin_docs.test_utils.TestUtils)', 'test_parse_rst (admin_docs.test_utils.TestUtils)', 'test_publish_parts (admin_docs.test_utils.TestUtils)', 'test_title_output (admin_docs.test_utils.TestUtils)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12155: resolved: True
+2026-06-18 19:54:48,941 - INFO - Attempting to stop container sweb.eval.django__django-12155.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:55:04,127 - INFO - Attempting to remove container sweb.eval.django__django-12155.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:55:04,142 - INFO - Container sweb.eval.django__django-12155.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 19:55:04,142 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12155:latest...
+2026-06-18 19:55:04,495 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12155:latest removed.

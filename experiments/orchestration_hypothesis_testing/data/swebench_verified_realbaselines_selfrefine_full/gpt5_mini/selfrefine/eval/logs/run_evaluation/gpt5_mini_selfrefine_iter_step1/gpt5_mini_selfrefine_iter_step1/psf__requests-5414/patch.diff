@@ -1,0 +1,15 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -384,6 +384,12 @@
+             scheme, auth, host, port, path, query, fragment = parse_url(url)
+         except LocationParseError as e:
+             raise InvalidURL(*e.args)
++        except UnicodeError:
++            # Some IDNA/codec errors can be raised while parsing the URL
++            # (for example, when a host contains an empty label like ".example.com").
++            # Normalize these to InvalidURL so callers get a consistent requests
++            # exception instead of a raw UnicodeError.
++            raise InvalidURL('URL has an invalid label.')
+ 
+         if not scheme:
+             error = ("Invalid URL {0!r}: No schema supplied. Perhaps you meant http://{0}?")

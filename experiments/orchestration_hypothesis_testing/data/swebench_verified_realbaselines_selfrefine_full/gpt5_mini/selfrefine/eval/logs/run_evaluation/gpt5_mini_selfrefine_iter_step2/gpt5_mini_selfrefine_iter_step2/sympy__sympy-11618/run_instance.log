@@ -1,0 +1,73 @@
+2026-06-19 07:18:59,751 - INFO - Creating container for sympy__sympy-11618...
+2026-06-19 07:19:00,903 - INFO - Container for sympy__sympy-11618 created: c92e9220fb8b341c0690f2a574e674574697e1fc92ebb2570b2b58893656a25f
+2026-06-19 07:19:01,060 - INFO - Container for sympy__sympy-11618 started: c92e9220fb8b341c0690f2a574e674574697e1fc92ebb2570b2b58893656a25f
+2026-06-19 07:19:01,061 - INFO - Intermediate patch for sympy__sympy-11618 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-11618/patch.diff, now applying to container...
+2026-06-19 07:19:01,166 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-19 07:19:01,691 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 593048464..e3ca573e8 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -14,6 +14,7 @@
+ from sympy.core.compatibility import iterable
+ from sympy.core.containers import Tuple
+ from sympy.simplify import nsimplify, simplify
++from itertools import zip_longest
+ from sympy.geometry.exceptions import GeometryError
+ from sympy.functions.elementary.miscellaneous import sqrt
+ from sympy.functions.elementary.complexes import im
+@@ -266,8 +267,11 @@ def distance(self, p):
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # Ensure p is a Point and pad shorter coordinate lists with zeros so that
++        # points in different dimensions are handled (e.g., Point2D vs Point3D).
++        p = Point(p) if not isinstance(p, Point) else p
++        return sqrt(sum([(a - b)**2 for a, b in zip_longest(
++            self.args, p.args, fillvalue=S.Zero)]))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.
+2026-06-19 07:19:01,692 - INFO - Eval script for sympy__sympy-11618 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-11618/eval.sh; copying to container...
+2026-06-19 07:19:16,717 - INFO - Test runtime: 14.97 seconds
+2026-06-19 07:19:16,719 - INFO - Test output for sympy__sympy-11618 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-11618/test_output.txt
+2026-06-19 07:19:16,827 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 593048464..e3ca573e8 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -14,6 +14,7 @@
+ from sympy.core.compatibility import iterable
+ from sympy.core.containers import Tuple
+ from sympy.simplify import nsimplify, simplify
++from itertools import zip_longest
+ from sympy.geometry.exceptions import GeometryError
+ from sympy.functions.elementary.miscellaneous import sqrt
+ from sympy.functions.elementary.complexes import im
+@@ -266,8 +267,11 @@ def distance(self, p):
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # Ensure p is a Point and pad shorter coordinate lists with zeros so that
++        # points in different dimensions are handled (e.g., Point2D vs Point3D).
++        p = Point(p) if not isinstance(p, Point) else p
++        return sqrt(sum([(a - b)**2 for a, b in zip_longest(
++            self.args, p.args, fillvalue=S.Zero)]))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.
+2026-06-19 07:19:16,827 - INFO - Grading answer for sympy__sympy-11618...
+2026-06-19 07:19:16,842 - INFO - report: {'sympy__sympy-11618': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_11617'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_point3D', 'test_Point2D', 'test_issue_9214', 'test_transform'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-11618: resolved: True
+2026-06-19 07:19:16,843 - INFO - Attempting to stop container sweb.eval.sympy__sympy-11618.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:19:32,012 - INFO - Attempting to remove container sweb.eval.sympy__sympy-11618.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:19:32,027 - INFO - Container sweb.eval.sympy__sympy-11618.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 07:19:32,027 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-11618:latest...
+2026-06-19 07:19:32,405 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-11618:latest removed.

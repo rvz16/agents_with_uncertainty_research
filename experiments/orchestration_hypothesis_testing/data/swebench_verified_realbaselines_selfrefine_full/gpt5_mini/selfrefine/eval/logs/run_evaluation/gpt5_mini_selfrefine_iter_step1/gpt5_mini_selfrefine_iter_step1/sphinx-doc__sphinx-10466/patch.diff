@@ -1,0 +1,37 @@
+--- a/sphinx/builders/gettext.py
++++ b/sphinx/builders/gettext.py
+@@ -3,7 +3,7 @@
+ from codecs import open
+ from collections import OrderedDict, defaultdict
+ from datetime import datetime, timedelta, tzinfo
+-from os import getenv, path, walk
++from os import getenv, path, walk, getcwd
+ from time import time
+ from typing import Any, DefaultDict, Dict, Generator, Iterable, List, Set, Tuple, Union
+ from uuid import uuid4
+@@ -57,8 +57,23 @@
+ 
+     def __iter__(self) -> Generator[Message, None, None]:
+         for message in self.messages:
+-            positions = [(source, line) for source, line, uuid in self.metadata[message]]
+-            uuids = [uuid for source, line, uuid in self.metadata[message]]
++            seen = set()
++            positions: List[Tuple[str, int]] = []
++            uuids: List[str] = []
++            for source, line, uuid in self.metadata[message]:
++                # normalize the source to a canonical, relative path (to avoid duplicates
++                # that differ only by absolute vs relative prefixes)
++                try:
++                    rel_source = canon_path(path.relpath(source, start=getcwd()))
++                except Exception:
++                    # if relpath fails for any reason, fall back to the original canonical path
++                    rel_source = canon_path(source)
++                key = (rel_source, line)
++                if key in seen:
++                    continue
++                seen.add(key)
++                positions.append((rel_source, line))
++                uuids.append(uuid)
+             yield Message(message, positions, uuids)
+ 
+ 

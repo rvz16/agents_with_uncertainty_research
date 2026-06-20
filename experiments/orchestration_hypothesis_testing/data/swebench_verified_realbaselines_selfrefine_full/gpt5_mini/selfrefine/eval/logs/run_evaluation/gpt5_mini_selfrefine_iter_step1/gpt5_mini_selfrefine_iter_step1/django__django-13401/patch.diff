@@ -1,0 +1,62 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -516,17 +516,56 @@
+     def __eq__(self, other):
+         # Needed for @total_ordering
+         if isinstance(other, Field):
+-            return self.creation_counter == other.creation_counter
++            # First compare creation_counter for a fast-fail.
++            if self.creation_counter != other.creation_counter:
++                return False
++            # Consider the model the field is attached to. If both fields are
++            # unattached, fall back to equality by creation_counter. If only
++            # one is attached, they are not equal. If both are attached,
++            # compare by app_label and object_name to avoid comparing model
++            # class objects directly.
++            self_model = getattr(self, 'model', None)
++            other_model = getattr(other, 'model', None)
++            if self_model is None and other_model is None:
++                return True
++            if self_model is None or other_model is None:
++                return False
++            return (
++                self_model._meta.app_label == other_model._meta.app_label and
++                self_model._meta.object_name == other_model._meta.object_name
++            )
+         return NotImplemented
+ 
+     def __lt__(self, other):
+         # This is needed because bisect does not take a comparison function.
+         if isinstance(other, Field):
+-            return self.creation_counter < other.creation_counter
++            # Order primarily by creation_counter to preserve existing ordering
++            # behavior in the common case. Use the model label as a secondary
++            # key so fields from different models with the same
++            # creation_counter don't compare equal for sorting purposes.
++            self_model = getattr(self, 'model', None)
++            other_model = getattr(other, 'model', None)
++            if self_model is None:
++                self_model_key = (None, None)
++            else:
++                self_model_key = (self_model._meta.app_label, self_model._meta.object_name)
++            if other_model is None:
++                other_model_key = (None, None)
++            else:
++                other_model_key = (other_model._meta.app_label, other_model._meta.object_name)
++            return (self.creation_counter, self_model_key) < (other.creation_counter, other_model_key)
+         return NotImplemented
+ 
+     def __hash__(self):
+-        return hash(self.creation_counter)
++        # Include the model identity (via app_label/object_name) together with
++        # creation_counter so fields attached to different models but sharing
++        # a creation_counter have different hashes.
++        model = getattr(self, 'model', None)
++        if model is None:
++            model_key = (None, None)
++        else:
++            model_key = (model._meta.app_label, model._meta.object_name)
++        return hash((self.creation_counter, model_key))
+ 
+     def __deepcopy__(self, memodict):
+         # We don't have to deepcopy very much here, since most things are not

@@ -1,0 +1,50 @@
+--- a/xarray/core/combine.py
++++ b/xarray/core/combine.py
+@@ -490,8 +490,13 @@
+     # before merging back together
+     concatenated_grouped_by_data_vars = []
+     for vars, datasets_with_same_vars in grouped_by_vars:
++        # materialize the iterator so we can both infer concat order and
++        # inspect original coordinates to determine whether a coordinate
++        # varied between input datasets. If a coordinate does not vary we
++        # should not require the final global index to be monotonic.
++        datasets_with_same_vars = list(datasets_with_same_vars)
+         combined_ids, concat_dims = _infer_concat_order_from_coords(
+-            list(datasets_with_same_vars))
++            datasets_with_same_vars)
+ 
+         _check_shape_tile_ids(combined_ids)
+ 
+@@ -500,9 +505,31 @@
+                                    data_vars=data_vars, coords=coords,
+                                    fill_value=fill_value)
+ 
+-        # Check the overall coordinates are monotonically increasing
++        # Check the overall coordinates are monotonically increasing,
++        # but skip dimensions whose coordinate does not vary between the
++        # original input datasets (these are just "bystander" coordinates).
+         for dim in concatenated.dims:
+             if dim in concatenated:
++                # Gather the original indexes for this dim from the input datasets
++                original_indexes = [ds.indexes.get(dim) for ds in datasets_with_same_vars]
++
++                # If any original dataset lacks the index, fall back to checking
++                # the concatenated index (this mirrors previous behaviour).
++                if any(index is None for index in original_indexes):
++                    indexes = concatenated.indexes.get(dim)
++                    if not (indexes.is_monotonic_increasing
++                            or indexes.is_monotonic_decreasing):
++                        raise ValueError("Resulting object does not have monotonic"
++                                         " global indexes along dimension {}"
++                                         .format(dim))
++                    continue
++
++                # If all original indexes are identical, this coordinate did not
++                # vary between datasets so we should not require global monotonicity.
++                if all(index.equals(original_indexes[0]) for index in original_indexes[1:]):
++                    continue
++
++                # Otherwise require the concatenated/global index to be monotonic.
+                 indexes = concatenated.indexes.get(dim)
+                 if not (indexes.is_monotonic_increasing
+                         or indexes.is_monotonic_decreasing):

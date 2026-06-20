@@ -1,0 +1,61 @@
+2026-06-18 20:06:38,869 - INFO - Creating container for django__django-13033...
+2026-06-18 20:06:39,082 - INFO - Container for django__django-13033 created: 51c890cc339cf4ddba0e10765a3dd2f99306f2292da4ad292b811dc13c862809
+2026-06-18 20:06:39,226 - INFO - Container for django__django-13033 started: 51c890cc339cf4ddba0e10765a3dd2f99306f2292da4ad292b811dc13c862809
+2026-06-18 20:06:39,227 - INFO - Intermediate patch for django__django-13033 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13033/patch.diff, now applying to container...
+2026-06-18 20:06:39,335 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/sql/compiler.py...
+Applied patch django/db/models/sql/compiler.py cleanly.
+
+2026-06-18 20:06:40,723 - INFO - Git diff before:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index abbb1e37cb..b4986f483d 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -727,7 +727,14 @@ class SQLCompiler:
+         # If we get to this point and the field is a relation to another model,
+         # append the default ordering for that model unless it is the pk
+         # shortcut or the attribute name of the field that is specified.
+-        if field.is_relation and opts.ordering and getattr(field, 'attname', None) != name and name != 'pk':
++        # Compare the attribute name against the last component of the lookup
++        # path (pieces[-1]) rather than the whole lookup string so that
++        # ordering by e.g. "record__root_id" (the FK attr) does not cause the
++        # related model's default ordering to be appended, while ordering by
++        # "record__root" (the relation name) will.
++        if (field.is_relation and opts.ordering and
++                getattr(field, 'attname', None) != pieces[-1] and
++                pieces[-1] != 'pk'):
+             # Firstly, avoid infinite loops.
+             already_seen = already_seen or set()
+             join_tuple = tuple(getattr(self.query.alias_map[j], 'join_cols', None) for j in joins)
+2026-06-18 20:06:40,723 - INFO - Eval script for django__django-13033 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13033/eval.sh; copying to container...
+2026-06-18 20:07:06,375 - INFO - Test runtime: 25.60 seconds
+2026-06-18 20:07:06,376 - INFO - Test output for django__django-13033 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13033/test_output.txt
+2026-06-18 20:07:06,496 - INFO - Git diff after:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index abbb1e37cb..b4986f483d 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -727,7 +727,14 @@ class SQLCompiler:
+         # If we get to this point and the field is a relation to another model,
+         # append the default ordering for that model unless it is the pk
+         # shortcut or the attribute name of the field that is specified.
+-        if field.is_relation and opts.ordering and getattr(field, 'attname', None) != name and name != 'pk':
++        # Compare the attribute name against the last component of the lookup
++        # path (pieces[-1]) rather than the whole lookup string so that
++        # ordering by e.g. "record__root_id" (the FK attr) does not cause the
++        # related model's default ordering to be appended, while ordering by
++        # "record__root" (the relation name) will.
++        if (field.is_relation and opts.ordering and
++                getattr(field, 'attname', None) != pieces[-1] and
++                pieces[-1] != 'pk'):
+             # Firstly, avoid infinite loops.
+             already_seen = already_seen or set()
+             join_tuple = tuple(getattr(self.query.alias_map[j], 'join_cols', None) for j in joins)
+2026-06-18 20:07:06,496 - INFO - Grading answer for django__django-13033...
+2026-06-18 20:07:06,497 - INFO - report: {'django__django-13033': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_order_by_self_referential_fk (ordering.tests.OrderingTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_default_ordering (ordering.tests.OrderingTests)', 'F expressions can be used in Meta.ordering.', 'test_default_ordering_override (ordering.tests.OrderingTests)', 'test_extra_ordering (ordering.tests.OrderingTests)', 'test_extra_ordering_quoting (ordering.tests.OrderingTests)', 'test_extra_ordering_with_table_name (ordering.tests.OrderingTests)', 'test_no_reordering_after_slicing (ordering.tests.OrderingTests)', 'test_order_by_constant_value (ordering.tests.OrderingTests)', 'test_order_by_constant_value_without_output_field (ordering.tests.OrderingTests)', 'test_order_by_f_expression (ordering.tests.OrderingTests)', 'test_order_by_f_expression_duplicates (ordering.tests.OrderingTests)', 'test_order_by_fk_attname (ordering.tests.OrderingTests)', 'test_order_by_nulls_first (ordering.tests.OrderingTests)', 'test_order_by_nulls_first_and_last (ordering.tests.OrderingTests)', 'test_order_by_nulls_last (ordering.tests.OrderingTests)', 'test_order_by_override (ordering.tests.OrderingTests)', 'test_order_by_pk (ordering.tests.OrderingTests)', 'test_order_by_ptr_field_with_default_ordering_by_expression (ordering.tests.OrderingTests)', 'test_orders_nulls_first_on_filtered_subquery (ordering.tests.OrderingTests)', 'test_random_ordering (ordering.tests.OrderingTests)', 'test_related_ordering_duplicate_table_reference (ordering.tests.OrderingTests)', 'test_reverse_meta_ordering_pure (ordering.tests.OrderingTests)', 'test_reverse_ordering_pure (ordering.tests.OrderingTests)', 'test_reversed_ordering (ordering.tests.OrderingTests)', 'test_stop_slicing (ordering.tests.OrderingTests)', 'test_stop_start_slicing (ordering.tests.OrderingTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13033: resolved: True
+2026-06-18 20:07:06,498 - INFO - Attempting to stop container sweb.eval.django__django-13033.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 20:07:21,740 - INFO - Attempting to remove container sweb.eval.django__django-13033.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 20:07:21,762 - INFO - Container sweb.eval.django__django-13033.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 20:07:21,762 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13033:latest...
+2026-06-18 20:07:22,195 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13033:latest removed.

@@ -1,0 +1,27 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -528,7 +528,7 @@
+         # Deleted uniques
+         for fields in olds.difference(news):
+             self._delete_composed_index(
+-                model, fields, {"unique": True}, self.sql_delete_unique
++                model, fields, {"unique": True, "primary_key": False}, self.sql_delete_unique
+             )
+         # Created uniques
+         for field_names in news.difference(olds):
+@@ -568,6 +568,15 @@
+             exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs,
+         )
++        # If more than one matching constraint is found, try to disambiguate by
++        # preferring Django-created unique_together/index names which include
++        # the "_uniq" suffix. This allows dropping unique_together on a single
++        # field even when another unique constraint (e.g. from unique=True or a
++        # primary key) exists on the same column.
++        if len(constraint_names) > 1:
++            uniq_candidates = [name for name in constraint_names if name.endswith("_uniq")]
++            if len(uniq_candidates) == 1:
++                constraint_names = uniq_candidates
+         if len(constraint_names) != 1:
+             raise ValueError(
+                 "Found wrong number (%s) of constraints for %s(%s)"

@@ -1,0 +1,62 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -569,15 +569,50 @@
+             **constraint_kwargs,
+         )
+         if len(constraint_names) != 1:
+-            raise ValueError(
+-                "Found wrong number (%s) of constraints for %s(%s)"
+-                % (
+-                    len(constraint_names),
+-                    model._meta.db_table,
+-                    ", ".join(columns),
+-                )
+-            )
+-        self.execute(self._delete_constraint_sql(sql, model, constraint_names[0]))
++            # Try to disambiguate when multiple unique/index constraints exist
++            # on the same columns (e.g. a unique=True constraint and a
++            # unique_together constraint on a single field). Prefer the
++            # constraint name that matches Django's generated unique_together
++            # naming (which ends with "_uniq" and normally includes a hash).
++            try:
++                expected = self._create_index_name(
++                    model._meta.db_table, columns, suffix="_uniq"
++                )
++            except Exception:
++                expected = None
++            constraint_name = None
++            if expected and expected in constraint_names:
++                constraint_name = expected
++            else:
++                # Prefer any candidate that ends with "_uniq".
++                uniq_candidates = [n for n in constraint_names if n.endswith("_uniq")]
++                if len(uniq_candidates) == 1:
++                    constraint_name = uniq_candidates[0]
++                else:
++                    # Try matching a prefix of "<table>_<columns>_" and suffix "_uniq".
++                    _, table_name = split_identifier(model._meta.db_table)
++                    prefix = "%s_%s_" % (table_name, "_".join(columns))
++                    prefix_candidates = [
++                        n
++                        for n in constraint_names
++                        if n.startswith(prefix) and n.endswith("_uniq")
++                    ]
++                    if len(prefix_candidates) == 1:
++                        constraint_name = prefix_candidates[0]
++            if constraint_name is None:
++                # Give up and raise the original error if we can't unambiguously
++                # identify the intended constraint to remove.
++                raise ValueError(
++                    "Found wrong number (%s) of constraints for %s(%s)"
++                    % (
++                        len(constraint_names),
++                        model._meta.db_table,
++                        ", ".join(columns),
++                    )
++                )
++        else:
++            constraint_name = constraint_names[0]
++        self.execute(self._delete_constraint_sql(sql, model, constraint_name))
+ 
+     def alter_db_table(self, model, old_db_table, new_db_table):
+         """Rename the table a model points to."""

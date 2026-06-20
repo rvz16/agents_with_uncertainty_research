@@ -1,0 +1,29 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -120,10 +120,24 @@
+                             rel_type = 'OneToOneField'
+                         else:
+                             rel_type = 'ForeignKey'
++                        referenced_table = relations[column_name][1]
++                        referenced_column = relations[column_name][0]
+                         rel_to = (
+-                            "self" if relations[column_name][1] == table_name
+-                            else table2model(relations[column_name][1])
++                            "self" if referenced_table == table_name
++                            else table2model(referenced_table)
+                         )
++                        # If the foreign key references a non-primary-key column on the
++                        # referenced table, include the `to_field` argument so the
++                        # generated model points to the correct field.
++                        try:
++                            ref_pk = connection.introspection.get_primary_key_column(cursor, referenced_table)
++                        except Exception:
++                            ref_pk = None
++                        if referenced_column is not None and (ref_pk is None or referenced_column != ref_pk):
++                            # Use the referenced column name as the to_field value.
++                            # The corresponding model field on the referenced model will
++                            # include db_column if its attribute name was changed.
++                            extra_params['to_field'] = referenced_column
+                         if rel_to in known_models:
+                             field_type = '%s(%s' % (rel_type, rel_to)
+                         else:

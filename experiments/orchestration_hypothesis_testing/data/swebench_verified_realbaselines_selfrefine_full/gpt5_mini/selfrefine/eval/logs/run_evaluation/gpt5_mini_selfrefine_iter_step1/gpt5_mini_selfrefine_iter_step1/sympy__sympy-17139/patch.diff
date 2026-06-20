@@ -1,0 +1,49 @@
+--- a/sympy/simplify/fu.py
++++ b/sympy/simplify/fu.py
+@@ -501,24 +501,39 @@
+         if not (rv.is_Pow and rv.base.func == f):
+             return rv
+ 
+-        if (rv.exp < 0) == True:
+-            return rv
+-        if (rv.exp > max) == True:
+-            return rv
++        # Avoid making direct ordering/comparison operations on exponents
++        # that may be complex or otherwise non-real which can raise
++        # TypeError (see issue with exponents like I). Use SymPy's
++        # predicate attributes to make decisions only when they are
++        # definite; otherwise be conservative and skip the transformation.
++        if rv.exp.is_negative is True:
++            return rv
++        if rv.exp.is_real is True:
++            gt = rv.exp > max
++            if gt is True:
++                return rv
+         if rv.exp == 2:
+             return h(g(rv.base.args[0])**2)
+         else:
+             if rv.exp == 4:
+                 e = 2
+             elif not pow:
+-                if rv.exp % 2:
++                # Only attempt odd/even testing for definite integer exponents.
++                if rv.exp.is_integer is not True:
+                     return rv
+-                e = rv.exp//2
++                # prefer is_odd predicate if available
++                if getattr(rv.exp, 'is_odd', None) is True:
++                    return rv
++                # fallback: if is_odd is not True, try even division
++                e = rv.exp // 2
+             else:
++                # perfect_power only makes sense for (definite) integer exponents
++                if rv.exp.is_Integer is not True:
++                    return rv
+                 p = perfect_power(rv.exp)
+                 if not p:
+                     return rv
+-                e = rv.exp//2
++                e = rv.exp // 2
+             return h(g(rv.base.args[0])**2)**e
+ 
+     return bottom_up(rv, _f)

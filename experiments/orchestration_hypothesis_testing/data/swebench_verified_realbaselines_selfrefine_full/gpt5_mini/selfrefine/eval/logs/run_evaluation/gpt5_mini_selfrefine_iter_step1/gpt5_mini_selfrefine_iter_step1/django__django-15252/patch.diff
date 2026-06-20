@@ -1,0 +1,100 @@
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -95,9 +95,24 @@
+         Django first needs to create all project states before a migration is
+         (un)applied and in a second step run all the database operations.
+         """
+-        # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # Determine whether the django_migrations table is allowed on this
++        # database according to the database routers. If routers explicitly
++        # return False, skip creating or writing the migrations table.
++        try:
++            migration_allowed = router.allow_migrate(
++                self.connection.alias,
++                self.recorder.Migration._meta.app_label,
++                model_name=self.recorder.Migration._meta.model_name,
++            )
++        except TypeError:
++            # Some router implementations accept (db, model) instead.
++            migration_allowed = router.allow_migrate(self.connection.alias, self.recorder.Migration)
++        # Store the decision for use by other methods in this executor.
++        self._migration_table_allowed = migration_allowed
++        if migration_allowed is not False:
++            # The django_migrations table must be present to record applied
++            # migrations.
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+             plan = self.migration_plan(targets)
+@@ -129,7 +144,10 @@
+             # would always evaluate to true.
+             state = self._migrate_all_backwards(plan, full_plan, fake=fake)
+ 
+-        self.check_replacements()
++        # Only check and record replacements if the migration table is allowed
++        # on this database.
++        if getattr(self, '_migration_table_allowed', None) is not False:
++            self.check_replacements()
+ 
+         return state
+ 
+@@ -245,6 +263,24 @@
+         return state
+ 
+     def record_migration(self, migration):
++        # Only record migration status if the migration table is allowed on
++        # this database by the routers. Compute the decision if it hasn't been
++        # computed yet (defensive).
++        migration_allowed = getattr(self, '_migration_table_allowed', None)
++        if migration_allowed is None:
++            try:
++                migration_allowed = router.allow_migrate(
++                    self.connection.alias,
++                    self.recorder.Migration._meta.app_label,
++                    model_name=self.recorder.Migration._meta.model_name,
++                )
++            except TypeError:
++                migration_allowed = router.allow_migrate(self.connection.alias, self.recorder.Migration)
++            self._migration_table_allowed = migration_allowed
++
++        if migration_allowed is False:
++            return
++
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -259,11 +295,27 @@
+         if not fake:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+-        # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only modify the migration records if the migration table is allowed
++        # on this database by the routers. Compute the decision if it hasn't
++        # been computed yet (defensive).
++        migration_allowed = getattr(self, '_migration_table_allowed', None)
++        if migration_allowed is None:
++            try:
++                migration_allowed = router.allow_migrate(
++                    self.connection.alias,
++                    self.recorder.Migration._meta.app_label,
++                    model_name=self.recorder.Migration._meta.model_name,
++                )
++            except TypeError:
++                migration_allowed = router.allow_migrate(self.connection.alias, self.recorder.Migration)
++            self._migration_table_allowed = migration_allowed
++
++        if migration_allowed is not False:
++            # For replacement migrations, also record individual statuses.
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)

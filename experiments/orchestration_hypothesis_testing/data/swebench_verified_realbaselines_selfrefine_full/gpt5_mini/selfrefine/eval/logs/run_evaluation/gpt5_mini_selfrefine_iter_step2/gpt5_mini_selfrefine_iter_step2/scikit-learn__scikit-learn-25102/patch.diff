@@ -1,0 +1,62 @@
+--- a/sklearn/feature_selection/_base.py
++++ b/sklearn/feature_selection/_base.py
+@@ -80,6 +80,10 @@
+         """
+         # note: we use _safe_tags instead of _get_tags because this is a
+         # public Mixin.
++        # Keep a reference to the original input to allow preserving pandas
++        # dtypes when the user requested pandas output and the transformer
++        # only selects a subset of the original columns.
++        X_orig = X
+         X = self._validate_data(
+             X,
+             dtype=None,
+@@ -87,7 +91,47 @@
+             force_all_finite=not _safe_tags(self, key="allow_nan"),
+             reset=False,
+         )
+-        return self._transform(X)
++
++        X_transformed = self._transform(X)
++
++        # Try to preserve pandas dtypes for selectors that output a subset
++        # of the input features when the user configured the estimator to
++        # return pandas outputs (set_output(transform="pandas")).
++        try:
++            pandas_requested = (
++                getattr(self, "_sklearn_output_config", {}).get("transform") == "pandas"
++            )
++        except Exception:
++            pandas_requested = False
++
++        if pandas_requested:
++            # Only attempt dtype-preserving conversion when the original input
++            # was a pandas DataFrame.
++            try:
++                import pandas as pd  # noqa: F401
++            except Exception:
++                pd = None
++
++            if pd is not None and hasattr(X_orig, "columns"):
++                # If no features selected, return an empty DataFrame with the
++                # same index as the input.
++                support = self.get_support()
++                # Ensure support length matches original columns
++                try:
++                    n_cols = len(X_orig.columns)
++                except Exception:
++                    n_cols = None
++
++                if n_cols is not None and len(support) == n_cols:
++                    # Selected column names
++                    selected_cols = X_orig.columns[support]
++                    # If zero selected, return empty DataFrame with preserved index
++                    if selected_cols.size == 0:
++                        return pd.DataFrame(index=X_orig.index)
++                    # Return a copy of the original columns to preserve dtypes
++                    return X_orig.loc[:, selected_cols].copy()
++
++        return X_transformed
+ 
+     def _transform(self, X):
+         """Reduce X to the selected features."""

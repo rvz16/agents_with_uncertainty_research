@@ -1,0 +1,23 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1172,13 +1172,19 @@
+ 
+         # If we're adding a new object, ignore a parent's auto-generated key
+         # as it will be regenerated on the save request.
++        # However, only clear the value for database-generated auto PKs
++        # (AutoField/BigAutoField). Fields with Python-side defaults
++        # (e.g. UUIDField(default=...)) should keep their generated value.
+         if self.instance._state.adding:
+             if kwargs.get("to_field") is not None:
+                 to_field = self.instance._meta.get_field(kwargs["to_field"])
+             else:
+                 to_field = self.instance._meta.pk
++            # Only clear the attribute for DB-generated auto fields.
+             if to_field.has_default():
+-                setattr(self.instance, to_field.attname, None)
++                from django.db.models import AutoField
++                if isinstance(to_field, AutoField):
++                    setattr(self.instance, to_field.attname, None)
+ 
+         form.fields[name] = InlineForeignKeyField(self.instance, **kwargs)
+ 

@@ -1,0 +1,72 @@
+--- a/django/db/backends/base/operations.py
++++ b/django/db/backends/base/operations.py
+@@ -579,8 +579,67 @@
+         return []
+ 
+     def convert_durationfield_value(self, value, expression, connection):
+-        if value is not None:
+-            return datetime.timedelta(0, 0, value)
++        """
++        Convert a value coming from the database for a DurationField into a
++        datetime.timedelta. Different backends may return different types:
++        - integer number of microseconds (common for backends that don't have
++          a native duration type, e.g. SQLite, MySQL)
++        - Decimal or string representing seconds (or seconds with fractional part)
++        - a datetime.timedelta (already converted by the DB driver)
++        - a string time representation (e.g. "HH:MM:SS[.ffffff]")
++
++        Use the connection.features.has_native_duration_field flag as a hint
++        for interpreting numeric values: if the backend doesn't have a native
++        duration type, numeric values are treated as microseconds.
++        """
++        if value is None:
++            return None
++        if isinstance(value, datetime.timedelta):
++            return value
++
++        # Decode bytes-like values to str.
++        if isinstance(value, (bytes, bytearray)):
++            try:
++                value = value.decode()
++            except Exception:
++                pass
++
++        # Backends without a native duration type store durations as integer
++        # microseconds. Treat numeric values as microseconds in that case.
++        try:
++            has_native = connection.features.has_native_duration_field
++        except Exception:
++            has_native = False
++
++        if not has_native:
++            # Expect microseconds (int/Decimal/str). Coerce to int.
++            try:
++                microseconds = int(decimal.Decimal(value))
++            except (decimal.InvalidOperation, TypeError, ValueError):
++                # Fallback to float -> int
++                microseconds = int(float(value))
++            return datetime.timedelta(microseconds=microseconds)
++
++        # For backends with native duration support, values are likely seconds
++        # possibly with fractional part. Interpret as seconds.
++        try:
++            seconds = float(value)
++        except Exception:
++            # Try to parse "HH:MM:SS" style strings.
++            if isinstance(value, str) and ':' in value:
++                try:
++                    parts = value.split(':')
++                    if len(parts) == 3:
++                        hours, minutes, seconds_part = parts
++                        total_seconds = (int(hours) * 3600 +
++                                         int(minutes) * 60 +
++                                         float(seconds_part))
++                        return datetime.timedelta(seconds=total_seconds)
++                except Exception:
++                    pass
++            # As a last resort, raise the original conversion error.
++            raise
++        return datetime.timedelta(seconds=seconds)
+ 
+     def check_expression_support(self, expression):
+         """

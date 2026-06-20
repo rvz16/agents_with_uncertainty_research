@@ -1,0 +1,28 @@
+--- a/sphinx/ext/autodoc/mock.py
++++ b/sphinx/ext/autodoc/mock.py
+@@ -68,12 +68,22 @@
+         return self.__display_name__
+ 
+ 
+-def _make_subclass(name: str, module: str, superclass: Any = _MockObject,
++def _make_subclass(name: Any, module: str, superclass: Any = _MockObject,
+                    attributes: Any = None) -> Any:
+-    attrs = {'__module__': module, '__display_name__': module + '.' + name}
++    # The `name` may sometimes be a typing object (TypeVar, GenericAlias, etc.)
++    # rather than a plain string. Ensure we always use a string for the class
++    # name and for display purposes to avoid TypeError when concatenating.
++    if isinstance(name, str):
++        safe_name = name
++    else:
++        # Prefer a __name__ attribute if present (common on TypeVar and similar),
++        # otherwise fall back to the string representation.
++        safe_name = getattr(name, '__name__', None) or str(name)
++
++    attrs = {'__module__': module, '__display_name__': module + '.' + safe_name}
+     attrs.update(attributes or {})
+ 
+-    return type(name, (superclass,), attrs)
++    return type(safe_name, (superclass,), attrs)
+ 
+ 
+ class _MockModule(ModuleType):

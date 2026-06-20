@@ -1,0 +1,24 @@
+--- a/django/contrib/admindocs/utils.py
++++ b/django/contrib/admindocs/utils.py
+@@ -1,6 +1,7 @@
+ "Misc. utility functions/classes for admin documentation generator."
+ 
+ import re
++import inspect
+ from email.errors import HeaderParseError
+ from email.parser import HeaderParser
+ 
+@@ -32,11 +33,8 @@
+     """
+     if not docstring or not docstring.strip():
+         return ''
+-    # Convert tabs to spaces and split into lines
+-    lines = docstring.expandtabs().splitlines()
+-    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())
+-    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]
+-    return "\n".join(trimmed).strip()
++    # Use inspect.cleandoc which implements the algorithm defined in PEP 257.
++    return inspect.cleandoc(docstring).strip()
+ 
+ 
+ def parse_docstring(docstring):

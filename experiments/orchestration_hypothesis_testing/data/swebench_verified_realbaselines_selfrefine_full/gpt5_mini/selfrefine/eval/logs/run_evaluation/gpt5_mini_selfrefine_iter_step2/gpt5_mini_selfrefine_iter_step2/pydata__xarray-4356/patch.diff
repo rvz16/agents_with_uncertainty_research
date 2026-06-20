@@ -1,0 +1,38 @@
+--- a/xarray/core/nanops.py
++++ b/xarray/core/nanops.py
+@@ -26,14 +26,28 @@
+     """
+     xarray version of pandas.core.nanops._maybe_null_out
+     """
+-    if hasattr(axis, "__len__"):  # if tuple or list
+-        raise ValueError(
+-            "min_count is not available for reduction with more than one dimensions."
+-        )
+-
+     if axis is not None and getattr(result, "ndim", False):
+-        null_mask = (mask.shape[axis] - mask.sum(axis) - min_count) < 0
+-        if null_mask.any():
++        # compute the number of elements reduced over the given axis/axes.
++        # axis may be an int or a sequence of ints. Normalize to a tuple of ints.
++        axes = np.atleast_1d(axis)
++        # Convert any numpy scalar to Python int and handle single-axis case.
++        try:
++            axes = tuple(int(a) for a in axes)
++        except Exception:
++            axes = (int(axis),)
++        # Normalize negative axes
++        axes = tuple(a if a >= 0 else a + mask.ndim for a in axes)
++
++        if len(axes) == 1:
++            reduced_size = mask.shape[axes[0]]
++            sum_axis = axes[0]
++        else:
++            # product of sizes along each reduced axis
++            reduced_size = int(np.prod([mask.shape[a] for a in axes]))
++            sum_axis = axes
++
++        null_mask = (reduced_size - mask.sum(axis=sum_axis) - min_count) < 0
++        if getattr(null_mask, "any", lambda: False)():
+             dtype, fill_value = dtypes.maybe_promote(result.dtype)
+             result = result.astype(dtype)
+             result[null_mask] = fill_value

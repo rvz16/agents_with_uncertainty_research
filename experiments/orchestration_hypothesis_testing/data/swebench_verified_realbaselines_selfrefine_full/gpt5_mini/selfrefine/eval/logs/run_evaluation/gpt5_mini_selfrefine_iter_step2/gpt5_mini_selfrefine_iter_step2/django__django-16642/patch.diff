@@ -1,0 +1,19 @@
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -607,11 +607,15 @@
+             if filename:
+                 content_type, encoding = mimetypes.guess_type(filename)
+                 # Encoding isn't set to prevent browsers from automatically
+-                # uncompressing files.
++                # uncompressing files. For certain compressed file extensions,
++                # prefer a generic application/* content type so browsers don't
++                # attempt to auto-decompress them when serving as files.
+                 content_type = {
+                     "bzip2": "application/x-bzip",
+                     "gzip": "application/gzip",
+                     "xz": "application/x-xz",
++                    "br": "application/brotli",
++                    "compress": "application/x-compress",
+                 }.get(encoding, content_type)
+                 self.headers["Content-Type"] = (
+                     content_type or "application/octet-stream"

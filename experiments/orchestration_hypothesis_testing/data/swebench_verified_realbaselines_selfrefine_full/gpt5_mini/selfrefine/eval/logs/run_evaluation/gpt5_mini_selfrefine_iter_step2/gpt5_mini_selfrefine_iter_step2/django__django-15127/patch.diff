@@ -1,0 +1,42 @@
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,39 @@
+ from django.apps import AppConfig
+ from django.utils.translation import gettext_lazy as _
++from django.conf import settings as django_settings
++from django.test.signals import setting_changed
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        """
++        Keep the storage.base.LEVEL_TAGS in sync with the MESSAGE_TAGS setting.
++        This ensures tests that use override_settings(MESSAGE_TAGS=...) get the
++        updated tags (see #16574).
++        """
++        # Import here to avoid importing message storage at module import time.
++        from django.contrib.messages import storage
++        from django.contrib.messages.storage import base
++
++        def update_level_tags(setting=None, **kwargs):
++            # Only care about changes to MESSAGE_TAGS
++            if setting != 'MESSAGE_TAGS':
++                return
++            # Rebuild LEVEL_TAGS from the module's DEFAULT_TAGS merged with the
++            # current MESSAGE_TAGS setting.
++            try:
++                default_tags = base.DEFAULT_TAGS.copy()
++            except AttributeError:
++                # If DEFAULT_TAGS isn't present for some reason, fall back to
++                # existing LEVEL_TAGS (if any).
++                default_tags = getattr(base, 'LEVEL_TAGS', {}).copy()
++            default_tags.update(getattr(django_settings, 'MESSAGE_TAGS', {}))
++            base.LEVEL_TAGS = default_tags
++
++        # Initialize LEVEL_TAGS with current settings at startup.
++        update_level_tags(setting='MESSAGE_TAGS')
++        # Listen for setting changes (used by override_settings in tests).
++        setting_changed.connect(update_level_tags, dispatch_uid='django.contrib.messages.update_level_tags')

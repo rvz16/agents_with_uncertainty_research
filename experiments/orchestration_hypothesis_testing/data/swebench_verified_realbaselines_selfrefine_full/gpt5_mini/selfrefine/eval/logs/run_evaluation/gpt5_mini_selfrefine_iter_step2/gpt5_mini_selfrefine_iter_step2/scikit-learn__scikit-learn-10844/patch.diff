@@ -1,0 +1,16 @@
+--- a/sklearn/metrics/cluster/supervised.py
++++ b/sklearn/metrics/cluster/supervised.py
+@@ -856,7 +856,12 @@
+     tk = np.dot(c.data, c.data) - n_samples
+     pk = np.sum(np.asarray(c.sum(axis=0)).ravel() ** 2) - n_samples
+     qk = np.sum(np.asarray(c.sum(axis=1)).ravel() ** 2) - n_samples
+-    return tk / np.sqrt(pk * qk) if tk != 0. else 0.
++    if tk == 0.:
++        return 0.
++    # Convert to float64 to avoid integer overflow when computing pk * qk.
++    # This preserves the intended result while preventing runtime warnings
++    # from integer multiplication overflow on platforms with 32-bit ints.
++    return np.float64(tk) / np.sqrt(np.float64(pk) * np.float64(qk))
+ 
+ 
+ def entropy(labels):

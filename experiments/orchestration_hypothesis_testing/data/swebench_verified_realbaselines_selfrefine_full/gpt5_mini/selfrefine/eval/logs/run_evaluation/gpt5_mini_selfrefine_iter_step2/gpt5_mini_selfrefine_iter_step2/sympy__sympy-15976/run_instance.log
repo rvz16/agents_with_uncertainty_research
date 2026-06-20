@@ -1,0 +1,99 @@
+2026-06-19 07:30:49,785 - INFO - Creating container for sympy__sympy-15976...
+2026-06-19 07:30:49,858 - INFO - Container for sympy__sympy-15976 created: 51ea057375e8c159a91b3187961e1e4664c24657e1407286f9573429da285549
+2026-06-19 07:30:49,995 - INFO - Container for sympy__sympy-15976 started: 51ea057375e8c159a91b3187961e1e4664c24657e1407286f9573429da285549
+2026-06-19 07:30:49,996 - INFO - Intermediate patch for sympy__sympy-15976 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-15976/patch.diff, now applying to container...
+2026-06-19 07:30:50,108 - INFO - >>>>> Applied Patch:
+Checking patch sympy/printing/mathml.py...
+Applied patch sympy/printing/mathml.py cleanly.
+
+2026-06-19 07:30:51,048 - INFO - Git diff before:
+diff --git a/sympy/printing/mathml.py b/sympy/printing/mathml.py
+index 3f8b8d49e..5049b688d 100644
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -366,27 +366,14 @@ def translate(s):
+ 
+         mname = self.dom.createElement('mml:mi')
+         mname.appendChild(self.dom.createTextNode(name))
++
++        # If there are no super/sub scripts, return a plain identifier element.
++        # If there are scripts, return the appropriate script element (msub, msup,
++        # msubsup) as the top-level node rather than wrapping it inside another
++        # identifier element. Wrapping the script element inside an <mi> (or <ci>)
++        # can cause rendering issues in some browsers (e.g. Safari).
+         if len(supers) == 0:
+-            if len(subs) == 0:
+-                ci.appendChild(self.dom.createTextNode(name))
+-            else:
+-                msub = self.dom.createElement('mml:msub')
+-                msub.appendChild(mname)
+-                msub.appendChild(join(subs))
+-                ci.appendChild(msub)
+-        else:
+-            if len(subs) == 0:
+-                msup = self.dom.createElement('mml:msup')
+-                msup.appendChild(mname)
+-                msup.appendChild(join(supers))
+-                ci.appendChild(msup)
+-            else:
+-                msubsup = self.dom.createElement('mml:msubsup')
+-                msubsup.appendChild(mname)
+-                msubsup.appendChild(join(subs))
+-                msubsup.appendChild(join(supers))
+-                ci.appendChild(msubsup)
+-        return ci
++            if len(subs)
+ 
+     _print_MatrixSymbol = _print_Symbol
+     _print_RandomSymbol = _print_Symbol
+2026-06-19 07:30:51,050 - INFO - Eval script for sympy__sympy-15976 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-15976/eval.sh; copying to container...
+2026-06-19 07:31:00,323 - INFO - Test runtime: 9.14 seconds
+2026-06-19 07:31:00,330 - INFO - Test output for sympy__sympy-15976 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-15976/test_output.txt
+2026-06-19 07:31:00,508 - INFO - Git diff after:
+diff --git a/sympy/printing/mathml.py b/sympy/printing/mathml.py
+index 3f8b8d49e..5049b688d 100644
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -366,27 +366,14 @@ def translate(s):
+ 
+         mname = self.dom.createElement('mml:mi')
+         mname.appendChild(self.dom.createTextNode(name))
++
++        # If there are no super/sub scripts, return a plain identifier element.
++        # If there are scripts, return the appropriate script element (msub, msup,
++        # msubsup) as the top-level node rather than wrapping it inside another
++        # identifier element. Wrapping the script element inside an <mi> (or <ci>)
++        # can cause rendering issues in some browsers (e.g. Safari).
+         if len(supers) == 0:
+-            if len(subs) == 0:
+-                ci.appendChild(self.dom.createTextNode(name))
+-            else:
+-                msub = self.dom.createElement('mml:msub')
+-                msub.appendChild(mname)
+-                msub.appendChild(join(subs))
+-                ci.appendChild(msub)
+-        else:
+-            if len(subs) == 0:
+-                msup = self.dom.createElement('mml:msup')
+-                msup.appendChild(mname)
+-                msup.appendChild(join(supers))
+-                ci.appendChild(msup)
+-            else:
+-                msubsup = self.dom.createElement('mml:msubsup')
+-                msubsup.appendChild(mname)
+-                msubsup.appendChild(join(subs))
+-                msubsup.appendChild(join(supers))
+-                ci.appendChild(msubsup)
+-        return ci
++            if len(subs)
+ 
+     _print_MatrixSymbol = _print_Symbol
+     _print_RandomSymbol = _print_Symbol
+2026-06-19 07:31:00,508 - INFO - Grading answer for sympy__sympy-15976...
+2026-06-19 07:31:00,511 - INFO - report: {'sympy__sympy-15976': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_presentation_symbol']}, 'PASS_TO_PASS': {'success': [], 'failure': ['test_mathml_printer', 'test_content_printmethod', 'test_content_mathml_core', 'test_content_mathml_functions', 'test_content_mathml_limits', 'test_content_mathml_integrals', 'test_content_mathml_matrices', 'test_content_mathml_sums', 'test_content_mathml_tuples', 'test_content_mathml_add', 'test_content_mathml_Rational', 'test_content_mathml_constants', 'test_content_mathml_trig', 'test_content_mathml_relational', 'test_content_symbol', 'test_content_mathml_greek', 'test_content_mathml_order', 'test_content_settings', 'test_presentation_printmethod', 'test_presentation_mathml_core', 'test_presentation_mathml_functions', 'test_presentation_mathml_limits', 'test_presentation_mathml_integrals', 'test_presentation_mathml_matrices', 'test_presentation_mathml_sums', 'test_presentation_mathml_add', 'test_presentation_mathml_Rational', 'test_presentation_mathml_constants', 'test_presentation_mathml_trig', 'test_presentation_mathml_relational', 'test_presentation_mathml_greek', 'test_presentation_mathml_order', 'test_presentation_settings', 'test_toprettyxml_hooking', 'test_print_basic', 'test_root_notation_print', 'test_print_matrix_symbol']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-15976: resolved: False
+2026-06-19 07:31:00,512 - INFO - Attempting to stop container sweb.eval.sympy__sympy-15976.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:31:15,753 - INFO - Attempting to remove container sweb.eval.sympy__sympy-15976.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:31:15,764 - INFO - Container sweb.eval.sympy__sympy-15976.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 07:31:15,764 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-15976:latest...
+2026-06-19 07:31:16,130 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-15976:latest removed.

@@ -1,0 +1,114 @@
+--- a/django/db/backends/mysql/operations.py
++++ b/django/db/backends/mysql/operations.py
+@@ -69,9 +69,33 @@
+             return "DATE(%s)" % (field_name)
+ 
+     def _convert_field_to_tz(self, field_name, tzname):
+-        if settings.USE_TZ:
+-            field_name = "CONVERT_TZ(%s, 'UTC', '%s')" % (field_name, tzname)
+-        return field_name
++        """
++        Convert the given field from the database connection timezone to the
++        provided tzname for use in SQL. If USE_TZ is False, or if the source
++        timezone is the same as the target tzname, return the field name
++        unchanged to avoid using CONVERT_TZ (which may require populated
++        timezone tables on the server).
++        """
++        if not settings.USE_TZ:
++            return field_name
++
++        # Determine the source timezone from the connection. It may be a
++        # pytz timezone instance (has attribute `zone`) or a simple string.
++        source_tz = getattr(self.connection, 'timezone', None)
++        if hasattr(source_tz, 'zone'):
++            source_tz_name = source_tz.zone
++        else:
++            source_tz_name = source_tz
++
++        # Fall back to 'UTC' if no source timezone is available.
++        if not source_tz_name:
++            source_tz_name = 'UTC'
++
++        # If source and target timezones are equal, no conversion is needed.
++        if source_tz_name == tzname:
++            return field_name
++
++        return "CONVERT_TZ(%s, '%s', '%s')" % (field_name, source_tz_name, tzname)
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+         field_name = self._convert_field_to_tz(field_name, tzname)
+
+--- a/django/db/backends/oracle/operations.py
++++ b/django/db/backends/oracle/operations.py
+@@ -95,13 +95,40 @@
+     _tzname_re = re.compile(r'^[\w/:+-]+$')
+ 
+     def _convert_field_to_tz(self, field_name, tzname):
++        """
++        Convert the given field from the database connection timezone to the
++        provided tzname for use in SQL. If USE_TZ is False, return the field
++        unchanged. If the source and target timezone names are equal, avoid
++        generating an AT TIME ZONE expression.
++        """
+         if not settings.USE_TZ:
+             return field_name
+         if not self._tzname_re.match(tzname):
+             raise ValueError("Invalid time zone name: %s" % tzname)
+-        # Convert from UTC to local time, returning TIMESTAMP WITH TIME ZONE
+-        # and cast it back to TIMESTAMP to strip the TIME ZONE details.
+-        return "CAST((FROM_TZ(%s, '0:00') AT TIME ZONE '%s') AS TIMESTAMP)" % (field_name, tzname)
++
++        # Determine the source timezone from the connection. It may be a
++        # pytz timezone instance (has attribute `zone`) or a simple string.
++        source_tz = getattr(self.connection, 'timezone', None)
++        if hasattr(source_tz, 'zone'):
++            source_tz_name = source_tz.zone
++        else:
++            source_tz_name = source_tz
++
++        # If no source timezone is available, default to UTC offset '0:00'
++        # (backwards-compatible behaviour).
++        if not source_tz_name:
++            source_tz_name = '0:00'
++
++        # If source and target timezones are equal (string-wise), no conversion is needed.
++        if source_tz_name == tzname:
++            return field_name
++
++        # Convert from the database timezone to the requested timezone,
++        # returning TIMESTAMP WITH TIME ZONE and cast it back to TIMESTAMP to
++        # strip the TIME ZONE details.
++        return "CAST((FROM_TZ(%s, '%s') AT TIME ZONE '%s') AS TIMESTAMP)" % (
++            field_name, source_tz_name, tzname
++        )
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+         field_name = self._convert_field_to_tz(field_name, tzname)
+
+--- a/django/db/backends/sqlite3/operations.py
++++ b/django/db/backends/sqlite3/operations.py
+@@ -85,7 +85,23 @@
+         return "django_time_trunc('%s', %s)" % (lookup_type.lower(), field_name)
+ 
+     def _convert_tzname_to_sql(self, tzname):
+-        return "'%s'" % tzname if settings.USE_TZ else 'NULL'
++        """
++        Return the timezone name quoted for SQL use if USE_TZ is enabled,
++        preferring the per-connection timezone when available. The tzname
++        argument is accepted for API compatibility but the connection's
++        timezone takes precedence so that per-database TIME_ZONE settings
++        are respected.
++        """
++        if not settings.USE_TZ:
++            return 'NULL'
++        conn_tz = getattr(self.connection, 'timezone', None)
++        if hasattr(conn_tz, 'zone'):
++            conn_tz_name = conn_tz.zone
++        else:
++            conn_tz_name = conn_tz
++        # Fall back to the provided tzname if connection has no timezone.
++        tz_to_use = conn_tz_name or tzname
++        return "'%s'" % tz_to_use
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+         return "django_datetime_cast_date(%s, %s)" % (

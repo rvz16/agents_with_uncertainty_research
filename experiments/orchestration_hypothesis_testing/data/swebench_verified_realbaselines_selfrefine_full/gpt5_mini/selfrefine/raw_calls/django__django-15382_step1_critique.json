@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:35:12.736500+00:00",
+  "instance_id": "django__django-15382",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nfilter on exists-subquery with empty queryset removes whole WHERE block\nDescription\n\t \n\t\t(last modified by Tobias Bengfort)\n\t \n>>> qs = MyModel.objects.filter(~models.Exists(MyModel.objects.none()), name='test')\n>>> qs\n<QuerySet []>\n>>> print(qs.query)\nEmptyResultSet\nWith django-debug-toolbar I can still see the query, but there WHERE block is missing completely.\nThis seems to be very similar to #33018.\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "- The patch is empty \u2014 no code changes were made, so the reported bug is not addressed at all.\n- No new tests were added to reproduce or guard against the regression (e.g. test for filter(~Exists(empty_qs), ...) preserving other WHERE clauses).\n- The patch does not implement logic to special-case negated Exists on an empty subquery (currently simplifying to EmptyResultSet); this is the core issue and remains unhandled.\n- There is no change to the SQL compiler or query simplification code that would prevent the entire WHERE block from being removed when a negated Exists over an empty queryset is present.\n- No handling for compound filters (AND/OR, Q objects) was added \u2014 the bug appears when other filters (like name='test') are present and must be preserved.\n- Edge cases are not considered: correlated subqueries, annotated/aggregated subqueries, querysets with extra(where) clauses, params, or database-specific behaviors are not addressed.\n- No documentation or comments explaining intended semantics for Exists/negated Exists simplification were provided.\n- No changes to or considerations for backward compatibility with related behavior referenced in issue #33018.",
+  "prompt_tokens": 224,
+  "completion_tokens": 889,
+  "cost_usd": 0.0018340000000000001
+}

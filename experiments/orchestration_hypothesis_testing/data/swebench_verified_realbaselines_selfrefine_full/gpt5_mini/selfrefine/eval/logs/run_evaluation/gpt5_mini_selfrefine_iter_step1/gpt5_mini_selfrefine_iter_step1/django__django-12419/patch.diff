@@ -1,0 +1,19 @@
+--- a/django/conf/global_settings.py
++++ b/django/conf/global_settings.py
+@@ -637,6 +637,15 @@
+ SECURE_HSTS_PRELOAD = False
+ SECURE_HSTS_SECONDS = 0
+ SECURE_REDIRECT_EXEMPT = []
+-SECURE_REFERRER_POLICY = None
++# Default Referrer-Policy header. For improved privacy, Django sends
++# `Referrer-Policy: same-origin` by default so cross-origin requests won't
++# receive the full Referer header. This is a deliberate "secure by default"
++# choice.
++#
++# Note: changing this default is a backwards-incompatible behavior: applications
++# that relied on the Referer header being sent to third-party sites may be
++# affected. To preserve the historical behavior (no header added by default),
++# set SECURE_REFERRER_POLICY = None in your project's settings.
++SECURE_REFERRER_POLICY = 'same-origin'
+ SECURE_SSL_HOST = None
+ SECURE_SSL_REDIRECT = False

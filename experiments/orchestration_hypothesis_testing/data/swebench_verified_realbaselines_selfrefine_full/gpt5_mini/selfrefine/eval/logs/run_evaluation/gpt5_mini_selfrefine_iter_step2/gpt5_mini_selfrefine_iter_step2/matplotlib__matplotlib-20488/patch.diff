@@ -1,0 +1,51 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -539,7 +539,47 @@
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,
+                                        ):
+-                    output = self.norm(resampled_masked)
++                    try:
++                        output = self.norm(resampled_masked)
++                    except ValueError as err:
++                        # Older NumPy or edge-case numeric issues can cause the
++                        # normalization transform to produce non-finite
++                        # transformed vmin/vmax (e.g. for LogNorm).  In that
++                        # case, try to recover by computing reasonable finite
++                        # bounds from the resampled data and retrying once.
++                        if "Invalid vmin or vmax" not in str(err):
++                            raise
++                        try:
++                            # Extract finite data from the (possibly masked)
++                            # resampled array.
++                            if hasattr(resampled_masked, "compressed"):
++                                data = resampled_masked.compressed()
++                            else:
++                                data = np.asarray(resampled_masked)
++                                # Remove NaNs if any.
++                                data = data[~np.isnan(data)]
++                            if data.size == 0:
++                                # Nothing to scale; fall back to an array of
++                                # zeros (consistent with behavior when
++                                # vmin==vmax).
++                                output = np.full_like(resampled_masked, 0)
++                            else:
++                                finite_min = float(np.nanmin(data))
++                                finite_max = float(np.nanmax(data))
++                                # Ensure positive bounds for LogNorm.
++                                if isinstance(self.norm, mcolors.LogNorm):
++                                    eps = np.finfo(np.float64).eps
++                                    if finite_max <= 0:
++                                        finite_max = eps
++                                    if finite_min <= 0:
++                                        finite_min = max(finite_min, eps)
++                                with cbook._setattr_cm(self.norm,
++                                                       vmin=finite_min,
++                                                       vmax=finite_max):
++                                    output = self.norm(resampled_masked)
++                        except Exception:
++                            # If recovery fails, re-raise the original error.
++                            raise
+             else:
+                 if A.shape[2] == 3:
+                     A = _rgb_to_rgba(A)

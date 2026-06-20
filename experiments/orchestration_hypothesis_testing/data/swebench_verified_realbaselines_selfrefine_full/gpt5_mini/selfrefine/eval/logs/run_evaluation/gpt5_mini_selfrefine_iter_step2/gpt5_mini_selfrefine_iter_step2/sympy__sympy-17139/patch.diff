@@ -1,0 +1,35 @@
+--- a/sympy/simplify/fu.py
++++ b/sympy/simplify/fu.py
+@@ -501,9 +501,21 @@
+         if not (rv.is_Pow and rv.base.func == f):
+             return rv
+ 
+-        if (rv.exp < 0) == True:
+-            return rv
+-        if (rv.exp > max) == True:
++        # Only handle integer, non-negative exponents. This avoids doing
++        # comparisons against complex or otherwise non-orderable exponents
++        # (e.g. I) which would raise a TypeError.
++        # If the exponent is not a concrete integer we bail out.
++        if not rv.exp.is_integer:
++            return rv
++        # If it is known to be negative, skip.
++        if rv.exp.is_negative:
++            return rv
++        # If the exponent is a concrete number, check the max bound.
++        if rv.exp.is_number:
++            if rv.exp > max:
++                return rv
++        else:
++            # Symbolic integer (unknown magnitude) -- don't attempt transform.
+             return rv
+         if rv.exp == 2:
+             return h(g(rv.base.args[0])**2)
+@@ -511,6 +523,7 @@
+             if rv.exp == 4:
+                 e = 2
+             elif not pow:
++                # rv.exp is an integer here so modulo and floor division are safe
+                 if rv.exp % 2:
+                     return rv
+                 e = rv.exp//2

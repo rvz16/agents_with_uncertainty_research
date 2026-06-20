@@ -1,0 +1,38 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -441,6 +441,35 @@
+ 
+     def set_source_expressions(self, exprs):
+         self.lhs, self.rhs = exprs
++
++    def _resolve_output_field(self):
++        """
++        Infer the output field for combined expressions.
++
++        Special-case subtraction of temporal fields (DateField, DateTimeField,
++        TimeField) to return a DurationField() instead of a Date/Time field.
++        """
++        # Attempt to infer using source fields while treating temporal subtraction
++        # as returning a DurationField.
++        source_fields = self.get_source_fields()
++        # Filter out None results (unresolved sources).
++        sources = [s for s in source_fields if s is not None]
++        if not sources:
++            return None
++        # If this is a subtraction between two temporal fields of the same type,
++        # the result is a DurationField.
++        datetime_field_types = {'DateField', 'DateTimeField', 'TimeField'}
++        if self.connector == self.SUB and len(sources) >= 2:
++            lhs, rhs = sources[0], sources[1]
++            try:
++                lhs_type = lhs.get_internal_type()
++                rhs_type = rhs.get_internal_type()
++            except Exception:
++                lhs_type = rhs_type = None
++            if lhs_type in datetime_field_types and lhs_type == rhs_type:
++                return fields.DurationField()
++        # Fall back to the default resolution.
++        return super()._resolve_output_field()
+ 
+     def as_sql(self, compiler, connection):
+         try:

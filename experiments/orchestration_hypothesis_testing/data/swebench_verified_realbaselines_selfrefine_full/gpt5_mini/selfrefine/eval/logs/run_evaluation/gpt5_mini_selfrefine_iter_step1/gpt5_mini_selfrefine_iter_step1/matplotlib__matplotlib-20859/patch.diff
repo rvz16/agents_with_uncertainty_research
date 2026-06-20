@@ -1,0 +1,30 @@
+--- a/lib/matplotlib/legend.py
++++ b/lib/matplotlib/legend.py
+@@ -360,7 +360,7 @@
+         """
+         # local import only to avoid circularity
+         from matplotlib.axes import Axes
+-        from matplotlib.figure import Figure
++        from matplotlib.figure import Figure, SubFigure
+ 
+         super().__init__()
+ 
+@@ -434,11 +434,17 @@
+             self.isaxes = True
+             self.axes = parent
+             self.set_figure(parent.figure)
++        elif isinstance(parent, SubFigure):
++            # A SubFigure is a container that lives inside a Figure.
++            # Use the SubFigure as the parent for anchoring the legend,
++            # but register the top-level Figure for drawing.
++            self.isaxes = False
++            self.set_figure(parent.figure)
+         elif isinstance(parent, Figure):
+             self.isaxes = False
+             self.set_figure(parent)
+         else:
+-            raise TypeError("Legend needs either Axes or Figure as parent")
++            raise TypeError("Legend needs either Axes or Figure (or SubFigure) as parent")
+         self.parent = parent
+ 
+         self._loc_used_default = loc is None

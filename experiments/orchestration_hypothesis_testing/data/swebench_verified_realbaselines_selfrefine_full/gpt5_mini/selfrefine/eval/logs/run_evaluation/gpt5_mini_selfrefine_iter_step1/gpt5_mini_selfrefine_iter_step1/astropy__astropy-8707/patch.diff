@@ -1,0 +1,41 @@
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -5,7 +5,7 @@
+ 
+ import numpy as np
+ 
+-from .util import _str_to_num, _is_int, translate, _words_group
++from .util import _str_to_num, _is_int, translate, _words_group, decode_ascii
+ from .verify import _Verify, _ErrList, VerifyError, VerifyWarning
+ 
+ from . import conf
+@@ -553,6 +553,11 @@
+         card(s).
+         """
+ 
++        # Accept bytes/bytearray on Python 3 as well as str; decode using ASCII
++        # so that callers may pass raw header bytes.
++        if isinstance(image, (bytes, bytearray)):
++            image = decode_ascii(bytes(image))
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -347,6 +347,14 @@
+         header
+             A new `Header` instance.
+         """
++
++        # Accept both text (str) and binary (bytes/bytearray) inputs. If bytes
++        # are provided, decode them to str using ASCII so callers can pass raw
++        # header bytes.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(bytes(data))
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(bytes(sep))
+ 
+         cards = []
+ 

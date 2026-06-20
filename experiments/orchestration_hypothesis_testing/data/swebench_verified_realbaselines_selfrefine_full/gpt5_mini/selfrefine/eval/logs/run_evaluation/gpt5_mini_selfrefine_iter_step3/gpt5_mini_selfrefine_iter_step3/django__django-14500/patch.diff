@@ -1,0 +1,32 @@
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -263,20 +263,27 @@
+ 
+     def check_replacements(self):
+         """
+-        Mark replacement migrations applied if their replaced set all are.
++        Mark replacement migrations applied if their replaced set all are,
++        and mark them unapplied if any of their replaced migrations are not.
+ 
+         Do this unconditionally on every migrate, rather than just when
+         migrations are applied or unapplied, to correctly handle the case
+         when a new squash migration is pushed to a deployment that already had
+         all its replaced migrations applied. In this case no new migration will
+         be applied, but the applied state of the squashed migration must be
+-        maintained.
++        maintained. Similarly, if a replaced migration is unapplied (for
++        example during a backwards migration), the squashed replacement should
++        be marked as unapplied as well.
+         """
+         applied = self.recorder.applied_migrations()
+         for key, migration in self.loader.replacements.items():
+             all_applied = all(m in applied for m in migration.replaces)
+             if all_applied and key not in applied:
+                 self.recorder.record_applied(*key)
++            elif not all_applied and key in applied:
++                # If not all replaced migrations are applied but the replacement
++                # is recorded as applied, mark the replacement as unapplied.
++                self.recorder.record_unapplied(*key)
+ 
+     def detect_soft_applied(self, project_state, migration):
+         """

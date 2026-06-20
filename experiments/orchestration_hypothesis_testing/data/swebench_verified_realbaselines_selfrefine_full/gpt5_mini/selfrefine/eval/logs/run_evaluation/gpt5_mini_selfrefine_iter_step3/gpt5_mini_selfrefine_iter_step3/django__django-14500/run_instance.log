@@ -1,0 +1,89 @@
+2026-06-19 09:32:40,495 - INFO - Creating container for django__django-14500...
+2026-06-19 09:32:42,233 - INFO - Container for django__django-14500 created: 1063d87b703570c931c45545e022a0791fc43364649fbc92df346f3c99040ab3
+2026-06-19 09:32:42,412 - INFO - Container for django__django-14500 started: 1063d87b703570c931c45545e022a0791fc43364649fbc92df346f3c99040ab3
+2026-06-19 09:32:42,413 - INFO - Intermediate patch for django__django-14500 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-14500/patch.diff, now applying to container...
+2026-06-19 09:32:42,542 - INFO - >>>>> Applied Patch:
+Checking patch django/db/migrations/executor.py...
+Applied patch django/db/migrations/executor.py cleanly.
+
+2026-06-19 09:32:44,137 - INFO - Git diff before:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index 57042a8690..5988171440 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -263,20 +263,27 @@ class MigrationExecutor:
+ 
+     def check_replacements(self):
+         """
+-        Mark replacement migrations applied if their replaced set all are.
++        Mark replacement migrations applied if their replaced set all are,
++        and mark them unapplied if any of their replaced migrations are not.
+ 
+         Do this unconditionally on every migrate, rather than just when
+         migrations are applied or unapplied, to correctly handle the case
+         when a new squash migration is pushed to a deployment that already had
+         all its replaced migrations applied. In this case no new migration will
+         be applied, but the applied state of the squashed migration must be
+-        maintained.
++        maintained. Similarly, if a replaced migration is unapplied (for
++        example during a backwards migration), the squashed replacement should
++        be marked as unapplied as well.
+         """
+         applied = self.recorder.applied_migrations()
+         for key, migration in self.loader.replacements.items():
+             all_applied = all(m in applied for m in migration.replaces)
+             if all_applied and key not in applied:
+                 self.recorder.record_applied(*key)
++            elif not all_applied and key in applied:
++                # If not all replaced migrations are applied but the replacement
++                # is recorded as applied, mark the replacement as unapplied.
++                self.recorder.record_unapplied(*key)
+ 
+     def detect_soft_applied(self, project_state, migration):
+         """
+2026-06-19 09:32:44,138 - INFO - Eval script for django__django-14500 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-14500/eval.sh; copying to container...
+2026-06-19 09:33:13,143 - INFO - Test runtime: 28.94 seconds
+2026-06-19 09:33:13,145 - INFO - Test output for django__django-14500 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-14500/test_output.txt
+2026-06-19 09:33:13,623 - INFO - Git diff after:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index 57042a8690..5988171440 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -263,20 +263,27 @@ class MigrationExecutor:
+ 
+     def check_replacements(self):
+         """
+-        Mark replacement migrations applied if their replaced set all are.
++        Mark replacement migrations applied if their replaced set all are,
++        and mark them unapplied if any of their replaced migrations are not.
+ 
+         Do this unconditionally on every migrate, rather than just when
+         migrations are applied or unapplied, to correctly handle the case
+         when a new squash migration is pushed to a deployment that already had
+         all its replaced migrations applied. In this case no new migration will
+         be applied, but the applied state of the squashed migration must be
+-        maintained.
++        maintained. Similarly, if a replaced migration is unapplied (for
++        example during a backwards migration), the squashed replacement should
++        be marked as unapplied as well.
+         """
+         applied = self.recorder.applied_migrations()
+         for key, migration in self.loader.replacements.items():
+             all_applied = all(m in applied for m in migration.replaces)
+             if all_applied and key not in applied:
+                 self.recorder.record_applied(*key)
++            elif not all_applied and key in applied:
++                # If not all replaced migrations are applied but the replacement
++                # is recorded as applied, mark the replacement as unapplied.
++                self.recorder.record_unapplied(*key)
+ 
+     def detect_soft_applied(self, project_state, migration):
+         """
+2026-06-19 09:33:13,623 - INFO - Grading answer for django__django-14500...
+2026-06-19 09:33:13,624 - INFO - report: {'django__django-14500': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_migrate_marks_replacement_unapplied (migrations.test_executor.ExecutorTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['If the current state satisfies the given target, do nothing.', 'Minimize unnecessary rollbacks in connected apps.', 'Minimize rollbacks when target has multiple in-app children.', 'test_alter_id_type_with_fk (migrations.test_executor.ExecutorTests)', 'Applying all replaced migrations marks replacement as applied (#24628).', 'An atomic operation is properly rolled back inside a non-atomic', 'Regression test for #22325 - references to a custom user model defined in the', 'executor.detect_soft_applied() detects ManyToManyField tables from an', "Re-planning a full migration of a fully-migrated set doesn't", 'A new squash migration will be marked as applied even if all its', 'Migrations are applied and recorded atomically.', 'Migrations are not recorded if deferred SQL application fails.', 'Although the MigrationExecutor interfaces allows for mixed migration', 'Applying a non-atomic migration works as expected.', '#24129 - Tests callback process', 'Tests running a simple set of migrations.', 'Tests running a squashed migration from zero (should ignore what it replaces)', 'Tests detection of initial migrations already having been applied.', '#26647 - Unrelated applied migrations should be part of the final', '#24123 - All models of apps being unapplied which are', '#24123 - All models of apps already applied which are'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14500: resolved: True
+2026-06-19 09:33:13,624 - INFO - Attempting to stop container sweb.eval.django__django-14500.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 09:33:28,870 - INFO - Attempting to remove container sweb.eval.django__django-14500.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 09:33:28,891 - INFO - Container sweb.eval.django__django-14500.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-19 09:33:28,892 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14500:latest...
+2026-06-19 09:33:29,461 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14500:latest removed.

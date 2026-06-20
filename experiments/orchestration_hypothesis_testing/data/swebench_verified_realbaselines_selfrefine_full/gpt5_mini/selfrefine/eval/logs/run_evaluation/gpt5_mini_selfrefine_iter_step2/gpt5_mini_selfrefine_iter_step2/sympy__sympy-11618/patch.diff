@@ -1,0 +1,24 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -14,6 +14,7 @@
+ from sympy.core.compatibility import iterable
+ from sympy.core.containers import Tuple
+ from sympy.simplify import nsimplify, simplify
++from itertools import zip_longest
+ from sympy.geometry.exceptions import GeometryError
+ from sympy.functions.elementary.miscellaneous import sqrt
+ from sympy.functions.elementary.complexes import im
+@@ -266,8 +267,11 @@
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # Ensure p is a Point and pad shorter coordinate lists with zeros so that
++        # points in different dimensions are handled (e.g., Point2D vs Point3D).
++        p = Point(p) if not isinstance(p, Point) else p
++        return sqrt(sum([(a - b)**2 for a, b in zip_longest(
++            self.args, p.args, fillvalue=S.Zero)]))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.

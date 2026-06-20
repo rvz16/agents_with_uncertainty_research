@@ -1,0 +1,66 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -514,19 +514,59 @@
+         return self.__class__(*args, **kwargs)
+ 
+     def __eq__(self, other):
+-        # Needed for @total_ordering
++        # Needed for @total_ordering.
++        # Fields should only be equal if they come from the same model (if
++        # they're bound to a model) and have the same name and creation
++        # counter. Unbound fields (no .model) compare equal only if they
++        # share creation_counter and name.
+         if isinstance(other, Field):
+-            return self.creation_counter == other.creation_counter
++            if self.creation_counter != other.creation_counter:
++                return False
++            self_model = getattr(self, 'model', None)
++            other_model = getattr(other, 'model', None)
++            # Both bound to models: require same model identity and name.
++            if self_model is not None and other_model is not None:
++                return self_model is other_model and (self.name == other.name)
++            # Both unbound: compare by name and creation_counter.
++            if self_model is None and other_model is None:
++                return self.name == other.name
++            # One bound and one unbound: not equal.
++            return False
+         return NotImplemented
+ 
+     def __lt__(self, other):
+         # This is needed because bisect does not take a comparison function.
++        # Order primarily by creation_counter to preserve historical ordering
++        # behaviour; tie-break by model label (if available), then by name,
++        # then by class name to ensure a total ordering.
+         if isinstance(other, Field):
+-            return self.creation_counter < other.creation_counter
++            if self.creation_counter != other.creation_counter:
++                return self.creation_counter < other.creation_counter
++            # creation_counter equal: tie-break deterministically.
++            def model_label(field):
++                model = getattr(field, 'model', None)
++                if model is None:
++                    return ('', '')
++                opts = model._meta
++                return (opts.app_label, opts.object_name)
++            self_label = model_label(self)
++            other_label = model_label(other)
++            if self_label != other_label:
++                return self_label < other_label
++            # Finally compare by name and then by class path to reach a total order.
++            self_name = self.name or ''
++            other_name = other.name or ''
++            if self_name != other_name:
++                return self_name < other_name
++            return ("%s.%s" % (self.__class__.__module__, self.__class__.__qualname__)) < (
++                "%s.%s" % (other.__class__.__module__, other.__class__.__qualname__)
++            )
+         return NotImplemented
+ 
+     def __hash__(self):
+-        return hash(self.creation_counter)
++        # Hash must be consistent with __eq__. Include creation_counter,
++        # model (if any) and name.
++        return hash((self.creation_counter, getattr(self, 'model', None), self.name))
+ 
+     def __deepcopy__(self, memodict):
+         # We don't have to deepcopy very much here, since most things are not

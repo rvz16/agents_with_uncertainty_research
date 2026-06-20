@@ -1,0 +1,19 @@
+--- a/sklearn/linear_model/huber.py
++++ b/sklearn/linear_model/huber.py
+@@ -251,12 +251,13 @@
+         self : object
+         """
+         X, y = check_X_y(
+-            X, y, copy=False, accept_sparse=['csr'], y_numeric=True)
++            X, y, copy=False, accept_sparse=['csr'], dtype=np.float64,
++            y_numeric=True)
+         if sample_weight is not None:
+-            sample_weight = np.array(sample_weight)
++            sample_weight = np.asarray(sample_weight, dtype=np.float64)
+             check_consistent_length(y, sample_weight)
+         else:
+-            sample_weight = np.ones_like(y)
++            sample_weight = np.ones_like(y, dtype=np.float64)
+ 
+         if self.epsilon < 1.0:
+             raise ValueError(

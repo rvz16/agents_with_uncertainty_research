@@ -1,0 +1,53 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -405,6 +405,32 @@
+         refs_subquery = False
+         replacements = {}
+         annotation_select_mask = self.annotation_select_mask
++
++        def _expr_contains_window(expr):
++            """
++            Return True if the expression tree contains a Window() node.
++
++            We check by class name to avoid importing Window here and possibly
++            creating import cycles. The function is recursive and handles
++            None/Ref wrappers.
++            """
++            if expr is None:
++                return False
++            # Unwrap Ref objects to inspect the underlying expression.
++            if isinstance(expr, Ref):
++                # Ref has attributes (refs, expression) historically; try to
++                # access the wrapped expression if present.
++                expr = getattr(expr, "expression", None) or expr
++            # Detect Window by class name to avoid direct import.
++            if expr.__class__.__name__ == "Window":
++                return True
++            # Recurse into source expressions if available.
++            if hasattr(expr, "get_source_expressions"):
++                for sub in expr.get_source_expressions() or ():
++                    if _expr_contains_window(sub):
++                        return True
++            return False
++
+         for alias, aggregate_expr in aggregate_exprs.items():
+             self.check_alias(alias)
+             aggregate = aggregate_expr.resolve_expression(
+@@ -415,9 +441,15 @@
+             # Temporarily add aggregate to annotations to allow remaining
+             # members of `aggregates` to resolve against each others.
+             self.append_annotation_mask([alias])
++            # If any referenced existing annotation is itself a subquery,
++            # or contains a Window expression, force using a subquery for the
++            # aggregation. Aggregating over window functions is disallowed by
++            # some backends (PostgreSQL), so prefer the subquery path.
++            refs = list(aggregate.get_refs())
+             refs_subquery |= any(
+-                getattr(self.annotations[ref], "subquery", False)
+-                for ref in aggregate.get_refs()
++                getattr(self.annotations.get(ref), "subquery", False)
++                or _expr_contains_window(self.annotations.get(ref))
++                for ref in refs
+             )
+             aggregate = aggregate.replace_expressions(replacements)
+             self.annotations[alias] = aggregate

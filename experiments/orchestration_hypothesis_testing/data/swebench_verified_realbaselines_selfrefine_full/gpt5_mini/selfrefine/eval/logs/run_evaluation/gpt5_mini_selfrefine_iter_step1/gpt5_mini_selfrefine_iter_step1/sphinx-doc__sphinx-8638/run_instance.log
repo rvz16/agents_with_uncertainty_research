@@ -1,0 +1,117 @@
+2026-06-19 00:57:24,120 - INFO - Creating container for sphinx-doc__sphinx-8638...
+2026-06-19 00:57:24,196 - INFO - Container for sphinx-doc__sphinx-8638 created: 4cdfbacb54b0690dd4515c33cd4f09a059360f58a3d991761bf3d100818da72f
+2026-06-19 00:57:24,352 - INFO - Container for sphinx-doc__sphinx-8638 started: 4cdfbacb54b0690dd4515c33cd4f09a059360f58a3d991761bf3d100818da72f
+2026-06-19 00:57:24,353 - INFO - Intermediate patch for sphinx-doc__sphinx-8638 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-8638/patch.diff, now applying to container...
+2026-06-19 00:57:24,485 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/domains/python.py...
+Applied patch sphinx/domains/python.py cleanly.
+
+2026-06-19 00:57:25,110 - INFO - Git diff before:
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 000e2e8d3..bf2930069 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -1161,19 +1161,31 @@ class PythonDomain(Domain):
+                                    if oname.endswith(searchname) and
+                                    self.objects[oname].objtype in objtypes]
+         else:
+-            # NOTE: searching for exact match, object type is not considered
+-            if name in self.objects:
+-                newname = name
+-            elif type == 'mod':
++            # NOTE: searching for exact match, object type is not considered.
++            # Prefer more specific (module + class + name) and class-scoped names
++            # over unqualified/bare names. This avoids linking instance/class
++            # attributes to unrelated module-level objects with the same name.
++            if type == 'mod':
+                 # only exact matches allowed for modules
+-                return []
+-            elif classname and classname + '.' + name in self.objects:
+-                newname = classname + '.' + name
+-            elif modname and modname + '.' + name in self.objects:
+-                newname = modname + '.' + name
+-            elif modname and classname and \
+-                    modname + '.' + classname + '.' + name in self.objects:
+-                newname = modname + '.' + classname + '.' + name
++                if name in self.objects:
++                    newname = name
++                else:
++                    return []
++            else:
++                # Prefer most specific qualification first:
++                # 1. modname.classname.name
++                # 2. classname.name
++                # 3. modname.name
++                # 4. name (bare)
++                if modname and classname and \
++                        (modname + '.' + classname + '.' + name) in self.objects:
++                    newname = modname + '.' + classname + '.' + name
++                elif classname and (classname + '.' + name) in self.objects:
++                    newname = classname + '.' + name
++                elif modname and (modname + '.' + name) in self.objects:
++                    newname = modname + '.' + name
++                elif name in self.objects:
++                    newname = name
+         if newname is not None:
+             matches.append((newname, self.objects[newname]))
+         return matches
+2026-06-19 00:57:25,111 - INFO - Eval script for sphinx-doc__sphinx-8638 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-8638/eval.sh; copying to container...
+2026-06-19 00:57:46,078 - INFO - Test runtime: 20.92 seconds
+2026-06-19 00:57:46,084 - INFO - Test output for sphinx-doc__sphinx-8638 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-8638/test_output.txt
+2026-06-19 00:57:46,215 - INFO - Git diff after:
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 000e2e8d3..bf2930069 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -1161,19 +1161,31 @@ class PythonDomain(Domain):
+                                    if oname.endswith(searchname) and
+                                    self.objects[oname].objtype in objtypes]
+         else:
+-            # NOTE: searching for exact match, object type is not considered
+-            if name in self.objects:
+-                newname = name
+-            elif type == 'mod':
++            # NOTE: searching for exact match, object type is not considered.
++            # Prefer more specific (module + class + name) and class-scoped names
++            # over unqualified/bare names. This avoids linking instance/class
++            # attributes to unrelated module-level objects with the same name.
++            if type == 'mod':
+                 # only exact matches allowed for modules
+-                return []
+-            elif classname and classname + '.' + name in self.objects:
+-                newname = classname + '.' + name
+-            elif modname and modname + '.' + name in self.objects:
+-                newname = modname + '.' + name
+-            elif modname and classname and \
+-                    modname + '.' + classname + '.' + name in self.objects:
+-                newname = modname + '.' + classname + '.' + name
++                if name in self.objects:
++                    newname = name
++                else:
++                    return []
++            else:
++                # Prefer most specific qualification first:
++                # 1. modname.classname.name
++                # 2. classname.name
++                # 3. modname.name
++                # 4. name (bare)
++                if modname and classname and \
++                        (modname + '.' + classname + '.' + name) in self.objects:
++                    newname = modname + '.' + classname + '.' + name
++                elif classname and (classname + '.' + name) in self.objects:
++                    newname = classname + '.' + name
++                elif modname and (modname + '.' + name) in self.objects:
++                    newname = modname + '.' + name
++                elif name in self.objects:
++                    newname = name
+         if newname is not None:
+             matches.append((newname, self.objects[newname]))
+         return matches
+2026-06-19 00:57:46,215 - INFO - Grading answer for sphinx-doc__sphinx-8638...
+2026-06-19 00:57:46,221 - INFO - report: {'sphinx-doc__sphinx-8638': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_domain_py.py::test_info_field_list_var']}, 'PASS_TO_PASS': {'success': ['tests/test_domain_py.py::test_function_signatures', 'tests/test_domain_py.py::test_domain_py_xrefs', 'tests/test_domain_py.py::test_domain_py_objects', 'tests/test_domain_py.py::test_resolve_xref_for_properties', 'tests/test_domain_py.py::test_domain_py_find_obj', 'tests/test_domain_py.py::test_get_full_qualified_name', 'tests/test_domain_py.py::test_parse_annotation', 'tests/test_domain_py.py::test_pyfunction_signature', 'tests/test_domain_py.py::test_pyfunction_signature_full', 'tests/test_domain_py.py::test_pyfunction_signature_full_py38', 'tests/test_domain_py.py::test_pyfunction_with_number_literals', 'tests/test_domain_py.py::test_optional_pyfunction_signature', 'tests/test_domain_py.py::test_pyexception_signature', 'tests/test_domain_py.py::test_exceptions_module_is_ignored', 'tests/test_domain_py.py::test_pydata_signature', 'tests/test_domain_py.py::test_pydata_signature_old', 'tests/test_domain_py.py::test_pyobject_prefix', 'tests/test_domain_py.py::test_pydata', 'tests/test_domain_py.py::test_pyfunction', 'tests/test_domain_py.py::test_pyclass_options', 'tests/test_domain_py.py::test_pymethod_options', 'tests/test_domain_py.py::test_pyclassmethod', 'tests/test_domain_py.py::test_pystaticmethod', 'tests/test_domain_py.py::test_pyattribute', 'tests/test_domain_py.py::test_pydecorator_signature', 'tests/test_domain_py.py::test_pydecoratormethod_signature', 'tests/test_domain_py.py::test_canonical', 'tests/test_domain_py.py::test_info_field_list', 'tests/test_domain_py.py::test_module_index', 'tests/test_domain_py.py::test_module_index_submodule', 'tests/test_domain_py.py::test_module_index_not_collapsed', 'tests/test_domain_py.py::test_modindex_common_prefix', 'tests/test_domain_py.py::test_noindexentry', 'tests/test_domain_py.py::test_warn_missing_reference'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-8638: resolved: False
+2026-06-19 00:57:46,221 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-8638.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:58:01,415 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-8638.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:58:01,433 - INFO - Container sweb.eval.sphinx-doc__sphinx-8638.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 00:58:01,433 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-8638:latest...
+2026-06-19 00:58:01,881 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-8638:latest removed.

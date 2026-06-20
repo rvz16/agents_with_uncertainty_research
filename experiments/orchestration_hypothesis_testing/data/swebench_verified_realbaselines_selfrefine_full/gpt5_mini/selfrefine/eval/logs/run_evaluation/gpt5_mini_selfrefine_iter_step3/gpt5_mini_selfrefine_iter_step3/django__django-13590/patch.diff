@@ -1,0 +1,27 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1077,10 +1077,20 @@
+         elif isinstance(value, (list, tuple)):
+             # The items of the iterable may be expressions and therefore need
+             # to be resolved independently.
+-            return type(value)(
+-                self.resolve_lookup_value(sub_value, can_reuse, allow_joins)
+-                for sub_value in value
+-            )
++            resolved = [self.resolve_lookup_value(sub_value, can_reuse, allow_joins)
++                        for sub_value in value]
++            # Preserve the concrete type. For plain tuples and lists, calling
++            # tuple()/list() on the resolved list is fine. For subclasses of
++            # tuple (e.g. namedtuple), we must expand the values into the
++            # constructor to avoid passing a single iterable argument.
++            if isinstance(value, tuple):
++                if type(value) is tuple:
++                    return tuple(resolved)
++                # tuple subclass (namedtuple etc.)
++                return type(value)(*resolved)
++            else:
++                # list (or list subclass)
++                return type(value)(resolved)
+         return value
+ 
+     def solve_lookup_type(self, lookup):

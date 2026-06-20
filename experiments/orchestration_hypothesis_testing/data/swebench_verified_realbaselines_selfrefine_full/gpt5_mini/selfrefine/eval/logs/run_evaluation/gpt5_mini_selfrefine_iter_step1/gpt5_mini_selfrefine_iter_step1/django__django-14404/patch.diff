@@ -1,0 +1,24 @@
+--- a/django/contrib/admin/sites.py
++++ b/django/contrib/admin/sites.py
+@@ -420,14 +420,18 @@
+     def catch_all_view(self, request, url):
+         if settings.APPEND_SLASH and not url.endswith('/'):
+             urlconf = getattr(request, 'urlconf', None)
+-            path = '%s/' % request.path_info
++            # Use path_info when resolving (URLconf expects path without
++            # SCRIPT_NAME), but include SCRIPT_NAME in the redirect so that
++            # FORCE_SCRIPT_NAME is respected.
++            path_info = '%s/' % request.path_info
++            redirect_path = '%s/' % request.path
+             try:
+-                match = resolve(path, urlconf)
++                match = resolve(path_info, urlconf)
+             except Resolver404:
+                 pass
+             else:
+                 if getattr(match.func, 'should_append_slash', True):
+-                    return HttpResponsePermanentRedirect(path)
++                    return HttpResponsePermanentRedirect(redirect_path)
+         raise Http404
+ 
+     def _build_app_dict(self, request, label=None):

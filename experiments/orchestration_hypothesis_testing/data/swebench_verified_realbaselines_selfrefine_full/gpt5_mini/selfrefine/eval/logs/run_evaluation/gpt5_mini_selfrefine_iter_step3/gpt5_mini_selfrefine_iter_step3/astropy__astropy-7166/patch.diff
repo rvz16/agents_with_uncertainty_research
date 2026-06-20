@@ -1,0 +1,39 @@
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,14 +528,28 @@
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
+-                for base in cls.__mro__[1:]:
+-                    super_method = getattr(base, key, None)
+-                    if super_method is not None:
+-                        val.__doc__ = super_method.__doc__
+-                        break
++            # Only consider public members
++            if not is_public_member(key):
++                continue
++            # Regular functions: set their __doc__ if missing
++            if inspect.isfunction(val):
++                if val.__doc__ is None:
++                    for base in cls.__mro__[1:]:
++                        super_method = getattr(base, key, None)
++                        if super_method is not None:
++                            val.__doc__ = super_method.__doc__
++                            break
++            # Properties: create a new property with the inherited docstring
++            elif isinstance(val, property):
++                if val.__doc__ is None:
++                    for base in cls.__mro__[1:]:
++                        super_method = getattr(base, key, None)
++                        if super_method is not None:
++                            doc = getattr(super_method, '__doc__', None)
++                            # Recreate the property with the inherited docstring
++                            new_prop = property(val.fget, val.fset, val.fdel, doc)
++                            setattr(cls, key, new_prop)
++                            break
+ 
+         super().__init__(name, bases, dct)
+ 

@@ -1,0 +1,117 @@
+2026-06-19 08:42:28,498 - INFO - Creating container for django__django-12039...
+2026-06-19 08:42:28,635 - INFO - Container for django__django-12039 created: fea7a69800c4d5e4148e9f5c10c8b3a79540991e5306976a4c53cd1baaf61fb0
+2026-06-19 08:42:28,763 - INFO - Container for django__django-12039 started: fea7a69800c4d5e4148e9f5c10c8b3a79540991e5306976a4c53cd1baaf61fb0
+2026-06-19 08:42:28,765 - INFO - Intermediate patch for django__django-12039 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-12039/patch.diff, now applying to container...
+2026-06-19 08:42:28,877 - INFO - >>>>> Applied Patch:
+Checking patch django/db/backends/ddl_references.py...
+Applied patch django/db/backends/ddl_references.py cleanly.
+
+2026-06-19 08:42:30,156 - INFO - Git diff before:
+diff --git a/django/db/backends/ddl_references.py b/django/db/backends/ddl_references.py
+index 44e49806f8..e45c0141f0 100644
+--- a/django/db/backends/ddl_references.py
++++ b/django/db/backends/ddl_references.py
+@@ -84,9 +84,17 @@ class Columns(TableColumns):
+     def __str__(self):
+         def col_str(column, idx):
+             try:
+-                return self.quote_name(column) + self.col_suffixes[idx]
++                suffix = self.col_suffixes[idx]
+             except IndexError:
+                 return self.quote_name(column)
++            if suffix:
++                # Ensure there is exactly one separating space between the
++                # quoted column name and the suffix (which might be an
++                # ordering like "DESC" or additional SQL like "NULLS LAST").
++                if not suffix.startswith(' '):
++                    suffix = ' ' + suffix
++                return self.quote_name(column) + suffix
++            return self.quote_name(column)
+ 
+         return ', '.join(col_str(column, idx) for idx, column in enumerate(self.columns))
+ 
+@@ -112,11 +120,21 @@ class IndexColumns(Columns):
+         def col_str(column, idx):
+             # Index.__init__() guarantees that self.opclasses is the same
+             # length as self.columns.
+-            col = '{} {}'.format(self.quote_name(column), self.opclasses[idx])
++            opclass = self.opclasses[idx]
++            col = self.quote_name(column)
++            if opclass:
++                # Ensure exactly one space between column and opclass.
++                col = '{} {}'.format(col, opclass)
+             try:
+-                col = '{} {}'.format(col, self.col_suffixes[idx])
++                suffix = self.col_suffixes[idx]
+             except IndexError:
+-                pass
++                return col
++            if suffix:
++                # Ensure there is exactly one separating space between the
++                # current column/opclass fragment and the suffix.
++                if not suffix.startswith(' '):
++                    suffix = ' ' + suffix
++                col = '{}{}'.format(col, suffix)
+             return col
+ 
+         return ', '.join(col_str(column, idx) for idx, column in enumerate(self.columns))
+2026-06-19 08:42:30,157 - INFO - Eval script for django__django-12039 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-12039/eval.sh; copying to container...
+2026-06-19 08:42:53,519 - INFO - Test runtime: 23.31 seconds
+2026-06-19 08:42:53,521 - INFO - Test output for django__django-12039 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-12039/test_output.txt
+2026-06-19 08:42:53,631 - INFO - Git diff after:
+diff --git a/django/db/backends/ddl_references.py b/django/db/backends/ddl_references.py
+index 44e49806f8..e45c0141f0 100644
+--- a/django/db/backends/ddl_references.py
++++ b/django/db/backends/ddl_references.py
+@@ -84,9 +84,17 @@ class Columns(TableColumns):
+     def __str__(self):
+         def col_str(column, idx):
+             try:
+-                return self.quote_name(column) + self.col_suffixes[idx]
++                suffix = self.col_suffixes[idx]
+             except IndexError:
+                 return self.quote_name(column)
++            if suffix:
++                # Ensure there is exactly one separating space between the
++                # quoted column name and the suffix (which might be an
++                # ordering like "DESC" or additional SQL like "NULLS LAST").
++                if not suffix.startswith(' '):
++                    suffix = ' ' + suffix
++                return self.quote_name(column) + suffix
++            return self.quote_name(column)
+ 
+         return ', '.join(col_str(column, idx) for idx, column in enumerate(self.columns))
+ 
+@@ -112,11 +120,21 @@ class IndexColumns(Columns):
+         def col_str(column, idx):
+             # Index.__init__() guarantees that self.opclasses is the same
+             # length as self.columns.
+-            col = '{} {}'.format(self.quote_name(column), self.opclasses[idx])
++            opclass = self.opclasses[idx]
++            col = self.quote_name(column)
++            if opclass:
++                # Ensure exactly one space between column and opclass.
++                col = '{} {}'.format(col, opclass)
+             try:
+-                col = '{} {}'.format(col, self.col_suffixes[idx])
++                suffix = self.col_suffixes[idx]
+             except IndexError:
+-                pass
++                return col
++            if suffix:
++                # Ensure there is exactly one separating space between the
++                # current column/opclass fragment and the suffix.
++                if not suffix.startswith(' '):
++                    suffix = ' ' + suffix
++                col = '{}{}'.format(col, suffix)
+             return col
+ 
+         return ', '.join(col_str(column, idx) for idx, column in enumerate(self.columns))
+2026-06-19 08:42:53,631 - INFO - Grading answer for django__django-12039...
+2026-06-19 08:42:53,632 - INFO - report: {'django__django-12039': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_descending_columns_list_sql (indexes.tests.SchemaIndexesTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_columns_list_sql (indexes.tests.SchemaIndexesTests)', 'test_index_name (indexes.tests.SchemaIndexesTests)', 'test_index_name_hash (indexes.tests.SchemaIndexesTests)', 'test_index_together (indexes.tests.SchemaIndexesTests)', 'test_index_together_single_list (indexes.tests.SchemaIndexesTests)', 'test_create_index_ignores_opclasses (indexes.tests.SchemaIndexesNotPostgreSQLTests)', 'test_boolean_restriction_partial (indexes.tests.PartialIndexTests)', 'test_integer_restriction_partial (indexes.tests.PartialIndexTests)', 'test_is_null_condition (indexes.tests.PartialIndexTests)', 'test_multiple_conditions (indexes.tests.PartialIndexTests)', 'test_partial_index (indexes.tests.PartialIndexTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12039: resolved: True
+2026-06-19 08:42:53,633 - INFO - Attempting to stop container sweb.eval.django__django-12039.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 08:43:08,875 - INFO - Attempting to remove container sweb.eval.django__django-12039.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 08:43:08,894 - INFO - Container sweb.eval.django__django-12039.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-19 08:43:08,894 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12039:latest...
+2026-06-19 08:43:09,463 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12039:latest removed.

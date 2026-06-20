@@ -1,0 +1,17 @@
+--- a/sklearn/linear_model/logistic.py
++++ b/sklearn/linear_model/logistic.py
+@@ -2174,8 +2174,12 @@
+                     w = np.mean([coefs_paths[i, best_indices[i], :]
+                                  for i in range(len(folds))], axis=0)
+                 else:
+-                    w = np.mean([coefs_paths[:, i, best_indices[i], :]
+-                                 for i in range(len(folds))], axis=0)
++                    # coefs_paths may have different shapes depending on the
++                    # multi_class and penalty/l1_ratios handling:
++                    # - shape (n_classes, n_folds, n_cs * n_l1, n_features)
++                    # - shape (n_folds, n_cs * n_l1, n_features)
++                    # Handle both possibilities to avoid IndexError.
++                    if getattr
+ 
+                 best_indices_C = best_indices % len(self.Cs_)
+                 self.C_.append(np.mean(self.Cs_[best_indices_C]))

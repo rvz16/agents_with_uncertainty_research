@@ -1,0 +1,23 @@
+--- a/astropy/units/format/cds.py
++++ b/astropy/units/format/cds.py
+@@ -301,7 +301,19 @@
+             return cls._parse_unit(s, detailed_exception=False)
+         except ValueError:
+             try:
+-                return cls._parser.parse(s, lexer=cls._lexer, debug=debug)
++                # Normalize sequences of multiple divisions such as
++                # "J/m/s/kpc2" to "J/(m.s.kpc2)" so that the grammar treats
++                # the entire trailing sequence as the denominator.  This
++                # preserves the intended CDS semantics where repeated '/'
++                # means successive division (i.e. division by the product of
++                # the following units) and avoids incorrect associativity in
++                # the PLY grammar.
++                s_norm = re.sub(
++                    r'/([^/()\[\]]+)(/[^/()\[\]]+)+',
++                    lambda m: '/(' + '.'.join(m.group(0)[1:].split('/')) + ')',
++                    s,
++                )
++                return cls._parser.parse(s_norm, lexer=cls._lexer, debug=debug)
+             except ValueError as e:
+                 if str(e):
+                     raise ValueError(str(e))

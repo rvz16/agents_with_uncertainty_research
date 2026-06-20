@@ -1,0 +1,22 @@
+--- a/astropy/io/ascii/html.py
++++ b/astropy/io/ascii/html.py
+@@ -362,6 +362,19 @@
+         if isinstance(raw_html_cols, str):
+             raw_html_cols = [raw_html_cols]  # Allow for a single string as input
+         cols_escaped = [col.info.name not in raw_html_cols for col in cols]
++
++        # Apply any user-supplied formats so that the HTML writer uses them when
++        # generating string values via Column.info.iter_str_vals(). The formats
++        # dict is expected to be available on self.data.formats (set by the
++        # unified I/O layer when the user passes the `formats=` kwarg to write()).
++        data_formats = getattr(self.data, 'formats', None)
++        if isinstance(data_formats, dict):
++            for col in cols:
++                name = col.info.name
++                if name in data_formats:
++                    # Assign the user-supplied format to the column's info so
++                    # that subsequent calls to iter_str_vals() will use it.
++                    col.info.format = data_formats[name]
+ 
+         # Kwargs that get passed on to bleach.clean() if that is available.
+         raw_html_clean_kwargs = self.html.get('raw_html_clean_kwargs', {})

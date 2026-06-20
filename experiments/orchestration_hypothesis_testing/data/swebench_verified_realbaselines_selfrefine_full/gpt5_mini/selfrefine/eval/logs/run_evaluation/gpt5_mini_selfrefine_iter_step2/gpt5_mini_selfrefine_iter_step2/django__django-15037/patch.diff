@@ -1,0 +1,36 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -120,14 +120,31 @@
+                             rel_type = 'OneToOneField'
+                         else:
+                             rel_type = 'ForeignKey'
++                        # relations[column_name] is expected to be a tuple of
++                        # (referenced_column, referenced_table)
++                        ref_info = relations[column_name]
++                        ref_table = ref_info[1]
+                         rel_to = (
+-                            "self" if relations[column_name][1] == table_name
+-                            else table2model(relations[column_name][1])
++                            "self" if ref_table == table_name
++                            else table2model(ref_table)
+                         )
+                         if rel_to in known_models:
+                             field_type = '%s(%s' % (rel_type, rel_to)
+                         else:
+                             field_type = "%s('%s'" % (rel_type, rel_to)
++                        # If the FK references a non-primary key column on the related
++                        # table, include to_field so Django knows which field on the
++                        # related model is referenced.
++                        ref_column = ref_info[0]
++                        try:
++                            related_pk = connection.introspection.get_primary_key_column(cursor, ref_table)
++                        except Exception:
++                            related_pk = None
++                        if ref_column is not None and related_pk is not None and ref_column != related_pk:
++                            # Normalize the referenced column name to the expected
++                            # model field name on the related model.
++                            ref_field_name, _params, _notes = self.normalize_col_name(ref_column, [], False)
++                            extra_params['to_field'] = ref_field_name
+                     else:
+                         # Calling `get_field_type` to get the field type string and any
+                         # additional parameters and notes.

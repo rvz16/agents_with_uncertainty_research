@@ -1,0 +1,24 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1171,13 +1171,19 @@
+             kwargs["to_field"] = self.fk.remote_field.field_name
+ 
+         # If we're adding a new object, ignore a parent's auto-generated key
+-        # as it will be regenerated on the save request.
++        # as it will be regenerated on the save request. Only clear the field
++        # when it's an AutoField (i.e. a DB-assigned integer primary key).
++        # For other fields that provide their own default (for example a
++        # UUIDField with a callable default), keep the default so inline forms
++        # can see the value.
+         if self.instance._state.adding:
+             if kwargs.get("to_field") is not None:
+                 to_field = self.instance._meta.get_field(kwargs["to_field"])
+             else:
+                 to_field = self.instance._meta.pk
+-            if to_field.has_default():
++            # Only clear auto-generated primary keys (AutoField subclasses).
++            from django.db.models import AutoField
++            if isinstance(to_field, AutoField) and to_field.has_default():
+                 setattr(self.instance, to_field.attname, None)
+ 
+         form.fields[name] = InlineForeignKeyField(self.instance, **kwargs)

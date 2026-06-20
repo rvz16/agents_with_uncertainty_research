@@ -1,0 +1,39 @@
+--- a/django/contrib/staticfiles/storage.py
++++ b/django/contrib/staticfiles/storage.py
+@@ -226,9 +226,19 @@
+             path for path in paths
+             if matches_patterns(path, self._patterns)
+         ]
++
++        # Track which original files we've already yielded to avoid duplicates
++        yielded = set()
++
+         # Do a single pass first. Post-process all files once, then repeat for
+-        # adjustable files.
++        # adjustable files. Only yield each original file once.
+         for name, hashed_name, processed, _ in self._post_process(paths, adjustable_paths, hashed_files):
++            if name == 'All':
++                yield name, hashed_name, processed
++                continue
++            if name in yielded:
++                continue
++            yielded.add(name)
+             yield name, hashed_name, processed
+ 
+         paths = {path: paths[path] for path in adjustable_paths}
+@@ -236,6 +246,15 @@
+         for i in range(self.max_post_process_passes):
+             substitutions = False
+             for name, hashed_name, processed, subst in self._post_process(paths, adjustable_paths, hashed_files):
++                if name == 'All':
++                    yield name, hashed_name, processed
++                    continue
++                # Always consider substitutions even if we've already yielded the file,
++                # so that the pass loop termination remains correct.
++                if name in yielded:
++                    substitutions = substitutions or subst
++                    continue
++                yielded.add(name)
+                 yield name, hashed_name, processed
+                 substitutions = substitutions or subst
+ 

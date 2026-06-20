@@ -1,0 +1,40 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -293,14 +293,29 @@
+             Estimator instance.
+         """
+         super().set_output(transform=transform)
+-        transformers = (
+-            trans
+-            for _, trans, _ in chain(
+-                self.transformers, getattr(self, "transformers_", [])
+-            )
+-            if trans not in {"passthrough", "drop"}
+-        )
+-        for trans in transformers:
++        # Collect all transformer objects from the user-specified transformers
++        # and from the fitted transformers_. Also ensure that the remainder
++        # estimator (either the parameter self.remainder or the internal
++        # self._remainder created during validation) is included when it is an
++        # estimator. We skip the special strings 'passthrough' and 'drop'.
++        transformers_to_set = []
++        for _, trans, _ in chain(self.transformers, getattr(self, "transformers_", [])):
++            if trans in {"passthrough", "drop"}:
++                continue
++            transformers_to_set.append(trans)
++
++        # Include the remainder parameter if it is an estimator (pre-fit case).
++        if hasattr(self, "remainder") and self.remainder not in {"passthrough", "drop"}:
++            if self.remainder not in transformers_to_set:
++                transformers_to_set.append(self.remainder)
++
++        # Include the internal _remainder estimator if present (post-validation/fitted).
++        if hasattr(self, "_remainder"):
++            _rem = self._remainder[1]
++            if _rem not in {"passthrough", "drop"} and _rem not in transformers_to_set:
++                transformers_to_set.append(_rem)
++
++        for trans in transformers_to_set:
+             _safe_set_output(trans, transform=transform)
+ 
+         return self

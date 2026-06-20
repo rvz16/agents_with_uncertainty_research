@@ -1,0 +1,27 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -217,10 +217,24 @@
+     on reloading.
+     """
+     import django.__main__
++    # Detect if Python was started with -m <package>.
++    # The top-level __main__ module is the entry point. Its __spec__.parent
++    # is the package name when invoked via `python -m pkg`. Relying on this
++    # documented behaviour avoids using __file__ on __main__.
++    import importlib
++    main_mod = importlib.import_module('__main__')
++    spec = getattr(main_mod, '__spec__', None)
++
+     django_main_path = Path(django.__main__.__file__)
+     py_script = Path(sys.argv[0])
+ 
+     args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions]
++    # If __main__.__spec__.parent is set to a non-empty string, Python was
++    # started with `-m <package>` where <package> == spec.parent.
++    if spec is not None and getattr(spec, 'parent', None):
++        args += ['-m', spec.parent]
++        args += sys.argv[1:]
++        return args
+     if py_script == django_main_path:
+         # The server was started with `python -m django runserver`.
+         args += ['-m', 'django']

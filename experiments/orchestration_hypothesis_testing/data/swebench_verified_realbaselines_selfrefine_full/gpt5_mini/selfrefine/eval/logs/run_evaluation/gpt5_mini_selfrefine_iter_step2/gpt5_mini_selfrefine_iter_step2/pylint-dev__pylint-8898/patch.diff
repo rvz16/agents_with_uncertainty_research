@@ -1,0 +1,101 @@
+--- a/pylint/utils/utils.py
++++ b/pylint/utils/utils.py
+@@ -253,6 +253,50 @@
+     return _splitstrip(value)
+ 
+ 
++def _split_regex_csv(value: list[str] | tuple[str] | str) -> Sequence[str]:
++    """Split a CSV string into a list but don't split on commas that are inside
++    unclosed '{' ... '}' sections (i.e. regex quantifiers like '{1,3}').
++    This mirrors the behaviour of _check_csv for list/tuple inputs.
++    """
++    if isinstance(value, (list, tuple)):
++        return value
++    s = value
++    parts: list[str] = []
++    cur: list[str] = []
++    in_brace = 0
++    escape = False
++    for ch in s:
++        if escape:
++            # keep the escape and the escaped char
++            cur.append(ch)
++            escape = False
++            continue
++        if ch == "\\":
++            # start escape sequence
++            cur.append(ch)
++            escape = True
++            continue
++        if ch == "{":
++            in_brace += 1
++            cur.append(ch)
++            continue
++        if ch == "}" and in_brace:
++            in_brace -= 1
++            cur.append(ch)
++            continue
++        if ch == "," and in_brace == 0:
++            part = "".join(cur).strip()
++            if part:
++                parts.append(part)
++            cur = []
++            continue
++        cur.append(ch)
++    part = "".join(cur).strip()
++    if part:
++        parts.append(part)
++    return parts
++
++
+ def _comment(string: str) -> str:
+     """Return string as a comment."""
+     lines = [line.strip() for line in string.splitlines()]
+
+--- a/pylint/utils/__init__.py
++++ b/pylint/utils/__init__.py
+@@ -15,6 +15,7 @@
+     IsortDriver,
+     _check_csv,
+     _splitstrip,
++    _split_regex_csv,
+     _unquote,
+     decoding_stream,
+     diff_string,
+@@ -33,6 +34,7 @@
+     "IsortDriver",
+     "_check_csv",
+     "_splitstrip",
++    "_split_regex_csv",
+     "_unquote",
+     "decoding_stream",
+     "diff_string",
+
+--- a/pylint/config/argument.py
++++ b/pylint/config/argument.py
+@@ -112,9 +112,14 @@
+ 
+ 
+ def _regexp_csv_transfomer(value: str) -> Sequence[Pattern[str]]:
+-    """Transforms a comma separated list of regular expressions."""
++    """Transforms a comma separated list of regular expressions.
++
++    This splits on top-level commas but will not split commas that are inside
++    unclosed '{...}' sections (quantifiers) so patterns like '{1,3}' are not
++    mangled into separate items.
++    """
+     patterns: list[Pattern[str]] = []
+-    for pattern in _csv_transformer(value):
++    for pattern in pylint_utils._split_regex_csv(value):
+         patterns.append(_regex_transformer(pattern))
+     return patterns
+ 
+@@ -122,7 +127,7 @@
+ def _regexp_paths_csv_transfomer(value: str) -> Sequence[Pattern[str]]:
+     """Transforms a comma separated list of regular expressions paths."""
+     patterns: list[Pattern[str]] = []
+-    for pattern in _csv_transformer(value):
++    for pattern in pylint_utils._split_regex_csv(value):
+         patterns.append(
+             re.compile(
+                 str(pathlib.PureWindowsPath(pattern)).replace("\\", "\\\\")

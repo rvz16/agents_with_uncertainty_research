@@ -1,0 +1,13 @@
+--- a/sympy/physics/vector/vector.py
++++ b/sympy/physics/vector/vector.py
+@@ -57,6 +57,10 @@
+ 
+     def __add__(self, other):
+         """The add operator for Vector. """
++        # Allow adding the numeric/sympy zero to a Vector (so that
++        # operations like sum([v, 0]) or sum([v, 0*v]) work).
++        if other == 0:
++            return self
+         other = _check_vector(other)
+         return Vector(self.args + other.args)
+ 

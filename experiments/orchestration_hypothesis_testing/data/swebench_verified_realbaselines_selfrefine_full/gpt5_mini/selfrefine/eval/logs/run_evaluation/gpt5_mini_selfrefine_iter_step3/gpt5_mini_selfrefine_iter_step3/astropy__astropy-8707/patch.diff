@@ -1,0 +1,61 @@
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -547,11 +547,17 @@
+     @classmethod
+     def fromstring(cls, image):
+         """
+-        Construct a `Card` object from a (raw) string. It will pad the string
+-        if it is not the length of a card image (80 columns).  If the card
+-        image is longer than 80 columns, assume it contains ``CONTINUE``
++        Construct a `Card` object from a (raw) string or bytes. It will pad the
++        string if it is not the length of a card image (80 columns). If the
++        card image is longer than 80 columns, assume it contains ``CONTINUE``
+         card(s).
+         """
++
++        # Accept bytes or bytearray as input (Python 3); decode to ASCII for
++        # internal string processing.
++        if isinstance(image, (bytes, bytearray)):
++            from .util import decode_ascii
++            image = decode_ascii(image)
+ 
+         card = cls()
+         card._image = _pad(image)
+
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -329,15 +329,15 @@
+     @classmethod
+     def fromstring(cls, data, sep=''):
+         """
+-        Creates an HDU header from a byte string containing the entire header
+-        data.
++        Creates an HDU header from a byte string or text string containing the
++        entire header data.
+ 
+         Parameters
+         ----------
+-        data : str
+-           String containing the entire header.
+-
+-        sep : str, optional
++        data : str or bytes
++           String or bytes containing the entire header.
++
++        sep : str or bytes, optional
+             The string separating cards from each other, such as a newline.  By
+             default there is no card separator (as is the case in a raw FITS
+             file).
+@@ -347,6 +347,12 @@
+         header
+             A new `Header` instance.
+         """
++
++        # Accept both str and bytes inputs. If bytes/bytearray, decode as ASCII.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(data)
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(sep)
+ 
+         cards = []
+ 

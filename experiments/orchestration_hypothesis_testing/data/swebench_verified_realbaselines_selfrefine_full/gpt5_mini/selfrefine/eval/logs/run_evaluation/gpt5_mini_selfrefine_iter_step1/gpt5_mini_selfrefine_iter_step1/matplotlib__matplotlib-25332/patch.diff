@@ -1,0 +1,60 @@
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -20,6 +20,7 @@
+ import traceback
+ import types
+ import weakref
++import pickle
+ 
+ import numpy as np
+ 
+@@ -181,16 +182,39 @@
+         self._pickled_cids = set()
+ 
+     def __getstate__(self):
+-        return {
+-            **vars(self),
+-            # In general, callbacks may not be pickled, so we just drop them,
+-            # unless directed otherwise by self._pickled_cids.
+-            "callbacks": {s: {cid: proxy() for cid, proxy in d.items()
+-                              if cid in self._pickled_cids}
+-                          for s, d in self.callbacks.items()},
+-            # It is simpler to reconstruct this from callbacks in __setstate__.
+-            "_func_cid_map": None,
+-        }
++        # We avoid pickling arbitrary callback proxies (which often contain
++        # weakref.ReferenceType objects) by only including callbacks that have
++        # been explicitly marked for pickling via self._pickled_cids and that
++        # themselves are picklable.  This is defensive: some callbacks may
++        # capture unpicklable state (e.g. weakref.Ref objects in closures),
++        # and trying to pickle them would raise a TypeError and fail the
++        # whole pickling of the owning object (e.g. a Figure).
++        safe_callbacks = {}
++        for s, d in self.callbacks.items():
++            inner = {}
++            for cid, proxy in d.items():
++                if cid in self._pickled_cids:
++                    func = proxy()
++                    # If the referent is gone, skip it.
++                    if func is None:
++                        continue
++                    try:
++                        # Test whether the callable is picklable.  If it is
++                        # not, skip including it in the state to avoid
++                        # failing the overall pickling process.
++                        pickle.dumps(func)
++                    except Exception:
++                        # Skip callbacks that are not picklable.
++                        continue
++                    inner[cid] = func
++            if inner:
++                safe_callbacks[s] = inner
++        state = {**vars(self)}
++        # Replace callbacks with the filtered, picklable set, and avoid
++        # pickling the internal _func_cid_map (it can be reconstructed).
++        state["callbacks"] = safe_callbacks
++        state["_func_cid_map"] = None
++        return state
+ 
+     def __setstate__(self, state):
+         vars(self).update(state)

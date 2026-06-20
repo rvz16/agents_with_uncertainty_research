@@ -1,0 +1,231 @@
+2026-06-19 00:50:01,386 - INFO - Creating container for sphinx-doc__sphinx-7748...
+2026-06-19 00:50:01,453 - INFO - Container for sphinx-doc__sphinx-7748 created: 33b75c770d55949951056214c65a10cc8b0787665be1cfbb71f5188c679000d6
+2026-06-19 00:50:01,601 - INFO - Container for sphinx-doc__sphinx-7748 started: 33b75c770d55949951056214c65a10cc8b0787665be1cfbb71f5188c679000d6
+2026-06-19 00:50:01,602 - INFO - Intermediate patch for sphinx-doc__sphinx-7748 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-7748/patch.diff, now applying to container...
+2026-06-19 00:50:01,723 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/ext/autodoc/__init__.py...
+Applied patch sphinx/ext/autodoc/__init__.py cleanly.
+
+2026-06-19 00:50:02,183 - INFO - Git diff before:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index f8e4be999..af1a16f73 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1037,39 +1037,59 @@ class DocstringSignatureMixin:
+     feature of reading the signature from the docstring.
+     """
+ 
+-    def _find_signature(self, encoding: str = None) -> Tuple[str, str]:
++    def _find_signature(self, encoding: str = None):
+         if encoding is not None:
+             warnings.warn("The 'encoding' argument to autodoc.%s._find_signature() is "
+                           "deprecated." % self.__class__.__name__,
+                           RemovedInSphinx40Warning, stacklevel=2)
+         docstrings = self.get_doc()
++        # make a shallow copy to be modified for stripped docstrings
+         self._new_docstrings = docstrings[:]
+-        result = None
+         for i, doclines in enumerate(docstrings):
+             # no lines in docstring, no match
+             if not doclines:
+                 continue
+-            # match first line of docstring against signature RE
+-            match = py_ext_sig_re.match(doclines[0])
+-            if not match:
+-                continue
+-            exmod, path, base, args, retann = match.groups()
+-            # the base name must match ours
+-            valid_names = [self.objpath[-1]]  # type: ignore
+-            if isinstance(self, ClassDocumenter):
+-                valid_names.append('__init__')
+-                if hasattr(self.object, '__mro__'):
+-                    valid_names.extend(cls.__name__ for cls in self.object.__mro__)
+-            if base not in valid_names:
++
++            # collect consecutive signature lines from the start of this docstring
++            sigs = []
++            j = 0
++            while j < len(doclines):
++                line = doclines[j]
++                match = py_ext_sig_re.match(line)
++                if not match:
++                    break
++                exmod, path, base, args, retann = match.groups()
++
++                # the base name must match ours
++                valid_names = [self.objpath[-1]]  # type: ignore
++                if isinstance(self, ClassDocumenter):
++                    valid_names.append('__init__')
++                    if hasattr(self.object, '__mro__'):
++                        valid_names.extend(cls.__name__ for cls in self.object.__mro__)
++                if base not in valid_names:
++                    break
++
++                sigs.append((args, retann))
++                j += 1
++
++            if not sigs:
+                 continue
+-            # re-prepare docstring to ignore more leading indentation
++
++            # re-prepare docstring to ignore more leading indentation and strip
++            # all signature lines we consumed
+             tab_width = self.directive.state.document.settings.tab_width  # type: ignore
+-            self._new_docstrings[i] = prepare_docstring('\n'.join(doclines[1:]),
++            remaining = doclines[j:]
++            self._new_docstrings[i] = prepare_docstring('\n'.join(remaining),
+                                                         tabsize=tab_width)
+-            result = args, retann
+-            # don't look any further
+-            break
+-        return result
++
++            # if only one signature was found, return it as a tuple (args, retann)
++            # for backward compatibility. If multiple were found, return the list
++            # of tuples so callers can handle multiple overloads.
++            if len(sigs) == 1:
++                return sigs[0]
++            else:
++                return sigs
++        return None
+ 
+     def get_doc(self, encoding: str = None, ignore: int = None) -> List[List[str]]:
+         if encoding is not None:
+@@ -1087,7 +1107,21 @@ class DocstringSignatureMixin:
+             # the feature is enabled
+             result = self._find_signature()
+             if result is not None:
+-                self.args, self.retann = result
++                # _find_signature may return a single (args, retann) tuple or
++                # a list of such tuples (for overloaded signatures). Handle both.
++                if isinstance(result, list):
++                    # multiple signatures found: build full signature lines and
++                    # return them joined by newline. add_directive_header already
++                    # supports multiple signature lines separated by '\n'.
++                    sig_lines = []
++                    for args, retann in result:
++                        line = '(%s)' % (args or '')
++                        if retann:
++                            line += ' -> %s' % retann
++                        sig_lines.append(line)
++                    return "\n".join(sig_lines)
++                else:
++                    self.args, self.retann = result
+         return super().format_signature(**kwargs)  # type: ignore
+2026-06-19 00:50:02,183 - INFO - Eval script for sphinx-doc__sphinx-7748 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-7748/eval.sh; copying to container...
+2026-06-19 00:50:22,754 - INFO - Test runtime: 20.53 seconds
+2026-06-19 00:50:22,756 - INFO - Test output for sphinx-doc__sphinx-7748 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-7748/test_output.txt
+2026-06-19 00:50:22,867 - INFO - Git diff after:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index f8e4be999..af1a16f73 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1037,39 +1037,59 @@ class DocstringSignatureMixin:
+     feature of reading the signature from the docstring.
+     """
+ 
+-    def _find_signature(self, encoding: str = None) -> Tuple[str, str]:
++    def _find_signature(self, encoding: str = None):
+         if encoding is not None:
+             warnings.warn("The 'encoding' argument to autodoc.%s._find_signature() is "
+                           "deprecated." % self.__class__.__name__,
+                           RemovedInSphinx40Warning, stacklevel=2)
+         docstrings = self.get_doc()
++        # make a shallow copy to be modified for stripped docstrings
+         self._new_docstrings = docstrings[:]
+-        result = None
+         for i, doclines in enumerate(docstrings):
+             # no lines in docstring, no match
+             if not doclines:
+                 continue
+-            # match first line of docstring against signature RE
+-            match = py_ext_sig_re.match(doclines[0])
+-            if not match:
+-                continue
+-            exmod, path, base, args, retann = match.groups()
+-            # the base name must match ours
+-            valid_names = [self.objpath[-1]]  # type: ignore
+-            if isinstance(self, ClassDocumenter):
+-                valid_names.append('__init__')
+-                if hasattr(self.object, '__mro__'):
+-                    valid_names.extend(cls.__name__ for cls in self.object.__mro__)
+-            if base not in valid_names:
++
++            # collect consecutive signature lines from the start of this docstring
++            sigs = []
++            j = 0
++            while j < len(doclines):
++                line = doclines[j]
++                match = py_ext_sig_re.match(line)
++                if not match:
++                    break
++                exmod, path, base, args, retann = match.groups()
++
++                # the base name must match ours
++                valid_names = [self.objpath[-1]]  # type: ignore
++                if isinstance(self, ClassDocumenter):
++                    valid_names.append('__init__')
++                    if hasattr(self.object, '__mro__'):
++                        valid_names.extend(cls.__name__ for cls in self.object.__mro__)
++                if base not in valid_names:
++                    break
++
++                sigs.append((args, retann))
++                j += 1
++
++            if not sigs:
+                 continue
+-            # re-prepare docstring to ignore more leading indentation
++
++            # re-prepare docstring to ignore more leading indentation and strip
++            # all signature lines we consumed
+             tab_width = self.directive.state.document.settings.tab_width  # type: ignore
+-            self._new_docstrings[i] = prepare_docstring('\n'.join(doclines[1:]),
++            remaining = doclines[j:]
++            self._new_docstrings[i] = prepare_docstring('\n'.join(remaining),
+                                                         tabsize=tab_width)
+-            result = args, retann
+-            # don't look any further
+-            break
+-        return result
++
++            # if only one signature was found, return it as a tuple (args, retann)
++            # for backward compatibility. If multiple were found, return the list
++            # of tuples so callers can handle multiple overloads.
++            if len(sigs) == 1:
++                return sigs[0]
++            else:
++                return sigs
++        return None
+ 
+     def get_doc(self, encoding: str = None, ignore: int = None) -> List[List[str]]:
+         if encoding is not None:
+@@ -1087,7 +1107,21 @@ class DocstringSignatureMixin:
+             # the feature is enabled
+             result = self._find_signature()
+             if result is not None:
+-                self.args, self.retann = result
++                # _find_signature may return a single (args, retann) tuple or
++                # a list of such tuples (for overloaded signatures). Handle both.
++                if isinstance(result, list):
++                    # multiple signatures found: build full signature lines and
++                    # return them joined by newline. add_directive_header already
++                    # supports multiple signature lines separated by '\n'.
++                    sig_lines = []
++                    for args, retann in result:
++                        line = '(%s)' % (args or '')
++                        if retann:
++                            line += ' -> %s' % retann
++                        sig_lines.append(line)
++                    return "\n".join(sig_lines)
++                else:
++                    self.args, self.retann = result
+         return super().format_signature(**kwargs)  # type: ignore
+2026-06-19 00:50:22,867 - INFO - Grading answer for sphinx-doc__sphinx-7748...
+2026-06-19 00:50:22,875 - INFO - report: {'sphinx-doc__sphinx-7748': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_init', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_both']}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_configs.py::test_autoclass_content_class', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_init', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_both', 'tests/test_ext_autodoc_configs.py::test_autodoc_inherit_docstrings', 'tests/test_ext_autodoc_configs.py::test_autodoc_docstring_signature', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_class', 'tests/test_ext_autodoc_configs.py::test_mocked_module_imports', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_signature', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_none', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description', 'tests/test_ext_autodoc_configs.py::test_autodoc_default_options', 'tests/test_ext_autodoc_configs.py::test_autodoc_default_options_with_values'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-7748: resolved: False
+2026-06-19 00:50:22,876 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-7748.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:50:38,111 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-7748.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:50:38,125 - INFO - Container sweb.eval.sphinx-doc__sphinx-7748.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 00:50:38,125 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7748:latest...
+2026-06-19 00:50:38,586 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7748:latest removed.

@@ -1,0 +1,21 @@
+--- a/astropy/units/decorators.py
++++ b/astropy/units/decorators.py
+@@ -220,8 +220,16 @@
+             # Call the original function with any equivalencies in force.
+             with add_enabled_equivalencies(self.equivalencies):
+                 return_ = wrapped_function(*func_args, **func_kwargs)
+-            if wrapped_signature.return_annotation is not inspect.Signature.empty:
+-                return return_.to(wrapped_signature.return_annotation)
++            # If the function has a return annotation, and it is not the special
++            # case of `None`, and the function actually returned a value, then
++            # attempt to convert the return value to the annotated unit.  If the
++            # annotation is `None` (e.g. for constructors) or the function
++            # returned `None`, skip any unit conversion.
++            ret_ann = wrapped_signature.return_annotation
++            if (ret_ann is not inspect.Signature.empty
++                    and ret_ann is not None
++                    and return_ is not None):
++                return return_.to(ret_ann)
+             else:
+                 return return_
+ 

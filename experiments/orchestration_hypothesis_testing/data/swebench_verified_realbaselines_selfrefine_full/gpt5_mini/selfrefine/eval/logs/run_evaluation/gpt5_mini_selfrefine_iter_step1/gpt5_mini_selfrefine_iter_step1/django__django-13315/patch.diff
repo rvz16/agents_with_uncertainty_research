@@ -1,0 +1,20 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1158,7 +1158,17 @@
+         # Can't use iterator() when queryset uses prefetch_related()
+         if not queryset._prefetch_related_lookups:
+             queryset = queryset.iterator()
++        # Filter out duplicate objects that may be produced by joins in the
++        # underlying queryset (e.g., when limit_choices_to is a complex Q()
++        # involving related tables). Doing this in Python avoids forcing
++        # DISTINCT/GROUP BY on the database query which can break custom
++        # database fields or backends.
++        seen = set()
+         for obj in queryset:
++            pk = getattr(obj, 'pk', None)
++            if pk in seen:
++                continue
++            seen.add(pk)
+             yield self.choice(obj)
+ 
+     def __len__(self):

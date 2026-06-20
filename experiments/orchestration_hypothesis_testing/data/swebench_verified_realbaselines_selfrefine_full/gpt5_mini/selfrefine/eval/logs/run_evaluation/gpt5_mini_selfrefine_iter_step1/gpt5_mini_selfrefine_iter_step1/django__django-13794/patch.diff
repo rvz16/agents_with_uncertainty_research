@@ -1,0 +1,20 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -145,6 +145,17 @@
+         def __bytes_cast_encoded(self):
+             return func(*self.__args, **self.__kw).encode()
+ 
++        def __radd__(self, other):
++            # Support right-side addition where the left operand is a plain
++            # str and the right operand is a lazy proxy. Evaluate the proxy
++            # and perform the appropriate concatenation. For text delegates,
++            # ensure the proxied value is converted to str before joining.
++            res = func(*self.__args, **self.__kw)
++            if self._delegate_text:
++                return other + str(res)
++            # Fallback to the proxied object's __radd__ if present.
++            return getattr(res, '__radd__')(other)
++
+         def __cast(self):
+             if self._delegate_bytes:
+                 return self.__bytes_cast()

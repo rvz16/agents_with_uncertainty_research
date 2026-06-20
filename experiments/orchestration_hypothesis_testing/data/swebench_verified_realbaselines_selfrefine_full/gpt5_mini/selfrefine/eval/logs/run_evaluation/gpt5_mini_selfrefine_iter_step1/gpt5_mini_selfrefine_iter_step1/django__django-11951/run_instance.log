@@ -1,0 +1,49 @@
+2026-06-18 19:48:57,703 - INFO - Creating container for django__django-11951...
+2026-06-18 19:48:58,875 - INFO - Container for django__django-11951 created: 47a5e8d04194bb81099425900b0d7498daba2e44412d11182badb7ec3f9adc5d
+2026-06-18 19:48:58,984 - INFO - Container for django__django-11951 started: 47a5e8d04194bb81099425900b0d7498daba2e44412d11182badb7ec3f9adc5d
+2026-06-18 19:48:58,985 - INFO - Intermediate patch for django__django-11951 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11951/patch.diff, now applying to container...
+2026-06-18 19:48:59,085 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/query.py...
+Applied patch django/db/models/query.py cleanly.
+
+2026-06-18 19:49:00,230 - INFO - Git diff before:
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index 794e0faae7..92349cd0c5 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1209,7 +1209,8 @@ class QuerySet:
+         if ignore_conflicts and not connections[self.db].features.supports_ignore_conflicts:
+             raise NotSupportedError('This database backend does not support ignoring conflicts.')
+         ops = connections[self.db].ops
+-        batch_size = (batch_size or max(ops.bulk_batch_size(fields, objs), 1))
++        max_batch_size = max(ops.bulk_batch_size(fields, objs), 1)
++        batch_size = min(batch_size, max_batch_size) if batch_size else max_batch_size
+         inserted_rows = []
+         bulk_return = connections[self.db].features.can_return_rows_from_bulk_insert
+         for item in [objs[i:i + batch_size] for i in range(0, len(objs), batch_size)]:
+2026-06-18 19:49:00,231 - INFO - Eval script for django__django-11951 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11951/eval.sh; copying to container...
+2026-06-18 19:49:23,471 - INFO - Test runtime: 23.20 seconds
+2026-06-18 19:49:23,473 - INFO - Test output for django__django-11951 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11951/test_output.txt
+2026-06-18 19:49:23,584 - INFO - Git diff after:
+diff --git a/django/db/models/query.py b/django/db/models/query.py
+index 794e0faae7..92349cd0c5 100644
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1209,7 +1209,8 @@ class QuerySet:
+         if ignore_conflicts and not connections[self.db].features.supports_ignore_conflicts:
+             raise NotSupportedError('This database backend does not support ignoring conflicts.')
+         ops = connections[self.db].ops
+-        batch_size = (batch_size or max(ops.bulk_batch_size(fields, objs), 1))
++        max_batch_size = max(ops.bulk_batch_size(fields, objs), 1)
++        batch_size = min(batch_size, max_batch_size) if batch_size else max_batch_size
+         inserted_rows = []
+         bulk_return = connections[self.db].features.can_return_rows_from_bulk_insert
+         for item in [objs[i:i + batch_size] for i in range(0, len(objs), batch_size)]:
+2026-06-18 19:49:23,584 - INFO - Grading answer for django__django-11951...
+2026-06-18 19:49:23,589 - INFO - report: {'django__django-11951': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_explicit_batch_size_respects_max_batch_size (bulk_create.tests.BulkCreateTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_batch_same_vals (bulk_create.tests.BulkCreateTests)', 'test_bulk_insert_expressions (bulk_create.tests.BulkCreateTests)', 'test_bulk_insert_nullable_fields (bulk_create.tests.BulkCreateTests)', 'test_efficiency (bulk_create.tests.BulkCreateTests)', 'test_empty_model (bulk_create.tests.BulkCreateTests)', 'test_explicit_batch_size (bulk_create.tests.BulkCreateTests)', 'test_explicit_batch_size_efficiency (bulk_create.tests.BulkCreateTests)', 'test_ignore_conflicts_ignore (bulk_create.tests.BulkCreateTests)', 'test_large_batch (bulk_create.tests.BulkCreateTests)', 'test_large_batch_efficiency (bulk_create.tests.BulkCreateTests)', 'test_large_batch_mixed (bulk_create.tests.BulkCreateTests)', 'test_large_batch_mixed_efficiency (bulk_create.tests.BulkCreateTests)', 'test_large_single_field_batch (bulk_create.tests.BulkCreateTests)', 'test_long_and_short_text (bulk_create.tests.BulkCreateTests)', 'test_long_non_ascii_text (bulk_create.tests.BulkCreateTests)', 'test_multi_table_inheritance_unsupported (bulk_create.tests.BulkCreateTests)', 'test_non_auto_increment_pk (bulk_create.tests.BulkCreateTests)', 'test_non_auto_increment_pk_efficiency (bulk_create.tests.BulkCreateTests)', 'test_proxy_inheritance_supported (bulk_create.tests.BulkCreateTests)', 'test_set_state_with_pk_specified (bulk_create.tests.BulkCreateTests)', 'test_simple (bulk_create.tests.BulkCreateTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11951: resolved: True
+2026-06-18 19:49:23,591 - INFO - Attempting to stop container sweb.eval.django__django-11951.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:49:38,839 - INFO - Attempting to remove container sweb.eval.django__django-11951.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:49:38,856 - INFO - Container sweb.eval.django__django-11951.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 19:49:38,856 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11951:latest...
+2026-06-18 19:49:39,223 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11951:latest removed.

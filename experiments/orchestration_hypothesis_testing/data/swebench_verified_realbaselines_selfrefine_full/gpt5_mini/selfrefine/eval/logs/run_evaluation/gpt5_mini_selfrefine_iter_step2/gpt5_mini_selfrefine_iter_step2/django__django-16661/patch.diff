@@ -1,0 +1,33 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -464,11 +464,26 @@
+             # It is allowed to filter on values that would be found from local
+             # model anyways. For example, if you filter on employee__department__id,
+             # then the id value would be found already from employee__department_id.
+-            if not prev_field or (
+-                prev_field.is_relation
+-                and field not in prev_field.path_infos[-1].target_fields
+-            ):
++            # However, if the target field(s) of the previous relation are themselves
++            # relational (for example, a FK/OneToOne used as the primary key), we
++            # must not treat the lookup as redundant because collapsing the path
++            # would change semantics.
++            if not prev_field:
+                 relation_parts.append(part)
++            else:
++                # prev_field is a relation: only consider the next part redundant
++                # if it matches the previous relation's target_fields and those
++                # target fields are not relational themselves.
++                if not prev_field.is_relation:
++                    relation_parts.append(part)
++                else:
++                    target_fields = prev_field.path_infos[-1].target_fields
++                    # If the next field isn't one of the target fields, or any of
++                    # the target fields are relational, we must keep the part.
++                    if field not in target_fields or any(
++                        getattr(tf, "is_relation", False) for tf in target_fields
++                    ):
++                        relation_parts.append(part)
+             if not getattr(field, "path_infos", None):
+                 # This is not a relational field, so further parts
+                 # must be transforms.

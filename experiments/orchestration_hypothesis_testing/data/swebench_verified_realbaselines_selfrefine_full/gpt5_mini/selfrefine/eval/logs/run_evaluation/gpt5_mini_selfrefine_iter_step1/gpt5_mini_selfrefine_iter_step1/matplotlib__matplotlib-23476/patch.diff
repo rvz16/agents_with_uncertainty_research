@@ -1,0 +1,39 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -3041,22 +3041,25 @@
+                 f"This figure was saved with matplotlib version {version} and "
+                 f"is unlikely to function correctly.")
+ 
++        # Preserve the requested dpi value from the saved state so that we can
++        # restore it after creating the canvas. Some GUI backends adjust the
++        # figure dpi to account for device pixel ratios (e.g., macOS/retina).
++        # Restoring the saved dpi after the canvas is created avoids the dpi
++        # being compounded on repeated pickle/unpickle cycles.
++        original_dpi = state.get('_dpi', None)
++
+         self.__dict__ = state
+ 
+         # re-initialise some of the unstored state information
+         FigureCanvasBase(self)  # Set self.canvas.
+ 
+-        if restore_to_pylab:
+-            # lazy import to avoid circularity
+-            import matplotlib.pyplot as plt
+-            import matplotlib._pylab_helpers as pylab_helpers
+-            allnums = plt.get_fignums()
+-            num = max(allnums) + 1 if allnums else 1
+-            mgr = plt._backend_mod.new_figure_manager_given_figure(num, self)
+-            pylab_helpers.Gcf._set_new_active_manager(mgr)
+-            plt.draw_if_interactive()
+-
+-        self.stale = True
++        # Restore the saved dpi explicitly without forwarding the size change
++        # to the manager (forward=False) to avoid triggering a resize on the
++        # window which some backends may perform when dpi is set.
++        if original_dpi is not None:
++            try:
++                # Use the internal setter to update transforms/etc but don't
++                # notify the manager to resize;
+ 
+     def add_axobserver(self, func):
+         """Whenever the Axes state change, ``func(self)`` will be called."""

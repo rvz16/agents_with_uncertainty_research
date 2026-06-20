@@ -1,0 +1,23 @@
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -457,6 +457,20 @@
+         else:
+             return "frozenset({%s})" % ", ".join(object_description(x)
+                                                  for x in sorted_values)
++    # Special-case enum members to avoid ugly '<Enum.Member: value>' reprs.
++    # Prefer the simple "EnumName.Member" form which is more readable in
++    # function signatures and documentation.
++    if isinstance(object, enum.Enum):
++        try:
++            cls = object.__class__
++            qual = getattr(cls, '__qualname__', getattr(cls, '__name__', None))
++            if qual:
++                return f"{qual}.{object.name}"
++            else:
++                return f"{cls.__name__}.{object.name}"
++        except Exception:
++            # fallback to generic repr below
++            pass
+     try:
+         s = repr(object)
+     except Exception as exc:

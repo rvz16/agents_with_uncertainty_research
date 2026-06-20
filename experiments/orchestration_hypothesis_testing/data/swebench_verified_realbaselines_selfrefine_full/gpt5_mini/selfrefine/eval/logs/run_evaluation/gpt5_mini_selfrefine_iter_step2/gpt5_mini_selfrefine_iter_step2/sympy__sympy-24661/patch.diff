@@ -1,0 +1,48 @@
+--- a/sympy/parsing/sympy_parser.py
++++ b/sympy/parsing/sympy_parser.py
+@@ -1110,6 +1110,17 @@
+         ast.BitAnd: 'And',
+         ast.BitXor: 'Not',
+     }
++    # Mapping for comparison operators to SymPy relational classes
++    comparators = {
++        ast.Eq: 'Eq',
++        ast.NotEq: 'Ne',
++        ast.Lt: 'Lt',
++        ast.LtE: 'Le',
++        ast.Gt: 'Gt',
++        ast.GtE: 'Ge',
++        ast.Is: 'Eq',
++        ast.IsNot: 'Ne',
++    }
+     functions = (
+         'Abs', 'im', 're', 'sign', 'arg', 'conjugate',
+         'acos', 'acot', 'acsc', 'asec', 'asin', 'atan',
+@@ -1126,7 +1137,8 @@
+                 arg_func = arg.func
+                 if isinstance(arg_func, ast.Call):
+                     arg_func = arg_func.func
+-                if arg_func.id == func:
++                # be defensive: arg_func may be an Attribute etc.
++                if isinstance(arg_func, ast.Name) and arg_func.id == func:
+                     result.extend(self.flatten(arg.args, func))
+                 else:
+                     result.append(arg)
+@@ -1181,16 +1193,7 @@
+ 
+             if sympy_class in ('Add', 'Mul'):
+                 # Denest Add or Mul as appropriate
+-                new_node.args = self.flatten(new_node.args, sympy_class)
+-
+-            return new_node
+-        return node
+-
+-    def visit_Call(self, node):
+-        new_node = self.generic_visit(node)
+-        if isinstance(node.func, ast.Name) and node.func.id in self.functions:
+-            new_node.keywords.append(ast.keyword(arg='evaluate', value=ast.NameConstant(value=False, ctx=ast.Load())))
+-        return new_node
++                new_node.args = self.flatten(new_node.args, sympy_class
+ 
+ 
+ _transformation = {  # items can be added but never re-ordered

@@ -1,0 +1,40 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -441,6 +441,37 @@
+ 
+     def set_source_expressions(self, exprs):
+         self.lhs, self.rhs = exprs
++
++    def _resolve_output_field(self):
++        """
++        Special-case resolution for combined expressions.
++
++        In particular, temporal subtraction (Date/DateTime/Time - same type)
++        should produce a DurationField output. Also, if either side is a
++        DurationField (e.g. Duration + Duration or DateTime - Duration), prefer
++        DurationField where appropriate. Otherwise, fall back to the default
++        inference implementation.
++        """
++        try:
++            lhs_field = self.lhs._output_field_or_none
++        except FieldError:
++            lhs_field = None
++        try:
++            rhs_field = self.rhs._output_field_or_none
++        except FieldError:
++            rhs_field = None
++
++        datetime_field_types = (fields.DateField, fields.DateTimeField, fields.TimeField)
++
++        # Date/DateTime/Time subtraction of the same type => DurationField
++        if self.connector == self.SUB and lhs_field is not None and rhs_field is not None:
++            if isinstance(lhs_field, fields.DurationField) or isinstance(rhs_field, fields.DurationField):
++                return fields.DurationField()
++            if isinstance(lhs_field, datetime_field_types) and isinstance(rhs_field, datetime_field_types) and lhs_field.__class__ == rhs_field.__class__:
++                return fields.DurationField()
++
++        # Fall back to base behaviour (which checks source fields for uniformity).
++        return super()._resolve_output_field()
+ 
+     def as_sql(self, compiler, connection):
+         try:

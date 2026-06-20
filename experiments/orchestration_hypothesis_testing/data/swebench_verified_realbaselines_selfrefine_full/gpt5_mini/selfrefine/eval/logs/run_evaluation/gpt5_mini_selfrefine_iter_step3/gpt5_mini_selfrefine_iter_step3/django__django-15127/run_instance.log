@@ -1,0 +1,77 @@
+2026-06-19 09:38:50,714 - INFO - Creating container for django__django-15127...
+2026-06-19 09:38:50,969 - INFO - Container for django__django-15127 created: a7f636e70c9492ae2f44113a4bdd17eb87a1c44bacf2c85c8243e3cd1ca0febd
+2026-06-19 09:38:51,136 - INFO - Container for django__django-15127 started: a7f636e70c9492ae2f44113a4bdd17eb87a1c44bacf2c85c8243e3cd1ca0febd
+2026-06-19 09:38:51,137 - INFO - Intermediate patch for django__django-15127 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-15127/patch.diff, now applying to container...
+2026-06-19 09:38:51,232 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/messages/apps.py...
+Applied patch django/contrib/messages/apps.py cleanly.
+
+2026-06-19 09:38:52,830 - INFO - Git diff before:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..3044665a24 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -5,3 +5,23 @@ from django.utils.translation import gettext_lazy as _
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # Update the module-level LEVEL_TAGS in the messages storage whenever
++        # the MESSAGE_TAGS setting is changed (for example during tests using
++        # override_settings). This mirrors other apps that react to
++        # setting_changed so the in-memory constant matches the current settings.
++        from django.conf import settings
++        from django.test.signals import setting_changed
++        from django.dispatch import receiver
++        from django.contrib.messages.storage import base as storage_base
++
++        @receiver(setting_changed)
++        def update_level_tags(**kwargs):
++            if kwargs.get('setting') == 'MESSAGE_TAGS':
++                # Use the setting if present, otherwise fall back to the
++                # existing LEVEL_TAGS in the storage module.
++                storage_base.LEVEL_TAGS = getattr(
++                    settings, 'MESSAGE_TAGS',
++                    getattr(storage_base, 'LEVEL_TAGS', {})
++                )
+2026-06-19 09:38:52,830 - INFO - Eval script for django__django-15127 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-15127/eval.sh; copying to container...
+2026-06-19 09:39:17,663 - INFO - Test runtime: 24.78 seconds
+2026-06-19 09:39:17,665 - INFO - Test output for django__django-15127 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-15127/test_output.txt
+2026-06-19 09:39:17,756 - INFO - Git diff after:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..3044665a24 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -5,3 +5,23 @@ from django.utils.translation import gettext_lazy as _
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # Update the module-level LEVEL_TAGS in the messages storage whenever
++        # the MESSAGE_TAGS setting is changed (for example during tests using
++        # override_settings). This mirrors other apps that react to
++        # setting_changed so the in-memory constant matches the current settings.
++        from django.conf import settings
++        from django.test.signals import setting_changed
++        from django.dispatch import receiver
++        from django.contrib.messages.storage import base as storage_base
++
++        @receiver(setting_changed)
++        def update_level_tags(**kwargs):
++            if kwargs.get('setting') == 'MESSAGE_TAGS':
++                # Use the setting if present, otherwise fall back to the
++                # existing LEVEL_TAGS in the storage module.
++                storage_base.LEVEL_TAGS = getattr(
++                    settings, 'MESSAGE_TAGS',
++                    getattr(storage_base, 'LEVEL_TAGS', {})
++                )
+2026-06-19 09:39:17,757 - INFO - Grading answer for django__django-15127...
+2026-06-19 09:39:17,758 - INFO - report: {'django__django-15127': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_override_settings_level_tags (messages_tests.tests.TestLevelTags)']}, 'PASS_TO_PASS': {'success': ['test_eq (messages_tests.tests.MessageTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15127: resolved: False
+2026-06-19 09:39:17,759 - INFO - Attempting to stop container sweb.eval.django__django-15127.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 09:39:33,038 - INFO - Attempting to remove container sweb.eval.django__django-15127.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 09:39:33,061 - INFO - Container sweb.eval.django__django-15127.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-19 09:39:33,062 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15127:latest...
+2026-06-19 09:39:33,633 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15127:latest removed.

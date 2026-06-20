@@ -1,0 +1,43 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -112,39 +112,7 @@
+                 else:
+                     expressions.append(expr)
+         # Note that even if the group_by is set, it is only the minimal
+-        # set to group by. So, we need to add cols in select, order_by, and
+-        # having into the select in any case.
+-        ref_sources = {
+-            expr.source for expr in expressions if isinstance(expr, Ref)
+-        }
+-        for expr, _, _ in select:
+-            # Skip members of the select clause that are already included
+-            # by reference.
+-            if expr in ref_sources:
+-                continue
+-            cols = expr.get_group_by_cols()
+-            for col in cols:
+-                expressions.append(col)
+-        for expr, (sql, params, is_ref) in order_by:
+-            # Skip References to the select clause, as all expressions in the
+-            # select clause are already part of the group by.
+-            if not is_ref:
+-                expressions.extend(expr.get_group_by_cols())
+-        having_group_by = self.having.get_group_by_cols() if self.having else ()
+-        for expr in having_group_by:
+-            expressions.append(expr)
+-        result = []
+-        seen = set()
+-        expressions = self.collapse_group_by(expressions, having_group_by)
+-
+-        for expr in expressions:
+-            sql, params = self.compile(expr)
+-            sql, params = expr.select_format(self, sql, params)
+-            params_hash = make_hashable(params)
+-            if (sql, params_hash) not in seen:
+-                result.append((sql, params))
+-                seen.add((sql, params_hash))
+-        return result
++        # set to group by. So,
+ 
+     def collapse_group_by(self, expressions, having):
+         # If the DB can group by primary key, then group by the primary key of

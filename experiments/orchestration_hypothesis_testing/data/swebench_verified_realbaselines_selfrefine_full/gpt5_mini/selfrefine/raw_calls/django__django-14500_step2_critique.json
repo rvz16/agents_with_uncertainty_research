@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:33:45.764005+00:00",
+  "instance_id": "django__django-14500",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nSquashed migration is not marked as unapplied\nDescription\n\t \n\t\t(last modified by Markus Holtermann)\n\t \nWhen unapplying a squashed migration and the replaced migration files are still around, the MigrationExecutor mark the squash migration as unapplied, too, not only the replaced migrations.\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no files changed, so it does not address the reported bug at all.\nDoes not modify MigrationExecutor (or related code paths) to mark the squashed migration as unapplied when replaced migrations are present.\nNo unit tests added or updated to reproduce the bug (unapplying a squashed migration while replaced migration files still exist).\nDoes not handle edge cases: partial application (some replaced migrations applied, some not), fake migrations, or squashed migrations with multiple replacements.\nNo consideration of multi-database setups or of MigrationRecorder updates to reflect the desired state.\nNo updates to documentation or comments explaining the intended behavior for squashed migrations.",
+  "prompt_tokens": 192,
+  "completion_tokens": 622,
+  "cost_usd": 0.0012920000000000002
+}

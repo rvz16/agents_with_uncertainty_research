@@ -1,0 +1,36 @@
+--- a/pylint/checkers/variables.py
++++ b/pylint/checkers/variables.py
+@@ -1822,13 +1822,24 @@
+ 
+     def _store_type_annotation_node(self, type_annotation):
+         """Given a type annotation, store all the name nodes it refers to"""
++        # Direct Name nodes (e.g. "ABC")
+         if isinstance(type_annotation, astroid.Name):
+             self._type_annotation_names.append(type_annotation.name)
+             return
+ 
++        # Attribute nodes (e.g. "abc.ABC" or "pkg.module.Type").
++        # Collect referenced Name nodes inside the Attribute (usually the base/module name).
++        if isinstance(type_annotation, astroid.Attribute):
++            for name_node in type_annotation.nodes_of_class(astroid.Name):
++                self._type_annotation_names.append(name_node.name)
++            return
++
++        # For subscriptions like "List[abc.ABC]" or "typing.List[ABC]"
+         if not isinstance(type_annotation, astroid.Subscript):
+             return
+ 
++        # Special-case typing.XYZ[...] where the base is typing. We want to
++        # record "typing" as used when someone writes e.g. "typing.List[int]".
+         if (
+             isinstance(type_annotation.value, astroid.Attribute)
+             and isinstance(type_annotation.value.expr, astroid.Name)
+@@ -1837,6 +1848,8 @@
+             self._type_annotation_names.append(TYPING_MODULE)
+             return
+ 
++        # Collect all Name nodes contained in the subscript (covers cases like
++        # "List[abc.ABC]" where "abc" will be picked up).
+         self._type_annotation_names.extend(
+             annotation.name
+             for annotation in type_annotation.nodes_of_class(astroid.Name)

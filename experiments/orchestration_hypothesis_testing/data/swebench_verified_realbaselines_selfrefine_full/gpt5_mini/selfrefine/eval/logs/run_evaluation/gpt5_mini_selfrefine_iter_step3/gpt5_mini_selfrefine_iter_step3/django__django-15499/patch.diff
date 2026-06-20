@@ -1,0 +1,25 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -168,6 +168,22 @@
+                     options=options,
+                     bases=self.bases,
+                     managers=self.managers,
++                ),
++            ]
++        elif (
++            isinstance(operation, AlterModelManagers)
++            and self.name_lower == operation.name_lower
++        ):
++            # Optimize CreateModel + AlterModelManagers to a single CreateModel
++            # containing the final managers. This allows migration reduction to
++            # collapse these two operations when possible.
++            return [
++                CreateModel(
++                    self.name,
++                    fields=self.fields,
++                    options=self.options,
++                    bases=self.bases,
++                    managers=operation.managers,
+                 ),
+             ]
+         elif (

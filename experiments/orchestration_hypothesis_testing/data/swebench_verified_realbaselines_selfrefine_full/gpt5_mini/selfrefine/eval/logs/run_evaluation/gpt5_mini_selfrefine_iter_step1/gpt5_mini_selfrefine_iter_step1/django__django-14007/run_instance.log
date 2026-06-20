@@ -1,0 +1,95 @@
+2026-06-18 20:27:59,895 - INFO - Creating container for django__django-14007...
+2026-06-18 20:28:00,012 - INFO - Container for django__django-14007 created: 0754dc27eb26497f3f18cca02326ad2b9dfa4b5eff34d55d552bac2399f7441c
+2026-06-18 20:28:00,141 - INFO - Container for django__django-14007 started: 0754dc27eb26497f3f18cca02326ad2b9dfa4b5eff34d55d552bac2399f7441c
+2026-06-18 20:28:00,142 - INFO - Intermediate patch for django__django-14007 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-14007/patch.diff, now applying to container...
+2026-06-18 20:28:00,244 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/sql/compiler.py...
+Applied patch django/db/models/sql/compiler.py cleanly.
+
+2026-06-18 20:28:01,702 - INFO - Git diff before:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index f02199d97c..048f732b6e 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1412,13 +1412,26 @@ class SQLInsertCompiler(SQLCompiler):
+             if not self.returning_fields:
+                 return []
+             if self.connection.features.can_return_rows_from_bulk_insert and len(self.query.objs) > 1:
+-                return self.connection.ops.fetch_returned_insert_rows(cursor)
+-            if self.connection.features.can_return_columns_from_insert:
++                raw_rows = self.connection.ops.fetch_returned_insert_rows(cursor)
++            elif self.connection.features.can_return_columns_from_insert:
+                 assert len(self.query.objs) == 1
+-                return [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
+-            return [(self.connection.ops.last_insert_id(
+-                cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
+-            ),)]
++                raw_rows = [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
++            else:
++                raw_rows = [(self.connection.ops.last_insert_id(
++                    cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
++                ),)]
++        # Apply any backend/field converters (e.g. Field.from_db_value) to the
++        # returned values so callers receive the same Python types as a normal
++        # SELECT would produce.
++        if self.returning_fields:
++            converters = self.get_converters(self.returning_fields)
++            if converters:
++                # Ensure we have a materialized list to iterate multiple times.
++                raw_rows = list(raw_rows)
++                # apply_converters yields lists; convert to tuples for stable return type.
++                return list(map(tuple, self.apply_converters(raw_rows, converters)))
++        # No converters to apply — ensure we return a materialized list.
++        return list(raw_rows) if not isinstance(raw_rows, list) else raw_rows
+ 
+ 
+ class SQLDeleteCompiler(SQLCompiler):
+2026-06-18 20:28:01,704 - INFO - Eval script for django__django-14007 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-14007/eval.sh; copying to container...
+2026-06-18 20:28:25,088 - INFO - Test runtime: 23.32 seconds
+2026-06-18 20:28:25,090 - INFO - Test output for django__django-14007 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-14007/test_output.txt
+2026-06-18 20:28:25,192 - INFO - Git diff after:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index f02199d97c..048f732b6e 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1412,13 +1412,26 @@ class SQLInsertCompiler(SQLCompiler):
+             if not self.returning_fields:
+                 return []
+             if self.connection.features.can_return_rows_from_bulk_insert and len(self.query.objs) > 1:
+-                return self.connection.ops.fetch_returned_insert_rows(cursor)
+-            if self.connection.features.can_return_columns_from_insert:
++                raw_rows = self.connection.ops.fetch_returned_insert_rows(cursor)
++            elif self.connection.features.can_return_columns_from_insert:
+                 assert len(self.query.objs) == 1
+-                return [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
+-            return [(self.connection.ops.last_insert_id(
+-                cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
+-            ),)]
++                raw_rows = [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
++            else:
++                raw_rows = [(self.connection.ops.last_insert_id(
++                    cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
++                ),)]
++        # Apply any backend/field converters (e.g. Field.from_db_value) to the
++        # returned values so callers receive the same Python types as a normal
++        # SELECT would produce.
++        if self.returning_fields:
++            converters = self.get_converters(self.returning_fields)
++            if converters:
++                # Ensure we have a materialized list to iterate multiple times.
++                raw_rows = list(raw_rows)
++                # apply_converters yields lists; convert to tuples for stable return type.
++                return list(map(tuple, self.apply_converters(raw_rows, converters)))
++        # No converters to apply — ensure we return a materialized list.
++        return list(raw_rows) if not isinstance(raw_rows, list) else raw_rows
+ 
+ 
+ class SQLDeleteCompiler(SQLCompiler):
+2026-06-18 20:28:25,192 - INFO - Grading answer for django__django-14007...
+2026-06-18 20:28:25,197 - INFO - report: {'django__django-14007': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_auto_field_subclass_create (custom_pk.tests.CustomPKTests)']}, 'PASS_TO_PASS': {'success': [], 'failure': ['Get can accept pk or the real attribute name', 'Custom pks work with in_bulk, both for integer and non-integer types', 'pk and attribute name are available on the model', 'Both pk and custom attribute_name can be used in filter and friends', "Custom pk doesn't affect related_name based lookups", 'Queries across tables, involving primary key', 'custom pks do not affect save', 'test_custom_field_pk (custom_pk.tests.CustomPKTests)', 'New objects can be created both with pk and the custom name', 'test_unicode_pk (custom_pk.tests.CustomPKTests)', 'test_unique_pk (custom_pk.tests.CustomPKTests)', 'test_zero_non_autoincrement_pk (custom_pk.tests.CustomPKTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14007: resolved: False
+2026-06-18 20:28:25,198 - INFO - Attempting to stop container sweb.eval.django__django-14007.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 20:28:40,439 - INFO - Attempting to remove container sweb.eval.django__django-14007.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 20:28:40,460 - INFO - Container sweb.eval.django__django-14007.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 20:28:40,461 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14007:latest...
+2026-06-18 20:28:40,909 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14007:latest removed.

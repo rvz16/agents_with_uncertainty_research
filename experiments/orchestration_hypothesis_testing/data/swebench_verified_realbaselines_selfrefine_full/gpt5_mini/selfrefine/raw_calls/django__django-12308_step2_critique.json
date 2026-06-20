@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-17T15:50:51.069928+00:00",
+  "instance_id": "django__django-12308",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nJSONField are not properly displayed in admin when they are readonly.\nDescription\n\t\nJSONField values are displayed as dict when readonly in the admin.\nFor example, {\"foo\": \"bar\"} would be displayed as {'foo': 'bar'}, which is not valid JSON.\nI believe the fix would be to add a special case in django.contrib.admin.utils.display_for_field to call the prepare_value of the JSONField (not calling json.dumps directly to take care of the InvalidJSONInput case).\n\n\n## Your previous patch (diff format)\n```\n--- a/django/contrib/admin/utils.py\n+++ b/django/contrib/admin/utils.py\n@@ -398,6 +398,15 @@\n         return formats.number_format(value)\n     elif isinstance(field, models.FileField) and value:\n         return format_html('<a href=\"{}\">{}</a>', value.url, value)\n+    # JSONField should be displayed using the field's prepare_value to ensure\n+    # a proper JSON representation and to allow the field to handle invalid\n+    # inputs (e.g. InvalidJSONInput) as it sees fit.\n+    elif getattr(field, 'get_internal_type', None) and field.get_internal_type() == 'JSONField':\n+        try:\n+            return field.prepare_value(value)\n+        except Exception:\n+            # Fall back to the generic value display if prepare_value fails.\n+            return display_for_value(value, empty_value_display)\n     else:\n         return display_for_value(value, empty_value_display)\n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 430,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030515
+}

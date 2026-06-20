@@ -1,0 +1,20 @@
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -378,7 +378,16 @@
+             axis.set_view_interval(vmin, vmax)
+             locs = axis.major.locator()
+             locs = locs[(vmin <= locs) & (locs <= vmax)]
+-            labels = axis.major.formatter.format_ticks(locs)
++            fmt = axis.major.formatter
++            # Prefer using set_locs + calling the formatter for each tick value.
++            # This ensures formatters like ScalarFormatter apply any multiplicative
++            # offset (controlled by rcParams like axes.formatter.useoffset)
++            # to the returned labels. Fall back to format_ticks for older mpl.
++            try:
++                fmt.set_locs(locs)
++                labels = [fmt(x) for x in locs]
++            except Exception:
++                labels = fmt.format_ticks(locs)
+             new._legend = list(locs), list(labels)
+ 
+         return new

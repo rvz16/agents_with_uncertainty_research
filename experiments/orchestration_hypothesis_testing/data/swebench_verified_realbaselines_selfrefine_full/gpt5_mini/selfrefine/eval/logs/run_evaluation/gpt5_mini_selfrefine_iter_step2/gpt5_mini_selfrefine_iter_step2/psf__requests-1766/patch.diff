@@ -1,0 +1,49 @@
+--- a/requests/auth.py
++++ b/requests/auth.py
+@@ -120,17 +120,26 @@
+         s += os.urandom(8)
+ 
+         cnonce = (hashlib.sha1(s).hexdigest()[:16])
+-        noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop, HA2)
+-        if _algorithm == 'MD5-SESS':
+-            HA1 = hash_utf8('%s:%s:%s' % (HA1, nonce, cnonce))
+-
++        # Choose qop token to use in the response. If qop contains multiple
++        # options (e.g. 'auth,auth-int'), prefer 'auth' if present.
+         if qop is None:
+             respdig = KD(HA1, "%s:%s" % (nonce, HA2))
+-        elif qop == 'auth' or 'auth' in qop.split(','):
+-            respdig = KD(HA1, noncebit)
++            qop_token = None
+         else:
+-            # XXX handle auth-int.
+-            return None
++            qop_options = [x.strip() for x in qop.split(',')]
++            if 'auth' in qop_options:
++                qop_token = 'auth'
++            else:
++                # Fallback to the first declared option if 'auth' is not present.
++                qop_token = qop_options[0] if qop_options else None
++
++            noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop_token, HA2)
++
++            if qop_token == 'auth':
++                respdig = KD(HA1, noncebit)
++            else:
++                # XXX handle auth-int or other qop values.
++                return None
+ 
+         self.last_nonce = nonce
+ 
+@@ -143,8 +152,9 @@
+             base += ', algorithm="%s"' % algorithm
+         if entdig:
+             base += ', digest="%s"' % entdig
+-        if qop:
+-            base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
++        if qop_token:
++            # Per RFC2617, the qop value in the Authorization header should be quoted.
++            base += ', qop="%s", nc=%s, cnonce="%s"' % (qop_token, ncvalue, cnonce)
+ 
+         return 'Digest %s' % (base)
+ 

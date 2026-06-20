@@ -1,0 +1,26 @@
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -1162,6 +1162,9 @@
+         cv = self.cv(random_state=rng, shuffle=True,
+                      **self.cvargs)
+         return cv.get_n_splits(X, y, groups) * self.n_repeats
++
++    def __repr__(self):
++        return _build_repr(self)
+ 
+ 
+ class RepeatedKFold(_RepeatedSplits):
+@@ -2157,7 +2160,13 @@
+         warnings.simplefilter("always", DeprecationWarning)
+         try:
+             with warnings.catch_warnings(record=True) as w:
++                # Prefer explicit attributes on the instance. Some wrappers
++                # (e.g. _RepeatedSplits) store constructor parameters in a
++                # `cvargs` dict rather than as direct attributes. If an
++                # attribute is missing or None, fall back to cvargs.
+                 value = getattr(self, key, None)
++                if value is None and hasattr(self, 'cvargs') and key in self.cvargs:
++                    value = self.cvargs[key]
+             if len(w) and w[0].category == DeprecationWarning:
+                 # if the parameter is deprecated, don't show it
+                 continue

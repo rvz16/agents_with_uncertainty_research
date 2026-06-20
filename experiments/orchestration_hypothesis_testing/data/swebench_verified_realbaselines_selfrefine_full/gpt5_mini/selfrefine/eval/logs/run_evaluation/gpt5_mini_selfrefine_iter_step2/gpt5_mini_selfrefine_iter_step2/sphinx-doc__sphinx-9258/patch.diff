@@ -1,0 +1,14 @@
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -304,7 +304,10 @@
+     def make_xrefs(self, rolename: str, domain: str, target: str,
+                    innernode: Type[TextlikeNode] = nodes.emphasis,
+                    contnode: Node = None, env: BuildEnvironment = None) -> List[Node]:
+-        delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+|\.\.\.)'
++        # split type strings into sub-targets.  Accept existing "or" separators
++        # and also support PEP 604 style union operator '|' used in annotations
++        # and some editors (e.g. "bytes | str").
++        delims = r'(\s*[\[\]\(\),\|](?:\s*or\s)?\s*|\s+or\s+|\.\.\.)'
+         delims_re = re.compile(delims)
+         sub_targets = re.split(delims, target)
+ 

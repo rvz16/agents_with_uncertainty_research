@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:23:40.861179+00:00",
+  "instance_id": "sympy__sympy-22456",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nArgument invariance of codegen.ast String\nCurrently, the `codegen.ast` `String` class does not support argument invariance like:\r\n`expr.func(*expr.args) == expr`, but instead uses the invariance `expr.func(**expr.kwargs()) == expr`.\r\nThe former should hold for any `Basic` subclass, which `String` is.\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/codegen/ast.py\n+++ b/sympy/codegen/ast.py\n@@ -898,6 +898,17 @@\n     not_in_args = ['text']\n     is_Atom = True\n \n+    @property\n+    def args(self):\n+        \"\"\"\n+        Provide positional-argument compatibility with Basic subclasses.\n+\n+        This ensures that String instances satisfy the Basic-style invariance\n+        expr.func(*expr.args) == expr by exposing the contained text as the\n+        single positional argument.\n+        \"\"\"\n+        return (self.text,)\n+\n     @classmethod\n     def _construct_text(cls, text):\n         if not isinstance(text, str):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 350,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030315
+}

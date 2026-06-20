@@ -1,0 +1,34 @@
+--- a/django/core/management/commands/makemigrations.py
++++ b/django/core/management/commands/makemigrations.py
+@@ -101,12 +101,25 @@
+         aliases_to_check = connections if settings.DATABASE_ROUTERS else [DEFAULT_DB_ALIAS]
+         for alias in sorted(aliases_to_check):
+             connection = connections[alias]
+-            if (connection.settings_dict['ENGINE'] != 'django.db.backends.dummy' and any(
+-                    # At least one model must be migrated to the database.
+-                    router.allow_migrate(connection.alias, app_label, model_name=model._meta.object_name)
+-                    for app_label in consistency_check_labels
+-                    for model in apps.get_models(app_label)
+-            )):
++            if connection.settings_dict['ENGINE'] == 'django.db.backends.dummy':
++                continue
++            # At least one model for one of the apps must be migrated to the database.
++            should_check = False
++            for app_label in consistency_check_labels:
++                try:
++                    app_config = apps.get_app_config(app_label)
++                except LookupError:
++                    # Skip app labels that can't be found for some reason.
++                    continue
++                for model in app_config.get_models():
++                    # router.allow_migrate expects the app_label and the
++                    # model_name (lowercase), not the CamelCase object_name.
++                    if router.allow_migrate(connection.alias, app_label, model_name=model._meta.model_name):
++                        should_check = True
++                        break
++                if should_check:
++                    break
++            if should_check:
+                 loader.check_consistent_history(connection)
+ 
+         # Before anything else, see if there's conflicting apps and drop out

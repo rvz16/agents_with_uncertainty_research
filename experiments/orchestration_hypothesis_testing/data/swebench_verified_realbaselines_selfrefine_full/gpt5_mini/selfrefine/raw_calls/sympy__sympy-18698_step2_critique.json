@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:21:51.314438+00:00",
+  "instance_id": "sympy__sympy-18698",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nsqf and sqf_list output is not consistant\nThe example below is wrong in the sense that we should have (x*_2 - 5_x + 6, 3) and not 2 factors of multiplicity 3.\n\n```\n>  sqf_list(  (x**2 + 1)  * (x - 1)**2 * (x - 2)**3 * (x - 3)**3  )\n\n>  (1, [(x**2 + 1, 1), (x - 1, 2), (x - 3, 3), (x - 2, 3)])\n```\n\nwhereas below is correct --- one factor of multiplicity 2\n\n```\n>  sqf_list( x**5 - 2*x**4 - 2*x**3 + 4*x**2 + x - 2 )\n\n>  (1, [(x - 2, 1), (x**2 - 1, 2)])\n```\n\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/polys/polytools.py\n+++ b/sympy/polys/polytools.py\n@@ -5995,6 +5995,23 @@\n                     f, _ = _poly_from_expr(f, _opt)\n                     factors[i] = (f, k)\n \n+        # For square-free factorization combine factors that have the same exponent.\n+        # Example: (x - 2, 3) and (x - 3, 3) should be combined to\n+        # ( (x - 2)*(x - 3), 3 ) i.e. (x**2 - 5*x + 6, 3).\n+        if method == 'sqf':\n+            def _combine_factors(factors):\n+                combined = {}\n+                for f, k in factors:\n+                    if k in combined:\n+                        combined[k] = combined[k].mul(f)\n+                    else:\n+                        combined[k] = f\n+                # Preserve insertion order of exponents (first occurrence)\n+                return [(g, k) for k, g in combined.items()]\n+\n+            fp = _combine_factors(fp)\n+            fq = _combine_factors(fq)\n+\n         fp = _sorted_factors(fp, method)\n         fq = _sorted_factors(fq, method)\n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 630,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0031015
+}

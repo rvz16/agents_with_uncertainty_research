@@ -1,0 +1,24 @@
+--- a/django/db/models/functions/math.py
++++ b/django/db/models/functions/math.py
+@@ -145,6 +145,21 @@
+     function = 'RANDOM'
+     arity = 0
+ 
++    # This expression is a pure SQL-side random generator that doesn't
++    # reference any model columns. Marking it as "contains_aggregate" would be
++    # semantically incorrect (it's not an aggregate), and changing that flag
++    # has wide-reaching implications. Instead, provide a small, explicit
++    # marker that SQL compilation code can check to avoid adding RANDOM()
++    # to GROUP BY clauses. See the SQLCompiler.get_group_by logic for the
++    # corresponding rationale.
++    #
++    # Note: SQLCompiler must be updated to check this attribute and skip
++    # expressions that set exclude_from_group_by=True when building the
++    # GROUP BY list. This keeps the change localized to avoiding grouping by
++    # pure SQL functions with no column references while preserving aggregate
++    # semantics.
++    exclude_from_group_by = True
++
+     def as_mysql(self, compiler, connection, **extra_context):
+         return super().as_sql(compiler, connection, function='RAND', **extra_context)
+ 

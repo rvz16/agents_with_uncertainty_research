@@ -1,0 +1,19 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -278,6 +278,16 @@
+         coords = [simplify(x*factor) for x in self.args]
+         return Point(coords, evaluate=False)
+ 
++    def __rmul__(self, factor):
++        """Right-hand multiplication to support scalar * Point.
++
++        This allows expressions like `2 * Point(1, 1)` or
++        `sympify(2.0) * Point(1, 1)` to return a Point (rather than
++        a Mul of a scalar and a Point), making operations like
++        `Point(0, 0) + 2*Point(1, 1)` work as expected.
++        """
++        return self.__mul__(factor)
++
+     def __neg__(self):
+         """Negate the point."""
+         coords = [-x for x in self.args]

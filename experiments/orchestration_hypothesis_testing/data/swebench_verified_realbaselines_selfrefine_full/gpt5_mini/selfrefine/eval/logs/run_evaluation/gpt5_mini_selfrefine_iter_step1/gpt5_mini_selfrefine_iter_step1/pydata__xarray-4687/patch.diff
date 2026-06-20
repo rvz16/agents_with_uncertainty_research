@@ -1,0 +1,21 @@
+--- a/xarray/core/computation.py
++++ b/xarray/core/computation.py
+@@ -1809,6 +1809,10 @@
+         equivalent methods
+     """
+     # alignment for three arguments is complicated, so don't support it yet
++    # Ensure we respect the global keep_attrs option (or preserve attrs by
++    # default like the DataArray.where method).  We fetch the configured
++    # behaviour via _get_keep_attrs(default=True) so that xr.where preserves
++    # attributes unless the user explicitly configures otherwise.
+     return apply_ufunc(
+         duck_array_ops.where,
+         cond,
+@@ -1816,6 +1820,7 @@
+         y,
+         join="exact",
+         dataset_join="exact",
++        keep_attrs=_get_keep_attrs(default=True),
+         dask="allowed",
+     )
+ 

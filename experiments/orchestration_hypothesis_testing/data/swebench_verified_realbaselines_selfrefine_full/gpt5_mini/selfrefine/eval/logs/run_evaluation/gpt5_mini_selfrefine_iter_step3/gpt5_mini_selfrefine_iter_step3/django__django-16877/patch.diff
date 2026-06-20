@@ -1,0 +1,23 @@
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -496,6 +496,20 @@
+     with the results.
+     """
+     return [mark_safe(obj) for obj in value]
++
++
++@register.filter(is_safe=True)
++def escapeseq(value):
++    """
++    Escape each element in a sequence and return a list with the results.
++
++    This is the counterpart to ``safeseq``: where ``safeseq`` marks each
++    element as safe, ``escapeseq`` forces HTML escaping of each element and
++    marks the escaped result as safe. Useful when autoescaping is off and
++    you want to ensure each sequence member is HTML-escaped before further
++    processing (for example, before a ``join``).
++    """
++    return [mark_safe(escape(obj)) for obj in value]
+ 
+ 
+ @register.filter(is_safe=True)

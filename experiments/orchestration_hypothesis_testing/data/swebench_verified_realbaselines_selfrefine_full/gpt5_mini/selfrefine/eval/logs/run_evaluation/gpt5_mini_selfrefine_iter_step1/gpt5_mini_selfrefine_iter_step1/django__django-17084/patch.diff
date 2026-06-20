@@ -1,0 +1,42 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -28,6 +28,7 @@
+     Ref,
+     ResolvedOuterRef,
+     Value,
++    Window,
+ )
+ from django.db.models.fields import Field
+ from django.db.models.fields.related_lookups import MultiColSource
+@@ -420,6 +421,31 @@
+                 for ref in aggregate.get_refs()
+             )
+             aggregate = aggregate.replace_expressions(replacements)
++
++            # Prevent aggregating over annotations that contain Window()
++            # expressions. PostgreSQL (and other backends) do not allow
++            # aggregate functions to contain window function calls. Rather
++            # than letting the database raise a cryptic GroupingError, raise
++            # a clear FieldError at the ORM level.
++            def contains_window(expr):
++                # Recursively check source expressions for Window instances.
++                if isinstance(expr, Window):
++                    return True
++                if hasattr(expr, "get_source_expressions"):
++                    for sub in expr.get_source_expressions() or ():
++                        if sub is None:
++                            continue
++                        if contains_window(sub):
++                            return True
++                return False
++
++            for ref in aggregate.get_refs():
++                if ref in self.annotations and contains_window(self.annotations[ref]):
++                    raise FieldError(
++                        "Cannot aggregate over the '%s' alias. It contains a "
++                        "Window expression." % ref
++                    )
++
+             self.annotations[alias] = aggregate
+             replacements[Ref(alias, aggregate)] = aggregate
+         # Stash resolved aggregates now that they have been allowed to resolve

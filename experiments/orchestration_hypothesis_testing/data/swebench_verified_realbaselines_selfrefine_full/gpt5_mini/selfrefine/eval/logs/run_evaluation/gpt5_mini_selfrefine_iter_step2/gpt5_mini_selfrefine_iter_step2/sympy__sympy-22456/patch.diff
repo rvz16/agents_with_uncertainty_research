@@ -1,0 +1,12 @@
+--- a/sympy/codegen/ast.py
++++ b/sympy/codegen/ast.py
+@@ -895,7 +895,8 @@
+ 
+     """
+     __slots__ = ('text',)
+-    not_in_args = ['text']
++    # Include 'text' in the object's args so that argument invariance holds:
++    # String('foo').func(*String('foo').args) == String('foo')
+     is_Atom = True
+ 
+     @classmethod

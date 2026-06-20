@@ -1,0 +1,13 @@
+--- a/django/template/defaultfilters.py
++++ b/django/template/defaultfilters.py
+@@ -184,6 +184,10 @@
+     units = len(tupl[1])
+     units += -tupl[2] if m else tupl[2]
+     prec = abs(p) + units + 1
++    # Context.prec must be at least 1 (prec==0 raises ValueError). Ensure a
++    # minimum precision to avoid failing for values like Decimal('0.00').
++    if prec < 1:
++        prec = 1
+ 
+     # Avoid conversion to scientific notation by accessing `sign`, `digits`,
+     # and `exponent` from Decimal.as_tuple() directly.

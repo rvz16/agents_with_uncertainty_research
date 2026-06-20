@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:34:33.623524+00:00",
+  "instance_id": "django__django-14500",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nSquashed migration is not marked as unapplied\nDescription\n\t \n\t\t(last modified by Markus Holtermann)\n\t \nWhen unapplying a squashed migration and the replaced migration files are still around, the MigrationExecutor mark the squash migration as unapplied, too, not only the replaced migrations.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/migrations/executor.py\n+++ b/django/db/migrations/executor.py\n@@ -277,6 +277,10 @@\n             all_applied = all(m in applied for m in migration.replaces)\n             if all_applied and key not in applied:\n                 self.recorder.record_applied(*key)\n+            elif (not all_applied) and key in applied:\n+                # If any of the replaced migrations are not applied, ensure the\n+                # squashed replacement migration is also marked as unapplied.\n+                self.recorder.record_unapplied(*key)\n \n     def detect_soft_applied(self, project_state, migration):\n         \"\"\"\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 334,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030275
+}

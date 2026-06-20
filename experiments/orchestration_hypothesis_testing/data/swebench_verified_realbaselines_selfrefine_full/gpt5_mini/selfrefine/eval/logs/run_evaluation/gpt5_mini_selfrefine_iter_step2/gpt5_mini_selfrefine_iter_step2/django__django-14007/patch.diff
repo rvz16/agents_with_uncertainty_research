@@ -1,0 +1,38 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1411,14 +1411,29 @@
+                 cursor.execute(sql, params)
+             if not self.returning_fields:
+                 return []
++
++            # Fetch returned rows/columns according to backend capabilities.
+             if self.connection.features.can_return_rows_from_bulk_insert and len(self.query.objs) > 1:
+-                return self.connection.ops.fetch_returned_insert_rows(cursor)
+-            if self.connection.features.can_return_columns_from_insert:
++                rows = list(self.connection.ops.fetch_returned_insert_rows(cursor))
++            elif self.connection.features.can_return_columns_from_insert:
+                 assert len(self.query.objs) == 1
+-                return [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
+-            return [(self.connection.ops.last_insert_id(
+-                cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
+-            ),)]
++                rows = [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
++            else:
++                rows = [(self.connection.ops.last_insert_id(
++                    cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
++                ),)]
++
++            # Apply DB converters (e.g. Field.from_db_value) to the returned
++            # values so that returned fields are processed similarly to SELECT
++            # results. This ensures insert-returned values use the same
++            # conversion logic as normal query results.
++            converters = self.get_converters(self.returning_fields or [])
++            if converters:
++                # apply_converters yields rows as mutable lists; convert back to
++                # tuples for consistency with previous behaviour.
++                rows = [tuple(r) for r in self.apply_converters(rows, converters)]
++
++            return rows
+ 
+ 
+ class SQLDeleteCompiler(SQLCompiler):

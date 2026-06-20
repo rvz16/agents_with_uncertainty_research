@@ -1,0 +1,16 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -522,8 +522,11 @@
+ 
+     def get_context(self, name, value, attrs):
+         if self.check_test(value):
+-            if attrs is None:
+-                attrs = {}
++            # Don't mutate the attrs dict passed in by callers (for example,
++            # MultiWidget may pass the same attrs dict to multiple children).
++            # Mutating a shared dict results in later widgets incorrectly
++            # inheriting the 'checked' attribute.
++            attrs = {} if attrs is None else attrs.copy()
+             attrs['checked'] = True
+         return super().get_context(name, value, attrs)
+ 

@@ -1,0 +1,60 @@
+--- a/astropy/io/ascii/html.py
++++ b/astropy/io/ascii/html.py
+@@ -365,6 +365,26 @@
+ 
+         # Kwargs that get passed on to bleach.clean() if that is available.
+         raw_html_clean_kwargs = self.html.get('raw_html_clean_kwargs', {})
++
++        # If table-level formats were provided (via Table.write(..., formats=...))
++        # apply them to column info so that Column.info.iter_str_vals() will
++        # produce values formatted accordingly. Support dict (by name), list/tuple
++        # (by column order), or single format applied to all columns.
++        table_formats = getattr(table, 'formats', None)
++        if table_formats:
++            if isinstance(table_formats, dict):
++                for col in cols:
++                    name = col.info.name
++                    if name in table_formats:
++                        col.info.format = table_formats[name]
++            elif isinstance(table_formats, (list, tuple)):
++                for col, fmt in zip(cols, table_formats):
++                    if fmt is not None:
++                        col.info.format = fmt
++            else:
++                # single format for all columns
++                for col in cols:
++                    col.info.format = table_formats
+ 
+         # Use XMLWriter to output HTML to lines
+         w = writer.XMLWriter(ListWriter(lines))
+@@ -423,12 +443,19 @@
+                         # requires that the weakref info._parent be maintained.
+                         new_cols = []
+ 
++                        # Map each column to its (possibly updated) format. For
++                        # multi-dimensional columns we'll ensure derived single
++                        # dimensional Columns inherit the format from the
++                        # original column.
+                         for col, col_escaped in zip(cols, cols_escaped):
+                             if len(col.shape) > 1 and self.html['multicol']:
+                                 span = col.shape[1]
+                                 for i in range(span):
+                                     # Split up multicolumns into separate columns
+                                     new_col = Column([el[i] for el in col])
++                                    # Inherit format from original (if any)
++                                    if getattr(col.info, 'format', None) is not None:
++                                        new_col.info.format = col.info.format
+ 
+                                     new_col_iter_str_vals = self.fill_values(
+                                         col, new_col.info.iter_str_vals())
+@@ -436,10 +463,8 @@
+                                     new_cols_escaped.append(col_escaped)
+                                     new_cols.append(new_col)
+                             else:
+-
+                                 col_iter_str_vals = self.fill_values(col, col.info.iter_str_vals())
+                                 col_str_iters.append(col_iter_str_vals)
+-
+                                 new_cols_escaped.append(col_escaped)
+ 
+                     for row in zip(*col_str_iters):

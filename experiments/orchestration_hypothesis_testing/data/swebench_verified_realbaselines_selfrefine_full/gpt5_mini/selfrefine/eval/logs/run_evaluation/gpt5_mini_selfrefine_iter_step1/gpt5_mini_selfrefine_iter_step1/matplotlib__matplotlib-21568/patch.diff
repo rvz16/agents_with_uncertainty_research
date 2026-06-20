@@ -1,0 +1,46 @@
+--- a/lib/matplotlib/dates.py
++++ b/lib/matplotlib/dates.py
+@@ -592,13 +592,36 @@
+ 
+ 
+ def _wrap_in_tex(text):
+-    p = r'([a-zA-Z]+)'
+-    ret_text = re.sub(p, r'}$\1$\\mathdefault{', text)
+-
+-    # Braces ensure dashes are not spaced like binary operators.
+-    ret_text = '$\\mathdefault{'+ret_text.replace('-', '{-}')+'}$'
+-    ret_text = ret_text.replace('$\\mathdefault{}$', '')
+-    return ret_text
++    """
++    Wrap text for usetex rendering of date tick labels.
++
++    Use \\mbox to preserve inter-word spacing and avoid math-mode spacing
++    changes. Escape common TeX special characters so that the resulting
++    TeX is robust for typical date strings (digits, letters, punctuation).
++    """
++    if not text:
++        return ''
++
++    # Escape characters that have special meaning in TeX.
++    replace_map = {
++        '\\': r'\textbackslash{}',
++        '%': r'\%',
++        '&': r'\&',
++        '$': r'\$',
++        '#': r'\#',
++        '_': r'\_',
++        '{': r'\{',
++        '}': r'\}',
++        '^': r'\^{}',
++        '~': r'\~{}',
++    }
++    for k, v in replace_map.items():
++        text = text.replace(k, v)
++
++    # Use \mbox to render the label in text-mode inside math delimiters so
++    # that Matplotlib's usetex machinery renders the text with the correct
++    # fonts while preserving normal inter-word spacing.
++    return r'$\mbox{' + text + '}$'
+ 
+ 
+ ## date tickers and formatters ###

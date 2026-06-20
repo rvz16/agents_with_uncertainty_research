@@ -1,0 +1,26 @@
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -602,22 +602,7 @@
+             )
+             filelike.seek(-int(self.headers["Content-Length"]), io.SEEK_END)
+ 
+-        filename = os.path.basename(self.filename or filename)
+-        if self._no_explicit_content_type:
+-            if filename:
+-                content_type, encoding = mimetypes.guess_type(filename)
+-                # Encoding isn't set to prevent browsers from automatically
+-                # uncompressing files.
+-                content_type = {
+-                    "bzip2": "application/x-bzip",
+-                    "gzip": "application/gzip",
+-                    "xz": "application/x-xz",
+-                }.get(encoding, content_type)
+-                self.headers["Content-Type"] = (
+-                    content_type or "application/octet-stream"
+-                )
+-            else:
+-                self.headers["Content-Type"] = "application/octet-stream"
++        filename = os.path.basename(self.filename
+ 
+         if content_disposition := content_disposition_header(
+             self.as_attachment, filename

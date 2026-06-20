@@ -1,0 +1,21 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -85,7 +85,17 @@
+         if path.startswith('django.db.models.query_utils'):
+             path = path.replace('django.db.models.query_utils', 'django.db.models')
+         args, kwargs = (), {}
+-        if len(self.children) == 1 and not isinstance(self.children[0], Q):
++        # Preserve the historical special-casing for single-child Q objects
++        # that are simple (i.e. created from keyword args). However, don't
++        # treat conditional expressions (such as Exists()) as subscriptable
++        # children — they have a .conditional attribute set to True and
++        # aren't (necessarily) (key, value) tuples, so attempting to index
++        # into them raises TypeError. See #32549.
++        if (
++            len(self.children) == 1 and
++            not isinstance(self.children[0], Q) and
++            getattr(self.children[0], 'conditional', False) is False
++        ):
+             child = self.children[0]
+             kwargs = {child[0]: child[1]}
+         else:

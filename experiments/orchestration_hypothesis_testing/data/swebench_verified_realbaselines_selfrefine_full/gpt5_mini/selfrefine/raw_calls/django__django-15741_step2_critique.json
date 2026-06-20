@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:38:31.306028+00:00",
+  "instance_id": "django__django-15741",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\ndjango.utils.formats.get_format should allow lazy parameter\nDescription\n\t\nCommit [659d2421c7adb] (fixing #20296) triggered a regression when the date template filter (possibly others are affected too) receives a lazy string, like in some_date|date:_('Y-m-d').\nThis fails with: TypeError: getattr(): attribute name must be string in django.utils.formats.get_format.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/utils/formats.py\n+++ b/django/utils/formats.py\n@@ -7,6 +7,7 @@\n \n from django.conf import settings\n from django.utils import dateformat, numberformat\n+from django.utils.encoding import force_str\n from django.utils.functional import lazy\n from django.utils.translation import check_for_language, get_language, to_locale\n \n@@ -113,6 +114,17 @@\n             use_l10n = settings.USE_L10N\n     if use_l10n and lang is None:\n         lang = get_language()\n+\n+    # Support lazy strings (Promise objects) for format_type (e.g. _('Y-m-d')).\n+    # Coerce lazy translations to regular str so getattr() and the cache key\n+    # use a plain string and don't raise TypeError.\n+    try:\n+        format_type = force_str(format_type)\n+    except Exception:\n+        # If coercion fails for some reason, fall back to the original value;\n+        # getattr() will raise a clear error if it's an invalid attribute name.\n+        pass\n+\n     cache_key = (format_type, lang)\n     try:\n         return _format_cache[cache_key]\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 470,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030615
+}

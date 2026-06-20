@@ -1,0 +1,26 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -266,8 +266,21 @@
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # Ensure p is a Point (this will also accept iterables)
++        p = Point(p) if not isinstance(p, Point) else p
++        # If the points have different dimensions, treat missing coordinates
++        # as zeros (so a 2D point vs a 3D point is handled correctly).
++        la, lb = len(self), len(p)
++        if la < lb:
++            coords1 = list(self.args) + [S.Zero] * (lb - la)
++            coords2 = list(p.args)
++        elif lb < la:
++            coords1 = list(self.args)
++            coords2 = list(p.args) + [S.Zero] * (la - lb)
++        else:
++            coords1 = list(self.args)
++            coords2 = list(p.args)
++        return sqrt(sum((a - b)**2 for a, b in zip(coords1, coords2)))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.

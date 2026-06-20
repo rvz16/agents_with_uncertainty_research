@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:44:53.619186+00:00",
+  "instance_id": "django__django-16642",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nImproper guessing of Mime Type for \"br\" and \"Z\" file types\nDescription\n\t\nBelow FileResponse will set the content type as text/html, even if the last file extension is \"Z' or \"br\".\nFileResponse(open('test.html.Z', 'rb'))\nFileResponse(open('test.html.br', 'rb'))\n\n\n## Your previous patch (diff format)\n```\n--- a/django/http/response.py\n+++ b/django/http/response.py\n@@ -607,11 +607,15 @@\n             if filename:\n                 content_type, encoding = mimetypes.guess_type(filename)\n                 # Encoding isn't set to prevent browsers from automatically\n-                # uncompressing files.\n+                # uncompressing files. For certain compressed file extensions,\n+                # prefer a generic application/* content type so browsers don't\n+                # attempt to auto-decompress them when serving as files.\n                 content_type = {\n                     \"bzip2\": \"application/x-bzip\",\n                     \"gzip\": \"application/gzip\",\n                     \"xz\": \"application/x-xz\",\n+                    \"br\": \"application/brotli\",\n+                    \"compress\": \"application/x-compress\",\n                 }.get(encoding, content_type)\n                 self.headers[\"Content-Type\"] = (\n                     content_type or \"application/octet-stream\"\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 393,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00304225
+}

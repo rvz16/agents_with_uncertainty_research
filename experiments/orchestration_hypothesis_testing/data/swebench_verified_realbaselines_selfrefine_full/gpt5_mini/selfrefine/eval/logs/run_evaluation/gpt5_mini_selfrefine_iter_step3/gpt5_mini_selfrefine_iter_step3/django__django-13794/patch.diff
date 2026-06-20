@@ -1,0 +1,29 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -176,6 +176,26 @@
+                 return str(self) % rhs
+             return self.__cast() % rhs
+ 
++        def __radd__(self, other):
++            # Support concatenation when the right-hand operand is a lazy proxy.
++            # If the proxy delegates to text/bytes, coerce both operands to the
++            # appropriate type and concatenate. If the other operand is also a
++            # Promise, evaluate it first. Otherwise, fall back to the
++            # underlying object's __radd__ implementation or return
++            # NotImplemented to allow Python to try other fallbacks.
++            if isinstance(other, Promise):
++                other = other.__cast()
++            if self._delegate_text:
++                return str(other) + str(self)
++            if self._delegate_bytes:
++                return bytes(other) + self.__bytes_cast()
++            # Fallback: evaluate and try to call the underlying object's __radd__.
++            res = self.__cast()
++            radd = getattr(res, "__radd__", None)
++            if radd is None:
++                return NotImplemented
++            return radd(other)
++
+         def __deepcopy__(self, memo):
+             # Instances of this class are effectively immutable. It's just a
+             # collection of functions. So we don't need to do anything

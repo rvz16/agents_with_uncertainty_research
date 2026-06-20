@@ -1,0 +1,17 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -250,11 +250,11 @@
+         db = kwargs.get('using')
+ 
+         autocomplete_fields = self.get_autocomplete_fields(request)
+-        if db_field.name in autocomplete_fields:
++        if 'widget' not in kwargs and db_field.name in autocomplete_fields:
+             kwargs['widget'] = AutocompleteSelectMultiple(db_field.remote_field, self.admin_site, using=db)
+-        elif db_field.name in self.raw_id_fields:
++        elif 'widget' not in kwargs and db_field.name in self.raw_id_fields:
+             kwargs['widget'] = widgets.ManyToManyRawIdWidget(db_field.remote_field, self.admin_site, using=db)
+-        elif db_field.name in [*self.filter_vertical, *self.filter_horizontal]:
++        elif 'widget' not in kwargs and db_field.name in [*self.filter_vertical, *self.filter_horizontal]:
+             kwargs['widget'] = widgets.FilteredSelectMultiple(
+                 db_field.verbose_name,
+                 db_field.name in self.filter_vertical

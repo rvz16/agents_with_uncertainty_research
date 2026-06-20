@@ -1,0 +1,25 @@
+--- a/django/utils/formats.py
++++ b/django/utils/formats.py
+@@ -7,7 +7,7 @@
+ 
+ from django.conf import settings
+ from django.utils import dateformat, numberformat
+-from django.utils.functional import lazy
++from django.utils.functional import lazy, Promise
+ from django.utils.translation import check_for_language, get_language, to_locale
+ 
+ # format_cache is a mapping from (format_type, lang) to the format string.
+@@ -106,6 +106,13 @@
+     If use_l10n is provided and is not None, it forces the value to
+     be localized (or not), overriding the value of settings.USE_L10N.
+     """
++    # Accept lazy strings (django.utils.functional.Promise) for format_type.
++    # getattr() requires a real string for attribute lookup, and format_type
++    # may be a lazy proxy (Promise) when used from templates. Coerce it to
++    # a str so checks and getattr() work as expected.
++    if isinstance(format_type, Promise):
++        format_type = str(format_type)
++
+     if use_l10n is None:
+         try:
+             use_l10n = settings._USE_L10N_INTERNAL

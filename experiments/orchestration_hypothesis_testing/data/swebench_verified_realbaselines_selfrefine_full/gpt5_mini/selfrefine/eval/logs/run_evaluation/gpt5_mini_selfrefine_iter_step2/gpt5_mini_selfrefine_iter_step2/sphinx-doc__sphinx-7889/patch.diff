@@ -1,0 +1,26 @@
+--- a/sphinx/ext/autodoc/mock.py
++++ b/sphinx/ext/autodoc/mock.py
+@@ -70,10 +70,21 @@
+ 
+ def _make_subclass(name: str, module: str, superclass: Any = _MockObject,
+                    attributes: Any = None) -> Any:
+-    attrs = {'__module__': module, '__display_name__': module + '.' + name}
++    # Ensure name and module are strings to avoid TypeError when e.g.
++    # a typing.TypeVar or other non-str object is passed in.
++    if not isinstance(name, str):
++        name_str = getattr(name, '__name__', str(name))
++    else:
++        name_str = name
++    if not isinstance(module, str):
++        module_str = getattr(module, '__name__', str(module))
++    else:
++        module_str = module
++
++    attrs = {'__module__': module_str, '__display_name__': module_str + '.' + name_str}
+     attrs.update(attributes or {})
+ 
+-    return type(name, (superclass,), attrs)
++    return type(name_str, (superclass,), attrs)
+ 
+ 
+ class _MockModule(ModuleType):

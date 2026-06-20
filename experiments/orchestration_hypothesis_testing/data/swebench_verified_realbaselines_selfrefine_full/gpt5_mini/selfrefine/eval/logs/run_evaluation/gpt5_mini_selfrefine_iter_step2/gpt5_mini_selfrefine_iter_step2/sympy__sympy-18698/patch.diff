@@ -1,0 +1,41 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5998,6 +5998,38 @@
+         fp = _sorted_factors(fp, method)
+         fq = _sorted_factors(fq, method)
+ 
++        # For square-free factorization, combine factors that have the same
++        # multiplicity into a single polynomial factor raised to that multiplicity.
++        # This mirrors Poly.sqf_list behavior which returns one polynomial for
++        # each exponent (e.g. (x - 2, 3) and (x - 3, 3) -> (x**2 - 5*x + 6, 3)).
++        if method == 'sqf':
++            def _combine_same_exp(factors):
++                if not factors:
++                    return factors
++                groups = {}
++                order = []
++                for f, k in factors:
++                    # keep the order of first occurrence of each exponent
++                    if k not in groups:
++                        groups[k] = [f]
++                        order.append(k)
++                    else:
++                        groups[k].append(f)
++                new = []
++                for k in order:
++                    fs = groups[k]
++                    if len(fs) == 1:
++                        new.append((fs[0], k))
++                    else:
++                        prod = fs[0]
++                        for g in fs[1:]:
++                            prod = prod.mul(g)
++                        new.append((prod, k))
++                return new
++
++            fp = _combine_same_exp(fp)
++            fq = _combine_same_exp(fq)
++
+         if not opt.polys:
+             fp = [(f.as_expr(), k) for f, k in fp]
+             fq = [(f.as_expr(), k) for f, k in fq]

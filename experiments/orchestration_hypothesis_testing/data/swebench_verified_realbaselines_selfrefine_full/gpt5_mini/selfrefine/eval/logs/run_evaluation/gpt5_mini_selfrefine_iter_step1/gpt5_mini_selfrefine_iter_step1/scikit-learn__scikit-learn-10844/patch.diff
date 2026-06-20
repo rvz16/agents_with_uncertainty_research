@@ -1,0 +1,25 @@
+--- a/sklearn/metrics/cluster/supervised.py
++++ b/sklearn/metrics/cluster/supervised.py
+@@ -853,10 +853,18 @@
+     n_samples, = labels_true.shape
+ 
+     c = contingency_matrix(labels_true, labels_pred, sparse=True)
+-    tk = np.dot(c.data, c.data) - n_samples
+-    pk = np.sum(np.asarray(c.sum(axis=0)).ravel() ** 2) - n_samples
+-    qk = np.sum(np.asarray(c.sum(axis=1)).ravel() ** 2) - n_samples
+-    return tk / np.sqrt(pk * qk) if tk != 0. else 0.
++    # Perform intermediate integer computations in a wider integer dtype to
++    # avoid overflow for large counts (see issue #9515). Convert to float
++    # only for the final division/square-root to keep the result as a Python
++    # float while avoiding integer overflow when squaring/multiplying.
++    tk = np.dot(c.data.astype(np.int64), c.data.astype(np.int64)) - n_samples
++    pk = np.sum(np.asarray(c.sum(axis=0)).ravel().astype(np.int64) ** 2) - n_samples
++    qk = np.sum(np.asarray(c.sum(axis=1)).ravel().astype(np.int64) ** 2) - n_samples
++    if tk == 0:
++        return 0.0
++    # Compute as product of two square-roots of ratios in float to avoid
++    # overflow from pk * qk while preserving numerical stability.
++    return np.sqrt(float(tk) / float(pk)) * np.sqrt(float(tk) / float(qk))
+ 
+ 
+ def entropy(labels):

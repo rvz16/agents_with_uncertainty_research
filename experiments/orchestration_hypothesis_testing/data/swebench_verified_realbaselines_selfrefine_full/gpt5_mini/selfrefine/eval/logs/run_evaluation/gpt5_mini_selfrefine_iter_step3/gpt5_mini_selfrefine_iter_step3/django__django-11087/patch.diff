@@ -1,0 +1,45 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,40 @@
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
+-        """
+-        return related.related_model._base_manager.using(self.using).filter(
++
++        Optimize the returned QuerySet to fetch only the fields required for
++        deletion traversal. By default, load only the primary key and any
++        concrete parent pointer fields for the model so that subsequent access
++        to parent relations (in multi-table inheritance) can avoid extra
++        per-instance queries. If there are deletion-related signal listeners
++        for the related model, skip the optimization to avoid surprising
++        behavior for receivers that may access arbitrary fields.
++        """
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++
++        # If there are deletion signal listeners for this model, don't defer
++        # fields as receivers may access arbitrary attributes.
++        model = related.related_model
++        if (signals.pre_delete.has_listeners(model) or
++                signals.post_delete.has_listeners(model) or
++                signals.m2m_changed.has_listeners(model)):
++            return qs
++
++        # Build a conservative list of fields required during delete traversal:
++        # - the primary key attname so QuerySet.__iter__/filtering works correctly
++        # - any parent pointer attnames so that getattr(obj, ptr.name) used when
++        #   collecting parent models does not trigger additional queries for
++        #   the parent object's id.
++        only_fields = [model._meta.pk.attname]
++        concrete_model = model._meta.concrete_model
++        for ptr in concrete_model._meta.parents.values():
++            if ptr:
++                only_fields.append(ptr.attname)
++
++        # Use only() to defer all non-required fields.
++        return qs.only(*only_fields)
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

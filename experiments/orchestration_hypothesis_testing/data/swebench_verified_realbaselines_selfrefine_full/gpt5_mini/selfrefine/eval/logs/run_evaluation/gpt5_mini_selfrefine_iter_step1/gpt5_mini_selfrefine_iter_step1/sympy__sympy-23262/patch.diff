@@ -1,0 +1,25 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -955,13 +955,21 @@
+     if isinstance(arg, (Basic, MatrixOperations)):
+         return doprint(arg)
+     elif iterable(arg):
++        # Handle Python-native sequences by delegating to the printer only for
++        # SymPy-specific types. For Python lists and tuples, build the literal
++        # representation here. Special-case single-element tuples to ensure
++        # the trailing comma is emitted: (x,) is different from (x).
+         if isinstance(arg, list):
+             left, right = "[]"
++            return left + ', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+         elif isinstance(arg, tuple):
++            # Single-element tuple must include a trailing comma.
++            if len(arg) == 1:
++                return '(' + _recursive_to_string(doprint, arg[0]) + ',)'
+             left, right = "()"
++            return left + ', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+         else:
+             raise NotImplementedError("unhandled type: %s, %s" % (type(arg), arg))
+-        return left +', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+     elif isinstance(arg, str):
+         return arg
+     else:

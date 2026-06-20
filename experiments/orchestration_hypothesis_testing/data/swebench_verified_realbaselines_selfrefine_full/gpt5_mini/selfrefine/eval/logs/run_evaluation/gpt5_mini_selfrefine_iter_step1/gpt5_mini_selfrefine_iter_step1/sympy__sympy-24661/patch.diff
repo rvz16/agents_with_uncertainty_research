@@ -1,0 +1,30 @@
+--- a/sympy/parsing/sympy_parser.py
++++ b/sympy/parsing/sympy_parser.py
+@@ -1186,11 +1186,22 @@
+             return new_node
+         return node
+ 
+-    def visit_Call(self, node):
+-        new_node = self.generic_visit(node)
+-        if isinstance(node.func, ast.Name) and node.func.id in self.functions:
+-            new_node.keywords.append(ast.keyword(arg='evaluate', value=ast.NameConstant(value=False, ctx=ast.Load())))
+-        return new_node
++    def visit_Compare(self, node):
++        """
++        Transform Python comparison nodes into SymPy relational calls
++        with evaluate=False. Chained comparisons (e.g. 1 < 2 < 3) become
++        And(Rel1, Rel2, ...) with evaluate=False.
++        """
++        # Visit subnodes first so nested constructs get transformed
++        left = self.visit(node.left)
++        comparators = [self.visit(c) for c in node.comparators]
++
++        # mapping from AST comparison operator classes to SymPy names
++        cmp_map = {
++            ast.Eq: 'Eq',
++            ast.NotEq: 'Ne',
++            ast.Lt: 'Lt',
++            ast.LtE: 'Le',
+ 
+ 
+ _transformation = {  # items can be added but never re-ordered

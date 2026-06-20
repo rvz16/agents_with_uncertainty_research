@@ -1,0 +1,53 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -539,7 +539,49 @@
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,
+                                        ):
+-                    output = self.norm(resampled_masked)
++                    try:
++                        output = self.norm(resampled_masked)
++                    except ValueError:
++                        # Some numpy/numpy.ma changes can cause the norm's
++                        # internal transform to produce non-finite values
++                        # for extreme or masked data (see PR/Issue referenced
++                        # in commit).  As a resilient fallback, try calling
++                        # the norm with masked values filled with NaN; if
++                        # that still fails, fall back to using the finite
++                        # data range for vmin/vmax.
++                        if np.ma.isMaskedArray(resampled_masked):
++                            arr2 = resampled_masked.filled(np.nan)
++                        else:
++                            arr2 = np.array(resampled_masked, copy=False)
++
++                        try:
++                            output = self.norm(arr2)
++                        except ValueError:
++                            # Use only finite values to derive a safe vmin/vmax.
++                            finite_mask = np.isfinite(arr2)
++                            if finite_mask.any():
++                                finite_vals = arr2[finite_mask]
++                                fm = float(np.nanmin(finite_vals))
++                                fx = float(np.nanmax(finite_vals))
++                                # Ensure vmin != vmax to avoid other errors.
++                                if fm == fx:
++                                    eps = max(abs(fm) * 1e-12, 1e-12)
++                                    fm -= eps
++                                    fx += eps
++                                with cbook._setattr_cm(self.norm,
++                                                       vmin=fm,
++                                                       vmax=fx):
++                                    # Replace NaNs with the finite minimum so
++                                    # the transform won't produce non-finite
++                                    # results.
++                                    safe_arr = np.where(np.isfinite(arr2),
++                                                        arr2, fm)
++                                    output = self.norm(safe_arr)
++                            else:
++                                # No finite data: produce a neutral gray image
++                                # by mapping to zeros. This avoids raising and
++                                # allows rendering to continue.
++                                output = np.zeros_like(resampled_masked, dtype=float)
+             else:
+                 if A.shape[2] == 3:
+                     A = _rgb_to_rgba(A)

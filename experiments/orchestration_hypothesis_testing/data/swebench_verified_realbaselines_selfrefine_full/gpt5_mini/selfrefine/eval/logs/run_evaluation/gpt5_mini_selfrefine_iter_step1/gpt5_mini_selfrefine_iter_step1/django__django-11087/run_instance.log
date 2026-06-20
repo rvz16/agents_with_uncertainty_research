@@ -1,0 +1,83 @@
+2026-06-18 19:28:55,473 - INFO - Creating container for django__django-11087...
+2026-06-18 19:28:56,906 - INFO - Container for django__django-11087 created: 4ca59785a168109f56ea97d7e72ba6ad35e94d7a7a95a7720ab51fb97685ed2e
+2026-06-18 19:28:57,055 - INFO - Container for django__django-11087 started: 4ca59785a168109f56ea97d7e72ba6ad35e94d7a7a95a7720ab51fb97685ed2e
+2026-06-18 19:28:57,058 - INFO - Intermediate patch for django__django-11087 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11087/patch.diff, now applying to container...
+2026-06-18 19:28:57,227 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/deletion.py...
+Applied patch django/db/models/deletion.py cleanly.
+
+2026-06-18 19:28:58,473 - INFO - Git diff before:
+diff --git a/django/db/models/deletion.py b/django/db/models/deletion.py
+index 3a462f1c4c..9f6527a5e8 100644
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,25 @@ class Collector:
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
++
++        Only load the fields required by the deletion collector (the primary
++        key and the foreign-key field that references the parent). This avoids
++        selecting all fields of the related model (which can trigger decoding
++        of corrupted/invalid data) and improves performance.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # Limit selected fields to the primary key and the relation field name.
++        # Use a try/except to be conservative in case .only() or field names
++        # aren't available for some custom managers/fields.
++        try:
++            pk_name = related.related_model._meta.pk.name
++            rel_field_name = related.field.name
++            # .only() expects attribute names, not column names.
++            return qs.only(pk_name, rel_field_name)
++        except Exception:
++            return qs
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():
+2026-06-18 19:28:58,474 - INFO - Eval script for django__django-11087 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11087/eval.sh; copying to container...
+2026-06-18 19:29:26,027 - INFO - Test runtime: 27.50 seconds
+2026-06-18 19:29:26,029 - INFO - Test output for django__django-11087 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11087/test_output.txt
+2026-06-18 19:29:26,147 - INFO - Git diff after:
+diff --git a/django/db/models/deletion.py b/django/db/models/deletion.py
+index 3a462f1c4c..9f6527a5e8 100644
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,25 @@ class Collector:
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
++
++        Only load the fields required by the deletion collector (the primary
++        key and the foreign-key field that references the parent). This avoids
++        selecting all fields of the related model (which can trigger decoding
++        of corrupted/invalid data) and improves performance.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # Limit selected fields to the primary key and the relation field name.
++        # Use a try/except to be conservative in case .only() or field names
++        # aren't available for some custom managers/fields.
++        try:
++            pk_name = related.related_model._meta.pk.name
++            rel_field_name = related.field.name
++            # .only() expects attribute names, not column names.
++            return qs.only(pk_name, rel_field_name)
++        except Exception:
++            return qs
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():
+2026-06-18 19:29:26,147 - INFO - Grading answer for django__django-11087...
+2026-06-18 19:29:26,150 - INFO - report: {'django__django-11087': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_only_referenced_fields_selected (delete.tests.DeletionTests)']}, 'PASS_TO_PASS': {'success': ['test_fast_delete_empty_no_update_can_self_select (delete.tests.FastDeleteTests)', 'test_fast_delete_fk (delete.tests.FastDeleteTests)', 'test_fast_delete_inheritance (delete.tests.FastDeleteTests)', 'test_fast_delete_instance_set_pk_none (delete.tests.FastDeleteTests)', 'test_fast_delete_joined_qs (delete.tests.FastDeleteTests)', 'test_fast_delete_large_batch (delete.tests.FastDeleteTests)', 'test_fast_delete_m2m (delete.tests.FastDeleteTests)', 'test_fast_delete_qs (delete.tests.FastDeleteTests)', 'test_fast_delete_revm2m (delete.tests.FastDeleteTests)', 'test_auto (delete.tests.OnDeleteTests)', 'test_auto_nullable (delete.tests.OnDeleteTests)', 'test_cascade (delete.tests.OnDeleteTests)', 'test_cascade_from_child (delete.tests.OnDeleteTests)', 'test_cascade_from_parent (delete.tests.OnDeleteTests)', 'test_cascade_nullable (delete.tests.OnDeleteTests)', 'test_do_nothing (delete.tests.OnDeleteTests)', 'test_do_nothing_qscount (delete.tests.OnDeleteTests)', 'test_inheritance_cascade_down (delete.tests.OnDeleteTests)', 'test_inheritance_cascade_up (delete.tests.OnDeleteTests)', 'test_o2o_setnull (delete.tests.OnDeleteTests)', 'test_protect (delete.tests.OnDeleteTests)', 'test_setdefault (delete.tests.OnDeleteTests)', 'test_setdefault_none (delete.tests.OnDeleteTests)', 'test_setnull (delete.tests.OnDeleteTests)', 'test_setnull_from_child (delete.tests.OnDeleteTests)', 'test_setnull_from_parent (delete.tests.OnDeleteTests)', 'test_setvalue (delete.tests.OnDeleteTests)', 'test_bulk (delete.tests.DeletionTests)', 'test_can_defer_constraint_checks (delete.tests.DeletionTests)', 'test_delete_with_keeping_parents (delete.tests.DeletionTests)', 'test_delete_with_keeping_parents_relationships (delete.tests.DeletionTests)', 'test_deletion_order (delete.tests.DeletionTests)', 'test_hidden_related (delete.tests.DeletionTests)', 'test_instance_update (delete.tests.DeletionTests)', 'test_large_delete (delete.tests.DeletionTests)', 'test_large_delete_related (delete.tests.DeletionTests)', 'test_m2m (delete.tests.DeletionTests)', 'test_model_delete_returns_num_rows (delete.tests.DeletionTests)', 'test_proxied_model_duplicate_queries (delete.tests.DeletionTests)', 'test_queryset_delete_returns_num_rows (delete.tests.DeletionTests)', 'test_relational_post_delete_signals_happen_before_parent_object (delete.tests.DeletionTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11087: resolved: False
+2026-06-18 19:29:26,151 - INFO - Attempting to stop container sweb.eval.django__django-11087.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:29:41,371 - INFO - Attempting to remove container sweb.eval.django__django-11087.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:29:41,392 - INFO - Container sweb.eval.django__django-11087.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 19:29:41,392 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11087:latest...
+2026-06-18 19:29:41,764 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11087:latest removed.

@@ -1,0 +1,14 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -60,6 +60,11 @@
+ 
+ class Choices(enum.Enum, metaclass=ChoicesMeta):
+     """Class for creating enumerated choices."""
++    # Prevent Django templates from attempting to call enum classes/instances
++    # (template engine calls callables with no arguments). Marking these
++    # types as not callable in templates avoids a TypeError when templates
++    # encounter enum classes such as YearInSchool.
++    do_not_call_in_templates = True
+ 
+     def __str__(self):
+         """

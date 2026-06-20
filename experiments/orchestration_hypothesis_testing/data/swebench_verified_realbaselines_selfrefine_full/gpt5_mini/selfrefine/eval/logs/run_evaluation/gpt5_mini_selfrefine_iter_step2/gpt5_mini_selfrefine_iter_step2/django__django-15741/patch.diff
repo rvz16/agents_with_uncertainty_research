@@ -1,0 +1,24 @@
+--- a/django/utils/formats.py
++++ b/django/utils/formats.py
+@@ -7,7 +7,7 @@
+ 
+ from django.conf import settings
+ from django.utils import dateformat, numberformat
+-from django.utils.functional import lazy
++from django.utils.functional import lazy, Promise
+ from django.utils.translation import check_for_language, get_language, to_locale
+ 
+ # format_cache is a mapping from (format_type, lang) to the format string.
+@@ -113,6 +113,12 @@
+             use_l10n = settings.USE_L10N
+     if use_l10n and lang is None:
+         lang = get_language()
++    # If format_type is a lazy object (e.g. a lazy translation), evaluate it
++    # to a concrete string (or list/tuple) before using it as an attribute
++    # name or cache key. Passing a lazy object to getattr() raises a
++    # TypeError: attribute name must be string.
++    if isinstance(format_type, Promise):
++        format_type = str(format_type)
+     cache_key = (format_type, lang)
+     try:
+         return _format_cache[cache_key]

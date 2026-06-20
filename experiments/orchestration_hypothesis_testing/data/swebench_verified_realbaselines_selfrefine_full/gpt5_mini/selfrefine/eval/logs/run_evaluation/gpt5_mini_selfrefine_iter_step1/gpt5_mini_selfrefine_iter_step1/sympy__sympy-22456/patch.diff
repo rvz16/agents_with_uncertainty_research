@@ -1,0 +1,20 @@
+--- a/sympy/codegen/ast.py
++++ b/sympy/codegen/ast.py
+@@ -898,6 +898,17 @@
+     not_in_args = ['text']
+     is_Atom = True
+ 
++    @property
++    def args(self):
++        """
++        Provide positional-argument compatibility with Basic subclasses.
++
++        This ensures that String instances satisfy the Basic-style invariance
++        expr.func(*expr.args) == expr by exposing the contained text as the
++        single positional argument.
++        """
++        return (self.text,)
++
+     @classmethod
+     def _construct_text(cls, text):
+         if not isinstance(text, str):

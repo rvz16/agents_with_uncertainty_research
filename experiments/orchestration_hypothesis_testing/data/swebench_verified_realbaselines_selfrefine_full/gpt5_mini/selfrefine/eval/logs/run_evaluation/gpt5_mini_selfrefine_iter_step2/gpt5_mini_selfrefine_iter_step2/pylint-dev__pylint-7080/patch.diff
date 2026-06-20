@@ -1,0 +1,22 @@
+--- a/pylint/lint/expand_modules.py
++++ b/pylint/lint/expand_modules.py
+@@ -74,6 +74,9 @@
+     path = sys.path.copy()
+ 
+     for something in files_or_modules:
++        # Normalize the input path so ignore-paths regexes match paths that
++        # may be passed with a "./" prefix or with different separators.
++        something = os.path.normpath(something)
+         basename = os.path.basename(something)
+         if _is_ignored_file(
+             something, ignore_list, ignore_list_re, ignore_list_paths_re
+@@ -138,6 +141,9 @@
+             for subfilepath in modutils.get_module_files(
+                 os.path.dirname(filepath), ignore_list, list_all=is_namespace
+             ):
++                # Normalize sub-file paths as well so ignore-paths with or
++                # without leading "./" match consistently.
++                subfilepath = os.path.normpath(subfilepath)
+                 if filepath == subfilepath:
+                     continue
+                 if _is_in_ignore_list_re(

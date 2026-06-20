@@ -1,0 +1,65 @@
+2026-06-19 10:10:54,187 - INFO - Creating container for django__django-16642...
+2026-06-19 10:10:55,805 - INFO - Container for django__django-16642 created: 782ae7841ae45e5bf5b9ed7a5968409b2f531be01f768a4705e438c96c6c7c2f
+2026-06-19 10:10:55,963 - INFO - Container for django__django-16642 started: 782ae7841ae45e5bf5b9ed7a5968409b2f531be01f768a4705e438c96c6c7c2f
+2026-06-19 10:10:55,966 - INFO - Intermediate patch for django__django-16642 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-16642/patch.diff, now applying to container...
+2026-06-19 10:10:56,065 - INFO - >>>>> Applied Patch:
+Checking patch django/http/response.py...
+Applied patch django/http/response.py cleanly.
+
+2026-06-19 10:10:57,569 - INFO - Git diff before:
+diff --git a/django/http/response.py b/django/http/response.py
+index f62dec8ce9..bdd87924ac 100644
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -607,11 +607,16 @@ class FileResponse(StreamingHttpResponse):
+             if filename:
+                 content_type, encoding = mimetypes.guess_type(filename)
+                 # Encoding isn't set to prevent browsers from automatically
+-                # uncompressing files.
++                # uncompressing files. For certain compression extensions we
++                # want to avoid leaking the underlying filename's MIME type
++                # (e.g. "text/html" for "foo.html.br") — prefer a safe binary
++                # content type or an appropriate archive/compression MIME type.
+                 content_type = {
+                     "bzip2": "application/x-bzip",
+                     "gzip": "application/gzip",
+                     "xz": "application/x-xz",
++                    "br": "application/brotli",
++                    "compress": "application/x-compress",
+                 }.get(encoding, content_type)
+                 self.headers["Content-Type"] = (
+                     content_type or "application/octet-stream"
+2026-06-19 10:10:57,570 - INFO - Eval script for django__django-16642 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-16642/eval.sh; copying to container...
+2026-06-19 10:11:22,440 - INFO - Test runtime: 24.81 seconds
+2026-06-19 10:11:22,442 - INFO - Test output for django__django-16642 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-16642/test_output.txt
+2026-06-19 10:11:22,580 - INFO - Git diff after:
+diff --git a/django/http/response.py b/django/http/response.py
+index f62dec8ce9..bdd87924ac 100644
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -607,11 +607,16 @@ class FileResponse(StreamingHttpResponse):
+             if filename:
+                 content_type, encoding = mimetypes.guess_type(filename)
+                 # Encoding isn't set to prevent browsers from automatically
+-                # uncompressing files.
++                # uncompressing files. For certain compression extensions we
++                # want to avoid leaking the underlying filename's MIME type
++                # (e.g. "text/html" for "foo.html.br") — prefer a safe binary
++                # content type or an appropriate archive/compression MIME type.
+                 content_type = {
+                     "bzip2": "application/x-bzip",
+                     "gzip": "application/gzip",
+                     "xz": "application/x-xz",
++                    "br": "application/brotli",
++                    "compress": "application/x-compress",
+                 }.get(encoding, content_type)
+                 self.headers["Content-Type"] = (
+                     content_type or "application/octet-stream"
+2026-06-19 10:11:22,580 - INFO - Grading answer for django__django-16642...
+2026-06-19 10:11:22,581 - INFO - report: {'django__django-16642': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['If compressed responses are served with the uncompressed Content-Type']}, 'PASS_TO_PASS': {'success': ['Headers are set correctly with a buffer when an absolute filename is', 'test_content_disposition_buffer (responses.test_fileresponse.FileResponseTests.test_content_disposition_buffer)', 'test_content_disposition_buffer_attachment (responses.test_fileresponse.FileResponseTests.test_content_disposition_buffer_attachment)', 'test_content_disposition_buffer_explicit_filename (responses.test_fileresponse.FileResponseTests.test_content_disposition_buffer_explicit_filename)', 'test_content_disposition_escaping (responses.test_fileresponse.FileResponseTests.test_content_disposition_escaping)', 'test_content_disposition_file (responses.test_fileresponse.FileResponseTests.test_content_disposition_file)', 'test_content_length_buffer (responses.test_fileresponse.FileResponseTests.test_content_length_buffer)', 'test_content_length_file (responses.test_fileresponse.FileResponseTests.test_content_length_file)', 'test_content_length_nonzero_starting_position_buffer (responses.test_fileresponse.FileResponseTests.test_content_length_nonzero_starting_position_buffer)', 'test_content_length_nonzero_starting_position_file (responses.test_fileresponse.FileResponseTests.test_content_length_nonzero_starting_position_file)', 'test_content_length_nonzero_starting_position_file_seekable_no_tell (responses.test_fileresponse.FileResponseTests.test_content_length_nonzero_starting_position_file_seekable_no_tell)', 'test_content_type_buffer (responses.test_fileresponse.FileResponseTests.test_content_type_buffer)', 'test_content_type_buffer_explicit (responses.test_fileresponse.FileResponseTests.test_content_type_buffer_explicit)', 'test_content_type_buffer_explicit_default (responses.test_fileresponse.FileResponseTests.test_content_type_buffer_explicit_default)', 'test_content_type_buffer_named (responses.test_fileresponse.FileResponseTests.test_content_type_buffer_named)', 'test_content_type_file (responses.test_fileresponse.FileResponseTests.test_content_type_file)', 'test_file_from_named_pipe_response (responses.test_fileresponse.FileResponseTests.test_file_from_named_pipe_response)', 'test_repr (responses.test_fileresponse.FileResponseTests.test_repr)', 'test_response_buffer (responses.test_fileresponse.FileResponseTests.test_response_buffer)', 'test_response_nonzero_starting_position (responses.test_fileresponse.FileResponseTests.test_response_nonzero_starting_position)', 'test_unicode_attachment (responses.test_fileresponse.FileResponseTests.test_unicode_attachment)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16642: resolved: False
+2026-06-19 10:11:22,582 - INFO - Attempting to stop container sweb.eval.django__django-16642.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 10:11:37,875 - INFO - Attempting to remove container sweb.eval.django__django-16642.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 10:11:37,899 - INFO - Container sweb.eval.django__django-16642.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-19 10:11:37,899 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-16642:latest...
+2026-06-19 10:11:38,580 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-16642:latest removed.

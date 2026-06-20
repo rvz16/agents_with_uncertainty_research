@@ -1,0 +1,40 @@
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -3,6 +3,7 @@
+ import json
+ import re
+ from html.parser import HTMLParser
++import html as _stdlib_html
+ from urllib.parse import (
+     parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit,
+ )
+@@ -24,15 +25,11 @@
+ simple_url_re = re.compile(r'^https?://\[?\w', re.IGNORECASE)
+ simple_url_2_re = re.compile(r'^www\.|^(?!http)\w[^@]+\.(com|edu|gov|int|mil|net|org)($|/.*)$', re.IGNORECASE)
+ 
+-_html_escapes = {
+-    ord('&'): '&amp;',
+-    ord('<'): '&lt;',
+-    ord('>'): '&gt;',
+-    ord('"'): '&quot;',
+-    ord("'"): '&#39;',
+-}
+-
+-
++# Use the Python standard library's html.escape implementation, which is
++# well-tested and generally faster than a custom implementation. Note that
++# html.escape converts single quotes to "&#x27;" (hex) rather than "&#39;"
++# (decimal); these are equivalent in HTML but the literal output will differ.
++# Keeping the function name and lazy behavior for backwards compatibility.
+ @keep_lazy(str, SafeString)
+ def escape(text):
+     """
+@@ -43,7 +40,7 @@
+     This may result in double-escaping. If this is a concern, use
+     conditional_escape() instead.
+     """
+-    return mark_safe(str(text).translate(_html_escapes))
++    return mark_safe(_stdlib_html.escape(str(text), quote=True))
+ 
+ 
+ _js_escapes = {

@@ -1,0 +1,26 @@
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -17,7 +17,7 @@
+     connections, router, transaction,
+ )
+ from django.db.models import (
+-    NOT_PROVIDED, ExpressionWrapper, IntegerField, Max, Value,
++    NOT_PROVIDED, ExpressionWrapper, IntegerField, Max, Value, AutoField,
+ )
+ from django.db.models.constants import LOOKUP_SEP
+ from django.db.models.constraints import CheckConstraint, UniqueConstraint
+@@ -1297,8 +1297,14 @@
+ 
+     @classmethod
+     def _check_default_pk(cls):
++        # Only warn when the auto-created primary key is an AutoField
++        # generated because no explicit primary key type was defined on the
++        # model (or its ancestors). Do not warn for auto-created parent-link
++        # OneToOneFields (multi-table inheritance) or other auto-created
++        # non-AutoField primary keys.
+         if (
+             cls._meta.pk.auto_created and
++            isinstance(cls._meta.pk, AutoField) and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+             not cls._meta.app_config._is_default_auto_field_overridden
+         ):

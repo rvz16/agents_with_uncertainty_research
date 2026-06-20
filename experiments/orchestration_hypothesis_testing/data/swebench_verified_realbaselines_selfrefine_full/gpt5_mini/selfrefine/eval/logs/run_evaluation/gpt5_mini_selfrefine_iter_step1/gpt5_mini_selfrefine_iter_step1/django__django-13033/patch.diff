@@ -1,0 +1,18 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -727,7 +727,14 @@
+         # If we get to this point and the field is a relation to another model,
+         # append the default ordering for that model unless it is the pk
+         # shortcut or the attribute name of the field that is specified.
+-        if field.is_relation and opts.ordering and getattr(field, 'attname', None) != name and name != 'pk':
++        # Compare the attribute name against the last component of the lookup
++        # path (pieces[-1]) rather than the whole lookup string so that
++        # ordering by e.g. "record__root_id" (the FK attr) does not cause the
++        # related model's default ordering to be appended, while ordering by
++        # "record__root" (the relation name) will.
++        if (field.is_relation and opts.ordering and
++                getattr(field, 'attname', None) != pieces[-1] and
++                pieces[-1] != 'pk'):
+             # Firstly, avoid infinite loops.
+             already_seen = already_seen or set()
+             join_tuple = tuple(getattr(self.query.alias_map[j], 'join_cols', None) for j in joins)

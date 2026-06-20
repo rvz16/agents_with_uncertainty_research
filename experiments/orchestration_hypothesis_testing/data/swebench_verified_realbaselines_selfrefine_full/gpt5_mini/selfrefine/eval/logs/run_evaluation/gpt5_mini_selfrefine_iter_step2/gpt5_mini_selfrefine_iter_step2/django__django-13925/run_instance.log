@@ -1,0 +1,67 @@
+2026-06-19 03:14:55,807 - INFO - Creating container for django__django-13925...
+2026-06-19 03:14:55,953 - INFO - Container for django__django-13925 created: 817f482c8dfdc8aadaaee3fb562ee3a1b06041b65c37f0c88e6efcfdaa0fbb74
+2026-06-19 03:14:56,094 - INFO - Container for django__django-13925 started: 817f482c8dfdc8aadaaee3fb562ee3a1b06041b65c37f0c88e6efcfdaa0fbb74
+2026-06-19 03:14:56,095 - INFO - Intermediate patch for django__django-13925 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-13925/patch.diff, now applying to container...
+2026-06-19 03:14:56,208 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/base.py...
+Applied patch django/db/models/base.py cleanly.
+
+2026-06-19 03:14:57,558 - INFO - Git diff before:
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 4038859cfa..2a894e4a6c 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1297,6 +1297,18 @@ class Model(metaclass=ModelBase):
+ 
+     @classmethod
+     def _check_default_pk(cls):
++        # Don't warn for auto-created primary keys that are parent links for
++        # multi-table inheritance. In that case the primary key type was
++        # explicitly defined on the parent model, so the child shouldn't get
++        # a DEFAULT_AUTO_FIELD warning.
++        pk = cls._meta.pk
++        # Some fields might not have the attributes if weird custom fields are used,
++        # so use getattr safely.
++        if getattr(pk, 'auto_created', False):
++            remote_field = getattr(pk, 'remote_field', None)
++            if remote_field is not None and getattr(remote_field, 'parent_link', False):
++                return []
++
+         if (
+             cls._meta.pk.auto_created and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+2026-06-19 03:14:57,559 - INFO - Eval script for django__django-13925 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-13925/eval.sh; copying to container...
+2026-06-19 03:15:11,289 - INFO - Test runtime: 13.68 seconds
+2026-06-19 03:15:11,291 - INFO - Test output for django__django-13925 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-13925/test_output.txt
+2026-06-19 03:15:11,430 - INFO - Git diff after:
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 4038859cfa..2a894e4a6c 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1297,6 +1297,18 @@ class Model(metaclass=ModelBase):
+ 
+     @classmethod
+     def _check_default_pk(cls):
++        # Don't warn for auto-created primary keys that are parent links for
++        # multi-table inheritance. In that case the primary key type was
++        # explicitly defined on the parent model, so the child shouldn't get
++        # a DEFAULT_AUTO_FIELD warning.
++        pk = cls._meta.pk
++        # Some fields might not have the attributes if weird custom fields are used,
++        # so use getattr safely.
++        if getattr(pk, 'auto_created', False):
++            remote_field = getattr(pk, 'remote_field', None)
++            if remote_field is not None and getattr(remote_field, 'parent_link', False):
++                return []
++
+         if (
+             cls._meta.pk.auto_created and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+2026-06-19 03:15:11,430 - INFO - Grading answer for django__django-13925...
+2026-06-19 03:15:11,432 - INFO - report: {'django__django-13925': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_auto_created_inherited_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_explicit_inherited_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_app_default_auto_field (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_auto_created_inherited_parent_link (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_auto_created_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_default_auto_field_setting (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_explicit_inherited_parent_link (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_explicit_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_collision_abstract_model (check_framework.test_model_checks.IndexNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_collision_abstract_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_across_apps_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_proxy_models (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_unmanaged_models (check_framework.test_model_checks.DuplicateDBTableTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13925: resolved: True
+2026-06-19 03:15:11,433 - INFO - Attempting to stop container sweb.eval.django__django-13925.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 03:15:26,667 - INFO - Attempting to remove container sweb.eval.django__django-13925.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 03:15:26,690 - INFO - Container sweb.eval.django__django-13925.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 03:15:26,690 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13925:latest...
+2026-06-19 03:15:27,204 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13925:latest removed.

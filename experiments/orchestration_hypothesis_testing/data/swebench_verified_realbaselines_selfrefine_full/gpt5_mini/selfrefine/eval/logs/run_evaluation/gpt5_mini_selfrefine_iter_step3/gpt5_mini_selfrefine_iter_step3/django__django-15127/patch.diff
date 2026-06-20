@@ -1,0 +1,26 @@
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -5,3 +5,23 @@
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # Update the module-level LEVEL_TAGS in the messages storage whenever
++        # the MESSAGE_TAGS setting is changed (for example during tests using
++        # override_settings). This mirrors other apps that react to
++        # setting_changed so the in-memory constant matches the current settings.
++        from django.conf import settings
++        from django.test.signals import setting_changed
++        from django.dispatch import receiver
++        from django.contrib.messages.storage import base as storage_base
++
++        @receiver(setting_changed)
++        def update_level_tags(**kwargs):
++            if kwargs.get('setting') == 'MESSAGE_TAGS':
++                # Use the setting if present, otherwise fall back to the
++                # existing LEVEL_TAGS in the storage module.
++                storage_base.LEVEL_TAGS = getattr(
++                    settings, 'MESSAGE_TAGS',
++                    getattr(storage_base, 'LEVEL_TAGS', {})
++                )

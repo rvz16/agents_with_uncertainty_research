@@ -1,0 +1,65 @@
+2026-06-18 20:22:37,438 - INFO - Creating container for django__django-13794...
+2026-06-18 20:22:37,552 - INFO - Container for django__django-13794 created: 72e2821e6dc6aa4a7357dc5183f9e9bef6bc92e4a98bdab8b995640c31b4eb5a
+2026-06-18 20:22:37,668 - INFO - Container for django__django-13794 started: 72e2821e6dc6aa4a7357dc5183f9e9bef6bc92e4a98bdab8b995640c31b4eb5a
+2026-06-18 20:22:37,669 - INFO - Intermediate patch for django__django-13794 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13794/patch.diff, now applying to container...
+2026-06-18 20:22:37,770 - INFO - >>>>> Applied Patch:
+Checking patch django/utils/functional.py...
+Applied patch django/utils/functional.py cleanly.
+
+2026-06-18 20:22:38,971 - INFO - Git diff before:
+diff --git a/django/utils/functional.py b/django/utils/functional.py
+index 6d38f932f9..31e66a114f 100644
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -145,6 +145,17 @@ def lazy(func, *resultclasses):
+         def __bytes_cast_encoded(self):
+             return func(*self.__args, **self.__kw).encode()
+ 
++        def __radd__(self, other):
++            # Support right-side addition where the left operand is a plain
++            # str and the right operand is a lazy proxy. Evaluate the proxy
++            # and perform the appropriate concatenation. For text delegates,
++            # ensure the proxied value is converted to str before joining.
++            res = func(*self.__args, **self.__kw)
++            if self._delegate_text:
++                return other + str(res)
++            # Fallback to the proxied object's __radd__ if present.
++            return getattr(res, '__radd__')(other)
++
+         def __cast(self):
+             if self._delegate_bytes:
+                 return self.__bytes_cast()
+2026-06-18 20:22:38,972 - INFO - Eval script for django__django-13794 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13794/eval.sh; copying to container...
+2026-06-18 20:23:02,195 - INFO - Test runtime: 23.17 seconds
+2026-06-18 20:23:02,196 - INFO - Test output for django__django-13794 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13794/test_output.txt
+2026-06-18 20:23:02,287 - INFO - Git diff after:
+diff --git a/django/utils/functional.py b/django/utils/functional.py
+index 6d38f932f9..31e66a114f 100644
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -145,6 +145,17 @@ def lazy(func, *resultclasses):
+         def __bytes_cast_encoded(self):
+             return func(*self.__args, **self.__kw).encode()
+ 
++        def __radd__(self, other):
++            # Support right-side addition where the left operand is a plain
++            # str and the right operand is a lazy proxy. Evaluate the proxy
++            # and perform the appropriate concatenation. For text delegates,
++            # ensure the proxied value is converted to str before joining.
++            res = func(*self.__args, **self.__kw)
++            if self._delegate_text:
++                return other + str(res)
++            # Fallback to the proxied object's __radd__ if present.
++            return getattr(res, '__radd__')(other)
++
+         def __cast(self):
+             if self._delegate_bytes:
+                 return self.__bytes_cast()
+2026-06-18 20:23:02,287 - INFO - Grading answer for django__django-13794...
+2026-06-18 20:23:02,289 - INFO - report: {'django__django-13794': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_add08 (template_tests.filter_tests.test_add.AddTests)'], 'failure': ['test_lazy_add (utils_tests.test_functional.FunctionalTests)', 'test_add09 (template_tests.filter_tests.test_add.AddTests)']}, 'PASS_TO_PASS': {'success': ['test_add (template_tests.filter_tests.test_add.FunctionTests)', 'cached_property caches its value and behaves like a property.', 'test_cached_property_auto_name (utils_tests.test_functional.FunctionalTests)', "Disallow this case because the decorated function wouldn't be cached.", 'test_cached_property_reuse_same_name (utils_tests.test_functional.FunctionalTests)', 'test_cached_property_set_name_not_called (utils_tests.test_functional.FunctionalTests)', 'test_classproperty_getter (utils_tests.test_functional.FunctionalTests)', 'test_classproperty_override_getter (utils_tests.test_functional.FunctionalTests)', 'test_lazy (utils_tests.test_functional.FunctionalTests)', 'lazy also finds base class methods in the proxy object', 'lazy finds the correct (overridden) method implementation', 'test_lazy_class_preparation_caching (utils_tests.test_functional.FunctionalTests)', 'test_lazy_equality (utils_tests.test_functional.FunctionalTests)', 'test_lazy_object_to_string (utils_tests.test_functional.FunctionalTests)', 'test_lazy_repr_bytes (utils_tests.test_functional.FunctionalTests)', 'test_lazy_repr_int (utils_tests.test_functional.FunctionalTests)', 'test_lazy_repr_text (utils_tests.test_functional.FunctionalTests)', 'test_add01 (template_tests.filter_tests.test_add.AddTests)', 'test_add02 (template_tests.filter_tests.test_add.AddTests)', 'test_add03 (template_tests.filter_tests.test_add.AddTests)', 'test_add04 (template_tests.filter_tests.test_add.AddTests)', 'test_add05 (template_tests.filter_tests.test_add.AddTests)', 'test_add06 (template_tests.filter_tests.test_add.AddTests)', 'test_add07 (template_tests.filter_tests.test_add.AddTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13794: resolved: False
+2026-06-18 20:23:02,290 - INFO - Attempting to stop container sweb.eval.django__django-13794.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 20:23:17,547 - INFO - Attempting to remove container sweb.eval.django__django-13794.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 20:23:17,564 - INFO - Container sweb.eval.django__django-13794.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 20:23:17,564 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13794:latest...
+2026-06-18 20:23:17,970 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13794:latest removed.

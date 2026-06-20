@@ -1,0 +1,19 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -141,6 +141,16 @@
+         user.set_password(self.cleaned_data["password1"])
+         if commit:
+             user.save()
++            # Save the m2m data for the form. ModelForm.save(commit=False)
++            # sets up the machinery so that calling self.save_m2m() will
++            # actually persist any ManyToManyField data. Call it here to
++            # ensure ModelMultipleChoiceField / ManyToManyField data is saved
++            # when commit=True.
++            try:
++                self.save_m2m()
++            except AttributeError:
++                # If for some reason save_m2m isn't available, ignore.
++                pass
+         return user
+ 
+ 

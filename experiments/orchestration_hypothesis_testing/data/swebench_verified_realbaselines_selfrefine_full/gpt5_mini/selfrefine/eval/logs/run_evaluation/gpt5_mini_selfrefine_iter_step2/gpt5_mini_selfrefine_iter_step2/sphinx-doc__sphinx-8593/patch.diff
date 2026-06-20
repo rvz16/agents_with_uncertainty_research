@@ -1,0 +1,28 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -757,6 +757,25 @@
+                 else:
+                     keep = False
+             elif (namespace, membername) in attr_docs:
++                # attribute documented in source (via analyzer: attribute comment)
++                # Use the attribute doc (from analyzer) to determine metadata
++                attr_doc = attr_docs[(namespace, membername)]
++                # attr_doc can be a list of lines (from analyzer) or a string
++                if isinstance(attr_doc, (list, tuple)):
++                    doc_from_attr = '\n'.join(attr_doc)
++                else:
++                    doc_from_attr = attr_doc or ''
++                # Extract metadata from the attribute docstring comment to
++                # affect privacy/publicness (e.g. ":meta public:")
++                metadata = extract_metadata(doc_from_attr)
++                if 'private' in metadata:
++                    isprivate = True
++                elif 'public' in metadata:
++                    isprivate = False
++                else:
++                    isprivate = membername.startswith('_')
++                # attribute doc exists
++                has_doc = True
+                 if want_all and isprivate:
+                     if self.options.private_members is None:
+                         keep = False

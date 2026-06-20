@@ -1,0 +1,40 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1722,11 +1722,35 @@
+ 
+         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
+ 
++        # Build ON CONFLICT suffix using actual database column names rather
++        # than Python field/attribute names. Elements in query.update_fields
++        # / query.unique_fields can be Field instances or strings (field
++        # names or possibly column names), so be defensive.
++        def _as_columns(field_list):
++            if not field_list:
++                return field_list
++            cols = []
++            meta = self.query.get_meta()
++            for item in field_list:
++                # Field instances expose the .column attribute.
++                if hasattr(item, "column"):
++                    cols.append(item.column)
++                else:
++                    # Try to resolve a model field by name; if that fails,
++                    # assume the item is already a column name or raw string.
++                    try:
++                        f = meta.get_field(item)
++                    except Exception:
++                        cols.append(str(item))
++                    else:
++                        cols.append(f.column)
++            return tuple(cols)
++
+         on_conflict_suffix_sql = self.connection.ops.on_conflict_suffix_sql(
+             fields,
+             self.query.on_conflict,
+-            self.query.update_fields,
+-            self.query.unique_fields,
++            _as_columns(self.query.update_fields),
++            _as_columns(self.query.unique_fields),
+         )
+         if (
+             self.returning_fields

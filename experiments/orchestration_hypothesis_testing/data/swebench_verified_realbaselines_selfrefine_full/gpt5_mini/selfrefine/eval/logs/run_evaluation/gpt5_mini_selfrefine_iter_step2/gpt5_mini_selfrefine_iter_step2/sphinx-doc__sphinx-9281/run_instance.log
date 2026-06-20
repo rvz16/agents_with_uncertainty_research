@@ -1,0 +1,75 @@
+2026-06-19 07:15:10,886 - INFO - Creating container for sphinx-doc__sphinx-9281...
+2026-06-19 07:15:12,379 - INFO - Container for sphinx-doc__sphinx-9281 created: 88b35089c9e4e509aa31b08aadf0557f7e118977ab54e8af77c6e4b780a00d9e
+2026-06-19 07:15:12,543 - INFO - Container for sphinx-doc__sphinx-9281 started: 88b35089c9e4e509aa31b08aadf0557f7e118977ab54e8af77c6e4b780a00d9e
+2026-06-19 07:15:12,545 - INFO - Intermediate patch for sphinx-doc__sphinx-9281 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sphinx-doc__sphinx-9281/patch.diff, now applying to container...
+2026-06-19 07:15:12,651 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/util/inspect.py...
+Applied patch sphinx/util/inspect.py cleanly.
+
+2026-06-19 07:15:13,104 - INFO - Git diff before:
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index a415a7074..a8cda793c 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -457,6 +457,22 @@ def object_description(object: Any) -> str:
+         else:
+             return "frozenset({%s})" % ", ".join(object_description(x)
+                                                  for x in sorted_values)
++    # Special-case enum members to avoid ugly repr like "<MyEnum.Value: 10>".
++    # Prefer a qualified name including module and class: "module.EnumClass.Member"
++    if isinstance(object, enum.Enum):
++        try:
++            cls = object.__class__
++            mod = getattr(cls, '__module__', None)
++            qualname = getattr(cls, '__qualname__', getattr(cls, '__name__', None))
++            name = getattr(object, 'name', None)
++            if name is not None and qualname is not None:
++                if mod and mod != 'builtins':
++                    return "%s.%s.%s" % (mod, qualname, name)
++                else:
++                    return "%s.%s" % (qualname, name)
++        except Exception:
++            # If anything goes wrong, fall back to generic repr below.
++            pass
+     try:
+         s = repr(object)
+     except Exception as exc:
+2026-06-19 07:15:13,105 - INFO - Eval script for sphinx-doc__sphinx-9281 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sphinx-doc__sphinx-9281/eval.sh; copying to container...
+2026-06-19 07:15:30,186 - INFO - Test runtime: 17.04 seconds
+2026-06-19 07:15:30,187 - INFO - Test output for sphinx-doc__sphinx-9281 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sphinx-doc__sphinx-9281/test_output.txt
+2026-06-19 07:15:30,277 - INFO - Git diff after:
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index a415a7074..a8cda793c 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -457,6 +457,22 @@ def object_description(object: Any) -> str:
+         else:
+             return "frozenset({%s})" % ", ".join(object_description(x)
+                                                  for x in sorted_values)
++    # Special-case enum members to avoid ugly repr like "<MyEnum.Value: 10>".
++    # Prefer a qualified name including module and class: "module.EnumClass.Member"
++    if isinstance(object, enum.Enum):
++        try:
++            cls = object.__class__
++            mod = getattr(cls, '__module__', None)
++            qualname = getattr(cls, '__qualname__', getattr(cls, '__name__', None))
++            name = getattr(object, 'name', None)
++            if name is not None and qualname is not None:
++                if mod and mod != 'builtins':
++                    return "%s.%s.%s" % (mod, qualname, name)
++                else:
++                    return "%s.%s" % (qualname, name)
++        except Exception:
++            # If anything goes wrong, fall back to generic repr below.
++            pass
+     try:
+         s = repr(object)
+     except Exception as exc:
+2026-06-19 07:15:30,277 - INFO - Grading answer for sphinx-doc__sphinx-9281...
+2026-06-19 07:15:30,281 - INFO - report: {'sphinx-doc__sphinx-9281': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_util_inspect.py::test_object_description_enum']}, 'PASS_TO_PASS': {'success': ['tests/test_util_inspect.py::test_TypeAliasNamespace', 'tests/test_util_inspect.py::test_signature', 'tests/test_util_inspect.py::test_signature_partial', 'tests/test_util_inspect.py::test_signature_methods', 'tests/test_util_inspect.py::test_signature_partialmethod', 'tests/test_util_inspect.py::test_signature_annotations', 'tests/test_util_inspect.py::test_signature_annotations_py38', 'tests/test_util_inspect.py::test_signature_from_str_basic', 'tests/test_util_inspect.py::test_signature_from_str_default_values', 'tests/test_util_inspect.py::test_signature_from_str_annotations', 'tests/test_util_inspect.py::test_signature_from_str_complex_annotations', 'tests/test_util_inspect.py::test_signature_from_str_kwonly_args', 'tests/test_util_inspect.py::test_signature_from_str_positionaly_only_args', 'tests/test_util_inspect.py::test_signature_from_str_invalid', 'tests/test_util_inspect.py::test_signature_from_ast', 'tests/test_util_inspect.py::test_safe_getattr_with_default', 'tests/test_util_inspect.py::test_safe_getattr_with_exception', 'tests/test_util_inspect.py::test_safe_getattr_with_property_exception', 'tests/test_util_inspect.py::test_safe_getattr_with___dict___override', 'tests/test_util_inspect.py::test_dictionary_sorting', 'tests/test_util_inspect.py::test_set_sorting', 'tests/test_util_inspect.py::test_set_sorting_fallback', 'tests/test_util_inspect.py::test_frozenset_sorting', 'tests/test_util_inspect.py::test_frozenset_sorting_fallback', 'tests/test_util_inspect.py::test_dict_customtype', 'tests/test_util_inspect.py::test_getslots', 'tests/test_util_inspect.py::test_isclassmethod', 'tests/test_util_inspect.py::test_isstaticmethod', 'tests/test_util_inspect.py::test_iscoroutinefunction', 'tests/test_util_inspect.py::test_isfunction', 'tests/test_util_inspect.py::test_isbuiltin', 'tests/test_util_inspect.py::test_isdescriptor', 'tests/test_util_inspect.py::test_isattributedescriptor', 'tests/test_util_inspect.py::test_isproperty', 'tests/test_util_inspect.py::test_isgenericalias', 'tests/test_util_inspect.py::test_unpartial', 'tests/test_util_inspect.py::test_getdoc_inherited_decorated_method', 'tests/test_util_inspect.py::test_is_builtin_class_method'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-9281: resolved: False
+2026-06-19 07:15:30,282 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-9281.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:15:45,517 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-9281.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 07:15:45,535 - INFO - Container sweb.eval.sphinx-doc__sphinx-9281.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 07:15:45,535 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9281:latest...
+2026-06-19 07:15:45,951 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9281:latest removed.

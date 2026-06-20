@@ -1,0 +1,33 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,28 @@
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
+-        """
+-        return related.related_model._base_manager.using(self.using).filter(
++
++        Only fetch the primary key and the field used for the relation to avoid
++        loading unnecessary / potentially problematic large text fields when
++        cascading deletes. If there are delete signal listeners for the related
++        model, avoid deferring fields since signal handlers may require full
++        instances.
++        """
++        rel_model = related.related_model
++        qs = rel_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # If there are listeners for delete-related signals, do not defer fields.
++        if (signals.pre_delete.has_listeners(rel_model) or
++                signals.post_delete.has_listeners(rel_model) or
++                signals.m2m_changed.has_listeners(rel_model)):
++            return qs
++        pk_name = rel_model._meta.pk.name
++        # Only select the PK and the FK field used in the filter to minimize
++        # the data fetched.
++        if pk_name == related.field.name:
++            return qs.only(pk_name)
++        return qs.only(pk_name, related.field.name)
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

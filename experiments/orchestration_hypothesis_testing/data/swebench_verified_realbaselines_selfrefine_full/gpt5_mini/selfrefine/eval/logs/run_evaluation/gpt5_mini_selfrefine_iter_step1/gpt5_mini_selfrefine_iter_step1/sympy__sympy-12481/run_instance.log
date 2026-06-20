@@ -1,0 +1,59 @@
+2026-06-19 01:04:58,820 - INFO - Creating container for sympy__sympy-12481...
+2026-06-19 01:04:59,839 - INFO - Container for sympy__sympy-12481 created: 92de1b5be055857a6c8552ade90524dc78e206ee0462733b22f7c3ea226f478e
+2026-06-19 01:04:59,979 - INFO - Container for sympy__sympy-12481 started: 92de1b5be055857a6c8552ade90524dc78e206ee0462733b22f7c3ea226f478e
+2026-06-19 01:04:59,980 - INFO - Intermediate patch for sympy__sympy-12481 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-12481/patch.diff, now applying to container...
+2026-06-19 01:05:00,085 - INFO - >>>>> Applied Patch:
+Checking patch sympy/combinatorics/permutations.py...
+Applied patch sympy/combinatorics/permutations.py cleanly.
+
+2026-06-19 01:05:00,601 - INFO - Git diff before:
+diff --git a/sympy/combinatorics/permutations.py b/sympy/combinatorics/permutations.py
+index 136ed5a47..8e96ca6f3 100644
+--- a/sympy/combinatorics/permutations.py
++++ b/sympy/combinatorics/permutations.py
+@@ -896,10 +896,11 @@ def __new__(cls, *args, **kwargs):
+ 
+         temp = flatten(args)
+         if has_dups(temp):
+-            if is_cycle:
+-                raise ValueError('there were repeated elements; to resolve '
+-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
+-            else:
++            # If array-form was given, repeated elements are invalid.
++            # If cycle-form was given, allow repeated elements across
++            # cycles: interpret the cycles as being applied left-to-right
++            # to form the resulting permutation.
++            if not is_cycle:
+                 raise ValueError('there were repeated elements.')
+         temp = set(temp)
+2026-06-19 01:05:00,603 - INFO - Eval script for sympy__sympy-12481 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-12481/eval.sh; copying to container...
+2026-06-19 01:05:14,687 - INFO - Test runtime: 14.04 seconds
+2026-06-19 01:05:14,689 - INFO - Test output for sympy__sympy-12481 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-12481/test_output.txt
+2026-06-19 01:05:14,806 - INFO - Git diff after:
+diff --git a/sympy/combinatorics/permutations.py b/sympy/combinatorics/permutations.py
+index 136ed5a47..8e96ca6f3 100644
+--- a/sympy/combinatorics/permutations.py
++++ b/sympy/combinatorics/permutations.py
+@@ -896,10 +896,11 @@ def __new__(cls, *args, **kwargs):
+ 
+         temp = flatten(args)
+         if has_dups(temp):
+-            if is_cycle:
+-                raise ValueError('there were repeated elements; to resolve '
+-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
+-            else:
++            # If array-form was given, repeated elements are invalid.
++            # If cycle-form was given, allow repeated elements across
++            # cycles: interpret the cycles as being applied left-to-right
++            # to form the resulting permutation.
++            if not is_cycle:
+                 raise ValueError('there were repeated elements.')
+         temp = set(temp)
+2026-06-19 01:05:14,806 - INFO - Grading answer for sympy__sympy-12481...
+2026-06-19 01:05:14,807 - INFO - report: {'sympy__sympy-12481': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_args'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_Permutation', 'test_josephus', 'test_ranking', 'test_mul', 'test_Cycle', 'test_from_sequence', 'test_printing_cyclic'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-12481: resolved: True
+2026-06-19 01:05:14,808 - INFO - Attempting to stop container sweb.eval.sympy__sympy-12481.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 01:05:29,987 - INFO - Attempting to remove container sweb.eval.sympy__sympy-12481.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 01:05:30,002 - INFO - Container sweb.eval.sympy__sympy-12481.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 01:05:30,002 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-12481:latest...
+2026-06-19 01:05:30,359 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-12481:latest removed.

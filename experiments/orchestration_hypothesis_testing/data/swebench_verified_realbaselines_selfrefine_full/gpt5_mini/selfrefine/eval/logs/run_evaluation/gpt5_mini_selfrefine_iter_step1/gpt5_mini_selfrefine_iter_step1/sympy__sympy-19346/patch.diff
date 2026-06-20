@@ -1,0 +1,35 @@
+--- a/sympy/printing/repr.py
++++ b/sympy/printing/repr.py
+@@ -144,6 +144,32 @@
+     def _print_list(self, expr):
+         return "[%s]" % self.reprify(expr, ", ")
+ 
++    def _print_set(self, expr):
++        # empty set must be represented as set()
++        if not expr:
++            return "set()"
++        # make ordering deterministic by sorting on srepr strings
++        elems = list(expr)
++        elems.sort(key=lambda e: self.doprint(e))
++        return "{%s}" % ", ".join([self.doprint(e) for e in elems])
++
++    def _print_frozenset(self, expr):
++        # empty frozenset
++        if not expr:
++            return "frozenset()"
++        elems = list(expr)
++        elems.sort(key=lambda e: self.doprint(e))
++        return "frozenset({%s})" % ", ".join([self.doprint(e) for e in elems])
++
++    def _print_dict(self, expr):
++        if not expr:
++            return "{}"
++        # sort items by key's srepr for deterministic ordering
++        items = list(expr.items())
++        items.sort(key=lambda kv: self.doprint(kv[0]))
++        pairs = ["%s: %s" % (self.doprint(k), self.doprint(v)) for k, v in items]
++        return "{%s}" % ", ".join(pairs)
++
+     def _print_MatrixBase(self, expr):
+         # special case for some empty matrices
+         if (expr.rows == 0) ^ (expr.cols == 0):

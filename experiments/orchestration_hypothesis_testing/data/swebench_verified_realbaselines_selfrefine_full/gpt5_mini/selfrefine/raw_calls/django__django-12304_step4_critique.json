@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:22:06.541667+00:00",
+  "instance_id": "django__django-12304",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nEnumeration Types are not usable in templates.\nDescription\n\t \n\t\t(last modified by Mariusz Felisiak)\n\t \nThe new \u200benumeration types are great but can't be used in Django templates due to their being callable. For example this doesn't work:\n{% if student.year_in_school == YearInSchool.FRESHMAN %}\nThis is because YearInSchool, being a class, is callable, and Django Templates always call callables with no arguments. The call fails because the required value argument is missing.\nThe easy solution would be to declare do_not_call_in_templates = True on the various Choices classes.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/enums.py\n+++ b/django/db/models/enums.py\n@@ -31,6 +31,10 @@\n         # that is passed in as \"self\" as the value to use when looking up the\n         # label in the choices.\n         cls.label = property(lambda self: cls._value2label_map_.get(self.value))\n+        # Prevent Django templates from attempting to call the Enum class (they\n+        # call callables with no arguments). Mark the Enum class as\n+        # non-callable in templates.\n+        cls.do_not_call_in_templates = True\n         return enum.unique(cls)\n \n     def __contains__(cls, member):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 398,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030435
+}

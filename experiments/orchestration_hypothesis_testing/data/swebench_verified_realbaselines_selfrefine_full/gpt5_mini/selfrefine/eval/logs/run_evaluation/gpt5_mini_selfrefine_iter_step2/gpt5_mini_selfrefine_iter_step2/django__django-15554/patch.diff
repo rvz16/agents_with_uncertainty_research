@@ -1,0 +1,37 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1024,11 +1024,29 @@
+         sure chains like t1 LOUTER t2 INNER t3 aren't generated. All new
+         joins are created as LOUTER if the join is nullable.
+         """
+-        reuse_aliases = [
+-            a
+-            for a, j in self.alias_map.items()
+-            if (reuse is None or a in reuse) and j.equals(join)
+-        ]
++        reuse_aliases = []
++        for a, j in self.alias_map.items():
++            if not ((reuse is None) or (a in reuse)):
++                continue
++            if not j.equals(join):
++                continue
++            # If the join being created has a filtered_relation, only reuse an
++            # existing join if it has the same filtered_relation alias. This
++            # prevents different FilteredRelation annotations that target the
++            # same table path but have different filtering conditions from
++            # collapsing into a single SQL JOIN.
++            j_fr = getattr(j, "filtered_relation", None)
++            join_fr = getattr(join, "filtered_relation", None)
++            if (j_fr is None) and (join_fr is None):
++                reuse_aliases.append(a)
++            elif (j_fr is not None) and (join_fr is not None):
++                # Compare by alias which is assigned when the FilteredRelation
++                # is added to the query; this identifies distinct filtered
++                # relations even if other join attributes are identical.
++                if getattr(j_fr, "alias", None) == getattr(join_fr, "alias", None):
++                    reuse_aliases.append(a)
++            # Otherwise, one has a filtered_relation and the other doesn't -
++            # they are not equivalent and must not be reused.
+         if reuse_aliases:
+             if join.table_alias in reuse_aliases:
+                 reuse_alias = join.table_alias

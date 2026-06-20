@@ -1,0 +1,101 @@
+--- a/django/db/backends/base/operations.py
++++ b/django/db/backends/base/operations.py
+@@ -579,8 +579,96 @@
+         return []
+ 
+     def convert_durationfield_value(self, value, expression, connection):
+-        if value is not None:
+-            return datetime.timedelta(0, 0, value)
++        """
++        Convert database returned duration-like values into a datetime.timedelta.
++
++        Different backends and drivers may return durations as:
++         - datetime.timedelta
++         - integer microseconds
++         - float microseconds
++         - decimal.Decimal (microseconds)
++         - bytes or str in various textual interval/time formats
++        This function tries to handle the common cases robustly.
++        """
++        if value is None:
++            return None
++
++        # Already a timedelta, nothing to do.
++        if isinstance(value, datetime.timedelta):
++            return value
++
++        # Numeric types are treated as microseconds.
++        if isinstance(value, int):
++            return datetime.timedelta(microseconds=value)
++        if isinstance(value, float):
++            # float microseconds -> round to nearest microsecond
++            return datetime.timedelta(microseconds=int(round(value)))
++        if isinstance(value, decimal.Decimal):
++            try:
++                micros = int(value)
++            except (TypeError, decimal.InvalidOperation):
++                # Fallback to converting via quantize/normalization.
++                micros = int(value.to_integral_value(rounding=decimal.ROUND_HALF_UP))
++            return datetime.timedelta(microseconds=micros)
++
++        # Bytes -> str.
++        if isinstance(value, bytes):
++            try:
++                value = value.decode()
++            except Exception:
++                # Can't decode, give up.
++                return value
++
++        # Handle text representations.
++        if isinstance(value, str):
++            s = value.strip()
++            # Common Postgres format: "1 day", "1 day 02:03:04.123456", "02:03:04"
++            # Also handle "1 day, 02:03:04" (comma variant) and signs.
++            try:
++                import re
++                # Try to parse patterns with optional days and a time part.
++                m = re.match(
++                    r'^(?P<sign>-)?(?:(?P<days>-?\d+)\s+days?(?:,)?\s*)?(?P<time>\d+:\d{2}:\d{2}(?:\.\d+)?)?$',
++                    s
++                )
++                if m:
++                    sign = -1 if m.group('sign') else 1
++                    days = int(m.group('days')) if m.group('days') else 0
++                    time_part = m.group('time')
++                    if time_part:
++                        hh, mm, ss = time_part.split(':')
++                        if '.' in ss:
++                            sec, frac = ss.split('.')
++                            micro = (frac + '000000')[:6]
++                        else:
++                            sec = ss
++                            micro = '0'
++                        total_seconds = int(hh) * 3600 + int(mm) * 60 + int(sec)
++                        td = datetime.timedelta(days=days, seconds=total_seconds, microseconds=int(micro))
++                    else:
++                        # Only days present (e.g. "1 day")
++                        td = datetime.timedelta(days=days)
++                    return sign * td
++            except Exception:
++                # Fall through to next parsing attempt.
++                pass
++
++            # As a last resort, try to interpret the string as a number of
++            # microseconds (possibly produced by some drivers).
++            try:
++                dec = decimal.Decimal(s)
++            except decimal.InvalidOperation:
++                # Couldn't parse, give up and return the original value.
++                return value
++            else:
++                try:
++                    micros = int(dec)
++                except (TypeError, decimal.InvalidOperation):
++                    micros = int(dec.to_integral_value(rounding=decimal.ROUND_HALF_UP))
++                return datetime.timedelta(microseconds=micros)
++
++        # Unknown type -- return as-is.
++        return value
+ 
+     def check_expression_support(self, expression):
+         """

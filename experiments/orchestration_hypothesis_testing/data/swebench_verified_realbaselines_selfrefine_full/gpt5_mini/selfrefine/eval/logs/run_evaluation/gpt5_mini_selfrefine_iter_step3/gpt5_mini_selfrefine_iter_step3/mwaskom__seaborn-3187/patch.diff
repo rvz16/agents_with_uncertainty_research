@@ -1,0 +1,26 @@
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -378,7 +378,22 @@
+             axis.set_view_interval(vmin, vmax)
+             locs = axis.major.locator()
+             locs = locs[(vmin <= locs) & (locs <= vmax)]
+-            labels = axis.major.formatter.format_ticks(locs)
++            # Ensure formatters that compute an offset (e.g. ScalarFormatter)
++            # are informed of the set of locations so their offset value is
++            # included in the produced strings. Fall back gracefully if the
++            # formatter doesn't support set_locs.
++            formatter = axis.major.formatter
++            if hasattr(formatter, "set_locs"):
++                try:
++                    formatter.set_locs(locs)
++                except Exception:
++                    # Be conservative: if something goes wrong, continue to
++                    # formatting without pre-setting locations.
++                    pass
++            # Use the callable API rather than format_ticks so that the
++            # formatter's computed state (offset, scientific notation) is
++            # respected when possible.
++            labels = [formatter(x) for x in locs]
+             new._legend = list(locs), list(labels)
+ 
+         return new

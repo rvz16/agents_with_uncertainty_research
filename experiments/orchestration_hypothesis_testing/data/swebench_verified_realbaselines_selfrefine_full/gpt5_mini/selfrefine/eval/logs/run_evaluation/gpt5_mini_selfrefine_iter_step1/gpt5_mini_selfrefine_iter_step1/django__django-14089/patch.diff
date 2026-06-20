@@ -1,0 +1,20 @@
+--- a/django/utils/datastructures.py
++++ b/django/utils/datastructures.py
+@@ -33,6 +33,17 @@
+ 
+     def __len__(self):
+         return len(self.dict)
++
++    def __reversed__(self):
++        """
++        Return a reverse iterator over the set's elements.
++        Prefer using dict.__reversed__ when available (CPython 3.8+), fall
++        back to reversing a list copy on older Python implementations.
++        """
++        try:
++            return reversed(self.dict)
++        except TypeError:
++            return reversed(list(self.dict))
+ 
+ 
+ class MultiValueDictKeyError(KeyError):

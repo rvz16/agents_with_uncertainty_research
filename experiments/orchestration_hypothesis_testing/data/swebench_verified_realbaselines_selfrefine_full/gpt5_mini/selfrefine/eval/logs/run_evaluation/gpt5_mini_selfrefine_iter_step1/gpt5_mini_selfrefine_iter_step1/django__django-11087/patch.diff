@@ -1,0 +1,30 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,25 @@
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
+-        """
+-        return related.related_model._base_manager.using(self.using).filter(
++
++        Only load the fields required by the deletion collector (the primary
++        key and the foreign-key field that references the parent). This avoids
++        selecting all fields of the related model (which can trigger decoding
++        of corrupted/invalid data) and improves performance.
++        """
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # Limit selected fields to the primary key and the relation field name.
++        # Use a try/except to be conservative in case .only() or field names
++        # aren't available for some custom managers/fields.
++        try:
++            pk_name = related.related_model._meta.pk.name
++            rel_field_name = related.field.name
++            # .only() expects attribute names, not column names.
++            return qs.only(pk_name, rel_field_name)
++        except Exception:
++            return qs
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

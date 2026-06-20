@@ -1,0 +1,32 @@
+--- a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
++++ b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+@@ -244,6 +244,19 @@
+ 
+     def world_to_pixel_values(self, *world_arrays):
+         world_arrays = tuple(map(np.asanyarray, world_arrays))
++
++        # For any world dimension that was dropped by the slice (i.e. not in
++        # self._world_keep) we need to provide the world coordinate corresponding
++        # to the fixed pixel index of the slice. These world values depend only
++        # on the pixel axes that were sliced away, so we can obtain them by
++        # evaluating the underlying WCS.pixel_to_world_values at the sliced
++        # pixel positions. We use zeros for the kept pixel positions here since
++        # dropped world dims have no correlation with the kept pixel axes.
++        base_world = self._pixel_to_world_values_all(*([0] * len(self._pixel_keep)))
++        # Ensure base_world is indexable per world dimension
++        if self._wcs.world_n_dim == 1:
++            base_world = (base_world,)
++
+         world_arrays_new = []
+         iworld_curr = -1
+         for iworld in range(self._wcs.world_n_dim):
+@@ -251,7 +264,8 @@
+                 iworld_curr += 1
+                 world_arrays_new.append(world_arrays[iworld_curr])
+             else:
+-                world_arrays_new.append(1.)
++                # Use the world coordinate corresponding to the sliced pixel
++                world_arrays_new.append(base_world[iworld])
+ 
+         world_arrays_new = np.broadcast_arrays(*world_arrays_new)
+         pixel_arrays = list(self._wcs.world_to_pixel_values(*world_arrays_new))

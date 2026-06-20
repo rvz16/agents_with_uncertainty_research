@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:33:15.569722+00:00",
+  "instance_id": "django__django-14434",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nStatement created by _create_unique_sql makes references_column always false\nDescription\n\t\nThis is due to an instance of Table is passed as an argument to Columns when a string is expected.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/backends/base/schema.py\n+++ b/django/db/backends/base/schema.py\n@@ -1241,7 +1241,10 @@\n             return self.quote_name(self._create_index_name(*args, **kwargs))\n \n         compiler = Query(model, alias_cols=False).get_compiler(connection=self.connection)\n-        table = Table(model._meta.db_table, self.quote_name)\n+        # Use the raw table name (string) for Columns/Expressions helpers and\n+        # wrap it in a Table() only when passing to the Statement. Passing a\n+        # Table() instance to Columns made references_column always false.\n+        table = model._meta.db_table\n         if name is None:\n             name = IndexName(model._meta.db_table, columns, '_uniq', create_unique_name)\n         else:\n@@ -1253,10 +1256,10 @@\n         if columns:\n             columns = self._index_columns(table, columns, col_suffixes=(), opclasses=opclasses)\n         else:\n-            columns = Expressions(model._meta.db_table, expressions, compiler, self.quote_value)\n+            columns = Expressions(table, expressions, compiler, self.quote_value)\n         return Statement(\n             sql,\n-            table=table,\n+            table=Table(table, self.quote_name),\n             name=name,\n             columns=columns,\n             condition=self._index_condition_sql(condition),\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 460,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003059
+}

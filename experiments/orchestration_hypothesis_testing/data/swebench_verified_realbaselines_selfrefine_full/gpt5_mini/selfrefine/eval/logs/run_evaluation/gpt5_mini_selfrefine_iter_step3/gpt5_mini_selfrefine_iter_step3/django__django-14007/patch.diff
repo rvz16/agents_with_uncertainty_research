@@ -1,0 +1,38 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1411,14 +1411,32 @@
+                 cursor.execute(sql, params)
+             if not self.returning_fields:
+                 return []
++
++            # Apply any database converters defined for the returning fields
++            # (e.g. Field.from_db_value). This mirrors how query results are
++            # converted in results_iter/get_converters.
++            converters = self.get_converters(self.returning_fields)
++
+             if self.connection.features.can_return_rows_from_bulk_insert and len(self.query.objs) > 1:
+-                return self.connection.ops.fetch_returned_insert_rows(cursor)
++                rows = self.connection.ops.fetch_returned_insert_rows(cursor)
++                if converters:
++                    rows = list(self.apply_converters(rows, converters))
++                return rows
++
+             if self.connection.features.can_return_columns_from_insert:
+                 assert len(self.query.objs) == 1
+-                return [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
+-            return [(self.connection.ops.last_insert_id(
++                row = self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)
++                rows = [row]
++                if converters:
++                    rows = list(self.apply_converters(rows, converters))
++                return rows
++
++            rows = [(self.connection.ops.last_insert_id(
+                 cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
+             ),)]
++            if converters:
++                rows = list(self.apply_converters(rows, converters))
++            return rows
+ 
+ 
+ class SQLDeleteCompiler(SQLCompiler):

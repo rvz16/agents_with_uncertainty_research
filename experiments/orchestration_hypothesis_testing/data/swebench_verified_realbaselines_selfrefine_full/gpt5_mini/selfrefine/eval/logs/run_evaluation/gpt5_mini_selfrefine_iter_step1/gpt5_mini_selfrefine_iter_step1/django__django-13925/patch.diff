@@ -1,0 +1,26 @@
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1297,8 +1297,22 @@
+ 
+     @classmethod
+     def _check_default_pk(cls):
++        """
++        Warn when an auto-created primary key was added because the model didn't
++        define a primary key, unless the primary key is an auto-created parent
++        link for multi-table inheritance (which inherits its type from the
++        parent's primary key).
++        """
++        pk = cls._meta.pk
++        # If the pk was auto-created as a parent link in multi-table
++        # inheritance, it inherits the type from the parent model's PK and
++        # shouldn't trigger the DEFAULT_AUTO_FIELD warning.
++        if getattr(pk, 'auto_created', False):
++            remote_field = getattr(pk, 'remote_field', None)
++            if remote_field is not None and getattr(remote_field, 'parent_link', False):
++                return []
+         if (
+-            cls._meta.pk.auto_created and
++            pk.auto_created and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+             not cls._meta.app_config._is_default_auto_field_overridden
+         ):

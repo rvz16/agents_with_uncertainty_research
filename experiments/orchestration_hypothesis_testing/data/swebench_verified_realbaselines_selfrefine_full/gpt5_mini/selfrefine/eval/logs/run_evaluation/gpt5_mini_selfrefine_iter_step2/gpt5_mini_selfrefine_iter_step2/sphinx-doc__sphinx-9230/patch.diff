@@ -1,0 +1,22 @@
+--- a/sphinx/util/docfields.py
++++ b/sphinx/util/docfields.py
+@@ -296,14 +296,16 @@
+                 continue
+ 
+             # also support syntax like ``:param type name:``
++            # split from the right so types containing spaces (e.g.
++            # "dict(str, str)") are kept intact and the last token is used
++            # as the parameter name.
+             if typedesc.is_typed:
+                 try:
+-                    argtype, argname = fieldarg.split(None, 1)
++                    argtype, argname = fieldarg.rsplit(None, 1)
+                 except ValueError:
+                     pass
+                 else:
+-                    types.setdefault(typename, {})[argname] = \
+-                        [nodes.Text(argtype)]
++                    types.setdefault(typename, {})[argname] = [nodes.Text(argtype)]
+                     fieldarg = argname
+ 
+             translatable_content = nodes.inline(field_body.rawsource,

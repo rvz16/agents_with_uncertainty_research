@@ -1,0 +1,16 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -302,6 +302,13 @@
+         )
+         for trans in transformers:
+             _safe_set_output(trans, transform=transform)
++
++        # Also set output on the remainder estimator if it is an estimator
++        # (i.e. not 'passthrough' or 'drop'). This covers the case where a
++        # user provided an estimator for `remainder` but it is not part of the
++        # `transformers` list (e.g. before fitting).
++        if self.remainder not in {"passthrough", "drop"}:
++            _safe_set_output(self.remainder, transform=transform)
+ 
+         return self
+ 

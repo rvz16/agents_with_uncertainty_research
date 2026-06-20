@@ -1,0 +1,39 @@
+--- a/xarray/core/dataset.py
++++ b/xarray/core/dataset.py
+@@ -365,13 +365,20 @@
+         )
+ 
+     def __len__(self) -> int:
+-        return len(self._dataset._variables) - len(self._dataset._coord_names)
++        # compute length based on actual variables that are not coordinates.
++        # Avoid assuming _coord_names is subset of _variables which may be false
++        # after recent index refactors: coord names can include names not present
++        # in _variables (e.g., implicit/index level names). Using a generator
++        # count ensures we never return a negative length.
++        return sum(1 for key in self._dataset._variables if key not in self._dataset._coord_names)
+ 
+     def __contains__(self, key: Hashable) -> bool:
+         return key in self._dataset._variables and key not in self._dataset._coord_names
+ 
+     def __getitem__(self, key: Hashable) -> DataArray:
+-        if key not in self._dataset._coord_names:
++        # Only allow access to actual data variables: the key must exist in
++        # _variables and must not be marked as a coordinate.
++        if key in self._dataset._variables and key not in self._dataset._coord_names:
+             return cast("DataArray", self._dataset[key])
+         raise KeyError(key)
+ 
+@@ -397,10 +404,12 @@
+ 
+     def _ipython_key_completions_(self):
+         """Provide method for the key-autocompletions in IPython."""
++        # Filter completions to only include actual data variables. Avoid using
++        # coord names that may not be present in _variables.
+         return [
+             key
+             for key in self._dataset._ipython_key_completions_()
+-            if key not in self._dataset._coord_names
++            if key in self._dataset._variables and key not in self._dataset._coord_names
+         ]
+ 
+ 

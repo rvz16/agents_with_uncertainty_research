@@ -1,0 +1,86 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -778,12 +778,83 @@
+         self._major_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'major'))
++        # Ensure tick side and label visibility defaults from rcParams are
++        # respected when resetting.  Axis subclasses set `axis_name` to 'x'
++        # or 'y', so use that to pick the appropriate rcParam keys.
++        axis = getattr(self, "axis_name", None)
++        if axis == "x":
++            prefix = "xtick"
++            side1 = "bottom"
++            side2 = "top"
++        elif axis == "y":
++            prefix = "ytick"
++            side1 = "left"
++            side2 = "right"
++        else:
++            # Fallback to x-axis style if unknown.
++            prefix = "xtick"
++            side1 = "bottom"
++            side2 = "top"
++        # tick visibility on the two sides
++        try:
++            self._major_tick_kw['tick1On'] = mpl.rcParams[f"{prefix}.{side1}"]
++            self._major_tick_kw['tick2On'] = mpl.rcParams[f"{prefix}.{side2}"]
++            # label visibility for the two sides
++            self._major_tick_kw['label1On'] = mpl.rcParams[f"{prefix}.label{side1}"]
++            self._major_tick_kw['label2On'] = mpl.rcParams[f"{prefix}.label{side2}"]
++            # label appearance defaults
++            self._major_tick_kw['labelsize'] = mpl.rcParams[f"{prefix}.labelsize"]
++            self._major_tick_kw['labelcolor'] = mpl.rcParams[f"{prefix}.color"]
++            # tick color (markeredgecolor) default
++            self._major_tick_kw['color'] = mpl.rcParams[f"{prefix}.color"]
++        except KeyError:
++            # If rcParams keys are missing for some reason, leave sensible
++            # defaults (ticks on both sides, labels on side1 only).
++            self._major_tick_kw.setdefault('tick1On', True)
++            self._major_tick_kw.setdefault('tick2On', True)
++            self._major_tick_kw.setdefault('label1On', True)
++            self._major_tick_kw.setdefault('label2On', False)
++            self._major_tick_kw.setdefault('labelsize', mpl.rcParams.get('xtick.labelsize', None))
++            self._major_tick_kw.setdefault('labelcolor', mpl.rcParams.get('xtick.color', None))
++            self._major_tick_kw.setdefault('color', mpl.rcParams.get('xtick.color', None))
+ 
+     def _reset_minor_tick_kw(self):
+         self._minor_tick_kw.clear()
+         self._minor_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'minor'))
++        # As with major ticks, ensure side and label visibility defaults from
++        # rcParams are used for minor ticks as well.
++        axis = getattr(self, "axis_name", None)
++        if axis == "x":
++            prefix = "xtick"
++            side1 = "bottom"
++            side2 = "top"
++        elif axis == "y":
++            prefix = "ytick"
++            side1 = "left"
++            side2 = "right"
++        else:
++            prefix = "xtick"
++            side1 = "bottom"
++            side2 = "top"
++        try:
++            self._minor_tick_kw['tick1On'] = mpl.rcParams[f"{prefix}.{side1}"]
++            self._minor_tick_kw['tick2On'] = mpl.rcParams[f"{prefix}.{side2}"]
++            self._minor_tick_kw['label1On'] = mpl.rcParams[f"{prefix}.label{side1}"]
++            self._minor_tick_kw['label2On'] = mpl.rcParams[f"{prefix}.label{side2}"]
++            # minor tick labels usually follow the same style as major labels
++            self._minor_tick_kw['labelsize'] = mpl.rcParams[f"{prefix}.labelsize"]
++            self._minor_tick_kw['labelcolor'] = mpl.rcParams[f"{prefix}.color"]
++            self._minor_tick_kw['color'] = mpl.rcParams[f"{prefix}.color"]
++        except KeyError:
++            self._minor_tick_kw.setdefault('tick1On', True)
++            self._minor_tick_kw.setdefault('tick2On', True)
++            self._minor_tick_kw.setdefault('label1On', True)
++            self._minor_tick_kw.setdefault('label2On', False)
++            self._minor_tick_kw.setdefault('labelsize', mpl.rcParams.get('xtick.labelsize', None))
++            self._minor_tick_kw.setdefault('labelcolor', mpl.rcParams.get('xtick.color', None))
++            self._minor_tick_kw.setdefault('color', mpl.rcParams.get('xtick.color', None))
+ 
+     def clear(self):
+         """

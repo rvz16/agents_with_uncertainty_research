@@ -1,0 +1,66 @@
+--- a/sklearn/utils/_show_versions.py
++++ b/sklearn/utils/_show_versions.py
+@@ -38,11 +38,18 @@
+     deps_info: dict
+         version information on relevant Python libraries
+ 
++    Notes
++    -----
++    joblib historically was vendored inside sklearn as
++    sklearn.externals.joblib for scikit-learn <= 0.20. To avoid reporting
++    "not installed" for those older sklearn releases, we try a fallback to
++    the vendored joblib when appropriate.
+     """
+     deps = [
+         "pip",
+         "setuptools",
+         "sklearn",
++        "joblib",
+         "numpy",
+         "scipy",
+         "Cython",
+@@ -51,7 +58,23 @@
+     ]
+ 
+     def get_version(module):
+-        return module.__version__
++        # Some modules may not have __version__ (be defensive)
++        return getattr(module, "__version__", None)
++
++    def _sklearn_vendored_joblib():
++        """Return True if installed sklearn is an old release that vendored joblib."""
++        try:
++            if "sklearn" in sys.modules:
++                skl = sys.modules["sklearn"]
++            else:
++                skl = importlib.import_module("sklearn")
++            skl_ver = getattr(skl, "__version__", "")
++            parts = skl_ver.split(".")
++            major = int(parts[0]) if parts and parts[0].isdigit() else 0
++            minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
++            return (major, minor) <= (0, 20)
++        except Exception:
++            return False
+ 
+     deps_info = {}
+ 
+@@ -64,6 +87,19 @@
+             ver = get_version(mod)
+             deps_info[modname] = ver
+         except ImportError:
++            # Special-case: joblib may be vendored inside older sklearn releases
++            if modname == "joblib" and _sklearn_vendored_joblib():
++                try:
++                    vendored = importlib.import_module("sklearn.externals.joblib")
++                    ver = get_version(vendored)
++                    if ver:
++                        deps_info[modname] = "{ver} (sklearn.externals.joblib)".format(ver=ver)
++                    else:
++                        deps_info[modname] = "(sklearn.externals.joblib)"
++                    continue
++                except Exception:
++                    # fall through to report as not installed
++                    pass
+             deps_info[modname] = None
+ 
+     return deps_info

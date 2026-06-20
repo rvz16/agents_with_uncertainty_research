@@ -1,0 +1,38 @@
+--- a/lib/matplotlib/axes/_base.py
++++ b/lib/matplotlib/axes/_base.py
+@@ -2431,17 +2431,24 @@
+                 ((not patch.get_width()) and (not patch.get_height()))):
+             return
+         p = patch.get_path()
+-        # Get all vertices on the path
+-        # Loop through each segment to get extrema for Bezier curve sections
+-        vertices = []
+-        for curve, code in p.iter_bezier():
+-            # Get distance along the curve of any extrema
+-            _, dzeros = curve.axis_aligned_extrema()
+-            # Calculate vertices of start, end and any extrema in between
+-            vertices.append(curve([0, *dzeros, 1]))
+-
+-        if len(vertices):
+-            vertices = np.row_stack(vertices)
++        # Get all vertices on the path.
++        # If the path has no codes (i.e. is a simple polygon), use the raw
++        # vertices directly. Using iter_bezier() on paths with explicit
++        # codes (as produced by some Polygon/outline constructions) can
++        # omit vertices needed to compute correct data limits (see GH#).
++        if getattr(p, "codes", None) is None:
++            vertices = p.vertices
++        else:
++            # Loop through each segment to get extrema for Bezier curve sections
++            vertices = []
++            for curve, code in p.iter_bezier():
++                # Get distance along the curve of any extrema
++                _, dzeros = curve.axis_aligned_extrema()
++                # Calculate vertices of start, end and any extrema in between
++                vertices.append(curve([0, *dzeros, 1]))
++
++            if len(vertices):
++                vertices = np.row_stack(vertices)
+ 
+         patch_trf = patch.get_transform()
+         updatex, updatey = patch_trf.contains_branch_seperately(self.transData)

@@ -1,0 +1,28 @@
+--- a/astropy/nddata/mixins/ndarithmetic.py
++++ b/astropy/nddata/mixins/ndarithmetic.py
+@@ -513,14 +513,21 @@
+             ``handle_mask`` must create (and copy) the returned mask.
+         """
+         # If only one mask is present we need not bother about any type checks
+-        if (
+-            self.mask is None and operand is not None and operand.mask is None
+-        ) or handle_mask is None:
++        # or if mask handling is disabled just return None.
++        # Cover these cases explicitly:
++        # - both masks are None -> result mask is None
++        # - handle_mask is None -> result mask is None
++        if (self.mask is None and (operand is None or operand.mask is None)) or (
++            handle_mask is None
++        ):
+             return None
++        # If self has no mask but operand does, return a copy of operand.mask
+         elif self.mask is None and operand is not None:
+             # Make a copy so there is no reference in the result.
+             return deepcopy(operand.mask)
+-        elif operand is None:
++        # If operand is None (collapse operations) or operand has no mask,
++        # but self does, return a copy of self.mask.
++        elif operand is None or (operand is not None and operand.mask is None):
+             return deepcopy(self.mask)
+         else:
+             # Now lets calculate the resulting mask (operation enforces copy)

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:17:12.083326+00:00",
+  "instance_id": "django__django-11490",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nComposed queries cannot change the list of columns with values()/values_list().\nDescription\n\t\nComposed queries cannot change the list of columns when values()/values_list() is evaluated multiple times, e.g.\n>>> ReservedName.objects.create(name='a', order=2)\n>>> qs1 = ReservedName.objects.all()\n>>> print(qs1.union(qs1).values_list('name', 'order').get())\n('a', 2)\n>>> print(qs1.union(qs1).values_list('order').get())\n('a', 2)\n(see \u200bcompiler.py#L428-L433).\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/sql/compiler.py\n+++ b/django/db/models/sql/compiler.py\n@@ -426,11 +426,16 @@\n                 # must have the same columns list. Set the selects defined on\n                 # the query on all combined queries, if not already set.\n                 if not compiler.query.values_select and self.query.values_select:\n-                    compiler.query.set_values((\n+                    # Don't mutate the original combined query. Use a clone\n+                    # to set values so repeated evaluations of different\n+                    # values()/values_list() don't leak changes to other queries.\n+                    cloned_query = compiler.query.clone()\n+                    cloned_query.set_values((\n                         *self.query.extra_select,\n                         *self.query.values_select,\n                         *self.query.annotation_select,\n                     ))\n+                    compiler = cloned_query.get_compiler(self.using, self.connection)\n                 part_sql, part_args = compiler.as_sql()\n                 if compiler.query.combinator:\n                     # Wrap in a subquery if wrapping in parentheses isn't\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 464,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030600000000000002
+}

@@ -1,0 +1,22 @@
+--- a/astropy/units/quantity.py
++++ b/astropy/units/quantity.py
+@@ -296,7 +296,9 @@
+                 if not copy:
+                     return value
+ 
+-                if not (np.can_cast(np.float32, value.dtype) or
++                # Preserve any inexact floating dtype (including float16),
++                # otherwise default to Python float.
++                if not (np.issubdtype(value.dtype, np.floating) or
+                         value.dtype.fields):
+                     dtype = float
+ 
+@@ -377,7 +379,7 @@
+                             "Numpy numeric type.")
+ 
+         # by default, cast any integer, boolean, etc., to float
+-        if dtype is None and (not (np.can_cast(np.float32, value.dtype)
++        if dtype is None and (not (np.issubdtype(value.dtype, np.floating)
+                                    or value.dtype.fields)
+                               or value.dtype.kind == 'O'):
+             value = value.astype(float)

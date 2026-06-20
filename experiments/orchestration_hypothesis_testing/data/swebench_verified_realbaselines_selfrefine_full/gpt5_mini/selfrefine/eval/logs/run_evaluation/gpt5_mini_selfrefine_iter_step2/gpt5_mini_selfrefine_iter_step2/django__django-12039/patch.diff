@@ -1,0 +1,40 @@
+--- a/django/db/backends/ddl_references.py
++++ b/django/db/backends/ddl_references.py
+@@ -84,9 +84,12 @@
+     def __str__(self):
+         def col_str(column, idx):
+             try:
+-                return self.quote_name(column) + self.col_suffixes[idx]
++                suffix = self.col_suffixes[idx].lstrip()
+             except IndexError:
+-                return self.quote_name(column)
++                suffix = ''
++            if suffix:
++                return '{} {}'.format(self.quote_name(column), suffix)
++            return self.quote_name(column)
+ 
+         return ', '.join(col_str(column, idx) for idx, column in enumerate(self.columns))
+ 
+@@ -112,11 +115,19 @@
+         def col_str(column, idx):
+             # Index.__init__() guarantees that self.opclasses is the same
+             # length as self.columns.
+-            col = '{} {}'.format(self.quote_name(column), self.opclasses[idx])
++            col = self.quote_name(column)
+             try:
+-                col = '{} {}'.format(col, self.col_suffixes[idx])
++                op = self.opclasses[idx].lstrip()
+             except IndexError:
+-                pass
++                op = ''
++            if op:
++                col = '{} {}'.format(col, op)
++            try:
++                suffix = self.col_suffixes[idx].lstrip()
++            except IndexError:
++                suffix = ''
++            if suffix:
++                col = '{} {}'.format(col, suffix)
+             return col
+ 
+         return ', '.join(col_str(column, idx) for idx, column in enumerate(self.columns))

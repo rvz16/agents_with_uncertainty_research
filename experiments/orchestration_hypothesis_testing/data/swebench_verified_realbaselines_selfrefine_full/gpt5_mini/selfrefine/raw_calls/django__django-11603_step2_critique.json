@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:17:32.426004+00:00",
+  "instance_id": "django__django-11603",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nAdd DISTINCT support for Avg and Sum aggregates.\nDescription\n\t\nAs an extension of #28658, aggregates should be supported for other general aggregates such as Avg and Sum. Before 2.2, these aggregations just ignored the parameter, but now throw an exception.\nThis change would just involve setting these classes as allowing DISTINCT, and could also be applied to Min and Max (although pointless).\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/aggregates.py\n+++ b/django/db/models/aggregates.py\n@@ -99,6 +99,7 @@\n class Avg(FixDurationInputMixin, NumericOutputFieldMixin, Aggregate):\n     function = 'AVG'\n     name = 'Avg'\n+    allow_distinct = True\n \n \n class Count(Aggregate):\n@@ -142,6 +143,7 @@\n class Sum(FixDurationInputMixin, Aggregate):\n     function = 'SUM'\n     name = 'Sum'\n+    allow_distinct = True\n \n \n class Variance(NumericOutputFieldMixin, Aggregate):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 338,
+  "completion_tokens": 1412,
+  "cost_usd": 0.0029085
+}

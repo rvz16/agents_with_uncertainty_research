@@ -1,0 +1,26 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5995,6 +5995,23 @@
+                     f, _ = _poly_from_expr(f, _opt)
+                     factors[i] = (f, k)
+ 
++        # For square-free factorization combine factors that have the same exponent.
++        # Example: (x - 2, 3) and (x - 3, 3) should be combined to
++        # ( (x - 2)*(x - 3), 3 ) i.e. (x**2 - 5*x + 6, 3).
++        if method == 'sqf':
++            def _combine_factors(factors):
++                combined = {}
++                for f, k in factors:
++                    if k in combined:
++                        combined[k] = combined[k].mul(f)
++                    else:
++                        combined[k] = f
++                # Preserve insertion order of exponents (first occurrence)
++                return [(g, k) for k, g in combined.items()]
++
++            fp = _combine_factors(fp)
++            fq = _combine_factors(fq)
++
+         fp = _sorted_factors(fp, method)
+         fq = _sorted_factors(fq, method)
+ 

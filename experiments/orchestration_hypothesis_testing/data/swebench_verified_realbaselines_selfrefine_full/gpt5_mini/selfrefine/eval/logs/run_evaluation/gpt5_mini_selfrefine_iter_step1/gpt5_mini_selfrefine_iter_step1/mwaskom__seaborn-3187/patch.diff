@@ -1,0 +1,22 @@
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -376,10 +376,15 @@
+         # besides allowing Scale.legend(False)?
+         if prop.legend:
+             axis.set_view_interval(vmin, vmax)
+-            locs = axis.major.locator()
+-            locs = locs[(vmin <= locs) & (locs <= vmax)]
+-            labels = axis.major.formatter.format_ticks(locs)
+-            new._legend = list(locs), list(labels)
++            # Use the helper that asks the locator for tick values and then
++            # formats them with a formatter that has been given the tick locations.
++            # This ensures matplotlib formatters that use offsets or scientific
++            # multipliers (e.g., ScalarFormatter) apply those offsets when creating
++            # the legend labels.
++            from seaborn.utils import locator_to_legend_entries
++            locator = axis.major.locator
++            raw_levels, formatted_levels = locator_to_legend_entries(locator, (vmin, vmax), float)
++            new._legend = list(raw_levels), list(formatted_levels)
+ 
+         return new
+ 

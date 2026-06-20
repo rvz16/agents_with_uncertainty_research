@@ -1,0 +1,49 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -2661,7 +2661,45 @@
+     @classmethod
+     def can_document_member(cls, member: Any, membername: str, isattr: bool, parent: Any
+                             ) -> bool:
+-        return inspect.isproperty(member) and isinstance(parent, ClassDocumenter)
++        """
++        Detect whether the given member should be documented as a property.
++
++        This handles the normal case where the member object is a property
++        instance, but also special cases like ``@classmethod`` + ``@property``
++        combinations (where the class __dict__ contains a classmethod that wraps
++        a property).  In those cases the runtime attribute may not be an
++        instance of ``property``, so inspect.isproperty(member) would be False,
++        but we still want to treat it as a property for documentation.
++        """
++        # First, straightforward case: the member itself is a property.
++        if inspect.isproperty(member):
++            return isinstance(parent, ClassDocumenter)
++
++        # If parent is a ClassDocumenter, try to inspect the class __dict__
++        # to detect descriptors like classmethod(property(...)).
++        try:
++            if isinstance(parent, ClassDocumenter):
++                clsobj = getattr(parent, 'object', None)
++                if clsobj is not None:
++                    # access the raw descriptor from the class dict to avoid
++                    # invoking descriptor logic via getattr()
++                    raw = vars(clsobj).get(membername, None)
++                    # detect classmethod wrapping a property (PEP: classmethod can
++                    # wrap descriptors like property() since Python 3.9)
++                    if isinstance(raw, classmethod) and isinstance(getattr(raw, '__func__', None), property):
++                        return True
++                    # Also handle the unlikely case where the raw descriptor is
++                    # a plain property stored under some custom wrapper type:
++                    # try to unwrap common wrappers by checking __func__ / __wrapped__.
++                    inner = getattr(raw, '__func__', None) or getattr(raw, '__wrapped__', None)
++                    if isinstance(inner, property):
++                        return True
++        except Exception:
++            # Be liberal in failure: if anything goes wrong here, don't claim
++            # it's a property.
++            pass
++
++        return False
+ 
+     def document_members(self, all_members: bool = False) -> None:
+         pass

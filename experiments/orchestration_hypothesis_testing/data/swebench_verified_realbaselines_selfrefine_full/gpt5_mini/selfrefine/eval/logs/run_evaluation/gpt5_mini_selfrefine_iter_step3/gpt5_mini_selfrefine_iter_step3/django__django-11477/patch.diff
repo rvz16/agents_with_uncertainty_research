@@ -1,0 +1,25 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -617,11 +617,19 @@
+                         continue
+                     candidate_subs = dict(zip(params, args))
+                 else:
+-                    if set(kwargs).symmetric_difference(params).difference(defaults):
++                    # Treat None values in kwargs as "not provided", mirroring
++                    # resolve() which returns None for missing optional groups.
++                    # This avoids converting None to the string 'None' and allows
++                    # callers to pass None to indicate an absent optional parameter.
++                    provided = {k: v for k, v in kwargs.items() if v is not None}
++                    if set(provided).symmetric_difference(params).difference(defaults):
+                         continue
+-                    if any(kwargs.get(k, v) != v for k, v in defaults.items()):
++                    if any(provided.get(k, v) != v for k, v in defaults.items()):
+                         continue
+-                    candidate_subs = kwargs
++                    # Merge defaults with provided values so missing parameters
++                    # are filled from defaults while None-valued kwargs are treated
++                    # as not provided.
++                    candidate_subs = {**defaults, **provided}
+                 # Convert the candidate subs to text using Converter.to_url().
+                 text_candidate_subs = {}
+                 for k, v in candidate_subs.items():

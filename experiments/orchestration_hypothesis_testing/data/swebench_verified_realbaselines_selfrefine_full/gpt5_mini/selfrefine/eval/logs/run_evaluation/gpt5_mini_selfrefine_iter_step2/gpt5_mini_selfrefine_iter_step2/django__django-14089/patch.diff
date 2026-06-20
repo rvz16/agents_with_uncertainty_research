@@ -1,0 +1,16 @@
+--- a/django/utils/datastructures.py
++++ b/django/utils/datastructures.py
+@@ -33,6 +33,13 @@
+ 
+     def __len__(self):
+         return len(self.dict)
++
++    def __reversed__(self):
++        """
++        Support reversed() on OrderedSet by returning an iterator over the
++        keys in reverse insertion order.
++        """
++        return reversed(list(self.dict))
+ 
+ 
+ class MultiValueDictKeyError(KeyError):

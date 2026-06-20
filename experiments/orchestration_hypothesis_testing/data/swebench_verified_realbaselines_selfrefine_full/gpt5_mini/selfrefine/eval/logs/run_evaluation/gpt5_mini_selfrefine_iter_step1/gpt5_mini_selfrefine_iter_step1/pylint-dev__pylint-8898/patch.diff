@@ -1,0 +1,112 @@
+--- a/pylint/config/argument.py
++++ b/pylint/config/argument.py
+@@ -111,18 +111,105 @@
+         raise argparse.ArgumentTypeError(msg) from e
+ 
+ 
++def _split_regex_csv_string(value: str) -> list[str]:
++    """Split a CSV of regex patterns but avoid splitting on commas that are
++    part of regex syntax (e.g., quantifiers {m,n}), inside character classes
++    [...] or when escaped.
++
++    Returns a list of stripped parts. This mirrors (loosely) _splitstrip but
++    avoids breaking valid regexes that include commas.
++    """
++    parts: list[str] = []
++    cur: list[str] = []
++    brace_depth = 0
++    bracket_depth = 0
++    paren_depth = 0
++    escape = False
++
++    for ch in value:
++        if escape:
++            # previous was backslash, keep current char and reset escape
++            cur.append(ch)
++            escape = False
++            continue
++        if ch == "\\":
++            # start escape sequence, keep backslash for fidelity
++            cur.append(ch)
++            escape = True
++            continue
++
++        # Track entering/exiting of character classes, braces and parentheses.
++        if ch == "[":
++            bracket_depth += 1
++            cur.append(ch)
++            continue
++        if ch == "]" and bracket_depth > 0:
++            bracket_depth -= 1
++            cur.append(ch)
++            continue
++        if ch == "{":
++            brace_depth += 1
++            cur.append(ch)
++            continue
++        if ch == "}" and brace_depth > 0:
++            brace_depth -= 1
++            cur.append(ch)
++            continue
++        if ch == "(":
++            paren_depth += 1
++            cur.append(ch)
++            continue
++        if ch == ")" and paren_depth > 0:
++            paren_depth -= 1
++            cur.append(ch)
++            continue
++
++        # Split only on commas that are not inside braces/brackets/parentheses.
++        if ch == "," and brace_depth == 0 and bracket_depth == 0 and paren_depth == 0:
++            part = "".join(cur).strip()
++            if part:
++                parts.append(part)
++            cur = []
++            continue
++
++        cur.append(ch)
++
++    last = "".join(cur).strip()
++    if last:
++        parts.append(last)
++    return parts
++
++
+ def _regexp_csv_transfomer(value: str) -> Sequence[Pattern[str]]:
+-    """Transforms a comma separated list of regular expressions."""
++    """Transforms a comma separated list of regular expressions.
++
++    This version avoids splitting on commas that are part of regex syntax (for
++    example quantifiers like {1,3}) or when escaped, reducing the chance of
++    mangling valid regexes from config files.
++    """
+     patterns: list[Pattern[str]] = []
+-    for pattern in _csv_transformer(value):
++    # If the value is already a sequence (config parsing may pass lists), keep it.
++    if isinstance(value, (list, tuple)):
++        items = pylint_utils._check_csv(value)
++    else:
++        items = _split_regex_csv_string(value)
++    for pattern in items:
+         patterns.append(_regex_transformer(pattern))
+     return patterns
+ 
+ 
+ def _regexp_paths_csv_transfomer(value: str) -> Sequence[Pattern[str]]:
+-    """Transforms a comma separated list of regular expressions paths."""
++    """Transforms a comma separated list of regular expressions paths.
++
++    Similar to _regexp_csv_transfomer, avoid splitting on commas that are part
++    of regex syntax so path-like patterns containing such commas aren't mangled.
++    """
+     patterns: list[Pattern[str]] = []
+-    for pattern in _csv_transformer(value):
++    if isinstance(value, (list, tuple)):
++        items = pylint_utils._check_csv(value)
++    else:
++        items = _split_regex_csv_string(value)
++    for pattern in items:
+         patterns.append(
+             re.compile(
+                 str(pathlib.PureWindowsPath(pattern)).replace("\\", "\\\\")

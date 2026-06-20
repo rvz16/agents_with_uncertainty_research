@@ -1,0 +1,139 @@
+2026-06-19 06:22:28,198 - INFO - Creating container for pylint-dev__pylint-4661...
+2026-06-19 06:22:28,256 - INFO - Container for pylint-dev__pylint-4661 created: 106de00bdc3744c166df987c9ee23cc6e76b20e62818dab7d512150e2064f5d4
+2026-06-19 06:22:28,409 - INFO - Container for pylint-dev__pylint-4661 started: 106de00bdc3744c166df987c9ee23cc6e76b20e62818dab7d512150e2064f5d4
+2026-06-19 06:22:28,411 - INFO - Intermediate patch for pylint-dev__pylint-4661 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pylint-dev__pylint-4661/patch.diff, now applying to container...
+2026-06-19 06:22:28,527 - INFO - >>>>> Applied Patch:
+Checking patch pylint/config/__init__.py...
+Applied patch pylint/config/__init__.py cleanly.
+
+2026-06-19 06:22:28,759 - INFO - Git diff before:
+diff --git a/pylint/config/__init__.py b/pylint/config/__init__.py
+index 84774d0e..01d329fa 100644
+--- a/pylint/config/__init__.py
++++ b/pylint/config/__init__.py
+@@ -60,10 +60,28 @@ if "PYLINTHOME" in os.environ:
+     PYLINT_HOME = os.environ["PYLINTHOME"]
+     if USER_HOME == "~":
+         USER_HOME = os.path.dirname(PYLINT_HOME)
+-elif USER_HOME == "~":
+-    PYLINT_HOME = ".pylint.d"
+ else:
+-    PYLINT_HOME = os.path.join(USER_HOME, ".pylint.d")
++    # If the user's home directory cannot be determined, keep the previous
++    # behaviour of using a .pylint.d directory in the current working dir.
++    if USER_HOME == "~":
++        PYLINT_HOME = ".pylint.d"
++    else:
++        # Use the XDG Base Directory for data files on Unix-like systems:
++        #   $XDG_DATA_HOME/pylint  (defaults to ~/.local/share/pylint)
++        # On Windows prefer LOCALAPPDATA or APPDATA if available:
++        #   %LOCALAPPDATA%\pylint  or %APPDATA%\pylint
++        if sys.platform.startswith("win") or os.name == "nt":
++            base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
++            if not base:
++                base = USER_HOME
++            PYLINT_HOME = os.path.join(base, "pylint")
++        else:
++            xdg_data = os.environ.get("XDG_DATA_HOME")
++            if xdg_data:
++                base = xdg_data
++            else:
++                base = os.path.join(USER_HOME, ".local", "share")
++            PYLINT_HOME = os.path.join(base, "pylint")
+ 
+ 
+ def _get_pdata_path(base_name, recurs):
+@@ -83,7 +101,8 @@ def load_results(base):
+ def save_results(results, base):
+     if not os.path.exists(PYLINT_HOME):
+         try:
+-            os.mkdir(PYLINT_HOME)
++            # Create intermediate directories if necessary.
++            os.makedirs(PYLINT_HOME, exist_ok=True)
+         except OSError:
+             print("Unable to create directory %s" % PYLINT_HOME, file=sys.stderr)
+     data_file = _get_pdata_path(base, 1)
+@@ -110,8 +129,10 @@ ENV_HELP = (
+ The following environment variables are used:
+     * PYLINTHOME
+     Path to the directory where persistent data for the run will be stored. If
+-not found, it defaults to ~/.pylint.d/ or .pylint.d (in the current working
+-directory).
++not found, it defaults to $XDG_DATA_HOME/pylint (typically
++~/.local/share/pylint) on Unix systems, %LOCALAPPDATA%/pylint or
++%APPDATA%/pylint on Windows, or .pylint.d (in the current working directory)
++if the user's home directory cannot be determined.
+     * PYLINTRC
+     Path to the configuration file. See the documentation for the method used
+ to search for configuration file.
+2026-06-19 06:22:28,760 - INFO - Eval script for pylint-dev__pylint-4661 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pylint-dev__pylint-4661/eval.sh; copying to container...
+2026-06-19 06:22:38,995 - INFO - Test runtime: 10.17 seconds
+2026-06-19 06:22:38,996 - INFO - Test output for pylint-dev__pylint-4661 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pylint-dev__pylint-4661/test_output.txt
+2026-06-19 06:22:39,176 - INFO - Git diff after:
+diff --git a/pylint/config/__init__.py b/pylint/config/__init__.py
+index 84774d0e..01d329fa 100644
+--- a/pylint/config/__init__.py
++++ b/pylint/config/__init__.py
+@@ -60,10 +60,28 @@ if "PYLINTHOME" in os.environ:
+     PYLINT_HOME = os.environ["PYLINTHOME"]
+     if USER_HOME == "~":
+         USER_HOME = os.path.dirname(PYLINT_HOME)
+-elif USER_HOME == "~":
+-    PYLINT_HOME = ".pylint.d"
+ else:
+-    PYLINT_HOME = os.path.join(USER_HOME, ".pylint.d")
++    # If the user's home directory cannot be determined, keep the previous
++    # behaviour of using a .pylint.d directory in the current working dir.
++    if USER_HOME == "~":
++        PYLINT_HOME = ".pylint.d"
++    else:
++        # Use the XDG Base Directory for data files on Unix-like systems:
++        #   $XDG_DATA_HOME/pylint  (defaults to ~/.local/share/pylint)
++        # On Windows prefer LOCALAPPDATA or APPDATA if available:
++        #   %LOCALAPPDATA%\pylint  or %APPDATA%\pylint
++        if sys.platform.startswith("win") or os.name == "nt":
++            base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
++            if not base:
++                base = USER_HOME
++            PYLINT_HOME = os.path.join(base, "pylint")
++        else:
++            xdg_data = os.environ.get("XDG_DATA_HOME")
++            if xdg_data:
++                base = xdg_data
++            else:
++                base = os.path.join(USER_HOME, ".local", "share")
++            PYLINT_HOME = os.path.join(base, "pylint")
+ 
+ 
+ def _get_pdata_path(base_name, recurs):
+@@ -83,7 +101,8 @@ def load_results(base):
+ def save_results(results, base):
+     if not os.path.exists(PYLINT_HOME):
+         try:
+-            os.mkdir(PYLINT_HOME)
++            # Create intermediate directories if necessary.
++            os.makedirs(PYLINT_HOME, exist_ok=True)
+         except OSError:
+             print("Unable to create directory %s" % PYLINT_HOME, file=sys.stderr)
+     data_file = _get_pdata_path(base, 1)
+@@ -110,8 +129,10 @@ ENV_HELP = (
+ The following environment variables are used:
+     * PYLINTHOME
+     Path to the directory where persistent data for the run will be stored. If
+-not found, it defaults to ~/.pylint.d/ or .pylint.d (in the current working
+-directory).
++not found, it defaults to $XDG_DATA_HOME/pylint (typically
++~/.local/share/pylint) on Unix systems, %LOCALAPPDATA%/pylint or
++%APPDATA%/pylint on Windows, or .pylint.d (in the current working directory)
++if the user's home directory cannot be determined.
+     * PYLINTRC
+     Path to the configuration file. See the documentation for the method used
+ to search for configuration file.
+2026-06-19 06:22:39,177 - INFO - Grading answer for pylint-dev__pylint-4661...
+2026-06-19 06:22:39,179 - INFO - report: {'pylint-dev__pylint-4661': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/lint/unittest_lint.py::test_pylint_home']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pylint-dev__pylint-4661: resolved: False
+2026-06-19 06:22:39,179 - INFO - Attempting to stop container sweb.eval.pylint-dev__pylint-4661.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 06:22:54,489 - INFO - Attempting to remove container sweb.eval.pylint-dev__pylint-4661.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 06:22:54,505 - INFO - Container sweb.eval.pylint-dev__pylint-4661.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 06:22:54,505 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-4661:latest...
+2026-06-19 06:22:54,938 - INFO - Image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-4661:latest removed.

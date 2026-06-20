@@ -1,0 +1,56 @@
+--- a/django/db/backends/mysql/operations.py
++++ b/django/db/backends/mysql/operations.py
+@@ -69,8 +69,21 @@
+             return "DATE(%s)" % (field_name)
+ 
+     def _convert_field_to_tz(self, field_name, tzname):
+-        if settings.USE_TZ:
+-            field_name = "CONVERT_TZ(%s, 'UTC', '%s')" % (field_name, tzname)
++        if not settings.USE_TZ:
++            return field_name
++        # Determine the timezone datetimes are stored in for this DB connection.
++        # Prefer the per-connection DATABASES['xxx']['TIME_ZONE'] setting if provided,
++        # then project settings.TIME_ZONE, and finally fall back to 'UTC'.
++        db_tz = (
++            self.connection.settings_dict.get('TIME_ZONE') or
++            getattr(settings, 'TIME_ZONE', None) or
++            'UTC'
++        )
++        # If the database timezone is the same as the target tzname, no conversion
++        # is necessary (and it avoids requiring the MySQL timezone tables).
++        if db_tz == tzname:
++            return field_name
++        field_name = "CONVERT_TZ(%s, '%s', '%s')" % (field_name, db_tz, tzname)
+         return field_name
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+
+--- a/django/db/backends/oracle/operations.py
++++ b/django/db/backends/oracle/operations.py
+@@ -97,11 +97,23 @@
+     def _convert_field_to_tz(self, field_name, tzname):
+         if not settings.USE_TZ:
+             return field_name
++        # Determine the timezone datetimes are stored in for this DB connection.
++        # Prefer the per-connection DATABASES['xxx']['TIME_ZONE'] setting if provided,
++        # then project settings.TIME_ZONE, and finally fall back to '0:00' (UTC).
++        db_tz = (
++            self.connection.settings_dict.get('TIME_ZONE') or
++            getattr(settings, 'TIME_ZONE', None) or
++            '0:00'
++        )
+         if not self._tzname_re.match(tzname):
+             raise ValueError("Invalid time zone name: %s" % tzname)
+-        # Convert from UTC to local time, returning TIMESTAMP WITH TIME ZONE
+-        # and cast it back to TIMESTAMP to strip the TIME ZONE details.
+-        return "CAST((FROM_TZ(%s, '0:00') AT TIME ZONE '%s') AS TIMESTAMP)" % (field_name, tzname)
++        if not self._tzname_re.match(db_tz):
++            raise ValueError("Invalid database time zone name: %s" % db_tz)
++        # If the database timezone equals the target tzname no conversion is needed.
++        if db_tz == tzname:
++            return field_name
++        # Convert from the database timezone to the requested timezone,
++        # returning
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+         field_name = self._convert_field_to_tz(field_name, tzname)

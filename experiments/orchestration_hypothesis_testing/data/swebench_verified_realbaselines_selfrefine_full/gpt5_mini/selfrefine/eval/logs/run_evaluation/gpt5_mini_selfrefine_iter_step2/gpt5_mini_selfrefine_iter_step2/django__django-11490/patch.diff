@@ -1,0 +1,20 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -423,9 +423,14 @@
+         for compiler in compilers:
+             try:
+                 # If the columns list is limited, then all combined queries
+-                # must have the same columns list. Set the selects defined on
+-                # the query on all combined queries, if not already set.
+-                if not compiler.query.values_select and self.query.values_select:
++                # must have the same columns list. Ensure the selects defined
++                # on the parent query are applied to all combined queries.
++                # This must be enforced even if a combined query already has
++                # a values_select, because values()/values_list() can be
++                # evaluated multiple times with different columns and the
++                # component queries must reflect the current parent's
++                # requested columns to produce valid SQL.
++                if self.query.values_select:
+                     compiler.query.set_values((
+                         *self.query.extra_select,
+                         *self.query.values_select,

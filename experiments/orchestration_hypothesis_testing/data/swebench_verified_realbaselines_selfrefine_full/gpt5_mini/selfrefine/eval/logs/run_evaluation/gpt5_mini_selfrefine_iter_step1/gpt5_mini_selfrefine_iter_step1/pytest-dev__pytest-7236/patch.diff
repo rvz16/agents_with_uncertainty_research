@@ -1,0 +1,27 @@
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -221,8 +221,22 @@
+             # TestCase instance interacts with the results object, so better to only do it
+             # when absolutely needed
+             if self.config.getoption("usepdb"):
+-                self._explicit_tearDown = self._testcase.tearDown
+-                setattr(self._testcase, "tearDown", lambda *args: None)
++                # When running with --pdb we generally postpone calling tearDown()
++                # so entering the debugger is more useful. However, if the test
++                # has been marked to be skipped via unittest.skip (which sets
++                # __unittest_skip__ on the function) we should NOT replace the
++                # instance tearDown: doing so may interfere with unittest's own
++                # skip handling and cause the original tearDown to be invoked
++                # unexpectedly (regression seen between pytest 5.4.1 and 5.4.2).
++                method_obj = getattr(self.parent.obj, self.name, None)
++                is_unittest_skipped = False
++                if method_obj is not None:
++                    is_unittest_skipped = getattr(method_obj, "__unittest_skip__", False)
++                # also respect skips set on the instance/class
++                instance_skipped = getattr(self._testcase, "__unittest_skip__", False)
++                if not is_unittest_skipped and not instance_skipped:
++                    self._explicit_tearDown = self._testcase.tearDown
++                    setattr(self._testcase, "tearDown", lambda *args: None)
+ 
+             # we need to update the actual bound method with self.obj, because
+             # wrap_pytest_function_for_tracing replaces self.obj by a wrapper

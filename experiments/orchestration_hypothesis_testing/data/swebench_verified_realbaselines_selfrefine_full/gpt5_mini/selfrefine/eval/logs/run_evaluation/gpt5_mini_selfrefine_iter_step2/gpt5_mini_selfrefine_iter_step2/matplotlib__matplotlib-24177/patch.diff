@@ -1,0 +1,25 @@
+--- a/lib/matplotlib/axes/_base.py
++++ b/lib/matplotlib/axes/_base.py
+@@ -2399,9 +2399,19 @@
+                 updatex = False
+             if updatey and line_trf == self.get_xaxis_transform():
+                 updatey = False
+-        self.dataLim.update_from_path(data_path,
+-                                      self.ignore_existing_data_limits,
+-                                      updatex=updatex, updatey=updatey)
++        # If the path has no codes, iterating its Bezier segments (as done by
++        # Path.iter_segments) can drop intermediate vertices which causes
++        # incorrect data-limits for artists like hist(..., histtype='step').
++        # In that case, use the raw vertices to update the data limits so
++        # that all vertices are considered.
++        if getattr(data_path, 'codes', None) is None:
++            # data_path.vertices are in data coordinates already.
++            self.update_datalim(data_path.vertices, updatex=updatex,
++                                updatey=updatey)
++        else:
++            self.dataLim.update_from_path(data_path,
++                                          self.ignore_existing_data_limits,
++                                          updatex=updatex, updatey=updatey)
+         self.ignore_existing_data_limits = False
+ 
+     def add_patch(self, p):

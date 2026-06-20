@@ -1,0 +1,57 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -120,10 +120,52 @@
+                             rel_type = 'OneToOneField'
+                         else:
+                             rel_type = 'ForeignKey'
++                        rel_table = relations[column_name][1]
+                         rel_to = (
+-                            "self" if relations[column_name][1] == table_name
+-                            else table2model(relations[column_name][1])
++                            "self" if rel_table == table_name
++                            else table2model(rel_table)
+                         )
++
++                        # If this foreign key references a non-primary key column on the
++                        # related table, include a to_field argument that points to the
++                        # referenced model's field name. We find the referenced column
++                        # using the table's constraints (the introspection backend
++                        # provides the referenced table/column as 'foreign_key').
++                        to_field = None
++                        for params in constraints.values():
++                            fk = params.get('foreign_key')
++                            if fk and column_name in params.get('columns', []):
++                                ref_table, ref_column = fk
++                                # Match the referenced table as reported by get_relations.
++                                if ref_table == rel_table and ref_column:
++                                    try:
++                                        ref_pk = connection.introspection.get_primary_key_column(cursor, ref_table)
++                                    except Exception:
++                                        ref_pk = None
++                                    # Ensure the referenced column is either the primary key
++                                    # or has a unique constraint; otherwise a to_field would
++                                    # be invalid and should not be emitted.
++                                    is_unique = False
++                                    try:
++                                        ref_constraints = connection.introspection.get_constraints(cursor, ref_table)
++                                    except NotImplementedError:
++                                        ref_constraints = {}
++                                    for rc in ref_constraints.values():
++                                        if rc.get('unique') and len(rc.get('columns', [])) == 1 and rc.get('columns')[0] == ref_column:
++                                            is_unique = True
++                                            break
++                                    if ref_column != ref_pk and not is_unique:
++                                        # Not a PK nor unique -> don't add to_field.
++                                        pass
++                                    else:
++                                        # Convert the referenced column name to the field name
++                                        # that would be generated for the referenced model.
++                                        ref_field_name, _, _ = self.normalize_col_name(ref_column, [], False)
++                                        to_field = ref_field_name
++                                break
++                        if to_field:
++                            extra_params['to_field'] = to_field
++
+                         if rel_to in known_models:
+                             field_type = '%s(%s' % (rel_type, rel_to)
+                         else:

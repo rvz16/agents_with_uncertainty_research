@@ -1,0 +1,18 @@
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -176,10 +176,12 @@
+ def pytest_collect_file(path, parent):
+     ext = path.ext
+     if ext == ".py":
++        # Only collect python files matching the python_files config when
++        # the path is not one of the initial paths. Do not treat arbitrary
++        # __init__.py files as test modules here — package __init__.py files
++        # are handled specially by Package.collect.
+         if not parent.session.isinitpath(path):
+-            if not path_matches_patterns(
+-                path, parent.config.getini("python_files") + ["__init__.py"]
+-            ):
++            if not path_matches_patterns(path, parent.config.getini("python_files")):
+                 return
+         ihook = parent.session.gethookproxy(path)
+         return ihook.pytest_pycollect_makemodule(path=path, parent=parent)

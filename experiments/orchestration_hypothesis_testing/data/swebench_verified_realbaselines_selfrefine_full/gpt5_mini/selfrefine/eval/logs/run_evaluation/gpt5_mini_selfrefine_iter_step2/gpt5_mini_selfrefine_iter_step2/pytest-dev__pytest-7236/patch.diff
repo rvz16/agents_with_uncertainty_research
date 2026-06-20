@@ -1,0 +1,25 @@
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -122,7 +122,21 @@
+ 
+     def teardown(self):
+         if self._explicit_tearDown is not None:
+-            self._explicit_tearDown()
++            # If the test was skipped, don't run the original tearDown()
++            # (see GH #___). When --pdb is used we postpone calling
++            # tearDown by stashing it in _explicit_tearDown; however for
++            # skipped tests tearDown should never be invoked.
++            skip_exc = False
++            for e in getattr(self, "_excinfo", ()) or ():
++                try:
++                    if e.errisinstance(skip.Exception):
++                        skip_exc = True
++                        break
++                except Exception:
++                    # be defensive in case excinfo is an unexpected form
++                    continue
++            if not skip_exc:
++                self._explicit_tearDown()
+             self._explicit_tearDown = None
+         self._testcase = None
+         self._obj = None

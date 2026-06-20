@@ -1,0 +1,21 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -401,9 +401,15 @@
+             placeholder = '(' + ', '.join(sqls) + ')'
+             return (placeholder, sqls_params)
+         else:
+-            if not getattr(self.rhs, 'has_select_fields', True):
+-                self.rhs.clear_select_clause()
+-                self.rhs.add_fields(['pk'])
++            # If rhs is a Query, ensure it selects only the PK unless the user
++            # explicitly specified select fields. This mirrors the behavior in
++            # Exact.process_rhs and avoids returning multiple columns in a
++            # subquery when used in an IN lookup.
++            from django.db.models.sql.query import Query
++            if isinstance(self.rhs, Query):
++                if not self.rhs.has_select_fields:
++                    self.rhs.clear_select_clause()
++                    self.rhs.add_fields(['pk'])
+             return super().process_rhs(compiler, connection)
+ 
+     def get_rhs_op(self, connection, rhs):

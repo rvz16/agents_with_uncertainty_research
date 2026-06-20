@@ -1,0 +1,111 @@
+2026-06-18 19:04:08,266 - INFO - Creating container for astropy__astropy-8707...
+2026-06-18 19:04:08,373 - INFO - Container for astropy__astropy-8707 created: af74c876866e74c0831d4bde37d72553464378dfd6b6adf65625b2bc01b51a71
+2026-06-18 19:04:08,527 - INFO - Container for astropy__astropy-8707 started: af74c876866e74c0831d4bde37d72553464378dfd6b6adf65625b2bc01b51a71
+2026-06-18 19:04:08,527 - INFO - Intermediate patch for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/astropy__astropy-8707/patch.diff, now applying to container...
+2026-06-18 19:04:08,617 - INFO - >>>>> Applied Patch:
+Checking patch astropy/io/fits/card.py...
+Checking patch astropy/io/fits/header.py...
+Applied patch astropy/io/fits/card.py cleanly.
+Applied patch astropy/io/fits/header.py cleanly.
+
+2026-06-18 19:04:09,447 - INFO - Git diff before:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..0dc840d6f 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -5,7 +5,7 @@ import warnings
+ 
+ import numpy as np
+ 
+-from .util import _str_to_num, _is_int, translate, _words_group
++from .util import _str_to_num, _is_int, translate, _words_group, decode_ascii
+ from .verify import _Verify, _ErrList, VerifyError, VerifyWarning
+ 
+ from . import conf
+@@ -553,6 +553,11 @@ class Card(_Verify):
+         card(s).
+         """
+ 
++        # Accept bytes/bytearray on Python 3 as well as str; decode using ASCII
++        # so that callers may pass raw header bytes.
++        if isinstance(image, (bytes, bytearray)):
++            image = decode_ascii(bytes(image))
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52..42abf81f0 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -348,6 +348,14 @@ class Header:
+             A new `Header` instance.
+         """
+ 
++        # Accept both text (str) and binary (bytes/bytearray) inputs. If bytes
++        # are provided, decode them to str using ASCII so callers can pass raw
++        # header bytes.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(bytes(data))
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(bytes(sep))
++
+         cards = []
+ 
+         # If the card separator contains characters that may validly appear in
+2026-06-18 19:04:09,450 - INFO - Eval script for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/astropy__astropy-8707/eval.sh; copying to container...
+2026-06-18 19:06:05,286 - INFO - Test runtime: 115.79 seconds
+2026-06-18 19:06:05,288 - INFO - Test output for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/astropy__astropy-8707/test_output.txt
+2026-06-18 19:06:05,432 - INFO - Git diff after:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..0dc840d6f 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -5,7 +5,7 @@ import warnings
+ 
+ import numpy as np
+ 
+-from .util import _str_to_num, _is_int, translate, _words_group
++from .util import _str_to_num, _is_int, translate, _words_group, decode_ascii
+ from .verify import _Verify, _ErrList, VerifyError, VerifyWarning
+ 
+ from . import conf
+@@ -553,6 +553,11 @@ class Card(_Verify):
+         card(s).
+         """
+ 
++        # Accept bytes/bytearray on Python 3 as well as str; decode using ASCII
++        # so that callers may pass raw header bytes.
++        if isinstance(image, (bytes, bytearray)):
++            image = decode_ascii(bytes(image))
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52..42abf81f0 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -348,6 +348,14 @@ class Header:
+             A new `Header` instance.
+         """
+ 
++        # Accept both text (str) and binary (bytes/bytearray) inputs. If bytes
++        # are provided, decode them to str using ASCII so callers can pass raw
++        # header bytes.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(bytes(data))
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(bytes(sep))
++
+         cards = []
+ 
+         # If the card separator contains characters that may validly appear in
+2026-06-18 19:06:05,432 - INFO - Grading answer for astropy__astropy-8707...
+2026-06-18 19:06:05,503 - INFO - report: {'astropy__astropy-8707': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_from_bytes']}, 'PASS_TO_PASS': {'success': ['astropy/io/fits/tests/test_header.py::test_shallow_copy', 'astropy/io/fits/tests/test_header.py::test_init_with_header', 'astropy/io/fits/tests/test_header.py::test_init_with_dict', 'astropy/io/fits/tests/test_header.py::test_init_with_ordereddict'], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_rename_keyword', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_constructor_default_args', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_string_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_boolean_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_long_integer_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_floating_point_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_complex_value_card']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-8707: resolved: False
+2026-06-18 19:06:05,504 - INFO - Attempting to stop container sweb.eval.astropy__astropy-8707.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:06:20,707 - INFO - Attempting to remove container sweb.eval.astropy__astropy-8707.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:06:20,727 - INFO - Container sweb.eval.astropy__astropy-8707.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 19:06:20,727 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest...
+2026-06-18 19:06:21,147 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest removed.

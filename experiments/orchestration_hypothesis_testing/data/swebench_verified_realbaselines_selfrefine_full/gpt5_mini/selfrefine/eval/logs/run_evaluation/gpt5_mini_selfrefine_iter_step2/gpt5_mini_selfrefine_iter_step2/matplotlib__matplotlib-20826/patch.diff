@@ -1,0 +1,71 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -774,13 +774,68 @@
+                 *self.get_major_ticks(), *self.get_minor_ticks()]
+ 
+     def _reset_major_tick_kw(self):
++        """
++        Reset the major tick keyword dictionary to the rcParams defaults.
++
++        This ensures that visibility of tick sides and tick labels (e.g.
++        xtick.bottom/xtick.top/xtick.labelbottom/xtick.labeltop and the
++        corresponding ytick rcParams) are preserved when an Axis is cleared.
++        """
+         self._major_tick_kw.clear()
++
++        # Determine whether this is an x- or y-axis from the class attribute
++        axis = getattr(self, "axis_name", None)
++
++        if axis == "x":
++            # tick1 => bottom, tick2 => top
++            self._major_tick_kw['tick1On'] = mpl.rcParams['xtick.bottom']
++            self._major_tick_kw['tick2On'] = mpl.rcParams['xtick.top']
++            self._major_tick_kw['label1On'] = mpl.rcParams['xtick.labelbottom']
++            self._major_tick_kw['label2On'] = mpl.rcParams['xtick.labeltop']
++        elif axis == "y":
++            # tick1 => left, tick2 => right
++            self._major_tick_kw['tick1On'] = mpl.rcParams['ytick.left']
++            self._major_tick_kw['tick2On'] = mpl.rcParams['ytick.right']
++            self._major_tick_kw['label1On'] = mpl.rcParams['ytick.labelleft']
++            self._major_tick_kw['label2On'] = mpl.rcParams['ytick.labelright']
++        else:
++            # Fallback: preserve a sensible default if axis_name is not set.
++            self._major_tick_kw['tick1On'] = True
++            self._major_tick_kw['tick2On'] = True
++            self._major_tick_kw['label1On'] = True
++            self._major_tick_kw['label2On'] = False
++
++        # Grid defaults follow previous behavior.
+         self._major_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'major'))
+ 
+     def _reset_minor_tick_kw(self):
++        """
++        Reset the minor tick keyword dictionary to the rcParams defaults.
++
++        Uses the same side/label visibility defaults as the major ticks.
++        """
+         self._minor_tick_kw.clear()
++
++        axis = getattr(self, "axis_name", None)
++
++        if axis == "x":
++            self._minor_tick_kw['tick1On'] = mpl.rcParams['xtick.bottom']
++            self._minor_tick_kw['tick2On'] = mpl.rcParams['xtick.top']
++            self._minor_tick_kw['label1On'] = mpl.rcParams['xtick.labelbottom']
++            self._minor_tick_kw['label2On'] = mpl.rcParams['xtick.labeltop']
++        elif axis == "y":
++            self._minor_tick_kw['tick1On'] = mpl.rcParams['ytick.left']
++            self._minor_tick_kw['tick2On'] = mpl.rcParams['ytick.right']
++            self._minor_tick_kw['label1On'] = mpl.rcParams['ytick.labelleft']
++            self._minor_tick_kw['label2On'] = mpl.rcParams['ytick.labelright']
++        else:
++            self._minor_tick_kw['tick1On'] = True
++            self._minor_tick_kw['tick2On'] = True
++            self._minor_tick_kw['label1On'] = True
++            self._minor_tick_kw['label2On'] = False
++
+         self._minor_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'minor'))

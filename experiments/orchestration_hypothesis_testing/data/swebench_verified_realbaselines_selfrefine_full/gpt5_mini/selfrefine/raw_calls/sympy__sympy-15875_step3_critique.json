@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:18:32.580278+00:00",
+  "instance_id": "sympy__sympy-15875",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nis_zero is incorrect on complex integer\n`is_zero` should return `None` if it cannot decide, but should never give the wrong answer. However:\r\n\r\n```\r\n>>> e = -2*I + (1 + I)**2\r\n>>> e.is_zero\r\nFalse\r\n>>> simplify(e).is_zero\r\nTrue\r\n```\r\n\r\nThis is causing errors in determining the rank of a matrix. See issue #15872 \nFixing is_zero for complex numbers while Add\nReferences to other Issues or PRs\r\n#15873 \r\n\r\nOther comments:\r\n\r\n<!-- BEGIN RELEASE NOTES -->\r\n\r\n- core\r\n  - Fix `is_zero` becoming `False` on some expressions with `Add`.\r\n\r\n<!-- END RELEASE NOTES -->\r\n\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/core/add.py\n+++ b/sympy/core/add.py\n@@ -558,10 +558,16 @@\n             return None\n         b = self.func(*nz)\n         if b.is_zero:\n+            # If the sum of the \"non-zero\" parts is definitely zero then\n+            # we can only conclude the whole Add is zero when there are no\n+            # imaginary/complex-only indicators.  In more subtle cases\n+            # (mixed real/imaginary information) be conservative and return\n+            # None rather than incorrectly returning False (see #15872).\n             if not im_or_z and not im:\n                 return True\n-            if im and not im_or_z:\n-                return False\n+            # Otherwise we cannot be sure (e.g. cancellation between complex\n+            # parts may occur) so return None.\n+            return\n         if b.is_zero is False:\n             return False\n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 476,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003063
+}

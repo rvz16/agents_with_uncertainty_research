@@ -1,0 +1,231 @@
+2026-06-19 00:47:23,007 - INFO - Creating container for sphinx-doc__sphinx-10673...
+2026-06-19 00:47:23,937 - INFO - Container for sphinx-doc__sphinx-10673 created: a2f0dccefd20128a3b873dc614faf7e07396eb7f1d68684b5a66e960593538b5
+2026-06-19 00:47:24,071 - INFO - Container for sphinx-doc__sphinx-10673 started: a2f0dccefd20128a3b873dc614faf7e07396eb7f1d68684b5a66e960593538b5
+2026-06-19 00:47:24,074 - INFO - Intermediate patch for sphinx-doc__sphinx-10673 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-10673/patch.diff, now applying to container...
+2026-06-19 00:47:24,187 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/directives/other.py...
+Checking patch sphinx/environment/adapters/toctree.py...
+Applied patch sphinx/directives/other.py cleanly.
+Applied patch sphinx/environment/adapters/toctree.py cleanly.
+
+2026-06-19 00:47:24,680 - INFO - Git diff before:
+diff --git a/sphinx/directives/other.py b/sphinx/directives/other.py
+index 35e16e623..1349e02f8 100644
+--- a/sphinx/directives/other.py
++++ b/sphinx/directives/other.py
+@@ -119,16 +119,24 @@ class TocTree(SphinxDirective):
+                 if url_re.match(ref) or ref == 'self':
+                     toctree['entries'].append((title, ref))
+                 elif docname not in self.env.found_docs:
+-                    if excluded(self.env.doc2path(docname, False)):
+-                        message = __('toctree contains reference to excluded document %r')
+-                        subtype = 'excluded'
++                    # Allow references to special, builder-generated documents
++                    # (genindex, modindex, search) to be listed in toctrees
++                    # without emitting "nonexisting document" warnings. These
++                    # pages are generated later by builders (e.g. HTML) so they
++                    # are not present in found_docs.
++                    if docname in ('genindex', 'modindex', 'search'):
++                        toctree['entries'].append((title, docname))
+                     else:
+-                        message = __('toctree contains reference to nonexisting document %r')
+-                        subtype = 'not_readable'
+-
+-                    logger.warning(message, docname, type='toc', subtype=subtype,
+-                                   location=toctree)
+-                    self.env.note_reread()
++                        if excluded(self.env.doc2path(docname, False)):
++                            message = __('toctree contains reference to excluded document %r')
++                            subtype = 'excluded'
++                        else:
++                            message = __('toctree contains reference to nonexisting document %r')
++                            subtype = 'not_readable'
++
++                        logger.warning(message, docname, type='toc', subtype=subtype,
++                                       location=toctree)
++                        self.env.note_reread()
+                 else:
+                     if docname in all_docnames:
+                         all_docnames.remove(docname)
+diff --git a/sphinx/environment/adapters/toctree.py b/sphinx/environment/adapters/toctree.py
+index 9678e3c7c..a27737768 100644
+--- a/sphinx/environment/adapters/toctree.py
++++ b/sphinx/environment/adapters/toctree.py
+@@ -6,7 +6,7 @@ from docutils import nodes
+ from docutils.nodes import Element, Node
+ 
+ from sphinx import addnodes
+-from sphinx.locale import __
++from sphinx.locale import _, __
+ from sphinx.util import logging, url_re
+ from sphinx.util.matching import Matcher
+ from sphinx.util.nodes import clean_astext, process_only_nodes
+@@ -146,18 +146,40 @@ class TocTree:
+                                            ref, ' <- '.join(parents),
+                                            location=ref, type='toc', subtype='circular')
+                             continue
+-                        refdoc = ref
+-                        toc = self.env.tocs[ref].deepcopy()
+-                        maxdepth = self.env.metadata[ref].get('tocdepth', 0)
+-                        if ref not in toctree_ancestors or (prune and maxdepth > 0):
+-                            self._toctree_prune(toc, 2, maxdepth, collapse)
+-                        process_only_nodes(toc, builder.tags)
+-                        if title and toc.children and len(toc.children) == 1:
+-                            child = toc.children[0]
+-                            for refnode in child.findall(nodes.reference):
+-                                if refnode['refuri'] == ref and \
+-                                   not refnode['anchorname']:
+-                                    refnode.children = [nodes.Text(title)]
++
++                        # Special-case builder-generated pages so users can add
++                        # links to them in toctrees (without having source files
++                        # named the same). These pages (genindex, modindex,
++                        # search) are typically generated by builders and thus
++                        # are not present in env.tocs; create simple reference
++                        # entries for them instead of trying to deepcopy a toc.
++                        if ref in ('genindex', 'modindex', 'search'):
++                            if title is None:
++                                if ref == 'genindex':
++                                    title = _('Index')
++                                elif ref == 'modindex':
++                                    title = _('Module Index')
++                                else:
++                                    title = _('Search')
++                            reference = nodes.reference('', '', internal=True,
++                                                        refuri=ref, anchorname='',
++                                                        *[nodes.Text(title)])
++                            para = addnodes.compact_paragraph('', '', reference)
++                            item = nodes.list_item('', para)
++                            toc = nodes.bullet_list('', item)
++                        else:
++                            refdoc = ref
++                            toc = self.env.tocs[ref].deepcopy()
++                            maxdepth = self.env.metadata[ref].get('tocdepth', 0)
++                            if ref not in toctree_ancestors or (prune and maxdepth > 0):
++                                self._toctree_prune(toc, 2, maxdepth, collapse)
++                            process_only_nodes(toc, builder.tags)
++                            if title and toc.children and len(toc.children) == 1:
++                                child = toc.children[0]
++                                for refnode in child.findall(nodes.reference):
++                                    if refnode['refuri'] == ref and \
++                                       not refnode['anchorname']:
++                                        refnode.children = [nodes.Text(title)]
+                     if not toc.children:
+                         # empty toc means: no titles will show up in the toctree
+                         logger.warning(__('toctree contains reference to document %r that '
+2026-06-19 00:47:24,681 - INFO - Eval script for sphinx-doc__sphinx-10673 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-10673/eval.sh; copying to container...
+2026-06-19 00:47:41,090 - INFO - Test runtime: 16.36 seconds
+2026-06-19 00:47:41,092 - INFO - Test output for sphinx-doc__sphinx-10673 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-10673/test_output.txt
+2026-06-19 00:47:41,202 - INFO - Git diff after:
+diff --git a/sphinx/directives/other.py b/sphinx/directives/other.py
+index 35e16e623..1349e02f8 100644
+--- a/sphinx/directives/other.py
++++ b/sphinx/directives/other.py
+@@ -119,16 +119,24 @@ class TocTree(SphinxDirective):
+                 if url_re.match(ref) or ref == 'self':
+                     toctree['entries'].append((title, ref))
+                 elif docname not in self.env.found_docs:
+-                    if excluded(self.env.doc2path(docname, False)):
+-                        message = __('toctree contains reference to excluded document %r')
+-                        subtype = 'excluded'
++                    # Allow references to special, builder-generated documents
++                    # (genindex, modindex, search) to be listed in toctrees
++                    # without emitting "nonexisting document" warnings. These
++                    # pages are generated later by builders (e.g. HTML) so they
++                    # are not present in found_docs.
++                    if docname in ('genindex', 'modindex', 'search'):
++                        toctree['entries'].append((title, docname))
+                     else:
+-                        message = __('toctree contains reference to nonexisting document %r')
+-                        subtype = 'not_readable'
+-
+-                    logger.warning(message, docname, type='toc', subtype=subtype,
+-                                   location=toctree)
+-                    self.env.note_reread()
++                        if excluded(self.env.doc2path(docname, False)):
++                            message = __('toctree contains reference to excluded document %r')
++                            subtype = 'excluded'
++                        else:
++                            message = __('toctree contains reference to nonexisting document %r')
++                            subtype = 'not_readable'
++
++                        logger.warning(message, docname, type='toc', subtype=subtype,
++                                       location=toctree)
++                        self.env.note_reread()
+                 else:
+                     if docname in all_docnames:
+                         all_docnames.remove(docname)
+diff --git a/sphinx/environment/adapters/toctree.py b/sphinx/environment/adapters/toctree.py
+index 9678e3c7c..a27737768 100644
+--- a/sphinx/environment/adapters/toctree.py
++++ b/sphinx/environment/adapters/toctree.py
+@@ -6,7 +6,7 @@ from docutils import nodes
+ from docutils.nodes import Element, Node
+ 
+ from sphinx import addnodes
+-from sphinx.locale import __
++from sphinx.locale import _, __
+ from sphinx.util import logging, url_re
+ from sphinx.util.matching import Matcher
+ from sphinx.util.nodes import clean_astext, process_only_nodes
+@@ -146,18 +146,40 @@ class TocTree:
+                                            ref, ' <- '.join(parents),
+                                            location=ref, type='toc', subtype='circular')
+                             continue
+-                        refdoc = ref
+-                        toc = self.env.tocs[ref].deepcopy()
+-                        maxdepth = self.env.metadata[ref].get('tocdepth', 0)
+-                        if ref not in toctree_ancestors or (prune and maxdepth > 0):
+-                            self._toctree_prune(toc, 2, maxdepth, collapse)
+-                        process_only_nodes(toc, builder.tags)
+-                        if title and toc.children and len(toc.children) == 1:
+-                            child = toc.children[0]
+-                            for refnode in child.findall(nodes.reference):
+-                                if refnode['refuri'] == ref and \
+-                                   not refnode['anchorname']:
+-                                    refnode.children = [nodes.Text(title)]
++
++                        # Special-case builder-generated pages so users can add
++                        # links to them in toctrees (without having source files
++                        # named the same). These pages (genindex, modindex,
++                        # search) are typically generated by builders and thus
++                        # are not present in env.tocs; create simple reference
++                        # entries for them instead of trying to deepcopy a toc.
++                        if ref in ('genindex', 'modindex', 'search'):
++                            if title is None:
++                                if ref == 'genindex':
++                                    title = _('Index')
++                                elif ref == 'modindex':
++                                    title = _('Module Index')
++                                else:
++                                    title = _('Search')
++                            reference = nodes.reference('', '', internal=True,
++                                                        refuri=ref, anchorname='',
++                                                        *[nodes.Text(title)])
++                            para = addnodes.compact_paragraph('', '', reference)
++                            item = nodes.list_item('', para)
++                            toc = nodes.bullet_list('', item)
++                        else:
++                            refdoc = ref
++                            toc = self.env.tocs[ref].deepcopy()
++                            maxdepth = self.env.metadata[ref].get('tocdepth', 0)
++                            if ref not in toctree_ancestors or (prune and maxdepth > 0):
++                                self._toctree_prune(toc, 2, maxdepth, collapse)
++                            process_only_nodes(toc, builder.tags)
++                            if title and toc.children and len(toc.children) == 1:
++                                child = toc.children[0]
++                                for refnode in child.findall(nodes.reference):
++                                    if refnode['refuri'] == ref and \
++                                       not refnode['anchorname']:
++                                        refnode.children = [nodes.Text(title)]
+                     if not toc.children:
+                         # empty toc means: no titles will show up in the toctree
+                         logger.warning(__('toctree contains reference to document %r that '
+2026-06-19 00:47:41,202 - INFO - Grading answer for sphinx-doc__sphinx-10673...
+2026-06-19 00:47:41,209 - INFO - report: {'sphinx-doc__sphinx-10673': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/test_environment_toctree.py::test_toctree_index'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/test_environment_toctree.py::test_process_doc', 'tests/test_environment_toctree.py::test_glob', 'tests/test_environment_toctree.py::test_get_toc_for', 'tests/test_environment_toctree.py::test_get_toc_for_only', 'tests/test_environment_toctree.py::test_get_toc_for_tocdepth', 'tests/test_environment_toctree.py::test_get_toctree_for', 'tests/test_environment_toctree.py::test_get_toctree_for_collapse', 'tests/test_environment_toctree.py::test_get_toctree_for_maxdepth', 'tests/test_environment_toctree.py::test_get_toctree_for_includehidden'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-10673: resolved: True
+2026-06-19 00:47:41,210 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-10673.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:47:56,440 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-10673.gpt5_mini_selfrefine_iter_step1...
+2026-06-19 00:47:56,454 - INFO - Container sweb.eval.sphinx-doc__sphinx-10673.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-19 00:47:56,455 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10673:latest...
+2026-06-19 00:47:56,946 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10673:latest removed.

@@ -1,0 +1,21 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1298,7 +1298,17 @@
+         connection.ops.check_expression_support(self)
+         template_params = extra_context
+         sql_params = []
+-        condition_sql, condition_params = compiler.compile(self.condition)
++        try:
++            condition_sql, condition_params = compiler.compile(self.condition)
++        except EmptyResultSet:
++            # If the condition is an (externally) impossible expression then
++            # the WHEN should be skipped. However, when the condition is a
++            # negated expression (for example, ~Q(pk__in=[])) the negation of
++            # an impossible condition is always true, so treat it as such.
++            if getattr(self.condition, "negated", False):
++                condition_sql, condition_params = compiler.compile(Value(True))
++            else:
++                raise
+         template_params["condition"] = condition_sql
+         sql_params.extend(condition_params)
+         result_sql, result_params = compiler.compile(self.result)

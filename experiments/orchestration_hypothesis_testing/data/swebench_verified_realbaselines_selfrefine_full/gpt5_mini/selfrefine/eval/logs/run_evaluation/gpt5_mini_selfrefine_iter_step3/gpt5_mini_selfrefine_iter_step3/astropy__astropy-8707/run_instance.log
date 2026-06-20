@@ -1,0 +1,151 @@
+2026-06-19 08:16:40,549 - INFO - Creating container for astropy__astropy-8707...
+2026-06-19 08:16:40,654 - INFO - Container for astropy__astropy-8707 created: 3b94f1a8243fa98deeca4a9490b245df9536131fdcecf6dc69bbf09e590be835
+2026-06-19 08:16:40,795 - INFO - Container for astropy__astropy-8707 started: 3b94f1a8243fa98deeca4a9490b245df9536131fdcecf6dc69bbf09e590be835
+2026-06-19 08:16:40,796 - INFO - Intermediate patch for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/astropy__astropy-8707/patch.diff, now applying to container...
+2026-06-19 08:16:40,903 - INFO - >>>>> Applied Patch:
+Checking patch astropy/io/fits/card.py...
+Checking patch astropy/io/fits/header.py...
+Applied patch astropy/io/fits/card.py cleanly.
+Applied patch astropy/io/fits/header.py cleanly.
+
+2026-06-19 08:16:41,705 - INFO - Git diff before:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..da25fa5bd 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -547,12 +547,18 @@ class Card(_Verify):
+     @classmethod
+     def fromstring(cls, image):
+         """
+-        Construct a `Card` object from a (raw) string. It will pad the string
+-        if it is not the length of a card image (80 columns).  If the card
+-        image is longer than 80 columns, assume it contains ``CONTINUE``
++        Construct a `Card` object from a (raw) string or bytes. It will pad the
++        string if it is not the length of a card image (80 columns). If the
++        card image is longer than 80 columns, assume it contains ``CONTINUE``
+         card(s).
+         """
+ 
++        # Accept bytes or bytearray as input (Python 3); decode to ASCII for
++        # internal string processing.
++        if isinstance(image, (bytes, bytearray)):
++            from .util import decode_ascii
++            image = decode_ascii(image)
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52..303c3bf55 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -329,15 +329,15 @@ class Header:
+     @classmethod
+     def fromstring(cls, data, sep=''):
+         """
+-        Creates an HDU header from a byte string containing the entire header
+-        data.
++        Creates an HDU header from a byte string or text string containing the
++        entire header data.
+ 
+         Parameters
+         ----------
+-        data : str
+-           String containing the entire header.
++        data : str or bytes
++           String or bytes containing the entire header.
+ 
+-        sep : str, optional
++        sep : str or bytes, optional
+             The string separating cards from each other, such as a newline.  By
+             default there is no card separator (as is the case in a raw FITS
+             file).
+@@ -348,6 +348,12 @@ class Header:
+             A new `Header` instance.
+         """
+ 
++        # Accept both str and bytes inputs. If bytes/bytearray, decode as ASCII.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(data)
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(sep)
++
+         cards = []
+ 
+         # If the card separator contains characters that may validly appear in
+2026-06-19 08:16:41,706 - INFO - Eval script for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/astropy__astropy-8707/eval.sh; copying to container...
+2026-06-19 08:18:32,280 - INFO - Test runtime: 110.53 seconds
+2026-06-19 08:18:32,284 - INFO - Test output for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/astropy__astropy-8707/test_output.txt
+2026-06-19 08:18:32,435 - INFO - Git diff after:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..da25fa5bd 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -547,12 +547,18 @@ class Card(_Verify):
+     @classmethod
+     def fromstring(cls, image):
+         """
+-        Construct a `Card` object from a (raw) string. It will pad the string
+-        if it is not the length of a card image (80 columns).  If the card
+-        image is longer than 80 columns, assume it contains ``CONTINUE``
++        Construct a `Card` object from a (raw) string or bytes. It will pad the
++        string if it is not the length of a card image (80 columns). If the
++        card image is longer than 80 columns, assume it contains ``CONTINUE``
+         card(s).
+         """
+ 
++        # Accept bytes or bytearray as input (Python 3); decode to ASCII for
++        # internal string processing.
++        if isinstance(image, (bytes, bytearray)):
++            from .util import decode_ascii
++            image = decode_ascii(image)
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52..303c3bf55 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -329,15 +329,15 @@ class Header:
+     @classmethod
+     def fromstring(cls, data, sep=''):
+         """
+-        Creates an HDU header from a byte string containing the entire header
+-        data.
++        Creates an HDU header from a byte string or text string containing the
++        entire header data.
+ 
+         Parameters
+         ----------
+-        data : str
+-           String containing the entire header.
++        data : str or bytes
++           String or bytes containing the entire header.
+ 
+-        sep : str, optional
++        sep : str or bytes, optional
+             The string separating cards from each other, such as a newline.  By
+             default there is no card separator (as is the case in a raw FITS
+             file).
+@@ -348,6 +348,12 @@ class Header:
+             A new `Header` instance.
+         """
+ 
++        # Accept both str and bytes inputs. If bytes/bytearray, decode as ASCII.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(data)
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(sep)
++
+         cards = []
+ 
+         # If the card separator contains characters that may validly appear in
+2026-06-19 08:18:32,435 - INFO - Grading answer for astropy__astropy-8707...
+2026-06-19 08:18:32,514 - INFO - report: {'astropy__astropy-8707': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_from_bytes']}, 'PASS_TO_PASS': {'success': ['astropy/io/fits/tests/test_header.py::test_shallow_copy', 'astropy/io/fits/tests/test_header.py::test_init_with_header', 'astropy/io/fits/tests/test_header.py::test_init_with_dict', 'astropy/io/fits/tests/test_header.py::test_init_with_ordereddict'], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_rename_keyword', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_constructor_default_args', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_string_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_boolean_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_long_integer_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_floating_point_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_complex_value_card']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-8707: resolved: False
+2026-06-19 08:18:32,515 - INFO - Attempting to stop container sweb.eval.astropy__astropy-8707.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 08:18:47,748 - INFO - Attempting to remove container sweb.eval.astropy__astropy-8707.gpt5_mini_selfrefine_iter_step3...
+2026-06-19 08:18:47,767 - INFO - Container sweb.eval.astropy__astropy-8707.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-19 08:18:47,768 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest...
+2026-06-19 08:18:48,299 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest removed.

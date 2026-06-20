@@ -1,0 +1,13 @@
+--- a/xarray/core/dataarray.py
++++ b/xarray/core/dataarray.py
+@@ -196,7 +196,9 @@
+             # expand the indexer so we can handle Ellipsis
+             labels = indexing.expanded_indexer(key, self.data_array.ndim)
+             key = dict(zip(self.data_array.dims, labels))
+-        return self.data_array.sel(**key)
++        # pass indexers as the 'indexers' argument to avoid collision with
++        # keyword parameters of sel (e.g., a dimension literally named "method")
++        return self.data_array.sel(indexers=key)
+ 
+     def __setitem__(self, key, value) -> None:
+         if not utils.is_dict_like(key):

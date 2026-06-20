@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T09:11:20.427833+00:00",
+  "instance_id": "astropy__astropy-7166",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nInheritDocstrings metaclass doesn't work for properties\nInside the InheritDocstrings metaclass it uses `inspect.isfunction` which returns `False` for properties.\n\n\n## Your previous patch (diff format)\n```\n--- a/astropy/utils/misc.py\n+++ b/astropy/utils/misc.py\n@@ -528,13 +528,19 @@\n                 not key.startswith('_'))\n \n         for key, val in dct.items():\n-            if (inspect.isfunction(val) and\n+            if ((inspect.isfunction(val) or inspect.isdatadescriptor(val)) and\n                 is_public_member(key) and\n-                val.__doc__ is None):\n+                getattr(val, '__doc__', None) is None):\n                 for base in cls.__mro__[1:]:\n                     super_method = getattr(base, key, None)\n                     if super_method is not None:\n-                        val.__doc__ = super_method.__doc__\n+                        doc = getattr(super_method, '__doc__', None)\n+                        if doc:\n+                            try:\n+                                val.__doc__ = doc\n+                            except Exception:\n+                                # Some descriptor objects may not allow assigning to __doc__\n+                                pass\n                         break\n \n         super().__init__(name, bases, dct)\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 388,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003041
+}

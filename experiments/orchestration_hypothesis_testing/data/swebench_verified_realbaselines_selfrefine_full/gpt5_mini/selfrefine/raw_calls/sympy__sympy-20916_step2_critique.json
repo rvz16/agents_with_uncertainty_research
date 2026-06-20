@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:22:23.773231+00:00",
+  "instance_id": "sympy__sympy-20916",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\npprint unicode does not format subscripts on Greek letters\nGood:\r\n\r\n[ -t\u2080\u22c5w\u2080   -t\u2081\u22c5w\u2080   -t\u2082\u22c5w\u2080]\r\n\r\n\r\nBad:\r\n\r\n[ -t\u2080\u22c5\u03c90   -t\u2081\u22c5\u03c90   -t\u2082\u22c5\u03c90]\r\n\r\n\r\n\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/printing/conventions.py\n+++ b/sympy/printing/conventions.py\n@@ -7,7 +7,7 @@\n from collections.abc import Iterable\n from sympy import Derivative\n \n-_name_with_digits_p = re.compile(r'^([a-zA-Z]+)([0-9]+)$')\n+_name_with_digits_p = re.compile(r'^([^\\d]+)([0-9]+)$')\n \n \n def split_super_sub(text):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Overly permissive character class: [^\\d]+ accepts underscores, punctuation, spaces, etc., so names like \"x_1\", \"a.b2\" or \"foo 3\" will now be split into base+digits whereas previously they were not \u2014 this may change printing for many existing symbols unexpectedly.\n\nBehavioral compatibility risk: the change can alter output for symbols that intentionally contained non-letter non-digit characters (e.g. underscores), potentially breaking existing tests/users' expectations.\n\nSemantic intent unclear: original pattern restricted to ASCII letters; switching to \"not a digit\" loses the intended restriction to \"letter-like\" characters (the fix for Greek letters would be better achieved by matching Unicode letters rather than negating digits).\n\nEdge cases with non-letter non-digit Unicode: [^\\d] will include other Unicode categories (symbols, punctuation, combining marks), so names with such characters may be treated as having numeric suffixes incorrectly.\n\nNo explicit handling/normalization of Unicode digits vs ASCII digits: while \\d is Unicode-aware, the pattern still assumes trailing",
+  "prompt_tokens": 309,
+  "completion_tokens": 1500,
+  "cost_usd": 0.00307725
+}

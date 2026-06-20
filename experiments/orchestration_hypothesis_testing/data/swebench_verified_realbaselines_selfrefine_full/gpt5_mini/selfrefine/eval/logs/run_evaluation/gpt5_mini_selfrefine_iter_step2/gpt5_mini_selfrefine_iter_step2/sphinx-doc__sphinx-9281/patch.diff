@@ -1,0 +1,25 @@
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -457,6 +457,22 @@
+         else:
+             return "frozenset({%s})" % ", ".join(object_description(x)
+                                                  for x in sorted_values)
++    # Special-case enum members to avoid ugly repr like "<MyEnum.Value: 10>".
++    # Prefer a qualified name including module and class: "module.EnumClass.Member"
++    if isinstance(object, enum.Enum):
++        try:
++            cls = object.__class__
++            mod = getattr(cls, '__module__', None)
++            qualname = getattr(cls, '__qualname__', getattr(cls, '__name__', None))
++            name = getattr(object, 'name', None)
++            if name is not None and qualname is not None:
++                if mod and mod != 'builtins':
++                    return "%s.%s.%s" % (mod, qualname, name)
++                else:
++                    return "%s.%s" % (qualname, name)
++        except Exception:
++            # If anything goes wrong, fall back to generic repr below.
++            pass
+     try:
+         s = repr(object)
+     except Exception as exc:

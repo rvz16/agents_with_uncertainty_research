@@ -1,0 +1,89 @@
+2026-06-19 02:23:08,048 - INFO - Creating container for django__django-11087...
+2026-06-19 02:23:09,524 - INFO - Container for django__django-11087 created: 0ce3799676ade682b49ce5d60373b243b3c20a3916d0eb159098b56708c06ec4
+2026-06-19 02:23:09,713 - INFO - Container for django__django-11087 started: 0ce3799676ade682b49ce5d60373b243b3c20a3916d0eb159098b56708c06ec4
+2026-06-19 02:23:09,714 - INFO - Intermediate patch for django__django-11087 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-11087/patch.diff, now applying to container...
+2026-06-19 02:23:09,832 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/deletion.py...
+Applied patch django/db/models/deletion.py cleanly.
+
+2026-06-19 02:23:11,139 - INFO - Git diff before:
+diff --git a/django/db/models/deletion.py b/django/db/models/deletion.py
+index 3a462f1c4c..a49998cec8 100644
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,28 @@ class Collector:
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
++
++        Only fetch the primary key and the field used for the relation to avoid
++        loading unnecessary / potentially problematic large text fields when
++        cascading deletes. If there are delete signal listeners for the related
++        model, avoid deferring fields since signal handlers may require full
++        instances.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        rel_model = related.related_model
++        qs = rel_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # If there are listeners for delete-related signals, do not defer fields.
++        if (signals.pre_delete.has_listeners(rel_model) or
++                signals.post_delete.has_listeners(rel_model) or
++                signals.m2m_changed.has_listeners(rel_model)):
++            return qs
++        pk_name = rel_model._meta.pk.name
++        # Only select the PK and the FK field used in the filter to minimize
++        # the data fetched.
++        if pk_name == related.field.name:
++            return qs.only(pk_name)
++        return qs.only(pk_name, related.field.name)
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():
+2026-06-19 02:23:11,140 - INFO - Eval script for django__django-11087 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-11087/eval.sh; copying to container...
+2026-06-19 02:23:36,757 - INFO - Test runtime: 25.56 seconds
+2026-06-19 02:23:36,759 - INFO - Test output for django__django-11087 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-11087/test_output.txt
+2026-06-19 02:23:36,853 - INFO - Git diff after:
+diff --git a/django/db/models/deletion.py b/django/db/models/deletion.py
+index 3a462f1c4c..a49998cec8 100644
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,28 @@ class Collector:
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
++
++        Only fetch the primary key and the field used for the relation to avoid
++        loading unnecessary / potentially problematic large text fields when
++        cascading deletes. If there are delete signal listeners for the related
++        model, avoid deferring fields since signal handlers may require full
++        instances.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        rel_model = related.related_model
++        qs = rel_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # If there are listeners for delete-related signals, do not defer fields.
++        if (signals.pre_delete.has_listeners(rel_model) or
++                signals.post_delete.has_listeners(rel_model) or
++                signals.m2m_changed.has_listeners(rel_model)):
++            return qs
++        pk_name = rel_model._meta.pk.name
++        # Only select the PK and the FK field used in the filter to minimize
++        # the data fetched.
++        if pk_name == related.field.name:
++            return qs.only(pk_name)
++        return qs.only(pk_name, related.field.name)
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():
+2026-06-19 02:23:36,853 - INFO - Grading answer for django__django-11087...
+2026-06-19 02:23:36,854 - INFO - report: {'django__django-11087': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_only_referenced_fields_selected (delete.tests.DeletionTests)']}, 'PASS_TO_PASS': {'success': ['test_fast_delete_empty_no_update_can_self_select (delete.tests.FastDeleteTests)', 'test_fast_delete_fk (delete.tests.FastDeleteTests)', 'test_fast_delete_inheritance (delete.tests.FastDeleteTests)', 'test_fast_delete_instance_set_pk_none (delete.tests.FastDeleteTests)', 'test_fast_delete_joined_qs (delete.tests.FastDeleteTests)', 'test_fast_delete_large_batch (delete.tests.FastDeleteTests)', 'test_fast_delete_m2m (delete.tests.FastDeleteTests)', 'test_fast_delete_qs (delete.tests.FastDeleteTests)', 'test_fast_delete_revm2m (delete.tests.FastDeleteTests)', 'test_auto (delete.tests.OnDeleteTests)', 'test_auto_nullable (delete.tests.OnDeleteTests)', 'test_cascade (delete.tests.OnDeleteTests)', 'test_cascade_from_child (delete.tests.OnDeleteTests)', 'test_cascade_from_parent (delete.tests.OnDeleteTests)', 'test_cascade_nullable (delete.tests.OnDeleteTests)', 'test_do_nothing (delete.tests.OnDeleteTests)', 'test_do_nothing_qscount (delete.tests.OnDeleteTests)', 'test_inheritance_cascade_down (delete.tests.OnDeleteTests)', 'test_inheritance_cascade_up (delete.tests.OnDeleteTests)', 'test_o2o_setnull (delete.tests.OnDeleteTests)', 'test_protect (delete.tests.OnDeleteTests)', 'test_setdefault (delete.tests.OnDeleteTests)', 'test_setdefault_none (delete.tests.OnDeleteTests)', 'test_setnull (delete.tests.OnDeleteTests)', 'test_setnull_from_child (delete.tests.OnDeleteTests)', 'test_setnull_from_parent (delete.tests.OnDeleteTests)', 'test_setvalue (delete.tests.OnDeleteTests)', 'test_bulk (delete.tests.DeletionTests)', 'test_can_defer_constraint_checks (delete.tests.DeletionTests)', 'test_delete_with_keeping_parents (delete.tests.DeletionTests)', 'test_delete_with_keeping_parents_relationships (delete.tests.DeletionTests)', 'test_deletion_order (delete.tests.DeletionTests)', 'test_hidden_related (delete.tests.DeletionTests)', 'test_instance_update (delete.tests.DeletionTests)', 'test_large_delete (delete.tests.DeletionTests)', 'test_large_delete_related (delete.tests.DeletionTests)', 'test_m2m (delete.tests.DeletionTests)', 'test_model_delete_returns_num_rows (delete.tests.DeletionTests)', 'test_proxied_model_duplicate_queries (delete.tests.DeletionTests)', 'test_queryset_delete_returns_num_rows (delete.tests.DeletionTests)', 'test_relational_post_delete_signals_happen_before_parent_object (delete.tests.DeletionTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11087: resolved: False
+2026-06-19 02:23:36,855 - INFO - Attempting to stop container sweb.eval.django__django-11087.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 02:23:52,118 - INFO - Attempting to remove container sweb.eval.django__django-11087.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 02:23:52,140 - INFO - Container sweb.eval.django__django-11087.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 02:23:52,141 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11087:latest...
+2026-06-19 02:23:52,623 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11087:latest removed.

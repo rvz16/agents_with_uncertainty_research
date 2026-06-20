@@ -1,0 +1,40 @@
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -346,6 +346,8 @@
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # original handler level (saved when set_level is first called)
++        self._initial_handler_level = None  # type: Optional[int]
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +358,14 @@
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # restore handler level if it was changed by set_level
++        if getattr(self, "_initial_handler_level", None) is not None:
++            try:
++                self.handler.setLevel(self._initial_handler_level)
++            except Exception:
++                # be defensive: handler may not be available anymore in some teardown
++                # orderings; ignore errors while finalizing logging state
++                pass
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -433,6 +443,13 @@
+         logger_obj = logging.getLogger(logger)
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
++        # save the original handler level to restore it during teardown (only once)
++        if getattr(self, "_initial_handler_level", None) is None:
++            try:
++                self._initial_handler_level = self.handler.level
++            except Exception:
++                # defensive: if handler is not available for some reason, ignore
++                self._initial_handler_level = None
+         logger_obj.setLevel(level)
+         self.handler.setLevel(level)
+ 

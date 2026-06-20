@@ -1,0 +1,25 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -221,7 +221,21 @@
+     py_script = Path(sys.argv[0])
+ 
+     args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions]
+-    if py_script == django_main_path:
++
++    # Detect if Python was started with -m <module>. The top-level __main__
++    # module will have a __spec__ when Python was launched with -m or the name
++    # of a directory/zipfile. For the -m case, __main__.__spec__.parent is the
++    # module/package name that was used with -m. Treat that as the entrypoint.
++    main_mod = sys.modules.get('__main__')
++    main_spec = getattr(main_mod, '__spec__', None)
++    main_parent = getattr(main_spec, 'parent', None) if main_spec is not None else None
++
++    if main_parent:
++        # The server was started with `python -m <main_parent> ...`.
++        args += ['-m', main_parent]
++        args += sys.argv[1:]
++    elif py_script == django_main_path:
++        # Fallback for environments where __spec__ may not be set on __main__.
+         # The server was started with `python -m django runserver`.
+         args += ['-m', 'django']
+         args += sys.argv[1:]

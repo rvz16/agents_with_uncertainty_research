@@ -1,0 +1,68 @@
+--- a/django/db/backends/postgresql/client.py
++++ b/django/db/backends/postgresql/client.py
+@@ -35,37 +35,46 @@
+         args += [dbname]
+ 
+         temp_pgpass = None
++        # Use a copy of the current environment and pass it to subprocess.run().
++        # This avoids modifying the parent's environment (os.environ) and lets
++        # us set PGPASSWORD for the child process reliably. If the password
++        # cannot be encoded for the environment, fall back to a temporary
++        # .pgpass file as before.
++        env = os.environ.copy()
+         sigint_handler = signal.getsignal(signal.SIGINT)
+         try:
+             if passwd:
+-                # Create temporary .pgpass file.
+-                temp_pgpass = NamedTemporaryFile(mode='w+')
+                 try:
+-                    print(
+-                        _escape_pgpass(host) or '*',
+-                        str(port) or '*',
+-                        _escape_pgpass(dbname) or '*',
+-                        _escape_pgpass(user) or '*',
+-                        _escape_pgpass(passwd),
+-                        file=temp_pgpass,
+-                        sep=':',
+-                        flush=True,
+-                    )
+-                    os.environ['PGPASSFILE'] = temp_pgpass.name
++                    env['PGPASSWORD'] = passwd
+                 except UnicodeEncodeError:
+-                    # If the current locale can't encode the data, let the
+-                    # user input the password manually.
+-                    pass
++                    # Can't store the password in the environment with the
++                    # current locale. Fall back to a temporary .pgpass file.
++                    temp_pgpass = NamedTemporaryFile(mode='w+')
++                    try:
++                        print(
++                            _escape_pgpass(host) or '*',
++                            str(port) or '*',
++                            _escape_pgpass(dbname) or '*',
++                            _escape_pgpass(user) or '*',
++                            _escape_pgpass(passwd),
++                            file=temp_pgpass,
++                            sep=':',
++                            flush=True,
++                        )
++                        env['PGPASSFILE'] = temp_pgpass.name
++                    except UnicodeEncodeError:
++                        # If writing to the temporary file also fails, give up
++                        # and let the user input the password manually.
++                        temp_pgpass.close()
++                        temp_pgpass = None
+             # Allow SIGINT to pass to psql to abort queries.
+             signal.signal(signal.SIGINT, signal.SIG_IGN)
+-            subprocess.check_call(args)
++            subprocess.run(args, env=env, check=True)
+         finally:
+             # Restore the original SIGINT handler.
+             signal.signal(signal.SIGINT, sigint_handler)
+             if temp_pgpass:
+                 temp_pgpass.close()
+-                if 'PGPASSFILE' in os.environ:  # unit tests need cleanup
+-                    del os.environ['PGPASSFILE']
+ 
+     def runshell(self):
+         DatabaseClient.runshell_db(self.connection.get_connection_params())

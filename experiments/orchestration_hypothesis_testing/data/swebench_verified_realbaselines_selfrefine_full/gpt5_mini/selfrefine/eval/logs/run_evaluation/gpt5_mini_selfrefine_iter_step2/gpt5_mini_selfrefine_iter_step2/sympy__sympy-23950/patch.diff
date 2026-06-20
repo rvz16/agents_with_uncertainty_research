@@ -1,0 +1,42 @@
+--- a/sympy/sets/contains.py
++++ b/sympy/sets/contains.py
+@@ -2,7 +2,7 @@
+ from sympy.core.relational import Eq, Ne
+ from sympy.logic.boolalg import BooleanFunction
+ from sympy.utilities.misc import func_name
+-from .sets import Set
++from .sets import Set, EmptySet, ConditionSet
+ 
+ 
+ class Contains(BooleanFunction):
+@@ -45,4 +45,29 @@
+             isinstance(i, (Eq, Ne))])
+ 
+     def as_set(self):
+-        raise NotImplementedError()
++        """
++        Return a Set corresponding to {x | Contains(x, S)}.
++
++        If the element is a single Symbol and the underlying set can determine
++        membership (s.contains(x) -> True/False/Set), return the appropriate
++        simplified Set (the set itself, EmptySet, or the returned set).
++        Otherwise, fall back to a ConditionSet.
++        """
++        x, s = self.args
++
++        # Try to let the underlying set decide membership for the (single)
++        # symbolic element.
++        try:
++            membership = s.contains(x)
++        except Exception:
++            membership = None
++
++        if membership is S.true:
++            return s
++        if membership is S.false:
++            return EmptySet
++        if isinstance(membership, Set):
++            return membership
++
++        # Fallback: represent {x | Contains(x, s)} as a ConditionSet.
++        return ConditionSet(x, self)

@@ -1,0 +1,37 @@
+--- a/sklearn/multioutput.py
++++ b/sklearn/multioutput.py
+@@ -232,6 +232,34 @@
+ 
+     def __init__(self, estimator, n_jobs=None):
+         super().__init__(estimator, n_jobs)
++
++    @if_delegate_has_method('estimator')
++    def partial_fit(self, X, y, classes=None, sample_weight=None):
++        """Incrementally fit the model to data and set classes_ attribute.
++
++        Parameters
++        ----------
++        X : array-like, shape (n_samples, n_features)
++        y : array-like, shape (n_samples, n_outputs)
++        classes : list of arrays, optional
++            Classes for each output (required on first call to partial_fit).
++        sample_weight : array-like, optional
++        """
++        # Delegate to MultiOutputEstimator.partial_fit
++        super().partial_fit(X, y, classes=classes, sample_weight=sample_weight)
++        # Ensure classes_ attribute is set for compatibility with APIs
++        if classes is not None:
++            self.classes_ = [np.asarray(c) for c in classes]
++        else:
++            self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
++    def fit(self, X, y, sample_weight=None):
++        """Fit model and set classes_ attribute."""
++        super().fit(X, y, sample_weight=sample_weight)
++        # Set classes_ per estimator to be compatible with scikit-learn API
++        self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
+ 
+     @if_delegate_has_method('estimator')
+     def partial_fit(self, X, y, sample_weight=None):

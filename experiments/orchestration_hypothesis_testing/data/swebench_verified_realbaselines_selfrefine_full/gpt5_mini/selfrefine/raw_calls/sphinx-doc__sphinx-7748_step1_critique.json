@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:08:23.592005+00:00",
+  "instance_id": "sphinx-doc__sphinx-7748",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nautodoc_docstring_signature with overloaded methods\nWhen using swig to wrap C++ classes for python, if they have overloaded methods, I believe the convention is to place the signatures for each of the overloaded C++ methods at the start of the docstring. Currently, `autodoc_docstring_signature` can only pick up the first one. It would be nice to be able to pick up all of them.\n\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty / missing \u2014 no changes were made to address the issue.\nBecause no code was changed, autodoc_docstring_signature still only picks up the first signature; the core bug is not fixed.\nNo new tests were added to verify handling of multiple signature lines in docstrings.\nNo unit tests for edge cases (multiple signatures separated by blank lines, leading/trailing whitespace, or non-ASCII) were provided.\nNo handling for overloaded constructors (__init__) or other special method names was added or tested.\nNo consideration of how to present multiple signatures to Sphinx was included (Sphinx expects a single signature; design decision about extra signatures was not addressed).\nNo logic to remove all signature lines from the docstring body was added, which would be necessary to avoid duplicate signature text in rendered docs.\nNo handling for signatures that include decorators/qualifiers (e.g., @staticmethod, async, type comments) or signatures with varying indentation was added.\nNo changes to documentation or changelog explaining the new behavior or configuration options.\nNo changes made to ensure backward compatibility with docstrings that contain only a single signature.",
+  "prompt_tokens": 217,
+  "completion_tokens": 778,
+  "cost_usd": 0.0016102500000000001
+}

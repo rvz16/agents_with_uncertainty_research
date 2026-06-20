@@ -1,0 +1,31 @@
+--- a/sklearn/tree/export.py
++++ b/sklearn/tree/export.py
+@@ -889,10 +889,25 @@
+     else:
+         value_fmt = "{}{} value: {}\n"
+ 
+-    if feature_names:
+-        feature_names_ = [feature_names[i] for i in tree_.feature]
++    if feature_names is not None:
++        # Build a per-node list of feature names. tree_.feature contains
++        # _tree.TREE_UNDEFINED for leaves (value = -2). Indexing into the
++        # user-provided feature_names with that value would raise IndexError
++        # for short lists (e.g. a single feature). Use None for leaves so
++        # callers only access names for splitting nodes.
++        feature_names_ = []
++        for i in tree_.feature:
++            if i != _tree.TREE_UNDEFINED:
++                feature_names_.append(feature_names[i])
++            else:
++                feature_names_.append(None)
+     else:
+-        feature_names_ = ["feature_{}".format(i) for i in tree_.feature]
++        feature_names_ = []
++        for i in tree_.feature:
++            if i != _tree.TREE_UNDEFINED:
++                feature_names_.append("feature_{}".format(i))
++            else:
++                feature_names_.append(None)
+ 
+     export_text.report = ""
+ 

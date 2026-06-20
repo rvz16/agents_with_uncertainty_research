@@ -1,0 +1,70 @@
+--- a/sympy/sets/handlers/issubset.py
++++ b/sympy/sets/handlers/issubset.py
+@@ -1,7 +1,7 @@
+ from sympy import S, Symbol
+ from sympy.core.logic import fuzzy_and, fuzzy_bool, fuzzy_not, fuzzy_or
+ from sympy.core.relational import Eq
+-from sympy.sets.sets import FiniteSet, Interval, Set, Union
++from sympy.sets.sets import FiniteSet, Interval, Set, Union, ProductSet
+ from sympy.sets.fancysets import Complexes, Reals, Range, Rationals
+ from sympy.multipledispatch import dispatch
+ 
+@@ -133,3 +133,58 @@
+ @dispatch(Rationals, Range)  # type: ignore # noqa:F811
+ def is_subset_sets(a, b): # noqa:F811
+     return False
++
++
++@dispatch(ProductSet, FiniteSet)  # type: ignore # noqa:F811
++def is_subset_sets(a_prod, b_finiteset):  # noqa:F811
++    """
++    Determine whether a ProductSet is a subset of a FiniteSet.
++
++    If all component sets of the ProductSet are FiniteSet instances then the
++    ProductSet is finite and we can check membership of each tuple in the
++    target FiniteSet. If any component is not finite we cannot decide here.
++    """
++    # If any factor is not a FiniteSet we cannot decide
++    if not all(isinstance(s, FiniteSet) for s in a_prod.sets):
++        return None
++
++    # Build the Cartesian product of the factors' elements and check that each
++    # tuple is contained in the target finite set.
++    from itertools import product
++    checks = []
++    for tup in product(*[s.args for s in a_prod.sets]):
++        checks.append(fuzzy_bool(b_finiteset.contains(tup)))
++    return fuzzy_and(checks)
++
++
++@dispatch(FiniteSet, ProductSet)  # type: ignore # noqa:F811
++def is_subset_sets(a_finiteset, b_prod):  # noqa:F811
++    """
++    Determine whether a FiniteSet of tuples is a subset of a ProductSet.
++
++    For each element of the finite set we check whether it is a member of the
++    ProductSet. Elements that are plain tuples or lists are handled by checking
++    each component against the corresponding factor set. Single-component
++    ProductSets are handled as well.
++    """
++    # empty finite set is always subset
++    if len(a_finiteset) == 0:
++        return True
++
++    sets = b_prod.sets
++
++    def elem_in_prod(e):
++        # If product has one factor, accept scalar membership checks too.
++        if not isinstance(e, (tuple, list)):
++            if len(sets) == 1:
++                return fuzzy_bool(sets[0].contains(e))
++            else:
++                return False
++        if len(e) != len(sets):
++            return False
++        comp_checks = []
++        for comp, s in zip(e, sets):
++            comp_checks.append(fuzzy_bool(s.contains(comp)))
++        return fuzzy_and(comp_checks)
++
++    return fuzzy_and([elem_in_prod(e) for e in a_finiteset])

@@ -1,0 +1,28 @@
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,7 +96,24 @@
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
++        # migrations. However, respect database router decisions: if the
++        # router explicitly disallows migrating the Migration model on this
++        # database, abort early to avoid creating the migrations table or
++        # recording migrations on a database the router forbids.
++        allow_migrate = router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        )
++        if allow_migrate is False:
++            # Router explicitly disallows creating/using the migration table
++            # on this database. Abort so we don't create the table or attempt
++            # to write to it (which could cause permission errors on read-only
++            # connections).
++            raise RuntimeError(
++                "The migrations table cannot be created for database '%s' because "
++                "router.allow_migrate() returned False." % self.connection.alias
++            )
+         self.recorder.ensure_schema()
+ 
+         if plan is None:

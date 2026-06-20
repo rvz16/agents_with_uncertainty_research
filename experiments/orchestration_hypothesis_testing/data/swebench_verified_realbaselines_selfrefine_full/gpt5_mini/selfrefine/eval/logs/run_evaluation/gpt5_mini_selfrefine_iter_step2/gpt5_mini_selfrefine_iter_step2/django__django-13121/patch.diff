@@ -1,0 +1,80 @@
+--- a/django/db/backends/base/operations.py
++++ b/django/db/backends/base/operations.py
+@@ -9,6 +9,7 @@
+ from django.db.backends import utils
+ from django.utils import timezone
+ from django.utils.encoding import force_str
++from django.utils.dateparse import parse_duration
+ 
+ 
+ class BaseDatabaseOperations:
+@@ -579,8 +580,67 @@
+         return []
+ 
+     def convert_durationfield_value(self, value, expression, connection):
+-        if value is not None:
+-            return datetime.timedelta(0, 0, value)
++        """
++        Convert values returned by the database for DurationField.
++
++        Databases may return:
++        - datetime.timedelta
++        - an integer/Decimal number of microseconds
++        - a string in the format accepted by django.utils.dateparse.parse_duration
++          (e.g., 'HH:MM:SS[.ffffff]' or ISO 8601 duration)
++        """
++        if value is None:
++            return None
++
++        # Already a timedelta.
++        if isinstance(value, datetime.timedelta):
++            return value
++
++        # sqlite/MySQL may return bytes for custom functions.
++        if isinstance(value, bytes):
++            try:
++                value = value.decode()
++            except Exception:
++                # If we cannot decode, fall through to the generic parser below.
++                pass
++
++        # Integers are microseconds.
++        if isinstance(value, int):
++            return datetime.timedelta(microseconds=value)
++
++        # Floats: decide whether they represent microseconds or seconds.
++        if isinstance(value, float):
++            # Large floats are likely microseconds, small ones seconds.
++            if abs(value) > 1e6:
++                return datetime.timedelta(microseconds=int(value))
++            return datetime.timedelta(seconds=value)
++
++        # Decimal: treat as microseconds.
++        if isinstance(value, decimal.Decimal):
++            try:
++                return datetime.timedelta(microseconds=int(value))
++            except (OverflowError, decimal.InvalidOperation):
++                # Fall through to string parsing below.
++                pass
++
++        # Strings: try numeric first (microseconds), then fallback to parse_duration.
++        if isinstance(value, str):
++            try:
++                dec = decimal.Decimal(value)
++            except decimal.InvalidOperation:
++                parsed = parse_duration(value)
++                if parsed is None:
++                    raise ValueError("Cannot convert duration value: %r" % (value,))
++                return parsed
++            else:
++                return datetime.timedelta(microseconds=int(dec))
++
++        # Last resort: try parse_duration for any other type that might be parseable.
++        parsed = parse_duration(value)
++        if parsed is not None:
++            return parsed
++
++        raise ValueError("Cannot convert duration value: %r" % (value,))
+ 
+     def check_expression_support(self, expression):
+         """

@@ -1,0 +1,119 @@
+2026-06-18 19:01:23,522 - INFO - Creating container for astropy__astropy-7166...
+2026-06-18 19:01:24,802 - INFO - Container for astropy__astropy-7166 created: b547875548528c593741ca80e291754a1cc4a7e8ca4e48b41ee823f409cdb8fb
+2026-06-18 19:01:25,023 - INFO - Container for astropy__astropy-7166 started: b547875548528c593741ca80e291754a1cc4a7e8ca4e48b41ee823f409cdb8fb
+2026-06-18 19:01:25,024 - INFO - Intermediate patch for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/astropy__astropy-7166/patch.diff, now applying to container...
+2026-06-18 19:01:25,145 - INFO - >>>>> Applied Patch:
+Checking patch astropy/utils/misc.py...
+Applied patch astropy/utils/misc.py cleanly.
+
+2026-06-18 19:01:26,040 - INFO - Git diff before:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..ddcd00f18 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,14 +528,42 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
++            # Only consider public members
++            if not is_public_member(key):
++                continue
++            # Regular functions (methods)
++            if inspect.isfunction(val) and val.__doc__ is None:
+                 for base in cls.__mro__[1:]:
+                     super_method = getattr(base, key, None)
+                     if super_method is not None:
+                         val.__doc__ = super_method.__doc__
+                         break
++            # Data descriptors (e.g. property) - try to inherit docstrings
++            elif inspect.isdatadescriptor(val) and getattr(val, '__doc__', None) is None:
++                for base in cls.__mro__[1:]:
++                    super_attr = getattr(base, key, None)
++                    if super_attr is None:
++                        continue
++                    super_doc = getattr(super_attr, '__doc__', None)
++                    if not super_doc:
++                        continue
++                    # For property objects, recreate with the inherited docstring
++                    if isinstance(val, property):
++                        newprop = property(val.fget, val.fset, val.fdel, super_doc)
++                        try:
++                            setattr(cls, key, newprop)
++                        except Exception:
++                            # If we can't set it on the class for some reason,
++                            # fall back to leaving it unchanged.
++                            pass
++                    else:
++                        # Try to set the __doc__ on the descriptor if possible.
++                        try:
++                            val.__doc__ = super_doc
++                        except Exception:
++                            # Some descriptors don't allow setting __doc__; ignore.
++                            pass
++                    break
+ 
+         super().__init__(name, bases, dct)
+2026-06-18 19:01:26,041 - INFO - Eval script for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/astropy__astropy-7166/eval.sh; copying to container...
+2026-06-18 19:01:45,045 - INFO - Test runtime: 18.96 seconds
+2026-06-18 19:01:45,047 - INFO - Test output for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/astropy__astropy-7166/test_output.txt
+2026-06-18 19:01:45,177 - INFO - Git diff after:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..ddcd00f18 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,14 +528,42 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
++            # Only consider public members
++            if not is_public_member(key):
++                continue
++            # Regular functions (methods)
++            if inspect.isfunction(val) and val.__doc__ is None:
+                 for base in cls.__mro__[1:]:
+                     super_method = getattr(base, key, None)
+                     if super_method is not None:
+                         val.__doc__ = super_method.__doc__
+                         break
++            # Data descriptors (e.g. property) - try to inherit docstrings
++            elif inspect.isdatadescriptor(val) and getattr(val, '__doc__', None) is None:
++                for base in cls.__mro__[1:]:
++                    super_attr = getattr(base, key, None)
++                    if super_attr is None:
++                        continue
++                    super_doc = getattr(super_attr, '__doc__', None)
++                    if not super_doc:
++                        continue
++                    # For property objects, recreate with the inherited docstring
++                    if isinstance(val, property):
++                        newprop = property(val.fget, val.fset, val.fdel, super_doc)
++                        try:
++                            setattr(cls, key, newprop)
++                        except Exception:
++                            # If we can't set it on the class for some reason,
++                            # fall back to leaving it unchanged.
++                            pass
++                    else:
++                        # Try to set the __doc__ on the descriptor if possible.
++                        try:
++                            val.__doc__ = super_doc
++                        except Exception:
++                            # Some descriptors don't allow setting __doc__; ignore.
++                            pass
++                    break
+ 
+         super().__init__(name, bases, dct)
+2026-06-18 19:01:45,178 - INFO - Grading answer for astropy__astropy-7166...
+2026-06-18 19:01:45,179 - INFO - report: {'astropy__astropy-7166': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_inherit_docstrings'], 'failure': []}, 'PASS_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_isiterable', 'astropy/utils/tests/test_misc.py::test_signal_number_to_name_no_failure', 'astropy/utils/tests/test_misc.py::test_skip_hidden', 'astropy/utils/tests/test_misc.py::test_JsonCustomEncoder', 'astropy/utils/tests/test_misc.py::test_check_broadcast', 'astropy/utils/tests/test_misc.py::test_dtype_bytes_or_chars'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-7166: resolved: True
+2026-06-18 19:01:45,179 - INFO - Attempting to stop container sweb.eval.astropy__astropy-7166.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:02:00,371 - INFO - Attempting to remove container sweb.eval.astropy__astropy-7166.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 19:02:00,383 - INFO - Container sweb.eval.astropy__astropy-7166.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 19:02:00,383 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest...
+2026-06-18 19:02:00,672 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest removed.

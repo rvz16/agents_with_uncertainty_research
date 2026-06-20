@@ -1,0 +1,22 @@
+--- a/sphinx/domains/cpp.py
++++ b/sphinx/domains/cpp.py
+@@ -4662,8 +4662,19 @@
+                       integer_literal_re, octal_literal_re]:
+             pos = self.pos
+             if self.match(regex):
++                # consume builtin suffix characters like u, U, l, L, f, F
+                 while self.current_char in 'uUlLfF':
+                     self.pos += 1
++                # support C++ user-defined literal suffixes (identifier after literal)
++                # e.g., 123_km, 1.23q_J
++                # Try to match an identifier at the current position and consume it.
++                id_pos = self.pos
++                if self.match(identifier_re):
++                    # matched an identifier suffix; it's now consumed
++                    pass
++                else:
++                    # no identifier suffix; ensure position unchanged
++                    self.pos = id_pos
+                 return ASTNumberLiteral(self.definition[pos:self.pos])
+ 
+         string = self._parse_string()

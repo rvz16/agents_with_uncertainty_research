@@ -1,0 +1,22 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -2524,7 +2524,18 @@
+         return isinstance(instance, self._subclasses) or super().__instancecheck__(instance)
+ 
+     def __subclasscheck__(self, subclass):
+-        return subclass in self._subclasses or super().__subclasscheck__(subclass)
++        """
++        Consider subclasses of BigAutoField and SmallAutoField as subclasses
++        of AutoField for backward compatibility. Use issubclass() to allow
++        indirect inheritance (e.g. user-defined subclass of BigAutoField).
++        """
++        try:
++            if issubclass(subclass, self._subclasses):
++                return True
++        except TypeError:
++            # If 'subclass' isn't a class, fall back to default behavior.
++            pass
++        return super().__subclasscheck__(subclass)
+ 
+ 
+ class AutoField(AutoFieldMixin, IntegerField, metaclass=AutoFieldMeta):

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:17:28.128863+00:00",
+  "instance_id": "sympy__sympy-15345",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nmathematica_code gives wrong output with Max\nIf I run the code\r\n\r\n```\r\nx = symbols('x')\r\nmathematica_code(Max(x,2))\r\n```\r\n\r\nthen I would expect the output `'Max[x,2]'` which is valid Mathematica code but instead I get `'Max(2, x)'` which is not valid Mathematica code.\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/printing/mathematica.py\n+++ b/sympy/printing/mathematica.py\n@@ -63,7 +63,7 @@\n                 userfuncs[k] = [(lambda *x: True, v)]\n                 self.known_functions.update(userfuncs)\n \n-    doprint = StrPrinter.doprint\n+    doprint = CodePrinter.doprint\n \n     def _print_Pow(self, expr):\n         PREC = precedence(expr)\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 308,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003021
+}

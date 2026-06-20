@@ -1,0 +1,147 @@
+2026-06-18 21:19:30,419 - INFO - Creating container for django__django-16631...
+2026-06-18 21:19:30,536 - INFO - Container for django__django-16631 created: b3b633b0426df2efb10d56e9a0ac6f2c7ea56d1e4031b3b3742ede85232f4c31
+2026-06-18 21:19:30,651 - INFO - Container for django__django-16631 started: b3b633b0426df2efb10d56e9a0ac6f2c7ea56d1e4031b3b3742ede85232f4c31
+2026-06-18 21:19:30,652 - INFO - Intermediate patch for django__django-16631 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-16631/patch.diff, now applying to container...
+2026-06-18 21:19:30,753 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/auth/base_user.py...
+Checking patch django/contrib/auth/__init__.py...
+Applied patch django/contrib/auth/base_user.py cleanly.
+Applied patch django/contrib/auth/__init__.py cleanly.
+
+2026-06-18 21:19:32,122 - INFO - Git diff before:
+diff --git a/django/contrib/auth/__init__.py b/django/contrib/auth/__init__.py
+index 155330c596..817245932e 100644
+--- a/django/contrib/auth/__init__.py
++++ b/django/contrib/auth/__init__.py
+@@ -199,9 +199,30 @@ def get_user(request):
+             # Verify the session
+             if hasattr(user, "get_session_auth_hash"):
+                 session_hash = request.session.get(HASH_SESSION_KEY)
+-                session_hash_verified = session_hash and constant_time_compare(
+-                    session_hash, user.get_session_auth_hash()
+-                )
++                session_hash_verified = False
++                if session_hash:
++                    # First verify against the current SECRET_KEY.
++                    if constant_time_compare(
++                        session_hash, user.get_session_auth_hash()
++                    ):
++                        session_hash_verified = True
++                    else:
++                        # If that fails, try any fallback secret keys and
++                        # upgrade the session if a fallback key validates.
++                        for fallback in getattr(
++                            settings, "SECRET_KEY_FALLBACKS", ()
++                        ):
++                            if not fallback:
++                                continue
++                            if constant_time_compare(
++                                session_hash, user.get_session_auth_hash(secret=fallback)
++                            ):
++                                # Upgrade the session hash to use the current
++                                # SECRET_KEY to avoid invalidating the session
++                                # when fallbacks are removed.
++                                update_session_auth_hash(request, user)
++                                session_hash_verified = True
++                                break
+                 if not session_hash_verified:
+                     request.session.flush()
+                     user = None
+diff --git a/django/contrib/auth/base_user.py b/django/contrib/auth/base_user.py
+index 5ee30bf59c..22afb60586 100644
+--- a/django/contrib/auth/base_user.py
++++ b/django/contrib/auth/base_user.py
+@@ -131,14 +131,19 @@ class AbstractBaseUser(models.Model):
+         """
+         return is_password_usable(self.password)
+ 
+-    def get_session_auth_hash(self):
++    def get_session_auth_hash(self, secret=None):
+         """
+         Return an HMAC of the password field.
++
++        If ``secret`` is provided, it will be used as the secret for the HMAC.
++        This allows verification of session hashes created with rotated
++        SECRET_KEY values (SECRET_KEY_FALLBACKS).
+         """
+         key_salt = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
+         return salted_hmac(
+             key_salt,
+             self.password,
++            secret=secret,
+             algorithm="sha256",
+         ).hexdigest()
+2026-06-18 21:19:32,122 - INFO - Eval script for django__django-16631 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-16631/eval.sh; copying to container...
+2026-06-18 21:19:54,348 - INFO - Test runtime: 22.18 seconds
+2026-06-18 21:19:54,351 - INFO - Test output for django__django-16631 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-16631/test_output.txt
+2026-06-18 21:19:54,453 - INFO - Git diff after:
+diff --git a/django/contrib/auth/__init__.py b/django/contrib/auth/__init__.py
+index 155330c596..817245932e 100644
+--- a/django/contrib/auth/__init__.py
++++ b/django/contrib/auth/__init__.py
+@@ -199,9 +199,30 @@ def get_user(request):
+             # Verify the session
+             if hasattr(user, "get_session_auth_hash"):
+                 session_hash = request.session.get(HASH_SESSION_KEY)
+-                session_hash_verified = session_hash and constant_time_compare(
+-                    session_hash, user.get_session_auth_hash()
+-                )
++                session_hash_verified = False
++                if session_hash:
++                    # First verify against the current SECRET_KEY.
++                    if constant_time_compare(
++                        session_hash, user.get_session_auth_hash()
++                    ):
++                        session_hash_verified = True
++                    else:
++                        # If that fails, try any fallback secret keys and
++                        # upgrade the session if a fallback key validates.
++                        for fallback in getattr(
++                            settings, "SECRET_KEY_FALLBACKS", ()
++                        ):
++                            if not fallback:
++                                continue
++                            if constant_time_compare(
++                                session_hash, user.get_session_auth_hash(secret=fallback)
++                            ):
++                                # Upgrade the session hash to use the current
++                                # SECRET_KEY to avoid invalidating the session
++                                # when fallbacks are removed.
++                                update_session_auth_hash(request, user)
++                                session_hash_verified = True
++                                break
+                 if not session_hash_verified:
+                     request.session.flush()
+                     user = None
+diff --git a/django/contrib/auth/base_user.py b/django/contrib/auth/base_user.py
+index 5ee30bf59c..22afb60586 100644
+--- a/django/contrib/auth/base_user.py
++++ b/django/contrib/auth/base_user.py
+@@ -131,14 +131,19 @@ class AbstractBaseUser(models.Model):
+         """
+         return is_password_usable(self.password)
+ 
+-    def get_session_auth_hash(self):
++    def get_session_auth_hash(self, secret=None):
+         """
+         Return an HMAC of the password field.
++
++        If ``secret`` is provided, it will be used as the secret for the HMAC.
++        This allows verification of session hashes created with rotated
++        SECRET_KEY values (SECRET_KEY_FALLBACKS).
+         """
+         key_salt = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
+         return salted_hmac(
+             key_salt,
+             self.password,
++            secret=secret,
+             algorithm="sha256",
+         ).hexdigest()
+2026-06-18 21:19:54,453 - INFO - Grading answer for django__django-16631...
+2026-06-18 21:19:54,455 - INFO - report: {'django__django-16631': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_get_user_fallback_secret (auth_tests.test_basic.TestGetUser.test_get_user_fallback_secret)']}, 'PASS_TO_PASS': {'success': ['test_get_user (auth_tests.test_basic.TestGetUser.test_get_user)', 'test_get_user_anonymous (auth_tests.test_basic.TestGetUser.test_get_user_anonymous)', 'The current user model can be retrieved', 'Check the creation and properties of a superuser', 'test_superuser_no_email_or_password (auth_tests.test_basic.BasicTestCase.test_superuser_no_email_or_password)', 'The current user model can be swapped out for another', 'The alternate user setting must point to something in the format app.model', 'The current user model must point to an installed model', 'test_unicode_username (auth_tests.test_basic.BasicTestCase.test_unicode_username)', 'Users can be created and can set their password', 'Users can be created without an email', 'Default User model verbose names are translatable (#19945)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16631: resolved: False
+2026-06-18 21:19:54,456 - INFO - Attempting to stop container sweb.eval.django__django-16631.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 21:20:09,742 - INFO - Attempting to remove container sweb.eval.django__django-16631.gpt5_mini_selfrefine_iter_step1...
+2026-06-18 21:20:09,761 - INFO - Container sweb.eval.django__django-16631.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-18 21:20:09,762 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-16631:latest...
+2026-06-18 21:20:10,232 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-16631:latest removed.

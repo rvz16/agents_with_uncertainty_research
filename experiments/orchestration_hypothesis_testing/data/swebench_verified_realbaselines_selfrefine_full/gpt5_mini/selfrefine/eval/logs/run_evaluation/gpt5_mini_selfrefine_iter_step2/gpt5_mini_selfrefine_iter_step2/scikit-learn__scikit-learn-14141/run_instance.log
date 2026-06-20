@@ -1,0 +1,157 @@
+2026-06-19 06:48:41,733 - INFO - Creating container for scikit-learn__scikit-learn-14141...
+2026-06-19 06:48:42,411 - INFO - Container for scikit-learn__scikit-learn-14141 created: cfd3d93e2a31614ee0424573a081ea7c2a9415d3cd5644f702632c15f6188e46
+2026-06-19 06:48:42,555 - INFO - Container for scikit-learn__scikit-learn-14141 started: cfd3d93e2a31614ee0424573a081ea7c2a9415d3cd5644f702632c15f6188e46
+2026-06-19 06:48:42,556 - INFO - Intermediate patch for scikit-learn__scikit-learn-14141 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/scikit-learn__scikit-learn-14141/patch.diff, now applying to container...
+2026-06-19 06:48:42,673 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/utils/_show_versions.py...
+Applied patch sklearn/utils/_show_versions.py cleanly.
+
+2026-06-19 06:48:43,111 - INFO - Git diff before:
+diff --git a/sklearn/utils/_show_versions.py b/sklearn/utils/_show_versions.py
+index e5d3141bf..1f706278d 100644
+--- a/sklearn/utils/_show_versions.py
++++ b/sklearn/utils/_show_versions.py
+@@ -38,11 +38,18 @@ def _get_deps_info():
+     deps_info: dict
+         version information on relevant Python libraries
+ 
++    Notes
++    -----
++    joblib historically was vendored inside sklearn as
++    sklearn.externals.joblib for scikit-learn <= 0.20. To avoid reporting
++    "not installed" for those older sklearn releases, we try a fallback to
++    the vendored joblib when appropriate.
+     """
+     deps = [
+         "pip",
+         "setuptools",
+         "sklearn",
++        "joblib",
+         "numpy",
+         "scipy",
+         "Cython",
+@@ -51,7 +58,23 @@ def _get_deps_info():
+     ]
+ 
+     def get_version(module):
+-        return module.__version__
++        # Some modules may not have __version__ (be defensive)
++        return getattr(module, "__version__", None)
++
++    def _sklearn_vendored_joblib():
++        """Return True if installed sklearn is an old release that vendored joblib."""
++        try:
++            if "sklearn" in sys.modules:
++                skl = sys.modules["sklearn"]
++            else:
++                skl = importlib.import_module("sklearn")
++            skl_ver = getattr(skl, "__version__", "")
++            parts = skl_ver.split(".")
++            major = int(parts[0]) if parts and parts[0].isdigit() else 0
++            minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
++            return (major, minor) <= (0, 20)
++        except Exception:
++            return False
+ 
+     deps_info = {}
+ 
+@@ -64,6 +87,19 @@ def _get_deps_info():
+             ver = get_version(mod)
+             deps_info[modname] = ver
+         except ImportError:
++            # Special-case: joblib may be vendored inside older sklearn releases
++            if modname == "joblib" and _sklearn_vendored_joblib():
++                try:
++                    vendored = importlib.import_module("sklearn.externals.joblib")
++                    ver = get_version(vendored)
++                    if ver:
++                        deps_info[modname] = "{ver} (sklearn.externals.joblib)".format(ver=ver)
++                    else:
++                        deps_info[modname] = "(sklearn.externals.joblib)"
++                    continue
++                except Exception:
++                    # fall through to report as not installed
++                    pass
+             deps_info[modname] = None
+ 
+     return deps_info
+2026-06-19 06:48:43,112 - INFO - Eval script for scikit-learn__scikit-learn-14141 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/scikit-learn__scikit-learn-14141/eval.sh; copying to container...
+2026-06-19 06:49:00,999 - INFO - Test runtime: 17.84 seconds
+2026-06-19 06:49:01,006 - INFO - Test output for scikit-learn__scikit-learn-14141 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/scikit-learn__scikit-learn-14141/test_output.txt
+2026-06-19 06:49:01,103 - INFO - Git diff after:
+diff --git a/sklearn/utils/_show_versions.py b/sklearn/utils/_show_versions.py
+index e5d3141bf..1f706278d 100644
+--- a/sklearn/utils/_show_versions.py
++++ b/sklearn/utils/_show_versions.py
+@@ -38,11 +38,18 @@ def _get_deps_info():
+     deps_info: dict
+         version information on relevant Python libraries
+ 
++    Notes
++    -----
++    joblib historically was vendored inside sklearn as
++    sklearn.externals.joblib for scikit-learn <= 0.20. To avoid reporting
++    "not installed" for those older sklearn releases, we try a fallback to
++    the vendored joblib when appropriate.
+     """
+     deps = [
+         "pip",
+         "setuptools",
+         "sklearn",
++        "joblib",
+         "numpy",
+         "scipy",
+         "Cython",
+@@ -51,7 +58,23 @@ def _get_deps_info():
+     ]
+ 
+     def get_version(module):
+-        return module.__version__
++        # Some modules may not have __version__ (be defensive)
++        return getattr(module, "__version__", None)
++
++    def _sklearn_vendored_joblib():
++        """Return True if installed sklearn is an old release that vendored joblib."""
++        try:
++            if "sklearn" in sys.modules:
++                skl = sys.modules["sklearn"]
++            else:
++                skl = importlib.import_module("sklearn")
++            skl_ver = getattr(skl, "__version__", "")
++            parts = skl_ver.split(".")
++            major = int(parts[0]) if parts and parts[0].isdigit() else 0
++            minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
++            return (major, minor) <= (0, 20)
++        except Exception:
++            return False
+ 
+     deps_info = {}
+ 
+@@ -64,6 +87,19 @@ def _get_deps_info():
+             ver = get_version(mod)
+             deps_info[modname] = ver
+         except ImportError:
++            # Special-case: joblib may be vendored inside older sklearn releases
++            if modname == "joblib" and _sklearn_vendored_joblib():
++                try:
++                    vendored = importlib.import_module("sklearn.externals.joblib")
++                    ver = get_version(vendored)
++                    if ver:
++                        deps_info[modname] = "{ver} (sklearn.externals.joblib)".format(ver=ver)
++                    else:
++                        deps_info[modname] = "(sklearn.externals.joblib)"
++                    continue
++                except Exception:
++                    # fall through to report as not installed
++                    pass
+             deps_info[modname] = None
+ 
+     return deps_info
+2026-06-19 06:49:01,104 - INFO - Grading answer for scikit-learn__scikit-learn-14141...
+2026-06-19 06:49:01,105 - INFO - report: {'scikit-learn__scikit-learn-14141': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/utils/tests/test_show_versions.py::test_get_deps_info'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/utils/tests/test_show_versions.py::test_get_sys_info', 'sklearn/utils/tests/test_show_versions.py::test_show_versions_with_blas'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-14141: resolved: True
+2026-06-19 06:49:01,106 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-14141.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 06:49:16,349 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-14141.gpt5_mini_selfrefine_iter_step2...
+2026-06-19 06:49:16,360 - INFO - Container sweb.eval.scikit-learn__scikit-learn-14141.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-19 06:49:16,361 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14141:latest...
+2026-06-19 06:49:17,283 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14141:latest removed.

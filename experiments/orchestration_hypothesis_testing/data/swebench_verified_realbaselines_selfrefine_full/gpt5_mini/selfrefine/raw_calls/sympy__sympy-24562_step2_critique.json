@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-18T10:25:30.521978+00:00",
+  "instance_id": "sympy__sympy-24562",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nRational calc value error\npython 3.11, sympy 1.11.1\r\nwhen calc Rational('0.5', '100'), the value is 1/100100; but Rational(0.5, 100) the value is 1/200, this value is the true value, and the version of sympy 1.8 is normal\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/core/numbers.py\n+++ b/sympy/core/numbers.py\n@@ -1625,9 +1625,12 @@\n             q = 1\n             gcd = 1\n \n+        # Use an integer accumulator Q for the final denominator to avoid\n+        # accidental string multiplication when p or q are strings.\n+        Q = 1\n         if not isinstance(p, SYMPY_INTS):\n             p = Rational(p)\n-            q *= p.q\n+            Q *= p.q\n             p = p.p\n         else:\n             p = int(p)\n@@ -1635,9 +1638,10 @@\n         if not isinstance(q, SYMPY_INTS):\n             q = Rational(q)\n             p *= q.q\n-            q = q.p\n+            Q *= q.p\n         else:\n-            q = int(q)\n+            Q *= int(q)\n+        q = Q\n \n         # p and q are now ints\n         if q == 0:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 428,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003051
+}

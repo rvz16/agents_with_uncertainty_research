@@ -1,0 +1,15 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -141,6 +141,12 @@
+         user.set_password(self.cleaned_data["password1"])
+         if commit:
+             user.save()
++            # Ensure many-to-many data is saved for forms that include it.
++            # Unlike ModelForm.save(), UserCreationForm previously omitted
++            # calling save_m2m(), so ModelMultipleChoiceField and other
++            # many-to-many data were not persisted.
++            if hasattr(self, "save_m2m"):
++                self.save_m2m()
+         return user
+ 
+ 
