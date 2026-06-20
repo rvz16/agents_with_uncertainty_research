@@ -6,6 +6,7 @@ None for instances that errored or weren't submitted.
 
 Usage:
   python3 backfill_swe_iter_y.py [--dry-run]
+  python3 iter/swe_backfill_y.py --cell-dir data/swebench_verified_realbaselines_reflexion_full/haiku45/reflexion
 """
 from __future__ import annotations
 import argparse
@@ -95,20 +96,34 @@ def backfill_cell(cell_dir: Path, dry_run: bool = False) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="print what would change without writing")
+    parser.add_argument(
+        "--cell-dir",
+        action="append",
+        type=Path,
+        default=[],
+        help="Specific <data>/<bench>/<gen>/<method> cell to backfill. Can be repeated.",
+    )
     args = parser.parse_args()
 
     print(f"{'cell':<55s} {'rows':>5s} {'filled':>7s} {'step0':>6s} {'nodata':>7s}  status")
-    for bench_dir in [ROOT / "data/swebench_lite_realbaselines", ROOT / "data/swebench_verified_realbaselines"]:
-        if not bench_dir.exists(): continue
-        for cell_dir in sorted(bench_dir.glob("*/*")):
-            if not cell_dir.is_dir(): continue
-            stats = backfill_cell(cell_dir, args.dry_run)
-            cell_name = "/".join(cell_dir.parts[-3:])
-            if "err" in stats:
-                print(f"{cell_name:<55s} {'-':>5s} {'-':>7s} {'-':>6s} {'-':>7s}  SKIP: {stats['err']}")
+    if args.cell_dir:
+        cell_dirs = args.cell_dir
+    else:
+        cell_dirs = []
+        for bench_dir in [ROOT / "data/swebench_lite_realbaselines", ROOT / "data/swebench_verified_realbaselines"]:
+            if not bench_dir.exists():
                 continue
-            tag = "DRY" if args.dry_run else "WROTE"
-            print(f"{cell_name:<55s} {stats['n_rows']:>5d} {stats['n_filled_y']:>7d} {stats['n_step0_kept']:>6d} {stats['n_no_data']:>7d}  {tag}")
+            cell_dirs.extend(sorted(p for p in bench_dir.glob("*/*") if p.is_dir()))
+
+    for cell_dir in cell_dirs:
+        cell_dir = cell_dir.resolve()
+        stats = backfill_cell(cell_dir, args.dry_run)
+        cell_name = "/".join(cell_dir.parts[-3:])
+        if "err" in stats:
+            print(f"{cell_name:<55s} {'-':>5s} {'-':>7s} {'-':>6s} {'-':>7s}  SKIP: {stats['err']}")
+            continue
+        tag = "DRY" if args.dry_run else "WROTE"
+        print(f"{cell_name:<55s} {stats['n_rows']:>5d} {stats['n_filled_y']:>7d} {stats['n_step0_kept']:>6d} {stats['n_no_data']:>7d}  {tag}")
 
 
 if __name__ == "__main__":

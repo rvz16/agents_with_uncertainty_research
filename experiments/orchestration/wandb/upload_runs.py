@@ -76,6 +76,8 @@ ORCH_CALIBRATION_BENCHMARKS = [
     ("humanevalfix", "humanevalfix_calibration"),
     ("codecontests", "codecontests_calibration"),
     ("swe_lite",     "swebench_lite"),
+    # Verified-200 SWE batch produced by the full harness pipeline.
+    ("swe_verified", "swebench_verified_calibration_full"),
     ("swe_verified", "swebench_verified"),
 ]
 
@@ -95,6 +97,10 @@ ORCH_REALBASELINES_BENCHMARKS = [
     ("lcb_medium",   "lcb_calibration_medium_realbaselines"),
     ("lcb_easy",     "lcb_calibration_easy_realbaselines"),
     ("swe_lite",     "swebench_lite_realbaselines"),
+    # Verified-200 SWE real-baseline reruns. Each directory contains only one
+    # method subdir, but the generic loop below handles the missing counterpart.
+    ("swe_verified", "swebench_verified_realbaselines_selfrefine_full"),
+    ("swe_verified", "swebench_verified_realbaselines_reflexion_full"),
     ("swe_verified", "swebench_verified_realbaselines"),
     # New "<bench>_iter/<gen>/<method>/" convention written by
     # refine.py + prep_cell.py (May 2026 iter-fill batch). Same per-method
@@ -290,8 +296,57 @@ def l3_per_reviewer_summary(cell: Path) -> dict:
     return out
 
 
+def compute_kernel_from_iter_records(path: Path, gen: str) -> dict | None:
+    """Beta(1,1)-smoothed transition kernel from raw iter_records.jsonl."""
+    if not path.exists():
+        return None
+    by_inst: dict[str, list[dict]] = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                by_inst.setdefault(row["instance_id"], []).append(row)
+    except Exception as e:
+        log.warning(f"  failed to read iter_records for kernel at {path}: {e}")
+        return None
+
+    counts = {"0->0": 0, "0->1": 0, "1->0": 0, "1->1": 0}
+    for rows in by_inst.values():
+        rows.sort(key=lambda r: r.get("step", 0))
+        for a, b in zip(rows, rows[1:]):
+            y0, y1 = a.get("Y"), b.get("Y")
+            if y0 in (0, 1) and y1 in (0, 1):
+                counts[f"{int(y0)}->{int(y1)}"] += 1
+
+    n_broken = counts["0->0"] + counts["0->1"]
+    n_correct = counts["1->0"] + counts["1->1"]
+    if n_broken + n_correct == 0:
+        return None
+
+    def smooth(success: int, total: int) -> float:
+        return (success + 1.0) / (total + 2.0)
+
+    p_fix = smooth(counts["0->1"], n_broken)
+    p_break = smooth(counts["1->0"], n_correct)
+    return {
+        "generator": gen,
+        "kernel_all": {
+            "P_fix_given_broken": p_fix,
+            "P_stay_broken": 1.0 - p_fix,
+            "P_break_given_correct": p_break,
+            "P_stay_correct": 1.0 - p_break,
+            "raw_counts": counts,
+            "n_pairs": n_broken + n_correct,
+            "smoothing": "Beta(1,1) [computed inline from iter_records.jsonl]",
+        },
+    }
+
+
 def upload_calibration_orch(args, existing):
     log.info("=== Calibration runs (track:orchestration) ===")
+    seen_names: set[str] = set()
     for bench, subdir in ORCH_CALIBRATION_BENCHMARKS:
         if args.benchmark and args.benchmark != bench:
             continue
@@ -323,6 +378,10 @@ def upload_calibration_orch(args, existing):
                 return v.get("gap")
 
             name = f"calibration__orchestration__{bench}__{gen}"
+            if name in seen_names:
+                log.debug(f"  duplicate calibration source skipped for {name}: {cell}")
+                continue
+            seen_names.add(name)
             config = {
                 "track": "orchestration",
                 "experiment_type": "calibration",
@@ -432,6 +491,7 @@ def upload_iter_orch(args, existing):
             run.finish()
 
     # Per-method realbaselines (newer layout: selfrefine/ + reflexion/ subdirs)
+    seen_realbaseline_names: set[str] = set()
     for bench, subdir in ORCH_REALBASELINES_BENCHMARKS:
         if args.benchmark and args.benchmark != bench:
             continue
@@ -442,17 +502,26 @@ def upload_iter_orch(args, existing):
                 cell = DATA_ROOT / subdir / gen / method
                 tk = cell / "transition_kernel.json"
                 ir = cell / "iter_records.jsonl"
-                if not tk.exists():
+                tkd = load_json(tk)
+                kernel_source = "transition_kernel.json"
+                if tkd is None:
+                    tkd = compute_kernel_from_iter_records(ir, gen)
+                    kernel_source = "computed_from_iter_records"
+                if tkd is None:
                     continue
-                tkd = load_json(tk) or {}
                 ka = tkd.get("kernel_all", {})
                 n_pairs = ka.get("n_pairs") or sum((ka.get("raw_counts") or {}).values())
 
                 name = f"iter__orchestration__{bench}__{gen}__{method}"
+                if name in seen_realbaseline_names:
+                    log.debug(f"  duplicate iter source skipped for {name}: {cell}")
+                    continue
+                seen_realbaseline_names.add(name)
                 config = {
                     "track": "orchestration",
                     "experiment_type": "iter",
                     "benchmark": bench, "generator": gen, "method": method,
+                    "kernel_source": kernel_source,
                     "git_sha": git_sha(),
                     "data_source": rel(cell),
                 }
@@ -470,7 +539,11 @@ def upload_iter_orch(args, existing):
                 run.summary["n_persist_broken"]   = counts.get("0->0", 0)
                 run.summary["n_break"]            = counts.get("1->0", 0)
                 run.summary["n_persist_correct"]  = counts.get("1->1", 0)
-                maybe_log_artifact(run, tk, "iter", f"{bench}_{gen}_{method}_kernel")
+                if tk.exists():
+                    maybe_log_artifact(run, tk, "iter", f"{bench}_{gen}_{method}_kernel")
+                else:
+                    log.warning(f"  {bench}/{gen}/{method}: transition_kernel.json "
+                                f"MISSING at {tk} — summary kernel computed inline")
                 if ir.exists():
                     maybe_log_artifact(run, ir, "iter", f"{bench}_{gen}_{method}_records")
                 else:
