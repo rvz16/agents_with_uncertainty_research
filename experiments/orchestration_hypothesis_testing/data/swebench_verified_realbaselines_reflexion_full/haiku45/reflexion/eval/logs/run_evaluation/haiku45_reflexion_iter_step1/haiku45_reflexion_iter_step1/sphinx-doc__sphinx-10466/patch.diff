@@ -1,0 +1,18 @@
+--- a/sphinx/builders/gettext.py
++++ b/sphinx/builders/gettext.py
+@@ -57,7 +57,14 @@
+ 
+     def __iter__(self) -> Generator[Message, None, None]:
+         for message in self.messages:
+-            positions = [(source, line) for source, line, uuid in self.metadata[message]]
++            # Deduplicate positions while preserving order
++            seen: Set[Tuple[str, int]] = set()
++            positions = []
++            for source, line, uuid in self.metadata[message]:
++                pos = (source, line)
++                if pos not in seen:
++                    positions.append(pos)
++                    seen.add(pos)
+             uuids = [uuid for source, line, uuid in self.metadata[message]]
+             yield Message(message, positions, uuids)
+ 

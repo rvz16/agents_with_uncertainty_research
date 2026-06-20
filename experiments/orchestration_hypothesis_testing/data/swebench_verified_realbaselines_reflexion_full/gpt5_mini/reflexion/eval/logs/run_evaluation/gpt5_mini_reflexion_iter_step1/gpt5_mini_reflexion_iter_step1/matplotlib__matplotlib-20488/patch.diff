@@ -1,0 +1,36 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -533,8 +533,31 @@
+                 # that may have moved input values in/out of range
+                 s_vmin, s_vmax = vrange
+                 if isinstance(self.norm, mcolors.LogNorm):
+-                    if s_vmin < 0:
+-                        s_vmin = max(s_vmin, np.finfo(scaled_dtype).eps)
++                    # Ensure vmin/vmax are positive finite numbers for log scale.
++                    # Historically we guarded against negative vmin; numpy changes
++                    # can lead to zero/inf/nan here which would make the log
++                    # transform blow up.  Use the smallest positive normal float
++                    # for the scaled dtype as a safe lower bound.
++                    tiny = np.finfo(scaled_dtype).tiny
++                    eps = np.finfo(scaled_dtype).eps
++                    # Coerce to python floats where possible; fall back to tiny.
++                    try:
++                        s_vmin = float(s_vmin)
++                    except Exception:
++                        s_vmin = tiny
++                    try:
++                        s_vmax = float(s_vmax)
++                    except Exception:
++                        s_vmax = tiny * (1.0 + eps)
++                    # Replace non-finite or non-positive bounds with safe values.
++                    if not np.isfinite(s_vmin) or s_vmin <= 0:
++                        s_vmin = tiny
++                    if not np.isfinite(s_vmax) or s_vmax <= 0:
++                        # Ensure vmax is at least slightly larger than vmin.
++                        s_vmax = max(s_vmin * (1.0 + eps), tiny)
++                    if s_vmin >= s_vmax:
++                        # Force a minimal positive range.
++                        s_vmax = s_vmin * (1.0 + eps)
+                 with cbook._setattr_cm(self.norm,
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,

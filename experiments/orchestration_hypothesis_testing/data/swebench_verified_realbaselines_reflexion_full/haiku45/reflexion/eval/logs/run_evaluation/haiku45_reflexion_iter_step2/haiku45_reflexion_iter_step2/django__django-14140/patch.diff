@@ -1,0 +1,16 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -87,7 +87,12 @@
+         args, kwargs = (), {}
+         if len(self.children) == 1 and not isinstance(self.children[0], Q):
+             child = self.children[0]
+-            kwargs = {child[0]: child[1]}
++            # Only use kwargs if the child is a tuple (from kwargs in __init__)
++            if isinstance(child, tuple) and len(child) == 2:
++                kwargs = {child[0]: child[1]}
++            else:
++                # Child is a conditional expression or other non-tuple object
++                args = (child,)
+         else:
+             args = tuple(self.children)
+             if self.connector != self.default:

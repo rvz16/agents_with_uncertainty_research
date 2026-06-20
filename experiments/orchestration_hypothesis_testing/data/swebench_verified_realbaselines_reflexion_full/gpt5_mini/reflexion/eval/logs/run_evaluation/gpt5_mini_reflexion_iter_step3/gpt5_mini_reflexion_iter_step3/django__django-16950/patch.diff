@@ -1,0 +1,20 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1172,12 +1172,16 @@
+ 
+         # If we're adding a new object, ignore a parent's auto-generated key
+         # as it will be regenerated on the save request.
++        # Only clear the cached value for the parent's auto-generated primary key;
++        # do not mutate other parent fields (e.g. non-PK UUIDFields with defaults).
+         if self.instance._state.adding:
+             if kwargs.get("to_field") is not None:
+                 to_field = self.instance._meta.get_field(kwargs["to_field"])
+             else:
+                 to_field = self.instance._meta.pk
+-            if to_field.has_default():
++            # Only unset defaults for the actual primary key field on the parent
++            # to avoid clobbering non-PK fields that may have callable defaults.
++            if to_field is self.instance._meta.pk and to_field.has_default():
+                 setattr(self.instance, to_field.attname, None)
+ 
+         form.fields[name] = InlineForeignKeyField(self.instance, **kwargs)

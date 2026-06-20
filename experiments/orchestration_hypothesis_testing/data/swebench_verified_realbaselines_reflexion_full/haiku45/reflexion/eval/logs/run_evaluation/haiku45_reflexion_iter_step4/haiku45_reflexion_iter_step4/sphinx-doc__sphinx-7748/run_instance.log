@@ -1,0 +1,171 @@
+2026-06-20 04:15:00,448 - INFO - Creating container for sphinx-doc__sphinx-7748...
+2026-06-20 04:15:00,540 - INFO - Container for sphinx-doc__sphinx-7748 created: 29bf14c6ea01f36afa44f27a266980323e91ee4d91da2e57b4beea58a2b49816
+2026-06-20 04:15:00,659 - INFO - Container for sphinx-doc__sphinx-7748 started: 29bf14c6ea01f36afa44f27a266980323e91ee4d91da2e57b4beea58a2b49816
+2026-06-20 04:15:00,659 - INFO - Intermediate patch for sphinx-doc__sphinx-7748 written to logs/run_evaluation/haiku45_reflexion_iter_step4/haiku45_reflexion_iter_step4/sphinx-doc__sphinx-7748/patch.diff, now applying to container...
+2026-06-20 04:15:00,772 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:27: trailing whitespace.
+            
+/tmp/patch.diff:31: trailing whitespace.
+            
+/tmp/patch.diff:38: trailing whitespace.
+                
+/tmp/patch.diff:49: trailing whitespace.
+                
+/tmp/patch.diff:53: trailing whitespace.
+            
+Checking patch sphinx/ext/autodoc/__init__.py...
+Applied patch sphinx/ext/autodoc/__init__.py cleanly.
+warning: squelched 1 whitespace error
+warning: 6 lines add whitespace errors.
+
+2026-06-20 04:15:00,994 - INFO - Git diff before:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index f8e4be999..0ebd6beae 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1049,26 +1049,44 @@ class DocstringSignatureMixin:
+             # no lines in docstring, no match
+             if not doclines:
+                 continue
+-            # match first line of docstring against signature RE
+-            match = py_ext_sig_re.match(doclines[0])
+-            if not match:
+-                continue
+-            exmod, path, base, args, retann = match.groups()
+-            # the base name must match ours
+-            valid_names = [self.objpath[-1]]  # type: ignore
+-            if isinstance(self, ClassDocumenter):
+-                valid_names.append('__init__')
+-                if hasattr(self.object, '__mro__'):
+-                    valid_names.extend(cls.__name__ for cls in self.object.__mro__)
+-            if base not in valid_names:
+-                continue
+-            # re-prepare docstring to ignore more leading indentation
+-            tab_width = self.directive.state.document.settings.tab_width  # type: ignore
+-            self._new_docstrings[i] = prepare_docstring('\n'.join(doclines[1:]),
+-                                                        tabsize=tab_width)
+-            result = args, retann
+-            # don't look any further
+-            break
++            
++            # Collect all consecutive signature lines at the start of docstring
++            signatures = []
++            consumed_lines = 0
++            
++            for line in doclines:
++                # match line against signature RE
++                match = py_ext_sig_re.match(line)
++                if not match:
++                    # Stop at first non-signature line
++                    break
++                
++                exmod, path, base, args, retann = match.groups()
++                # the base name must match ours
++                valid_names = [self.objpath[-1]]  # type: ignore
++                if isinstance(self, ClassDocumenter):
++                    valid_names.append('__init__')
++                    if hasattr(self.object, '__mro__'):
++                        valid_names.extend(cls.__name__ for cls in self.object.__mro__)
++                if base not in valid_names:
++                    # Stop if base name doesn't match
++                    break
++                
++                # Collect this signature
++                signatures.append((args, retann))
++                consumed_lines += 1
++            
++            if signatures:
++                # Use the last signature for args and retann
++                # (this preserves backward compatibility)
++                result = signatures[-1]
++                
++                # re-prepare docstring to ignore consumed signature lines
++                tab_width = self.directive.state.document.settings.tab_width  # type: ignore
++                self._new_docstrings[i] = prepare_docstring('\n'.join(doclines[consumed_lines:]),
++                                                            tabsize=tab_width)
++                # don't look any further
++                break
+         return result
+ 
+     def get_doc(self, encoding: str = None, ignore: int = None) -> List[List[str]]:
+2026-06-20 04:15:00,994 - INFO - Eval script for sphinx-doc__sphinx-7748 written to logs/run_evaluation/haiku45_reflexion_iter_step4/haiku45_reflexion_iter_step4/sphinx-doc__sphinx-7748/eval.sh; copying to container...
+2026-06-20 04:15:03,833 - INFO - Test runtime: 2.78 seconds
+2026-06-20 04:15:03,834 - INFO - Test output for sphinx-doc__sphinx-7748 written to logs/run_evaluation/haiku45_reflexion_iter_step4/haiku45_reflexion_iter_step4/sphinx-doc__sphinx-7748/test_output.txt
+2026-06-20 04:15:03,899 - INFO - Git diff after:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index f8e4be999..0ebd6beae 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1049,26 +1049,44 @@ class DocstringSignatureMixin:
+             # no lines in docstring, no match
+             if not doclines:
+                 continue
+-            # match first line of docstring against signature RE
+-            match = py_ext_sig_re.match(doclines[0])
+-            if not match:
+-                continue
+-            exmod, path, base, args, retann = match.groups()
+-            # the base name must match ours
+-            valid_names = [self.objpath[-1]]  # type: ignore
+-            if isinstance(self, ClassDocumenter):
+-                valid_names.append('__init__')
+-                if hasattr(self.object, '__mro__'):
+-                    valid_names.extend(cls.__name__ for cls in self.object.__mro__)
+-            if base not in valid_names:
+-                continue
+-            # re-prepare docstring to ignore more leading indentation
+-            tab_width = self.directive.state.document.settings.tab_width  # type: ignore
+-            self._new_docstrings[i] = prepare_docstring('\n'.join(doclines[1:]),
+-                                                        tabsize=tab_width)
+-            result = args, retann
+-            # don't look any further
+-            break
++            
++            # Collect all consecutive signature lines at the start of docstring
++            signatures = []
++            consumed_lines = 0
++            
++            for line in doclines:
++                # match line against signature RE
++                match = py_ext_sig_re.match(line)
++                if not match:
++                    # Stop at first non-signature line
++                    break
++                
++                exmod, path, base, args, retann = match.groups()
++                # the base name must match ours
++                valid_names = [self.objpath[-1]]  # type: ignore
++                if isinstance(self, ClassDocumenter):
++                    valid_names.append('__init__')
++                    if hasattr(self.object, '__mro__'):
++                        valid_names.extend(cls.__name__ for cls in self.object.__mro__)
++                if base not in valid_names:
++                    # Stop if base name doesn't match
++                    break
++                
++                # Collect this signature
++                signatures.append((args, retann))
++                consumed_lines += 1
++            
++            if signatures:
++                # Use the last signature for args and retann
++                # (this preserves backward compatibility)
++                result = signatures[-1]
++                
++                # re-prepare docstring to ignore consumed signature lines
++                tab_width = self.directive.state.document.settings.tab_width  # type: ignore
++                self._new_docstrings[i] = prepare_docstring('\n'.join(doclines[consumed_lines:]),
++                                                            tabsize=tab_width)
++                # don't look any further
++                break
+         return result
+ 
+     def get_doc(self, encoding: str = None, ignore: int = None) -> List[List[str]]:
+2026-06-20 04:15:03,899 - INFO - Grading answer for sphinx-doc__sphinx-7748...
+2026-06-20 04:15:03,904 - INFO - report: {'sphinx-doc__sphinx-7748': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_init', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_both']}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_configs.py::test_autoclass_content_class', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_init', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_both', 'tests/test_ext_autodoc_configs.py::test_autodoc_inherit_docstrings', 'tests/test_ext_autodoc_configs.py::test_autodoc_docstring_signature', 'tests/test_ext_autodoc_configs.py::test_autoclass_content_and_docstring_signature_class', 'tests/test_ext_autodoc_configs.py::test_mocked_module_imports', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_signature', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_none', 'tests/test_ext_autodoc_configs.py::test_autodoc_typehints_description', 'tests/test_ext_autodoc_configs.py::test_autodoc_default_options', 'tests/test_ext_autodoc_configs.py::test_autodoc_default_options_with_values'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-7748: resolved: False
+2026-06-20 04:15:03,904 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-7748.haiku45_reflexion_iter_step4...
+2026-06-20 04:15:19,131 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-7748.haiku45_reflexion_iter_step4...
+2026-06-20 04:15:19,151 - INFO - Container sweb.eval.sphinx-doc__sphinx-7748.haiku45_reflexion_iter_step4 removed.
+2026-06-20 04:15:19,152 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7748:latest...
+2026-06-20 04:15:19,531 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7748:latest removed.

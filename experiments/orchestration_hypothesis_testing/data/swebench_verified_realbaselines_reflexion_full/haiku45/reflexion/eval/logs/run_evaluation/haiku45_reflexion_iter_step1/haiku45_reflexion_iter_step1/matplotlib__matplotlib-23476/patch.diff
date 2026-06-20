@@ -1,0 +1,20 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -3043,8 +3043,17 @@
+ 
+         self.__dict__ = state
+ 
++        # Save the DPI before creating the canvas, as some backends (e.g.,
++        # macOS) may modify it during canvas creation. We restore it
++        # afterwards to avoid unintended DPI scaling on unpickling.
++        dpi = self._dpi
++
+         # re-initialise some of the unstored state information
+         FigureCanvasBase(self)  # Set self.canvas.
++
++        # Restore the DPI to its pickled value
++        self._dpi = dpi
++        self.dpi_scale_trans.clear().scale(dpi)
+ 
+         if restore_to_pylab:
+             # lazy import to avoid circularity

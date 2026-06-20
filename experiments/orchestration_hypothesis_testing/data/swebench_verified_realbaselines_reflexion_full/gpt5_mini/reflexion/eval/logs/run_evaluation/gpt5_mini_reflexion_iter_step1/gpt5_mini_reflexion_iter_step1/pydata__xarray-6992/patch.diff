@@ -1,0 +1,20 @@
+--- a/xarray/core/dataset.py
++++ b/xarray/core/dataset.py
+@@ -365,7 +365,16 @@
+         )
+ 
+     def __len__(self) -> int:
+-        return len(self._dataset._variables) - len(self._dataset._coord_names)
++        # Count the number of variables that are not coordinates. Previously this
++        # assumed there were always at least as many variables as coord names and
++        # returned len(_variables) - len(_coord_names), which could be negative
++        # after the index refactor when _coord_names can be larger than
++        # _variables. Use an explicit count to avoid negative results.
++        return sum(
++            1
++            for key in self._dataset._variables
++            if key not in self._dataset._coord_names
++        )
+ 
+     def __contains__(self, key: Hashable) -> bool:
+         return key in self._dataset._variables and key not in self._dataset._coord_names

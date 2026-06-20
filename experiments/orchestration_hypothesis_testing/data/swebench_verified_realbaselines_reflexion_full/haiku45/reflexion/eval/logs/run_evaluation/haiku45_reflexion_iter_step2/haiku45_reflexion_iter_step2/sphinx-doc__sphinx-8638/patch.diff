@@ -1,0 +1,23 @@
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -1157,9 +1157,19 @@
+                     else:
+                         # "fuzzy" searching mode
+                         searchname = '.' + name
+-                        matches = [(oname, self.objects[oname]) for oname in self.objects
++                        fuzzy_matches = [(oname, self.objects[oname]) for oname in self.objects
+                                    if oname.endswith(searchname) and
+                                    self.objects[oname].objtype in objtypes]
++                        # Prioritize matches within the current class if we're in a class context
++                        if classname and modname:
++                            class_prefix = modname + '.' + classname + '.'
++                            class_matches = [m for m in fuzzy_matches if m[0].startswith(class_prefix)]
++                            if class_matches:
++                                matches = class_matches
++                            else:
++                                matches = fuzzy_matches
++                        else:
++                            matches = fuzzy_matches
+         else:
+             # NOTE: searching for exact match, object type is not considered
+             if name in self.objects:

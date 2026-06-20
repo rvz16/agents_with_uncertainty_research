@@ -1,0 +1,193 @@
+2026-06-20 07:51:18,675 - INFO - Creating container for sympy__sympy-15976...
+2026-06-20 07:51:18,764 - INFO - Container for sympy__sympy-15976 created: 0ed31e4977c45aa6fceb2ee5f57370e82821c743f784d52d3646f67b678a6e71
+2026-06-20 07:51:18,915 - INFO - Container for sympy__sympy-15976 started: 0ed31e4977c45aa6fceb2ee5f57370e82821c743f784d52d3646f67b678a6e71
+2026-06-20 07:51:18,915 - INFO - Intermediate patch for sympy__sympy-15976 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-15976/patch.diff, now applying to container...
+2026-06-20 07:51:19,012 - INFO - >>>>> Applied Patch:
+Checking patch sympy/printing/mathml.py...
+Applied patch sympy/printing/mathml.py cleanly.
+
+2026-06-20 07:51:19,226 - INFO - Git diff before:
+diff --git a/sympy/printing/mathml.py b/sympy/printing/mathml.py
+index 3f8b8d49e..def842184 100644
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -743,12 +743,15 @@ def _print_Sum(self, e):
+         return mrow
+ 
+     def _print_Symbol(self, sym, style='plain'):
+-        x = self.dom.createElement('mi')
+-
+-        if style == 'bold':
+-            x.setAttribute('mathvariant', 'bold')
+-
++        # In Presentation MathML, if a symbol has subscripts/superscripts the
++        # correct structure is to return an <msub>/<msup>/<msubsup> element
++        # containing the base <mi> and the sub/sup elements directly.
++        # Wrapping the msub/msup element inside another <mi> (as was done
++        # previously) leads to invalid MathML like <mi><msub>...</msub></mi>
++        # which some browsers (Safari) fail to render.
+         def join(items):
++            # Join parts (possibly multi-character) into either an <mi> or an
++            # <mrow> of <mi> separated by invisible operators (space).
+             if len(items) > 1:
+                 mrow = self.dom.createElement('mrow')
+                 for i, item in enumerate(items):
+@@ -757,11 +760,15 @@ def join(items):
+                         mo.appendChild(self.dom.createTextNode(" "))
+                         mrow.appendChild(mo)
+                     mi = self.dom.createElement('mi')
++                    if style == 'bold':
++                        mi.setAttribute('mathvariant', 'bold')
+                     mi.appendChild(self.dom.createTextNode(item))
+                     mrow.appendChild(mi)
+                 return mrow
+             else:
+                 mi = self.dom.createElement('mi')
++                if style == 'bold':
++                    mi.setAttribute('mathvariant', 'bold')
+                 mi.appendChild(self.dom.createTextNode(items[0]))
+                 return mi
+ 
+@@ -777,29 +784,34 @@ def translate(s):
+         supers = [translate(sup) for sup in supers]
+         subs = [translate(sub) for sub in subs]
+ 
++        # Base name element
+         mname = self.dom.createElement('mi')
++        if style == 'bold':
++            mname.setAttribute('mathvariant', 'bold')
+         mname.appendChild(self.dom.createTextNode(name))
++
++        # If there are no super/sub scripts just return the <mi>
++        if len(supers) == 0 and len(subs) == 0:
++            return mname
++
++        # Otherwise construct and return the appropriate msup/msub/msubsup
+         if len(supers) == 0:
+-            if len(subs) == 0:
+-                x.appendChild(self.dom.createTextNode(name))
+-            else:
+-                msub = self.dom.createElement('msub')
+-                msub.appendChild(mname)
+-                msub.appendChild(join(subs))
+-                x.appendChild(msub)
++            msub = self.dom.createElement('msub')
++            msub.appendChild(mname)
++            msub.appendChild(join(subs))
++            return msub
+         else:
+             if len(subs) == 0:
+                 msup = self.dom.createElement('msup')
+                 msup.appendChild(mname)
+                 msup.appendChild(join(supers))
+-                x.appendChild(msup)
++                return msup
+             else:
+                 msubsup = self.dom.createElement('msubsup')
+                 msubsup.appendChild(mname)
+                 msubsup.appendChild(join(subs))
+                 msubsup.appendChild(join(supers))
+-                x.appendChild(msubsup)
+-        return x
++                return msubsup
+ 
+     def _print_MatrixSymbol(self, sym):
+         return self._print_Symbol(sym, style=self._settings['mat_symbol_style'])
+2026-06-20 07:51:19,226 - INFO - Eval script for sympy__sympy-15976 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-15976/eval.sh; copying to container...
+2026-06-20 07:51:21,330 - INFO - Test runtime: 2.06 seconds
+2026-06-20 07:51:21,330 - INFO - Test output for sympy__sympy-15976 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-15976/test_output.txt
+2026-06-20 07:51:21,373 - INFO - Git diff after:
+diff --git a/sympy/printing/mathml.py b/sympy/printing/mathml.py
+index 3f8b8d49e..def842184 100644
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -743,12 +743,15 @@ def _print_Sum(self, e):
+         return mrow
+ 
+     def _print_Symbol(self, sym, style='plain'):
+-        x = self.dom.createElement('mi')
+-
+-        if style == 'bold':
+-            x.setAttribute('mathvariant', 'bold')
+-
++        # In Presentation MathML, if a symbol has subscripts/superscripts the
++        # correct structure is to return an <msub>/<msup>/<msubsup> element
++        # containing the base <mi> and the sub/sup elements directly.
++        # Wrapping the msub/msup element inside another <mi> (as was done
++        # previously) leads to invalid MathML like <mi><msub>...</msub></mi>
++        # which some browsers (Safari) fail to render.
+         def join(items):
++            # Join parts (possibly multi-character) into either an <mi> or an
++            # <mrow> of <mi> separated by invisible operators (space).
+             if len(items) > 1:
+                 mrow = self.dom.createElement('mrow')
+                 for i, item in enumerate(items):
+@@ -757,11 +760,15 @@ def join(items):
+                         mo.appendChild(self.dom.createTextNode(" "))
+                         mrow.appendChild(mo)
+                     mi = self.dom.createElement('mi')
++                    if style == 'bold':
++                        mi.setAttribute('mathvariant', 'bold')
+                     mi.appendChild(self.dom.createTextNode(item))
+                     mrow.appendChild(mi)
+                 return mrow
+             else:
+                 mi = self.dom.createElement('mi')
++                if style == 'bold':
++                    mi.setAttribute('mathvariant', 'bold')
+                 mi.appendChild(self.dom.createTextNode(items[0]))
+                 return mi
+ 
+@@ -777,29 +784,34 @@ def translate(s):
+         supers = [translate(sup) for sup in supers]
+         subs = [translate(sub) for sub in subs]
+ 
++        # Base name element
+         mname = self.dom.createElement('mi')
++        if style == 'bold':
++            mname.setAttribute('mathvariant', 'bold')
+         mname.appendChild(self.dom.createTextNode(name))
++
++        # If there are no super/sub scripts just return the <mi>
++        if len(supers) == 0 and len(subs) == 0:
++            return mname
++
++        # Otherwise construct and return the appropriate msup/msub/msubsup
+         if len(supers) == 0:
+-            if len(subs) == 0:
+-                x.appendChild(self.dom.createTextNode(name))
+-            else:
+-                msub = self.dom.createElement('msub')
+-                msub.appendChild(mname)
+-                msub.appendChild(join(subs))
+-                x.appendChild(msub)
++            msub = self.dom.createElement('msub')
++            msub.appendChild(mname)
++            msub.appendChild(join(subs))
++            return msub
+         else:
+             if len(subs) == 0:
+                 msup = self.dom.createElement('msup')
+                 msup.appendChild(mname)
+                 msup.appendChild(join(supers))
+-                x.appendChild(msup)
++                return msup
+             else:
+                 msubsup = self.dom.createElement('msubsup')
+                 msubsup.appendChild(mname)
+                 msubsup.appendChild(join(subs))
+                 msubsup.appendChild(join(supers))
+-                x.appendChild(msubsup)
+-        return x
++                return msubsup
+ 
+     def _print_MatrixSymbol(self, sym):
+         return self._print_Symbol(sym, style=self._settings['mat_symbol_style'])
+2026-06-20 07:51:21,373 - INFO - Grading answer for sympy__sympy-15976...
+2026-06-20 07:51:21,373 - INFO - report: {'sympy__sympy-15976': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_presentation_symbol'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_mathml_printer', 'test_content_printmethod', 'test_content_mathml_core', 'test_content_mathml_functions', 'test_content_mathml_limits', 'test_content_mathml_integrals', 'test_content_mathml_matrices', 'test_content_mathml_sums', 'test_content_mathml_tuples', 'test_content_mathml_add', 'test_content_mathml_Rational', 'test_content_mathml_constants', 'test_content_mathml_trig', 'test_content_mathml_relational', 'test_content_symbol', 'test_content_mathml_greek', 'test_content_mathml_order', 'test_content_settings', 'test_presentation_printmethod', 'test_presentation_mathml_core', 'test_presentation_mathml_functions', 'test_presentation_mathml_limits', 'test_presentation_mathml_integrals', 'test_presentation_mathml_matrices', 'test_presentation_mathml_sums', 'test_presentation_mathml_add', 'test_presentation_mathml_Rational', 'test_presentation_mathml_constants', 'test_presentation_mathml_trig', 'test_presentation_mathml_relational', 'test_presentation_mathml_greek', 'test_presentation_mathml_order', 'test_presentation_settings', 'test_toprettyxml_hooking', 'test_print_basic', 'test_root_notation_print', 'test_print_matrix_symbol'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-15976: resolved: True
+2026-06-20 07:51:21,373 - INFO - Attempting to stop container sweb.eval.sympy__sympy-15976.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:51:36,552 - INFO - Attempting to remove container sweb.eval.sympy__sympy-15976.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:51:36,569 - INFO - Container sweb.eval.sympy__sympy-15976.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-20 07:51:36,569 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-15976:latest...
+2026-06-20 07:51:36,605 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-15976:latest removed.

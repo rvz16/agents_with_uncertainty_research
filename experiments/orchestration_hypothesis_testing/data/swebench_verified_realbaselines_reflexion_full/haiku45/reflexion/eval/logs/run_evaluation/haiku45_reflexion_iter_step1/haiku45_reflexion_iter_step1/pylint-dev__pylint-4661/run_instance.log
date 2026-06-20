@@ -1,0 +1,198 @@
+2026-06-19 20:01:27,078 - INFO - Creating container for pylint-dev__pylint-4661...
+2026-06-19 20:01:27,157 - INFO - Container for pylint-dev__pylint-4661 created: 080381abf635b559d60c96c5ef24d725fda93c7c0a875b28fb620129c4d9aa6b
+2026-06-19 20:01:27,290 - INFO - Container for pylint-dev__pylint-4661 started: 080381abf635b559d60c96c5ef24d725fda93c7c0a875b28fb620129c4d9aa6b
+2026-06-19 20:01:27,290 - INFO - Intermediate patch for pylint-dev__pylint-4661 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/pylint-dev__pylint-4661/patch.diff, now applying to container...
+2026-06-19 20:01:27,394 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:13: trailing whitespace.
+    
+/tmp/patch.diff:15: trailing whitespace.
+    
+/tmp/patch.diff:20: trailing whitespace.
+    
+/tmp/patch.diff:25: trailing whitespace.
+    
+/tmp/patch.diff:33: trailing whitespace.
+    
+Checking patch pylint/config/__init__.py...
+Checking patch setup.cfg...
+Applied patch pylint/config/__init__.py cleanly.
+Applied patch setup.cfg cleanly.
+warning: 5 lines add whitespace errors.
+
+2026-06-19 20:01:27,477 - INFO - Git diff before:
+diff --git a/pylint/config/__init__.py b/pylint/config/__init__.py
+index 84774d0e..7c530880 100644
+--- a/pylint/config/__init__.py
++++ b/pylint/config/__init__.py
+@@ -55,15 +55,38 @@ __all__ = [
+     "UnsupportedAction",
+ ]
+ 
++
++def _get_default_pylint_home():
++    """Return the default directory for pylint data, following XDG Base Directory spec."""
++    # If PYLINTHOME is explicitly set, use it (for backward compatibility)
++    if "PYLINTHOME" in os.environ:
++        return os.environ["PYLINTHOME"]
++    
++    user_home = os.path.expanduser("~")
++    
++    # Check if user_home expansion failed (e.g., ~ couldn't be expanded)
++    if user_home == "~":
++        # Fall back to .pylint.d in current directory
++        return ".pylint.d"
++    
++    # Check for backward compatibility: if old .pylint.d exists, use it
++    old_pylint_home = os.path.join(user_home, ".pylint.d")
++    if os.path.isdir(old_pylint_home):
++        return old_pylint_home
++    
++    # Follow XDG Base Directory spec for cache data
++    # Use XDG_CACHE_HOME if set, otherwise default to ~/.cache
++    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
++    if xdg_cache_home:
++        cache_home = xdg_cache_home
++    else:
++        cache_home = os.path.join(user_home, ".cache")
++    
++    return os.path.join(cache_home, "pylint")
++
++
+ USER_HOME = os.path.expanduser("~")
+-if "PYLINTHOME" in os.environ:
+-    PYLINT_HOME = os.environ["PYLINTHOME"]
+-    if USER_HOME == "~":
+-        USER_HOME = os.path.dirname(PYLINT_HOME)
+-elif USER_HOME == "~":
+-    PYLINT_HOME = ".pylint.d"
+-else:
+-    PYLINT_HOME = os.path.join(USER_HOME, ".pylint.d")
++PYLINT_HOME = _get_default_pylint_home()
+ 
+ 
+ def _get_pdata_path(base_name, recurs):
+@@ -110,11 +133,15 @@ ENV_HELP = (
+ The following environment variables are used:
+     * PYLINTHOME
+     Path to the directory where persistent data for the run will be stored. If
+-not found, it defaults to ~/.pylint.d/ or .pylint.d (in the current working
+-directory).
++not found, it defaults to $XDG_CACHE_HOME/pylint or ~/.cache/pylint (following
++the XDG Base Directory Specification). For backward compatibility, if
++~/.pylint.d exists, it will be used instead.
+     * PYLINTRC
+     Path to the configuration file. See the documentation for the method used
+ to search for configuration file.
++    * XDG_CACHE_HOME
++    If set, pylint will store its cache data in $XDG_CACHE_HOME/pylint instead
++of ~/.cache/pylint.
+ """
+     % globals()  # type: ignore
+ )
+diff --git a/setup.cfg b/setup.cfg
+index 62a3fd7a..52e8c54c 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -49,6 +49,8 @@ install_requires =
+     colorama;sys_platform=="win32"
+ python_requires = ~=3.6
+ 
++[options.extras_require]
++
+ [options.packages.find]
+ include =
+     pylint*
+2026-06-19 20:01:27,477 - INFO - Eval script for pylint-dev__pylint-4661 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/pylint-dev__pylint-4661/eval.sh; copying to container...
+2026-06-19 20:01:29,132 - INFO - Test runtime: 1.61 seconds
+2026-06-19 20:01:29,132 - INFO - Test output for pylint-dev__pylint-4661 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/pylint-dev__pylint-4661/test_output.txt
+2026-06-19 20:01:29,168 - INFO - Git diff after:
+diff --git a/pylint/config/__init__.py b/pylint/config/__init__.py
+index 84774d0e..7c530880 100644
+--- a/pylint/config/__init__.py
++++ b/pylint/config/__init__.py
+@@ -55,15 +55,38 @@ __all__ = [
+     "UnsupportedAction",
+ ]
+ 
++
++def _get_default_pylint_home():
++    """Return the default directory for pylint data, following XDG Base Directory spec."""
++    # If PYLINTHOME is explicitly set, use it (for backward compatibility)
++    if "PYLINTHOME" in os.environ:
++        return os.environ["PYLINTHOME"]
++    
++    user_home = os.path.expanduser("~")
++    
++    # Check if user_home expansion failed (e.g., ~ couldn't be expanded)
++    if user_home == "~":
++        # Fall back to .pylint.d in current directory
++        return ".pylint.d"
++    
++    # Check for backward compatibility: if old .pylint.d exists, use it
++    old_pylint_home = os.path.join(user_home, ".pylint.d")
++    if os.path.isdir(old_pylint_home):
++        return old_pylint_home
++    
++    # Follow XDG Base Directory spec for cache data
++    # Use XDG_CACHE_HOME if set, otherwise default to ~/.cache
++    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
++    if xdg_cache_home:
++        cache_home = xdg_cache_home
++    else:
++        cache_home = os.path.join(user_home, ".cache")
++    
++    return os.path.join(cache_home, "pylint")
++
++
+ USER_HOME = os.path.expanduser("~")
+-if "PYLINTHOME" in os.environ:
+-    PYLINT_HOME = os.environ["PYLINTHOME"]
+-    if USER_HOME == "~":
+-        USER_HOME = os.path.dirname(PYLINT_HOME)
+-elif USER_HOME == "~":
+-    PYLINT_HOME = ".pylint.d"
+-else:
+-    PYLINT_HOME = os.path.join(USER_HOME, ".pylint.d")
++PYLINT_HOME = _get_default_pylint_home()
+ 
+ 
+ def _get_pdata_path(base_name, recurs):
+@@ -110,11 +133,15 @@ ENV_HELP = (
+ The following environment variables are used:
+     * PYLINTHOME
+     Path to the directory where persistent data for the run will be stored. If
+-not found, it defaults to ~/.pylint.d/ or .pylint.d (in the current working
+-directory).
++not found, it defaults to $XDG_CACHE_HOME/pylint or ~/.cache/pylint (following
++the XDG Base Directory Specification). For backward compatibility, if
++~/.pylint.d exists, it will be used instead.
+     * PYLINTRC
+     Path to the configuration file. See the documentation for the method used
+ to search for configuration file.
++    * XDG_CACHE_HOME
++    If set, pylint will store its cache data in $XDG_CACHE_HOME/pylint instead
++of ~/.cache/pylint.
+ """
+     % globals()  # type: ignore
+ )
+diff --git a/setup.cfg b/setup.cfg
+index 62a3fd7a..52e8c54c 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -49,6 +49,8 @@ install_requires =
+     colorama;sys_platform=="win32"
+ python_requires = ~=3.6
+ 
++[options.extras_require]
++
+ [options.packages.find]
+ include =
+     pylint*
+2026-06-19 20:01:29,168 - INFO - Grading answer for pylint-dev__pylint-4661...
+2026-06-19 20:01:29,169 - INFO - report: {'pylint-dev__pylint-4661': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/lint/unittest_lint.py::test_pylint_home']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pylint-dev__pylint-4661: resolved: False
+2026-06-19 20:01:29,169 - INFO - Attempting to stop container sweb.eval.pylint-dev__pylint-4661.haiku45_reflexion_iter_step1...
+2026-06-19 20:01:44,397 - INFO - Attempting to remove container sweb.eval.pylint-dev__pylint-4661.haiku45_reflexion_iter_step1...
+2026-06-19 20:01:44,410 - INFO - Container sweb.eval.pylint-dev__pylint-4661.haiku45_reflexion_iter_step1 removed.
+2026-06-19 20:01:44,410 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-4661:latest...
+2026-06-19 20:01:44,653 - INFO - Image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-4661:latest removed.

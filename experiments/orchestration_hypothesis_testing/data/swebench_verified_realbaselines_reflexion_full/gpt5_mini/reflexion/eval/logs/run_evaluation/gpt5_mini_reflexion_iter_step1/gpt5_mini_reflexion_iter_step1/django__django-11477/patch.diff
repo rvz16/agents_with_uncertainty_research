@@ -1,0 +1,22 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -617,11 +617,16 @@
+                         continue
+                     candidate_subs = dict(zip(params, args))
+                 else:
+-                    if set(kwargs).symmetric_difference(params).difference(defaults):
++                    # Discard any kwargs that are None: optional capture groups that
++                    # aren't provided by resolve() are represented as None. Treat
++                    # those as not provided when reversing so we don't turn them
++                    # into the literal string 'None'.
++                    effective_kwargs = {k: v for k, v in kwargs.items() if v is not None}
++                    if set(effective_kwargs).symmetric_difference(params).difference(defaults):
+                         continue
+-                    if any(kwargs.get(k, v) != v for k, v in defaults.items()):
++                    if any(effective_kwargs.get(k, v) != v for k, v in defaults.items()):
+                         continue
+-                    candidate_subs = kwargs
++                    candidate_subs = effective_kwargs
+                 # Convert the candidate subs to text using Converter.to_url().
+                 text_candidate_subs = {}
+                 for k, v in candidate_subs.items():

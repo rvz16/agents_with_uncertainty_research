@@ -1,0 +1,39 @@
+--- a/sklearn/multioutput.py
++++ b/sklearn/multioutput.py
+@@ -324,6 +324,36 @@
+ 
+     def __init__(self, estimator, n_jobs=None):
+         super().__init__(estimator, n_jobs)
++
++    @if_delegate_has_method('estimator')
++    def partial_fit(self, X, y, classes=None, sample_weight=None):
++        """Incrementally fit the model to data and collect classes_.
++
++        This wraps the MultiOutputEstimator.partial_fit to ensure that after
++        partial fitting the per-output classes_ attribute is available on the
++        meta-estimator (when the underlying estimators expose classes_).
++        """
++        super().partial_fit(X, y, classes=classes,
++                            sample_weight=sample_weight)
++        # collect classes_ from underlying estimators if present
++        if hasattr(self, "estimators_"):
++            self.classes_ = [getattr(est, "classes_", None)
++                             for est in self.estimators_]
++        return self
++
++    def fit(self, X, y, sample_weight=None):
++        """Fit the model to data and collect classes_.
++
++        After fitting the underlying estimators, this stores a list
++        self.classes_ containing the classes_ attribute of each fitted
++        estimator. This mirrors the behavior of other meta-estimators
++        (e.g. ClassifierChain) and is required by utilities such as
++        cross_val_predict(method='predict_proba').
++        """
++        super().fit(X, y, sample_weight=sample_weight)
++        # collect classes_ from underlying estimators
++        self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
+ 
+     def predict_proba(self, X):
+         """Probability estimates.

@@ -1,0 +1,85 @@
+2026-06-20 06:20:40,820 - INFO - Creating container for sympy__sympy-17655...
+2026-06-20 06:20:40,921 - INFO - Container for sympy__sympy-17655 created: 62b69e131abc7634a8fd551a8b76b72faadf754a89a63338245ba6f0919c5728
+2026-06-20 06:20:41,076 - INFO - Container for sympy__sympy-17655 started: 62b69e131abc7634a8fd551a8b76b72faadf754a89a63338245ba6f0919c5728
+2026-06-20 06:20:41,076 - INFO - Intermediate patch for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-17655/patch.diff, now applying to container...
+2026-06-20 06:20:41,171 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-20 06:20:41,405 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 7c978c47be..7005a071da 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -32,6 +32,7 @@
+ from sympy.core.numbers import Float
+ from sympy.core.evaluate import global_evaluate
+ from sympy.core.add import Add
++from sympy.core.mul import Mul
+ from sympy.utilities.iterables import uniq
+ from sympy.utilities.misc import filldedent, func_name, Undecidable
+ 
+@@ -213,6 +214,19 @@ def __add__(self, other):
+         sympy.geometry.point.Point.translate
+ 
+         """
++        # Handle expressions like scalar * Point (e.g., 2*Point(1,1))
++        if isinstance(other, Mul):
++            pts = [arg for arg in other.args if isinstance(arg, Point)]
++            if len(pts) == 1:
++                pt = pts[0]
++                # factor is the product of non-point args
++                non_pts = [arg for arg in other.args if arg is not pt]
++                if non_pts:
++                    factor = Mul(*non_pts)
++                else:
++                    factor = S.One
++                other = pt * factor
++
+         try:
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:
+2026-06-20 06:20:41,405 - INFO - Eval script for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-17655/eval.sh; copying to container...
+2026-06-20 06:20:52,826 - INFO - Test runtime: 11.39 seconds
+2026-06-20 06:20:52,826 - INFO - Test output for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-17655/test_output.txt
+2026-06-20 06:20:52,868 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 7c978c47be..7005a071da 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -32,6 +32,7 @@
+ from sympy.core.numbers import Float
+ from sympy.core.evaluate import global_evaluate
+ from sympy.core.add import Add
++from sympy.core.mul import Mul
+ from sympy.utilities.iterables import uniq
+ from sympy.utilities.misc import filldedent, func_name, Undecidable
+ 
+@@ -213,6 +214,19 @@ def __add__(self, other):
+         sympy.geometry.point.Point.translate
+ 
+         """
++        # Handle expressions like scalar * Point (e.g., 2*Point(1,1))
++        if isinstance(other, Mul):
++            pts = [arg for arg in other.args if isinstance(arg, Point)]
++            if len(pts) == 1:
++                pt = pts[0]
++                # factor is the product of non-point args
++                non_pts = [arg for arg in other.args if arg is not pt]
++                if non_pts:
++                    factor = Mul(*non_pts)
++                else:
++                    factor = S.One
++                other = pt * factor
++
+         try:
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:
+2026-06-20 06:20:52,868 - INFO - Grading answer for sympy__sympy-17655...
+2026-06-20 06:20:52,869 - INFO - report: {'sympy__sympy-17655': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_point', 'test_point3D']}, 'PASS_TO_PASS': {'success': ['test_Point2D', 'test_issue_9214', 'test_issue_11617', 'test_transform', 'test_concyclic_doctest_bug', 'test_arguments', 'test_unit', 'test_dot', 'test__normalize_dimension'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-17655: resolved: False
+2026-06-20 06:20:52,869 - INFO - Attempting to stop container sweb.eval.sympy__sympy-17655.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:21:08,115 - INFO - Attempting to remove container sweb.eval.sympy__sympy-17655.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:21:08,150 - INFO - Container sweb.eval.sympy__sympy-17655.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 06:21:08,150 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-17655:latest...
+2026-06-20 06:21:08,215 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-17655:latest removed.

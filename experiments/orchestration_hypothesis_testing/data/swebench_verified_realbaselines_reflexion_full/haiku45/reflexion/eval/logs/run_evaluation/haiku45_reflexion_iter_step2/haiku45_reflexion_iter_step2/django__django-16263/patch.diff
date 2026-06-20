@@ -1,0 +1,110 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -24,6 +24,7 @@
+     Col,
+     Exists,
+     F,
++    OrderBy,
+     OuterRef,
+     Ref,
+     ResolvedOuterRef,
+@@ -545,11 +546,88 @@
+ 
+         return dict(zip(outer_query.annotation_select, result))
+ 
++    def _collect_annotation_refs(self):
++        """
++        Collect all annotation names that are referenced in the query's
++        WHERE clause, ORDER BY clause, or other annotations.
++        """
++        refs = set()
++        
++        # Collect from WHERE clause
++        def collect_from_node(node):
++            if hasattr(node, 'children'):
++                for child in node.children:
++                    collect_from_node(child)
++            if hasattr(node, 'lhs'):
++                if isinstance(node.lhs, Ref):
++                    refs.add(node.lhs.refs)
++            if hasattr(node, 'rhs'):
++                if isinstance(node.rhs, Ref):
++                    refs.add(node.rhs.refs)
++        
++        collect_from_node(self.where)
++        
++        # Collect from ORDER BY
++        for expr in self.order_by:
++            if isinstance(expr, OrderBy):
++                expr = expr.expression
++            if isinstance(expr, Ref):
++                refs.add(expr.refs)
++            elif isinstance(expr, F):
++                if expr.name in self.annotations:
++                    refs.add(expr.name)
++        
++        # Collect from annotations referencing other annotations
++        def collect_from_expr(expr):
++            if isinstance(expr, Ref):
++                refs.add(expr.refs)
++            elif isinstance(expr, F):
++                if expr.name in self.annotations:
++                    refs.add(expr.name)
++            elif hasattr(expr, 'get_source_expressions'):
++                for source_expr in expr.get_source_expressions():
++                    if source_expr:
++                        collect_from_expr(source_expr)
++        
++        for alias, annotation in self.annotations.items():
++            collect_from_expr(annotation)
++        
++        return refs
++
++    def _strip_unused_annotations(self):
++        """
++        Strip annotations that are not referenced in filters, other annotations,
++        or ordering. Returns a cloned query with unused annotations removed.
++        """
++        if not self.annotations:
++            return self
++        
++        # Collect all referenced annotation names
++        used_refs = self._collect_annotation_refs()
++        
++        # Check if any annotations are unused
++        unused = set(self.annotations.keys()) - used_refs
++        if not unused:
++            return self
++        
++        # Clone and remove unused annotations
++        obj = self.clone()
++        for alias in unused:
++            del obj.annotations[alias]
++            if obj.annotation_select_mask is not None and alias in obj.annotation_select_mask:
++                obj.annotation_select_mask.discard(alias)
++        
++        # Clear the annotation select cache
++        obj._annotation_select_cache = None
++        
++        return obj
++
+     def get_count(self, using):
+         """
+         Perform a COUNT() query using the current filter constraints.
+         """
+-        obj = self.clone()
++        obj = self._strip_unused_annotations()
++        obj = obj.clone()
+         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+         return obj.get_aggregation(using, ["__count"])["__count"]
+ 
+@@ -557,7 +635,8 @@
+         return self.where
+ 
+     def exists(self, limit=True):
+-        q = self.clone()
++        q = self._strip_unused_annotations()
++        q = q.clone()
+         if not (q.distinct and q.is_sliced):
+             if q.group_by is True:
+                 q.add_fields(

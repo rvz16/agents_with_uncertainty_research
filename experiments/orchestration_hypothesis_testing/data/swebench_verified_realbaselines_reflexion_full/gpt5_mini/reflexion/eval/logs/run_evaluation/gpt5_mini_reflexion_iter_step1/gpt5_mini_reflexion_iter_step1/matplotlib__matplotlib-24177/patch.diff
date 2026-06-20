@@ -1,0 +1,27 @@
+--- a/lib/matplotlib/axes/_base.py
++++ b/lib/matplotlib/axes/_base.py
+@@ -2364,6 +2364,24 @@
+         if path.vertices.size == 0:
+             return
+ 
++        # Some Path objects (for example the step-outline produced for
++        # histtype='step') may have no explicit 'codes' and rely on implicit
++        # line segments. Downstream routines that iterate over path segments
++        # (e.g., to compute extrema for autoscaling) can under-sample such
++        # paths if they rely on segment iteration. To ensure all vertices
++        # are considered for autoscaling, expand paths without codes into an
++        # explicit MOVETO/LINETO-coded Path so the full set of vertices is
++        # preserved when computing data limits.
++        if getattr(path, "codes", None) is None:
++            # local import to avoid touching module-level imports and to keep
++            # the change minimal and isolated.
++            import matplotlib.path as mpath
++            verts = path.vertices
++            if verts.size:
++                codes = np.full(len(verts), mpath.Path.LINETO, dtype=np.uint8)
++                codes[0] = mpath.Path.MOVETO
++                path = mpath.Path(verts, codes)
++
+         line_trf = line.get_transform()
+ 
+         if line_trf == self.transData:

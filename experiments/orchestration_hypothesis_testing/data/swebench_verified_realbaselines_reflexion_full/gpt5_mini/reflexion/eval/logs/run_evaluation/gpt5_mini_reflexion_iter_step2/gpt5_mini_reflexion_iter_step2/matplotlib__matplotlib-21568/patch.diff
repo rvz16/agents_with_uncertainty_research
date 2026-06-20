@@ -1,0 +1,42 @@
+--- a/lib/matplotlib/dates.py
++++ b/lib/matplotlib/dates.py
+@@ -592,13 +592,32 @@
+ 
+ 
+ def _wrap_in_tex(text):
+-    p = r'([a-zA-Z]+)'
+-    ret_text = re.sub(p, r'}$\1$\\mathdefault{', text)
+-
+-    # Braces ensure dashes are not spaced like binary operators.
+-    ret_text = '$\\mathdefault{'+ret_text.replace('-', '{-}')+'}$'
+-    ret_text = ret_text.replace('$\\mathdefault{}$', '')
+-    return ret_text
++    """
++    Wrap a date/time label for rendering in TeX math mode while preserving
++    sensible spacing.
++
++    The goal is to render the label using \mathdefault (so digits and letters
++    look like text) but avoid TeX's math-mode algorithm from adding
++    binary-operator spacing around characters like '-' or ':' and to provide
++    reasonable inter-word spacing.  We therefore:
++
++    - Surround '-' and ':' with braces to avoid binary-operator spacing.
++    - Replace space characters with a small math-mode space (\;).
++    - Wrap the whole result in $\mathdefault{...}$.
++
++    Return an empty string unchanged.
++    """
++    if not text:
++        return ''
++
++    # Braces ensure characters like '-' and ':' are not spaced like binary
++    # operators in math mode.
++    s = text.replace('-', '{-}').replace(':', '{:}')
++
++    # Use a small space in math mode to mimic text-mode spacing.
++    s = s.replace(' ', r'\;')
++
++    return '$\\mathdefault{' + s + '}$'
+ 
+ 
+ ## date tickers and formatters ###

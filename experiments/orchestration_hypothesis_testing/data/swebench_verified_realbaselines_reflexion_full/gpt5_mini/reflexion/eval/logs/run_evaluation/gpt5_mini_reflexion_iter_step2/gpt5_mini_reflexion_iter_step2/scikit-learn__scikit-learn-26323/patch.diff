@@ -1,0 +1,39 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -293,15 +293,27 @@
+             Estimator instance.
+         """
+         super().set_output(transform=transform)
+-        transformers = (
+-            trans
+-            for _, trans, _ in chain(
+-                self.transformers, getattr(self, "transformers_", [])
+-            )
+-            if trans not in {"passthrough", "drop"}
+-        )
+-        for trans in transformers:
+-            _safe_set_output(trans, transform=transform)
++        # Set output for all transformers specified in `transformers` and any
++        # fitted transformers in `transformers_`. Also handle `remainder` when
++        # it is an estimator (and not the string 'passthrough'/'drop') which
++        # may not be present in self.transformers.
++        seen = set()
++        for container in (self.transformers, getattr(self, "transformers_", [])):
++            for _, trans, _ in container:
++                if trans in {"passthrough", "drop"}:
++                    continue
++                if id(trans) in seen:
++                    continue
++                seen.add(id(trans))
++                _safe_set_output(trans, transform=transform)
++
++        # If remainder is an estimator (unfitted case), ensure we also set its
++        # output configuration. When fitted, the remainder estimator is present
++        # in `transformers_` and was already handled above.
++        remainder = getattr(self, "remainder", None)
++        if remainder is not None and remainder not in {"passthrough", "drop"}:
++            if id(remainder) not in seen:
++                _safe_set_output(remainder, transform=transform)
+ 
+         return self
+ 

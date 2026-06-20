@@ -1,0 +1,34 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -231,10 +231,29 @@
+     def related_objects(self, related, objs):
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
+-        """
+-        return related.related_model._base_manager.using(self.using).filter(
++
++        To avoid fetching unnecessary fields (which can be expensive or trigger
++        decoding errors for corrupt legacy data), only select the primary key
++        and the field that references the source model. If there are signal
++        listeners for the related model, return the full queryset so signal
++        handlers can access all fields.
++        """
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        model = related.related_model
++        # If any delete/m2m signals are connected for this model, don't defer fields
++        if (signals.pre_delete.has_listeners(model) or
++                signals.post_delete.has_listeners(model) or
++                signals.m2m_changed.has_listeners(model)):
++            return qs
++        # Only load the primary key and the FK field that points to the source model.
++        pk_name = model._meta.pk.name
++        try:
++            return qs.only(related.field.name, pk_name)
++        except Exception:
++            # Fall back to the full queryset if the manager/backend doesn't support only().
++            return qs
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

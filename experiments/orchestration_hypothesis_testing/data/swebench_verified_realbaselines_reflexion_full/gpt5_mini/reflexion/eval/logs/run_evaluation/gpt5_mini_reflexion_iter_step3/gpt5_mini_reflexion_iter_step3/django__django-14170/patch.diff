@@ -1,0 +1,14 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -548,8 +548,9 @@
+ 
+     def as_sql(self, compiler, connection):
+         # Avoid the extract operation if the rhs is a direct value to allow
+-        # indexes to be used.
+-        if self.rhs_is_direct_value():
++        # indexes to be used. Do not apply this optimization for ISO
++        # week-based year lookups (iso_year) as their bounds differ.
++        if self.rhs_is_direct_value() and getattr(self, 'lookup_name', None) != 'iso_year':
+             # Skip the extract part by directly using the originating field,
+             # that is self.lhs.lhs.
+             lhs_sql, params = self.process_lhs(compiler, connection, self.lhs.lhs)

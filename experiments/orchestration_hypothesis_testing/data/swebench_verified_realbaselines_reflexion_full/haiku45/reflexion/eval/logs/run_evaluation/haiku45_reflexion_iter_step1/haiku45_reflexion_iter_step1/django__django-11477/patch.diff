@@ -1,0 +1,11 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -625,6 +625,8 @@
+                 # Convert the candidate subs to text using Converter.to_url().
+                 text_candidate_subs = {}
+                 for k, v in candidate_subs.items():
++                    if v is None:
++                        continue
+                     if k in converters:
+                         text_candidate_subs[k] = converters[k].to_url(v)
+                     else:

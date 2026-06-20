@@ -1,0 +1,17 @@
+--- a/django/db/backends/base/operations.py
++++ b/django/db/backends/base/operations.py
+@@ -558,6 +558,14 @@
+         second = self.adapt_datetimefield_value(second)
+         return [first, second]
+ 
++    def year_lookup_bounds_for_iso_year_field(self, value):
++        """
++        Return None to indicate that BETWEEN optimization should not be used
++        for ISO year lookups, as ISO year semantics differ from calendar year
++        and require EXTRACT('isoyear' ...) instead.
++        """
++        return None
++
+     def get_db_converters(self, expression):
+         """
+         Return a list of functions needed to convert field data.

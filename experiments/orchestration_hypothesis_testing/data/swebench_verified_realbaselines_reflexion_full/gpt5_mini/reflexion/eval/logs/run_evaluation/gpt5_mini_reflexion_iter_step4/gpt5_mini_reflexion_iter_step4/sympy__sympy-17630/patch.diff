@@ -1,0 +1,20 @@
+--- a/sympy/matrices/expressions/matexpr.py
++++ b/sympy/matrices/expressions/matexpr.py
+@@ -1219,9 +1219,16 @@
+ 
+ 
+ def _make_matrix(x):
+-    from sympy import ImmutableDenseMatrix
++    from sympy import ImmutableDenseMatrix, ZeroMatrix
++    # Prefer to keep MatrixExpr instances as-is
+     if isinstance(x, MatrixExpr):
+         return x
++    # If the element is the scalar zero, represent it as a 1x1 ZeroMatrix
++    # so that matrix-expression machinery that expects .rows/.cols attributes
++    # does not get a bare scalar Zero (which caused AttributeError in block
++    # operations).
++    if x is S.Zero:
++        return ZeroMatrix(1, 1)
+     return ImmutableDenseMatrix([[x]])
+ 
+ 

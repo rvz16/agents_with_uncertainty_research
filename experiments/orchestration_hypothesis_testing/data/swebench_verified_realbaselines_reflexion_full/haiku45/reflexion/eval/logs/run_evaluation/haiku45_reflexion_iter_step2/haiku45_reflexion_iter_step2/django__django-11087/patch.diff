@@ -1,0 +1,18 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -232,9 +232,14 @@
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # Only fetch the primary key when collecting related objects for deletion.
++        # This avoids fetching large fields that may have encoding issues and
++        # improves performance since we only need the pk to determine if objects
++        # exist and to delete them.
++        return qs.only('pk')
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

@@ -1,0 +1,20 @@
+--- a/lib/mpl_toolkits/axes_grid1/inset_locator.py
++++ b/lib/mpl_toolkits/axes_grid1/inset_locator.py
+@@ -70,6 +70,17 @@
+ 
+     def __call__(self, ax, renderer):
+         self.axes = ax
++        # Some backends (notably the inline backend used by IPython/Jupyter)
++        # call the locator with renderer=None (e.g. when applying tight
++        # bounding-box adjustments). Older code relied on the OffsetBox
++        # having a .figure set so that get_window_extent() could obtain a
++        # renderer via self.figure._get_renderer(). However, the locator is
++        # generally invoked with an Axes and that Axes always has an
++        # associated Figure. Use ax.figure to obtain a renderer when one is
++        # not provided to avoid AttributeError when the offsetbox's figure is
++        # not yet set.
++        if renderer is None:
++            renderer = ax.figure._get_renderer()
+         bbox = self.get_window_extent(renderer)
+         px, py = self.get_offset(bbox.width, bbox.height, 0, 0, renderer)
+         bbox_canvas = Bbox.from_bounds(px, py, bbox.width, bbox.height)

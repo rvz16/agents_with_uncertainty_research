@@ -1,0 +1,109 @@
+2026-06-20 07:42:54,959 - INFO - Creating container for pytest-dev__pytest-7571...
+2026-06-20 07:42:55,238 - INFO - Container for pytest-dev__pytest-7571 created: 80897cd4c87d876d8c7bfca676ce526a9f766b8e7e8662cb89aa0ad25014feaa
+2026-06-20 07:42:55,396 - INFO - Container for pytest-dev__pytest-7571 started: 80897cd4c87d876d8c7bfca676ce526a9f766b8e7e8662cb89aa0ad25014feaa
+2026-06-20 07:42:55,396 - INFO - Intermediate patch for pytest-dev__pytest-7571 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-7571/patch.diff, now applying to container...
+2026-06-20 07:42:55,494 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/logging.py...
+Applied patch src/_pytest/logging.py cleanly.
+
+2026-06-20 07:42:55,562 - INFO - Git diff before:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index 11031f2f2..9871e0042 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -346,6 +346,10 @@ class LogCaptureFixture:
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # remember the initial level of the handler (if modified by set_level)
++        self._initial_handler_level = None  # type: Optional[int]
++        # keep a direct reference to the handler in case the plugin removes it
++        self._handler_ref = None  # type: Optional[LogCaptureHandler]
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +360,15 @@ class LogCaptureFixture:
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # restore handler level if we changed it via set_level
++        if getattr(self, "_handler_ref", None) is not None and getattr(
++            self, "_initial_handler_level", None
++        ) is not None:
++            try:
++                self._handler_ref.setLevel(self._initial_handler_level)
++            except Exception:
++                # be tolerant if handler is already removed/closed
++                pass
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,7 +447,11 @@ class LogCaptureFixture:
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
+-        self.handler.setLevel(level)
++        # remember the handler reference and its original level so it can be restored
++        if getattr(self, "_handler_ref", None) is None:
++            self._handler_ref = self.handler
++        if getattr(self, "_initial_handler_level", None) is None and self._handler_ref is not None:
++            self._initial_handler_level = self._handler
+ 
+     @contextmanager
+     def at_level(
+2026-06-20 07:42:55,562 - INFO - Eval script for pytest-dev__pytest-7571 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-7571/eval.sh; copying to container...
+2026-06-20 07:42:58,915 - INFO - Test runtime: 3.31 seconds
+2026-06-20 07:42:58,915 - INFO - Test output for pytest-dev__pytest-7571 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-7571/test_output.txt
+2026-06-20 07:42:58,969 - INFO - Git diff after:
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index 11031f2f2..9871e0042 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -346,6 +346,10 @@ class LogCaptureFixture:
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # remember the initial level of the handler (if modified by set_level)
++        self._initial_handler_level = None  # type: Optional[int]
++        # keep a direct reference to the handler in case the plugin removes it
++        self._handler_ref = None  # type: Optional[LogCaptureHandler]
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +360,15 @@ class LogCaptureFixture:
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # restore handler level if we changed it via set_level
++        if getattr(self, "_handler_ref", None) is not None and getattr(
++            self, "_initial_handler_level", None
++        ) is not None:
++            try:
++                self._handler_ref.setLevel(self._initial_handler_level)
++            except Exception:
++                # be tolerant if handler is already removed/closed
++                pass
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,7 +447,11 @@ class LogCaptureFixture:
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
+-        self.handler.setLevel(level)
++        # remember the handler reference and its original level so it can be restored
++        if getattr(self, "_handler_ref", None) is None:
++            self._handler_ref = self.handler
++        if getattr(self, "_initial_handler_level", None) is None and self._handler_ref is not None:
++            self._initial_handler_level = self._handler
+ 
+     @contextmanager
+     def at_level(
+2026-06-20 07:42:58,969 - INFO - Grading answer for pytest-dev__pytest-7571...
+2026-06-20 07:42:58,971 - INFO - report: {'pytest-dev__pytest-7571': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/logging/test_fixture.py::test_change_level_undos_handler_level']}, 'PASS_TO_PASS': {'success': ['testing/logging/test_fixture.py::test_with_statement', 'testing/logging/test_fixture.py::test_fixture_help', 'testing/logging/test_fixture.py::test_ini_controls_global_log_level', 'testing/logging/test_fixture.py::test_caplog_captures_despite_exception', 'testing/logging/test_fixture.py::test_log_report_captures_according_to_config_option_upon_failure'], 'failure': ['testing/logging/test_fixture.py::test_change_level', 'testing/logging/test_fixture.py::test_log_access', 'testing/logging/test_fixture.py::test_messages', 'testing/logging/test_fixture.py::test_record_tuples', 'testing/logging/test_fixture.py::test_unicode', 'testing/logging/test_fixture.py::test_clear', 'testing/logging/test_fixture.py::test_caplog_captures_for_all_stages', 'testing/logging/test_fixture.py::test_change_level_undo', 'testing/logging/test_fixture.py::test_caplog_can_override_global_log_level']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-7571: resolved: False
+2026-06-20 07:42:58,972 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-7571.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:43:14,155 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-7571.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:43:14,170 - INFO - Container sweb.eval.pytest-dev__pytest-7571.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-20 07:43:14,170 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7571:latest...
+2026-06-20 07:43:14,376 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7571:latest removed.

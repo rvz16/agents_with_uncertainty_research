@@ -1,0 +1,43 @@
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -346,16 +346,25 @@
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # original level of the caplog handler, recorded when a test changes it
++        self._initial_handler_level = None  # type: Optional[int]
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+ 
+         This restores the log levels changed by :meth:`set_level`.
+         """
+-        # restore log levels
++        # restore logger levels
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++
++        # restore the caplog handler level if it was changed during the test
++        # the handler may already have been removed from the item's store by
++        # the logging plugin teardown, so guard against that.
++        handler = self._item._store.get(caplog_handler_key)
++        if handler is not None and self._initial_handler_level is not None:
++            handler.setLevel(self._initial_handler_level)
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,7 +443,12 @@
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
+-        self.handler.setLevel(level)
++
++        # record the original handler level the first time it's changed during the test
++        handler = self.handler
++        if self._initial_handler_level is None:
++            self._initial_handler_level = handler.level
++        handler.setLevel(level)
+ 
+     @contextmanager
+     def at_level(

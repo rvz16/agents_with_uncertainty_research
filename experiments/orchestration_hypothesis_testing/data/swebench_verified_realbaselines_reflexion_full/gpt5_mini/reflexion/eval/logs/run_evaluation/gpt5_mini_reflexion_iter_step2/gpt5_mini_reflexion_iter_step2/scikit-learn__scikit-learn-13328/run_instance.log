@@ -1,0 +1,49 @@
+2026-06-20 07:44:43,072 - INFO - Creating container for scikit-learn__scikit-learn-13328...
+2026-06-20 07:44:43,183 - INFO - Container for scikit-learn__scikit-learn-13328 created: 645fc41b8acfdcead31ed603093a2646bc369fcc8833913788188b1dd2425045
+2026-06-20 07:44:43,365 - INFO - Container for scikit-learn__scikit-learn-13328 started: 645fc41b8acfdcead31ed603093a2646bc369fcc8833913788188b1dd2425045
+2026-06-20 07:44:43,365 - INFO - Intermediate patch for scikit-learn__scikit-learn-13328 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/scikit-learn__scikit-learn-13328/patch.diff, now applying to container...
+2026-06-20 07:44:43,446 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/linear_model/huber.py...
+Applied patch sklearn/linear_model/huber.py cleanly.
+
+2026-06-20 07:44:43,600 - INFO - Git diff before:
+diff --git a/sklearn/linear_model/huber.py b/sklearn/linear_model/huber.py
+index 65c686400..de8b05ee2 100644
+--- a/sklearn/linear_model/huber.py
++++ b/sklearn/linear_model/huber.py
+@@ -251,7 +251,8 @@ class HuberRegressor(LinearModel, RegressorMixin, BaseEstimator):
+         self : object
+         """
+         X, y = check_X_y(
+-            X, y, copy=False, accept_sparse=['csr'], y_numeric=True)
++            X, y, copy=False, accept_sparse=['csr'], dtype=np.float64,
++            y_numeric=True)
+         if sample_weight is not None:
+             sample_weight = np.array(sample_weight)
+             check_consistent_length(y, sample_weight)
+2026-06-20 07:44:43,600 - INFO - Eval script for scikit-learn__scikit-learn-13328 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/scikit-learn__scikit-learn-13328/eval.sh; copying to container...
+2026-06-20 07:44:46,373 - INFO - Test runtime: 2.74 seconds
+2026-06-20 07:44:46,373 - INFO - Test output for scikit-learn__scikit-learn-13328 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/scikit-learn__scikit-learn-13328/test_output.txt
+2026-06-20 07:44:46,417 - INFO - Git diff after:
+diff --git a/sklearn/linear_model/huber.py b/sklearn/linear_model/huber.py
+index 65c686400..de8b05ee2 100644
+--- a/sklearn/linear_model/huber.py
++++ b/sklearn/linear_model/huber.py
+@@ -251,7 +251,8 @@ class HuberRegressor(LinearModel, RegressorMixin, BaseEstimator):
+         self : object
+         """
+         X, y = check_X_y(
+-            X, y, copy=False, accept_sparse=['csr'], y_numeric=True)
++            X, y, copy=False, accept_sparse=['csr'], dtype=np.float64,
++            y_numeric=True)
+         if sample_weight is not None:
+             sample_weight = np.array(sample_weight)
+             check_consistent_length(y, sample_weight)
+2026-06-20 07:44:46,417 - INFO - Grading answer for scikit-learn__scikit-learn-13328...
+2026-06-20 07:44:46,418 - INFO - report: {'scikit-learn__scikit-learn-13328': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/linear_model/tests/test_huber.py::test_huber_bool'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/linear_model/tests/test_huber.py::test_huber_equals_lr_for_high_epsilon', 'sklearn/linear_model/tests/test_huber.py::test_huber_max_iter', 'sklearn/linear_model/tests/test_huber.py::test_huber_gradient', 'sklearn/linear_model/tests/test_huber.py::test_huber_sample_weights', 'sklearn/linear_model/tests/test_huber.py::test_huber_sparse', 'sklearn/linear_model/tests/test_huber.py::test_huber_scaling_invariant', 'sklearn/linear_model/tests/test_huber.py::test_huber_and_sgd_same_results', 'sklearn/linear_model/tests/test_huber.py::test_huber_warm_start', 'sklearn/linear_model/tests/test_huber.py::test_huber_better_r2_score'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-13328: resolved: True
+2026-06-20 07:44:46,418 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-13328.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:45:01,632 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-13328.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:45:01,646 - INFO - Container sweb.eval.scikit-learn__scikit-learn-13328.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-20 07:45:01,646 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-13328:latest...
+2026-06-20 07:45:01,691 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-13328:latest removed.

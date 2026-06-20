@@ -1,0 +1,89 @@
+2026-06-19 20:53:20,542 - INFO - Creating container for django__django-15127...
+2026-06-19 20:53:20,695 - INFO - Container for django__django-15127 created: 2a6097d0e00d9059dc904ecb260c2f415a6765aa1e955129ae5f4cd9d53428e9
+2026-06-19 20:53:20,866 - INFO - Container for django__django-15127 started: 2a6097d0e00d9059dc904ecb260c2f415a6765aa1e955129ae5f4cd9d53428e9
+2026-06-19 20:53:20,866 - INFO - Intermediate patch for django__django-15127 written to logs/run_evaluation/haiku45_reflexion_iter_step2/haiku45_reflexion_iter_step2/django__django-15127/patch.diff, now applying to container...
+2026-06-19 20:53:20,997 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/messages/apps.py...
+Applied patch django/contrib/messages/apps.py cleanly.
+
+2026-06-19 20:53:21,364 - INFO - Git diff before:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..f2f6bfbdb6 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,29 @@
+ from django.apps import AppConfig
++from django.core.signals import setting_changed
++from django.dispatch import receiver
+ from django.utils.translation import gettext_lazy as _
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        from django.contrib.messages import constants
++        from django.contrib.messages.storage import base
++
++        @receiver(setting_changed)
++        def reset_level_tags(sender, setting, **kwargs):
++            if setting == 'MESSAGE_TAGS':
++                from django.conf import settings
++                # Rebuild LEVEL_TAGS by merging default constants with MESSAGE_TAGS
++                base.LEVEL_TAGS = {
++                    **{
++                        constants.DEBUG: 'debug',
++                        constants.INFO: 'info',
++                        constants.SUCCESS: 'success',
++                        constants.WARNING: 'warning',
++                        constants.ERROR: 'error',
++                    },
++                    **getattr(settings, 'MESSAGE_TAGS', {}),
++                }
+2026-06-19 20:53:21,364 - INFO - Eval script for django__django-15127 written to logs/run_evaluation/haiku45_reflexion_iter_step2/haiku45_reflexion_iter_step2/django__django-15127/eval.sh; copying to container...
+2026-06-19 20:53:25,910 - INFO - Test runtime: 4.50 seconds
+2026-06-19 20:53:25,910 - INFO - Test output for django__django-15127 written to logs/run_evaluation/haiku45_reflexion_iter_step2/haiku45_reflexion_iter_step2/django__django-15127/test_output.txt
+2026-06-19 20:53:25,960 - INFO - Git diff after:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..f2f6bfbdb6 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,29 @@
+ from django.apps import AppConfig
++from django.core.signals import setting_changed
++from django.dispatch import receiver
+ from django.utils.translation import gettext_lazy as _
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        from django.contrib.messages import constants
++        from django.contrib.messages.storage import base
++
++        @receiver(setting_changed)
++        def reset_level_tags(sender, setting, **kwargs):
++            if setting == 'MESSAGE_TAGS':
++                from django.conf import settings
++                # Rebuild LEVEL_TAGS by merging default constants with MESSAGE_TAGS
++                base.LEVEL_TAGS = {
++                    **{
++                        constants.DEBUG: 'debug',
++                        constants.INFO: 'info',
++                        constants.SUCCESS: 'success',
++                        constants.WARNING: 'warning',
++                        constants.ERROR: 'error',
++                    },
++                    **getattr(settings, 'MESSAGE_TAGS', {}),
++                }
+2026-06-19 20:53:25,960 - INFO - Grading answer for django__django-15127...
+2026-06-19 20:53:25,960 - INFO - report: {'django__django-15127': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_override_settings_level_tags (messages_tests.tests.TestLevelTags)']}, 'PASS_TO_PASS': {'success': ['test_eq (messages_tests.tests.MessageTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15127: resolved: False
+2026-06-19 20:53:25,960 - INFO - Attempting to stop container sweb.eval.django__django-15127.haiku45_reflexion_iter_step2...
+2026-06-19 20:53:41,127 - INFO - Attempting to remove container sweb.eval.django__django-15127.haiku45_reflexion_iter_step2...
+2026-06-19 20:53:41,144 - INFO - Container sweb.eval.django__django-15127.haiku45_reflexion_iter_step2 removed.
+2026-06-19 20:53:41,144 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15127:latest...
+2026-06-19 20:53:41,237 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15127:latest removed.

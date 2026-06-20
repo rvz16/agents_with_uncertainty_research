@@ -1,0 +1,39 @@
+--- a/pylint/checkers/variables.py
++++ b/pylint/checkers/variables.py
+@@ -1822,6 +1822,15 @@
+ 
+     def _store_type_annotation_node(self, type_annotation):
+         """Given a type annotation, store all the name nodes it refers to"""
++        # Accept string type comments, e.g. '# type: abc.ABC'
++        if isinstance(type_annotation, str):
++            # Collect simple identifier tokens from the type comment.
++            # This will capture both module and name parts for dotted names
++            # like "abc.ABC" (i.e. "abc" and "ABC").
++            names = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", type_annotation)
++            self._type_annotation_names.extend(names)
++            return
++
+         if isinstance(type_annotation, astroid.Name):
+             self._type_annotation_names.append(type_annotation.name)
+             return
+@@ -1843,10 +1852,16 @@
+         )
+ 
+     def _store_type_annotation_names(self, node):
+-        type_annotation = node.type_annotation
+-        if not type_annotation:
+-            return
+-        self._store_type_annotation_node(node.type_annotation)
++        # Some AST nodes (like Assign) may have a parsed type_annotation,
++        # and others (like type comments) may expose the annotation as a string
++        # via the 'type_comment' attribute. Handle both cases.
++        type_annotation = getattr(node, "type_annotation", None)
++        if type_annotation:
++            self._store_type_annotation_node(type_annotation)
++        type_comment = getattr(node, "type_comment", None)
++        if type_comment:
++            # type_comment can be a string (e.g. "abc.ABC") or an astroid node.
++            self._store_type_annotation_node(type_comment)
+ 
+     def _check_self_cls_assign(self, node):
+         """Check that self/cls don't get assigned"""

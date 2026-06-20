@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-19T23:28:49.040956+00:00",
+  "instance_id": "django__django-15382",
+  "step": 2,
+  "purpose": "reflect",
+  "model": "openai/gpt-5-mini",
+  "prompt": "Your previous attempt at solving this SWE-bench issue did not pass internal\nquality checks (syntax or LLM review).\n\n## Issue\nfilter on exists-subquery with empty queryset removes whole WHERE block\nDescription\n\t \n\t\t(last modified by Tobias Bengfort)\n\t \n>>> qs = MyModel.objects.filter(~models.Exists(MyModel.objects.none()), name='test')\n>>> qs\n<QuerySet []>\n>>> print(qs.query)\nEmptyResultSet\nWith django-debug-toolbar I can still see the query, but there WHERE block is missing completely.\nThis seems to be very similar to #33018.\n\n\n## Your previous patch\n```\n--- a/django/db/models/expressions.py\n+++ b/django/db/models/expressions.py\n@@ -1211,13 +1211,22 @@\n \n     def as_sql(self, compiler, connection, template=None, **extra_context):\n         query = self.query.exists(using=connection.alias)\n-        sql, params = super().as_sql(\n-            compiler,\n-            connection,\n-            template=template,\n-            query=query,\n-            **extra_context,\n-        )\n+        try:\n+            sql, params = super().as_sql(\n+                compiler,\n+                connection,\n+                template=template,\n+                query=query,\n+                **extra_context,\n+            )\n+        except EmptyResultSet:\n+            # If the inner queryset is empty, EXISTS(...) is always False.\n+            # However, a negated EXISTS (NOT EXISTS(empty_queryset)) is always\n+            # True and must not remove the surrounding WHERE clause. In that\n+            # case return a SQL truthy predicate so other filters are preserved.\n+            if self.negated:\n+                return '1 = 1', []\n+            raise\n         if self.negated:\n             sql = 'NOT {}'.format(sql)\n         return sql, params\n\n```\n\n## Internal feedback\nL0_syntax: True, L3_llm_review: False. These cheap proxies failed; the patch likely has problems with syntax, structure, or correctness.\n\nIn 2-3 sentences, reflect on what went wrong with your previous attempt and\nwhat strategy you should try next. Be specific and actionable, not vague.\nThis reflection will guide your next attempt.\n",
+  "response": "",
+  "prompt_tokens": 473,
+  "completion_tokens": 448,
+  "cost_usd": 0.00101425
+}

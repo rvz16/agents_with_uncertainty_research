@@ -1,0 +1,28 @@
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -378,8 +378,24 @@
+             axis.set_view_interval(vmin, vmax)
+             locs = axis.major.locator()
+             locs = locs[(vmin <= locs) & (locs <= vmax)]
+-            labels = axis.major.formatter.format_ticks(locs)
++            formatter = axis.major.formatter
++            labels = formatter.format_ticks(locs)
++            
++            # Account for formatter offset (e.g., from ScalarFormatter with large numbers)
++            # The formatter may apply an offset to tick labels, so we need to apply the same
++            # offset to the legend locations before they're used
++            offset = getattr(formatter, 'offset', 0)
++            if offset:
++                locs = locs + offset
++            
+             new._legend = list(locs), list(labels)
++REPLACE>>>
++
++Wait, I need to reconsider. The offset is applied *during* formatting, not to the locations themselves. The issue is that `locs` are the correct axis positions, but when they get formatted by `ScalarFormatter`, the formatter internally subtracts the offset for display. So the legend needs to show the actual data values.
++
++Let me reconsider the approach: The `locs` are already correct data values. When `format_ticks(locs)` is called, the formatter internally computes an offset and formats the labels. The problem is that the legend is showing `locs` (which are correct) but formatted as if they had the offset applied. 
++
++Actually, looking more carefully: the formatter's `offset` attribute is computed *after* calling `format_ticks()`. We should format the values that would result in the same labels, which means we need to add the offset back to get the "displayed" values that match what would appear on axis ticks.
+ 
+         return new
+ 

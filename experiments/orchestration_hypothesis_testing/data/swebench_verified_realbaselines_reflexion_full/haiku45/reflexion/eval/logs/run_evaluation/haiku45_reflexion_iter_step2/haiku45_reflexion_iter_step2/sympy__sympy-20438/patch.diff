@@ -1,0 +1,71 @@
+--- a/sympy/sets/handlers/issubset.py
++++ b/sympy/sets/handlers/issubset.py
+@@ -133,3 +133,48 @@
+ @dispatch(Rationals, Range)  # type: ignore # noqa:F811
+ def is_subset_sets(a, b): # noqa:F811
+     return False
++
++@dispatch(ProductSet, FiniteSet)  # type: ignore # noqa:F811
++def is_subset_sets(a_prod, b_fs): # noqa:F811
++    # ProductSet is a subset of FiniteSet only if all elements of ProductSet are in FiniteSet
++    # For finite ProductSets, we can check this by verifying all tuples are in the FiniteSet
++    try:
++        # Try to convert ProductSet to a set of tuples
++        # This works when all component sets are finite
++        prod_elements = set()
++        for element in a_prod:
++            prod_elements.add(element)
++            # Safety check: if ProductSet is too large, bail out
++            if len(prod_elements) > len(b_fs):
++                return False
++        
++        # Check if all elements of ProductSet are in FiniteSet
++        for element in prod_elements:
++            if element not in b_fs:
++                return False
++        return True
++    except (TypeError, AttributeError):
++        # ProductSet might be infinite or iteration might fail
++        return None
++
++@dispatch(FiniteSet, ProductSet)  # type: ignore # noqa:F811
++def is_subset_sets(a_fs, b_prod): # noqa:F811
++    # FiniteSet is a subset of ProductSet
++    # Check if all elements of FiniteSet are tuples that belong to ProductSet
++    if len(a_fs) == 0:
++        return True
++    
++    # All elements must be tuples of the right dimension
++    if len(b_prod.sets) == 0:
++        return False
++    
++    for element in a_fs:
++        # Check if element is a tuple of correct length
++        if not isinstance(element, tuple) or len(element) != len(b_prod.sets):
++            return False
++        # Check if each component is in the corresponding set
++        for component, component_set in zip(element, b_prod.sets):
++            if component not in component_set:
++                return False
++    
++    return True
+
+--- a/sympy/core/relational.py
++++ b/sympy/core/relational.py
+@@ -311,8 +311,14 @@
+             v = None
+             if dif.is_comparable:
+                 v = dif.n(2)
+-            elif dif.equals(0):  # XXX this is expensive
+-                v = S.Zero
++            else:
++                # Try to check if dif equals zero, but handle cases where equals() doesn't exist
++                try:
++                    if dif.equals(0):  # XXX this is expensive
++                        v = S.Zero
++                except AttributeError:
++                    # Some objects (like Complement) don't have equals method
++                    pass
+             if v is not None:
+                 r = r.func._eval_relation(v, S.Zero)
+             r = r.canonical

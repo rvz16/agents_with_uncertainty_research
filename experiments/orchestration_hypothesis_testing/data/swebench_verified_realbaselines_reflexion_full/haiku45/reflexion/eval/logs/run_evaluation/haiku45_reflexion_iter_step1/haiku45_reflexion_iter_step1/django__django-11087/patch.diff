@@ -1,0 +1,64 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -232,9 +232,60 @@
+         """
+         Get a QuerySet of objects related to `objs` via the relation `related`.
+         """
+-        return related.related_model._base_manager.using(self.using).filter(
++        qs = related.related_model._base_manager.using(self.using).filter(
+             **{"%s__in" % related.field.name: objs}
+         )
++        # Only fetch the primary key and foreign key fields needed for cascading.
++        # Defer all other fields to avoid fetching unnecessary data (especially
++        # large text fields) which can cause encoding issues and improves performance.
++        model = related.related_model
++        pk_name = model._meta.pk.name
++        # Collect all field names to defer (everything except pk and fk fields)
++        fields_to_defer = []
++        for field in model._meta.get_fields():
++            # Keep pk and fields that are ForeignKey or OneToOneField (needed for cascades)
++            if field.name == pk_name:
++                continue
++            if field.many_to_one or (field.one_to_one and field.auto_created is False):
++                continue
++            # Defer all other fields
++            if hasattr(field, 'name'):
++                fields_to_defer.append(field.name)
++        if fields_to_defer:
++            qs = qs.defer(*fields_to_defer)
++        return qs
++        # Only fetch the primary key and foreign key fields needed for cascading.
++        # Defer all other fields to avoid fetching unnecessary data (especially
++        # large text fields) which can cause encoding issues and improves performance.
++        model = related.related_model
++        pk_name = model._meta.pk.name
++        # Collect all field names to defer (everything except pk and fk fields)
++        fields_to_defer = []
++        for field in model._meta.get_fields():
++            # Keep pk and fields that are ForeignKey or OneToOneField (needed for cascades)
++            if field.name == pk_name:
++                continue
++            if field.many_to_one or (field.one_to_one and field.auto_created is False):
++                continue
++            # Defer all other fields
++            if hasattr(field, 'name'):
++                fields_to_defer.append(field.name)
++        if fields_to_defer:
++            qs = qs.defer(*fields_to_defer)
++        return qs
++        # Only fetch the primary key and any fields needed for deletion.
++        # Defer all other fields to avoid fetching unnecessary data, which can
++        # cause encoding issues with large text fields.
++        model = related.related_model
++        pk_field = model._meta.pk
++        # Get all fields except pk
++        fields_to_defer = [
++            f.name for f in model._meta.get_fields()
++            if f.name != pk_field.name and not f.many_to_one and not f.one_to_one
++        ]
++        if fields_to_defer:
++            qs = qs.defer(*fields_to_defer)
++        return qs
+ 
+     def instances_with_model(self):
+         for model, instances in self.data.items():

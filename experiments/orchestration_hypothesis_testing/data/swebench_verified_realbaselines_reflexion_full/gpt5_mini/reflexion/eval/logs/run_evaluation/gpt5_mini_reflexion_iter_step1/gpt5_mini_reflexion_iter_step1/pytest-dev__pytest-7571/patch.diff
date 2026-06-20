@@ -1,0 +1,11 @@
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -346,6 +346,8 @@
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # original handler level (to restore after test), None if not changed
++        self._initial_handler_level = None  # type: Optional[int]
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.

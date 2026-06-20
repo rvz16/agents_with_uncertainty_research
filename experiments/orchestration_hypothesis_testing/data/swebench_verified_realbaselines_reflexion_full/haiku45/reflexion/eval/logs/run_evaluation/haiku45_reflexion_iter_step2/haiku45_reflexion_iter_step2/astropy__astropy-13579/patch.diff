@@ -1,0 +1,46 @@
+--- a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
++++ b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+@@ -244,6 +244,34 @@
+ 
+     def world_to_pixel_values(self, *world_arrays):
+         world_arrays = tuple(map(np.asanyarray, world_arrays))
++        
++        # Compute world coordinates for dropped dimensions
++        dropped_world_values = {}
++        if len(self._world_keep) < self._wcs.world_n_dim:
++            # Build pixel array with slice indices for dropped dimensions
++            pixel_arrays_for_dropped = []
++            for ipixel in range(self._wcs.pixel_n_dim):
++                if isinstance(self._slices_pixel[ipixel], numbers.Integral):
++                    pixel_arrays_for_dropped.append(self._slices_pixel[ipixel])
++                else:
++                    # For kept dimensions, use 0 as reference point
++                    pixel_arrays_for_dropped.append(0)
++            
++            # Get world coordinates at the slice positions
++            world_coords_at_slice = self._wcs.pixel_to_world_values(*pixel_arrays_for_dropped)
++            
++            # Extract world values for dropped dimensions
++            if self._wcs.world_n_dim > 1:
++                for iworld in range(self._wcs.world_n_dim):
++                    if iworld not in self._world_keep:
++                        dropped_world_values[iworld] = world_coords_at_slice[iworld]
++            else:
++                # Single world dimension case
++                for iworld in range(self._wcs.world_n_dim):
++                    if iworld not in self._world_keep:
++                        dropped_world_values[iworld] = world_coords_at_slice
++        
++        # Build world array with dropped dimensions filled in
+         world_arrays_new = []
+         iworld_curr = -1
+         for iworld in range(self._wcs.world_n_dim):
+@@ -251,7 +279,7 @@
+                 iworld_curr += 1
+                 world_arrays_new.append(world_arrays[iworld_curr])
+             else:
+-                world_arrays_new.append(1.)
++                world_arrays_new.append(dropped_world_values[iworld])
+ 
+         world_arrays_new = np.broadcast_arrays(*world_arrays_new)
+         pixel_arrays = list(self._wcs.world_to_pixel_values(*world_arrays_new))

@@ -1,0 +1,26 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -533,8 +533,21 @@
+                 # that may have moved input values in/out of range
+                 s_vmin, s_vmax = vrange
+                 if isinstance(self.norm, mcolors.LogNorm):
+-                    if s_vmin < 0:
+-                        s_vmin = max(s_vmin, np.finfo(scaled_dtype).eps)
++                    # Ensure vmin and vmax are valid for LogNorm
++                    # LogNorm requires vmin > 0 and vmax > vmin, with finite values
++                    eps = np.finfo(scaled_dtype).eps
++                    # Clamp vmin to be positive
++                    if s_vmin <= 0:
++                        s_vmin = eps
++                    # Ensure vmax is greater than vmin and finite
++                    if s_vmax <= s_vmin or not np.isfinite(s_vmax):
++                        s_vmax = s_vmin * 10.0
++                    # Final check: ensure both are finite and positive
++                    if not (np.isfinite(s_vmin) and np.isfinite(s_vmax) and 
++                            s_vmin > 0 and s_vmax > s_vmin):
++                        # Fallback to safe defaults if validation fails
++                        s_vmin = eps
++                        s_vmax = 1.0
+                 with cbook._setattr_cm(self.norm,
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,

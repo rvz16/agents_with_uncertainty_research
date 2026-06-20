@@ -1,0 +1,19 @@
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -379,7 +379,15 @@
+             locs = axis.major.locator()
+             locs = locs[(vmin <= locs) & (locs <= vmax)]
+             labels = axis.major.formatter.format_ticks(locs)
+-            new._legend = list(locs), list(labels)
++            
++            # Account for formatter offset when creating legend values
++            # ScalarFormatter may use an offset for large numbers, which needs to be
++            # applied to the tick locations to get the actual data values
++            formatter = axis.major.formatter
++            offset = getattr(formatter, 'offset', 0)
++            legend_locs = locs + offset
++            
++            new._legend = list(legend_locs), list(labels)
+ 
+         return new
+ 

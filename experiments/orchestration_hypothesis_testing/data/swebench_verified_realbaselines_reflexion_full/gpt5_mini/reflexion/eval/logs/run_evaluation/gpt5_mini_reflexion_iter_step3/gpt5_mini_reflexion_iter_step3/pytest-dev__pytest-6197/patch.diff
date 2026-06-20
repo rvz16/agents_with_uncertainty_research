@@ -1,0 +1,32 @@
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -176,11 +176,26 @@
+ def pytest_collect_file(path, parent):
+     ext = path.ext
+     if ext == ".py":
+-        if not parent.session.isinitpath(path):
+-            if not path_matches_patterns(
+-                path, parent.config.getini("python_files") + ["__init__.py"]
++        # Historically pytest only collected __init__.py when it was part of
++        # a package collection or explicitly listed in the initial collection
++        # paths. A previous change made pytest treat any __init__.py as a
++        # candidate by adding "__init__.py" to the python_files patterns,
++        # which caused unrelated package inits to be imported unexpectedly
++        # (see regression in 5.2.3). Restore the intended behaviour:
++        # - normal .py files are matched against python_files (unless they are
++        #   in the initialpaths)
++        # - __init__.py files are only collected when they are part of a package
++        #   collection (i.e., parent is a Package) or are in the initial paths.
++        if path.basename == "__init__.py":
++            if not (
++                parent.session.isinitpath(path)
++                or isinstance(parent, Package)
+             ):
+                 return
++        else:
++            if not parent.session.isinitpath(path):
++                if not path_matches_patterns(path, parent.config.getini("python_files")):
++                    return
+         ihook = parent.session.gethookproxy(path)
+         return ihook.pytest_pycollect_makemodule(path=path, parent=parent)
+ 

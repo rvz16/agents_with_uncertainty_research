@@ -1,0 +1,47 @@
+2026-06-20 06:14:24,555 - INFO - Creating container for scikit-learn__scikit-learn-12585...
+2026-06-20 06:14:24,789 - INFO - Container for scikit-learn__scikit-learn-12585 created: 17479df5f100408d66a330604b2b45b1bde6d57ab9a126c3cb5894ba5cd06144
+2026-06-20 06:14:25,009 - INFO - Container for scikit-learn__scikit-learn-12585 started: 17479df5f100408d66a330604b2b45b1bde6d57ab9a126c3cb5894ba5cd06144
+2026-06-20 06:14:25,009 - INFO - Intermediate patch for scikit-learn__scikit-learn-12585 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-12585/patch.diff, now applying to container...
+2026-06-20 06:14:25,144 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/base.py...
+Applied patch sklearn/base.py cleanly.
+
+2026-06-20 06:14:25,408 - INFO - Git diff before:
+diff --git a/sklearn/base.py b/sklearn/base.py
+index 56ffb18bf..34998270c 100644
+--- a/sklearn/base.py
++++ b/sklearn/base.py
+@@ -48,7 +48,7 @@ def clone(estimator, safe=True):
+     # XXX: not handling dictionaries
+     if estimator_type in (list, tuple, set, frozenset):
+         return estimator_type([clone(e, safe=safe) for e in estimator])
+-    elif not hasattr(estimator, 'get_params'):
++    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):
+         if not safe:
+             return copy.deepcopy(estimator)
+         else:
+2026-06-20 06:14:25,408 - INFO - Eval script for scikit-learn__scikit-learn-12585 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-12585/eval.sh; copying to container...
+2026-06-20 06:14:28,970 - INFO - Test runtime: 3.51 seconds
+2026-06-20 06:14:28,971 - INFO - Test output for scikit-learn__scikit-learn-12585 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-12585/test_output.txt
+2026-06-20 06:14:28,998 - INFO - Git diff after:
+diff --git a/sklearn/base.py b/sklearn/base.py
+index 56ffb18bf..34998270c 100644
+--- a/sklearn/base.py
++++ b/sklearn/base.py
+@@ -48,7 +48,7 @@ def clone(estimator, safe=True):
+     # XXX: not handling dictionaries
+     if estimator_type in (list, tuple, set, frozenset):
+         return estimator_type([clone(e, safe=safe) for e in estimator])
+-    elif not hasattr(estimator, 'get_params'):
++    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):
+         if not safe:
+             return copy.deepcopy(estimator)
+         else:
+2026-06-20 06:14:28,998 - INFO - Grading answer for scikit-learn__scikit-learn-12585...
+2026-06-20 06:14:28,998 - INFO - report: {'scikit-learn__scikit-learn-12585': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/tests/test_base.py::test_clone_estimator_types'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/tests/test_base.py::test_clone', 'sklearn/tests/test_base.py::test_clone_2', 'sklearn/tests/test_base.py::test_clone_buggy', 'sklearn/tests/test_base.py::test_clone_empty_array', 'sklearn/tests/test_base.py::test_clone_nan', 'sklearn/tests/test_base.py::test_clone_sparse_matrices', 'sklearn/tests/test_base.py::test_repr', 'sklearn/tests/test_base.py::test_str', 'sklearn/tests/test_base.py::test_get_params', 'sklearn/tests/test_base.py::test_is_classifier', 'sklearn/tests/test_base.py::test_set_params', 'sklearn/tests/test_base.py::test_set_params_passes_all_parameters', 'sklearn/tests/test_base.py::test_set_params_updates_valid_params', 'sklearn/tests/test_base.py::test_score_sample_weight', 'sklearn/tests/test_base.py::test_clone_pandas_dataframe', 'sklearn/tests/test_base.py::test_pickle_version_warning_is_not_raised_with_matching_version', 'sklearn/tests/test_base.py::test_pickle_version_warning_is_issued_upon_different_version', 'sklearn/tests/test_base.py::test_pickle_version_warning_is_issued_when_no_version_info_in_pickle', 'sklearn/tests/test_base.py::test_pickle_version_no_warning_is_issued_with_non_sklearn_estimator', 'sklearn/tests/test_base.py::test_pickling_when_getstate_is_overwritten_by_mixin', 'sklearn/tests/test_base.py::test_pickling_when_getstate_is_overwritten_by_mixin_outside_of_sklearn', 'sklearn/tests/test_base.py::test_pickling_works_when_getstate_is_overwritten_in_the_child_class'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-12585: resolved: True
+2026-06-20 06:14:28,999 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-12585.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:14:44,278 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-12585.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:14:44,303 - INFO - Container sweb.eval.scikit-learn__scikit-learn-12585.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 06:14:44,303 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-12585:latest...
+2026-06-20 06:14:44,372 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-12585:latest removed.

@@ -1,0 +1,25 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1298,7 +1298,21 @@
+         connection.ops.check_expression_support(self)
+         template_params = extra_context
+         sql_params = []
+-        condition_sql, condition_params = compiler.compile(self.condition)
++        try:
++            condition_sql, condition_params = compiler.compile(self.condition)
++        except EmptyResultSet:
++            # Handle the case where the condition is an empty Q object or similar.
++            # For ~Q(pk__in=[]), this represents a tautology (matches all rows).
++            # We need to generate valid SQL for the condition.
++            # Check if the condition has an empty_result_set_value attribute.
++            empty_result_set_value = getattr(
++                self.condition, "empty_result_set_value", NotImplemented
++            )
++            if empty_result_set_value is NotImplemented:
++                raise
++            condition_sql, condition_params = compiler.compile(
++                Value(empty_result_set_value)
++            )
+         template_params["condition"] = condition_sql
+         sql_params.extend(condition_params)
+         result_sql, result_params = compiler.compile(self.result)

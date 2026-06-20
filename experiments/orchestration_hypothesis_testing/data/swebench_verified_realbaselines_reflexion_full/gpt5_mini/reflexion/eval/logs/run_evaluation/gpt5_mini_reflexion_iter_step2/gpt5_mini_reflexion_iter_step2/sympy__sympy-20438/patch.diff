@@ -1,0 +1,77 @@
+--- a/sympy/sets/handlers/issubset.py
++++ b/sympy/sets/handlers/issubset.py
+@@ -1,7 +1,7 @@
+ from sympy import S, Symbol
+ from sympy.core.logic import fuzzy_and, fuzzy_bool, fuzzy_not, fuzzy_or
+ from sympy.core.relational import Eq
+-from sympy.sets.sets import FiniteSet, Interval, Set, Union
++from sympy.sets.sets import FiniteSet, Interval, Set, Union, ProductSet
+ from sympy.sets.fancysets import Complexes, Reals, Range, Rationals
+ from sympy.multipledispatch import dispatch
+ 
+@@ -133,3 +133,65 @@
+ @dispatch(Rationals, Range)  # type: ignore # noqa:F811
+ def is_subset_sets(a, b): # noqa:F811
+     return False
++
++@dispatch(ProductSet, FiniteSet)  # type: ignore # noqa:F811
++def is_subset_sets(a_prod, b_fset): # noqa:F811
++    """
++    Determine whether a ProductSet is a subset of a FiniteSet.
++
++    Returns True if every element of the product (a tuple) is contained in
++    the finite set, False if it can be determined that it is not a subset,
++    or None if indeterminate.
++    """
++    from itertools import product as _product
++
++    sets = a_prod.sets
++    # If any factor is definitely infinite, the product is infinite and
++    # cannot be a subset of a finite set.
++    for s in sets:
++        if s.is_finite is False:
++            return False
++
++    # If any factor has unknown finiteness, we cannot enumerate the product.
++    # In that case we can at least check whether any element of the finite set
++    # is definitely not in the product (which proves non-subset). If all
++    # elements of the finite set are contained in the product, the result is
++    # still indeterminate (None).
++    for s in sets:
++        if s.is_finite is None:
++            for el in b_fset:
++                cres = a_prod.contains(el)
++                if cres is False:
++                    return False
++                if cres is None:
++                    return None
++            return None
++
++    # All factors are finite: try to enumerate the product. If the total number
++    # of product elements exceeds size of the finite set, it cannot be a subset.
++    total = 1
++    iterables = []
++    for s in sets:
++        try:
++            n = len(s)
++        except Exception:
++            lst = list(s)
++            n = len(lst)
++            iterables.append(lst)
++        else:
++            # Convert to list to allow iteration below
++            lst = list(s)
++            iterables.append(lst)
++        total *= n
++        if total > len(b_fset):
++            return False
++
++    # Now check that every tuple in the product is contained in b_fset.
++    for t in _product(*iterables):
++        tup = tuple(t)
++        res = b_fset.contains(tup)
++        if res is False:
++            return False
++        if res is None:
++            return None
++    return True

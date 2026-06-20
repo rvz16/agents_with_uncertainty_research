@@ -1,0 +1,13 @@
+--- a/django/template/engine.py
++++ b/django/template/engine.py
+@@ -160,7 +160,9 @@
+         if isinstance(context, Context):
+             return t.render(context)
+         else:
+-            return t.render(Context(context))
++            # Ensure the engine's autoescape setting is honored when creating
++            # a Context from a plain dict.
++            return t.render(Context(context, autoescape=self.autoescape))
+ 
+     def select_template(self, template_name_list):
+         """

@@ -1,0 +1,36 @@
+--- a/django/db/backends/mysql/operations.py
++++ b/django/db/backends/mysql/operations.py
+@@ -287,7 +287,6 @@
+             lhs, rhs = sub_expressions
+             return 'FLOOR(%(lhs)s / POW(2, %(rhs)s))' % {'lhs': lhs, 'rhs': rhs}
+         return super().combine_expression(connector, sub_expressions)
+-
+     def get_db_converters(self, expression):
+         converters = super().get_db_converters(expression)
+         internal_type = expression.output_field.get_internal_type()
+@@ -298,7 +297,25 @@
+                 converters.append(self.convert_datetimefield_value)
+         elif internal_type == 'UUIDField':
+             converters.append(self.convert_uuidfield_value)
++        elif internal_type == 'DurationField':
++            converters.append(self.convert_durationfield_value)
+         return converters
++
++    def convert_durationfield_value(self, value, expression, connection):
++        if value is not None:
++            # Ensure value is a string representation of microseconds
++            # MySQL returns the raw numeric value from INTERVAL arithmetic
++            value = str(int(value) if not isinstance(value, str) else int(value))
++        return value
++        elif internal_type == 'DurationField':
++            converters.append(self.convert_durationfield_value)
++        return converters
++
++    def convert_durationfield_value(self, value, expression, connection):
++        if value is not None:
++            value = int(value) if isinstance(value, str) else value
++            value = str(value)
++        return value
+ 
+     def convert_booleanfield_value(self, value, expression, connection):
+         if value in (0, 1):

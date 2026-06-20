@@ -1,0 +1,20 @@
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -605,7 +605,16 @@
+         filename = os.path.basename(self.filename or filename)
+         if self._no_explicit_content_type:
+             if filename:
+-                content_type, encoding = mimetypes.guess_type(filename)
++                # Strip compression-related extensions to guess the underlying file type
++                name_for_guessing = filename
++                compression_extensions = (".Z", ".br", ".gz", ".bz2", ".xz")
++                for ext in compression_extensions:
++                    if name_for_guessing.lower().endswith(ext):
++                        name_for_guessing = name_for_guessing[:-len(ext)]
++                        break
++                
++                # Guess type from the stripped filename to get the correct content-type
++                content_type, encoding = mimetypes.guess_type(name_for_guessing)
+                 # Encoding isn't set to prevent browsers from automatically
+                 # uncompressing files.
+                 content_type = {

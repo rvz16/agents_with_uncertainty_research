@@ -1,0 +1,55 @@
+2026-06-20 07:53:09,224 - INFO - Creating container for sympy__sympy-22914...
+2026-06-20 07:53:09,321 - INFO - Container for sympy__sympy-22914 created: fbd5c29d4365288ca2d67bf9b906a5ac9f7720e00b3ff0d417ccecaeec239141
+2026-06-20 07:53:09,461 - INFO - Container for sympy__sympy-22914 started: fbd5c29d4365288ca2d67bf9b906a5ac9f7720e00b3ff0d417ccecaeec239141
+2026-06-20 07:53:09,461 - INFO - Intermediate patch for sympy__sympy-22914 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-22914/patch.diff, now applying to container...
+2026-06-20 07:53:09,572 - INFO - >>>>> Applied Patch:
+Checking patch sympy/printing/pycode.py...
+Applied patch sympy/printing/pycode.py cleanly.
+
+2026-06-20 07:53:09,828 - INFO - Git diff before:
+diff --git a/sympy/printing/pycode.py b/sympy/printing/pycode.py
+index 3a72ab606c..3d33543825 100644
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -428,6 +428,12 @@ def _print_sign(self, e):
+         return '(0.0 if {e} == 0 else {f}(1, {e}))'.format(
+             f=self._module_format('math.copysign'), e=self._print(e.args[0]))
+ 
++    def _print_Min(self, expr):
++        return "min({})".format(", ".join(self._print(arg) for arg in expr.args))
++
++    def _print_Max(self, expr):
++        return "max({})".format(", ".join(self._print(arg) for arg in expr.args))
++
+     def _print_Not(self, expr):
+         PREC = precedence(expr)
+         return self._operators['not'] + self.parenthesize(expr.args[0], PREC)
+2026-06-20 07:53:09,828 - INFO - Eval script for sympy__sympy-22914 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-22914/eval.sh; copying to container...
+2026-06-20 07:53:12,096 - INFO - Test runtime: 2.23 seconds
+2026-06-20 07:53:12,097 - INFO - Test output for sympy__sympy-22914 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-22914/test_output.txt
+2026-06-20 07:53:12,128 - INFO - Git diff after:
+diff --git a/sympy/printing/pycode.py b/sympy/printing/pycode.py
+index 3a72ab606c..3d33543825 100644
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -428,6 +428,12 @@ def _print_sign(self, e):
+         return '(0.0 if {e} == 0 else {f}(1, {e}))'.format(
+             f=self._module_format('math.copysign'), e=self._print(e.args[0]))
+ 
++    def _print_Min(self, expr):
++        return "min({})".format(", ".join(self._print(arg) for arg in expr.args))
++
++    def _print_Max(self, expr):
++        return "max({})".format(", ".join(self._print(arg) for arg in expr.args))
++
+     def _print_Not(self, expr):
+         PREC = precedence(expr)
+         return self._operators['not'] + self.parenthesize(expr.args[0], PREC)
+2026-06-20 07:53:12,128 - INFO - Grading answer for sympy__sympy-22914...
+2026-06-20 07:53:12,128 - INFO - report: {'sympy__sympy-22914': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_PythonCodePrinter'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_PythonCodePrinter_standard', 'test_MpmathPrinter', 'test_NumPyPrinter', 'test_SciPyPrinter', 'test_pycode_reserved_words', 'test_sqrt', 'test_frac', 'test_printmethod', 'test_codegen_ast_nodes', 'test_issue_14283', 'test_NumPyPrinter_print_seq', 'test_issue_16535_16536', 'test_Integral', 'test_fresnel_integrals', 'test_beta', 'test_airy', 'test_airy_prime'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-22914: resolved: True
+2026-06-20 07:53:12,128 - INFO - Attempting to stop container sweb.eval.sympy__sympy-22914.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:53:27,307 - INFO - Attempting to remove container sweb.eval.sympy__sympy-22914.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:53:27,329 - INFO - Container sweb.eval.sympy__sympy-22914.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-20 07:53:27,329 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-22914:latest...
+2026-06-20 07:53:27,370 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-22914:latest removed.

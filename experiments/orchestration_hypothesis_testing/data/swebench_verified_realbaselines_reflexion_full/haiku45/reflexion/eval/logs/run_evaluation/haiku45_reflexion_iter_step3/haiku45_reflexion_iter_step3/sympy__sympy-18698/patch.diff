@@ -1,0 +1,46 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5874,6 +5874,31 @@
+         return result
+ 
+ 
++def _combine_factors_by_multiplicity(factors):
++    """Combine factors with the same multiplicity into a single polynomial. """
++    from collections import defaultdict
++    
++    # Group factors by their multiplicity
++    multiplicity_groups = defaultdict(list)
++    for factor, mult in factors:
++        multiplicity_groups[mult].append(factor)
++    
++    # Combine factors with the same multiplicity
++    combined = []
++    for mult in sorted(multiplicity_groups.keys()):
++        polys = multiplicity_groups[mult]
++        if len(polys) == 1:
++            combined.append((polys[0], mult))
++        else:
++            # Multiply all factors with this multiplicity
++            result = polys[0]
++            for poly in polys[1:]:
++                result = result.mul(poly)
++            combined.append((result, mult))
++    
++    return combined
++
++
+ def _sorted_factors(factors, method):
+     """Sort a list of ``(expr, exp)`` pairs. """
+     if method == 'sqf':
+@@ -5997,6 +6022,11 @@
+ 
+         fp = _sorted_factors(fp, method)
+         fq = _sorted_factors(fq, method)
++
++        # For sqf method, combine factors with the same multiplicity
++        if method == 'sqf':
++            fp = _combine_factors_by_multiplicity(fp)
++            fq = _combine_factors_by_multiplicity(fq)
+ 
+         if not opt.polys:
+             fp = [(f.as_expr(), k) for f, k in fp]

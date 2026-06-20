@@ -1,0 +1,63 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -535,11 +535,59 @@
+                 if isinstance(self.norm, mcolors.LogNorm):
+                     if s_vmin < 0:
+                         s_vmin = max(s_vmin, np.finfo(scaled_dtype).eps)
++                # Try to run the norm; older numpy versions (and some edge-case
++                # data) can cause the transform inside certain norms (e.g.
++                # LogNorm) to produce non-finite vmin/vmax and raise a
++                # ValueError.  To be robust across numpy versions, try once
++                # with the intended vmin/vmax, and if that raises, attempt a
++                # safe fallback for LogNorm by replacing non-finite bounds
++                # with reasonable finite values and retrying.
+                 with cbook._setattr_cm(self.norm,
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,
+                                        ):
+-                    output = self.norm(resampled_masked)
++                    try:
++                        output = self.norm(resampled_masked)
++                    except ValueError:
++                        # Only handle the specific case of log scaling here;
++                        # re-raise for other norms / unexpected errors.
++                        if not isinstance(self.norm, mcolors.LogNorm):
++                            raise
++                        # Helper to coerce problematic bounds to finite values.
++                        def _ensure_finite_bound(x, is_vmin):
++                            try:
++                                fx = float(x)
++                            except Exception:
++                                # Masked or otherwise non-scalar: pick a safe
++                                # fallback (small positive for vmin, large
++                                # finite for vmax).
++                                return (np.finfo(scaled_dtype).eps
++                                        if is_vmin
++                                        else np.finfo(scaled_dtype).max)
++                            if np.isfinite(fx):
++                                return fx
++                            if np.isposinf(fx) or np.isnan(fx):
++                                return np.finfo(scaled_dtype).max
++                            if np.isneginf(fx):
++                                # For vmin, negative infinity is invalid for
++                                # log scaling; pick a small positive number.
++                                return (np.finfo(scaled_dtype).eps
++                                        if is_vmin
++                                        else -np.finfo(scaled_dtype).max)
++                            return fx
++                        safe_vmin = _ensure_finite_bound(self.norm.vmin, True)
++                        safe_vmax = _ensure_finite_bound(self.norm.vmax, False)
++                        # Ensure positivity for LogNorm.
++                        if safe_vmin <= 0:
++                            safe_vmin = max(safe_vmin,
++                                            np.finfo(scaled_dtype).eps)
++                        if safe_vmax <= 0:
++                            safe_vmax = max(safe_vmax,
++                                            np.finfo(scaled_dtype).eps)
++                        with cbook._setattr_cm(self.norm,
++                                               vmin=safe_vmin,
++                                               vmax=safe_vmax):
++                            output = self.norm(resampled_masked)
+             else:
+                 if A.shape[2] == 3:
+                     A = _rgb_to_rgba(A)

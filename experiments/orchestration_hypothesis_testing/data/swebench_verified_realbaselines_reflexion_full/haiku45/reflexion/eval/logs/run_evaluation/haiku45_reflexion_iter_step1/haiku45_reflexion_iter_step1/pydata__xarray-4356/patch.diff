@@ -1,0 +1,32 @@
+--- a/xarray/core/nanops.py
++++ b/xarray/core/nanops.py
+@@ -26,13 +26,23 @@
+     """
+     xarray version of pandas.core.nanops._maybe_null_out
+     """
+-    if hasattr(axis, "__len__"):  # if tuple or list
+-        raise ValueError(
+-            "min_count is not available for reduction with more than one dimensions."
+-        )
+-
+     if axis is not None and getattr(result, "ndim", False):
+-        null_mask = (mask.shape[axis] - mask.sum(axis) - min_count) < 0
++        # Handle both single and multiple axes
++        if not hasattr(axis, "__len__"):
++            axis = (axis,)
++        
++        # Calculate the total number of elements along the reduction axes
++        # by taking the product of sizes of those dimensions
++        num_elements = np.prod([mask.shape[ax] for ax in axis])
++        
++        # Count NaN values along the reduction axes
++        nan_count = mask.sum(axis=axis)
++        
++        # Valid count = total elements - NaN count
++        valid_count = num_elements - nan_count
++        
++        # Create null mask where valid_count < min_count
++        null_mask = valid_count < min_count
+         if null_mask.any():
+             dtype, fill_value = dtypes.maybe_promote(result.dtype)
+             result = result.astype(dtype)

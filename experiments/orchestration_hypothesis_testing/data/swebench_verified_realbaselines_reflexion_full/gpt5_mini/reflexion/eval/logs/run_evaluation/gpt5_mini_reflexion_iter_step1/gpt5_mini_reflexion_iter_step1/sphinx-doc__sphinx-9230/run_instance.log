@@ -1,0 +1,117 @@
+2026-06-20 06:18:50,155 - INFO - Creating container for sphinx-doc__sphinx-9230...
+2026-06-20 06:18:50,448 - INFO - Container for sphinx-doc__sphinx-9230 created: 7b2bc6729e0ae074c209c40b3c0def75428b4addc14e491008b90de128454e0e
+2026-06-20 06:18:50,780 - INFO - Container for sphinx-doc__sphinx-9230 started: 7b2bc6729e0ae074c209c40b3c0def75428b4addc14e491008b90de128454e0e
+2026-06-20 06:18:50,780 - INFO - Intermediate patch for sphinx-doc__sphinx-9230 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sphinx-doc__sphinx-9230/patch.diff, now applying to container...
+2026-06-20 06:18:50,950 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/util/docfields.py...
+Applied patch sphinx/util/docfields.py cleanly.
+
+2026-06-20 06:18:51,114 - INFO - Git diff before:
+diff --git a/sphinx/util/docfields.py b/sphinx/util/docfields.py
+index 3a3367ebe..74383cb18 100644
+--- a/sphinx/util/docfields.py
++++ b/sphinx/util/docfields.py
+@@ -297,13 +297,36 @@ class DocFieldTransformer:
+ 
+             # also support syntax like ``:param type name:``
+             if typedesc.is_typed:
+-                try:
+-                    argtype, argname = fieldarg.split(None, 1)
+-                except ValueError:
+-                    pass
+-                else:
+-                    types.setdefault(typename, {})[argname] = \
+-                        [nodes.Text(argtype)]
++                # Try to split a type and a name from the fieldarg, but be
++                # careful not to split on whitespace that occurs inside
++                # parentheses/brackets/etc. (e.g. "dict(str, str) name").
++                s = fieldarg
++                argtype = None
++                argname = None
++                stack: List[str] = []
++                pairs = {'(': ')', '[': ']', '{': '}', '<': '>'}
++                closing = {v: k for k, v in pairs.items()}
++                for i, ch in enumerate(s):
++                    if ch in pairs:
++                        stack.append(ch)
++                    elif ch in closing:
++                        if stack and stack[-1] == closing[ch]:
++                            stack.pop()
++                        else:
++                            # unmatched closer -- treat as literal
++                            pass
++                    elif ch.isspace() and not stack:
++                        argtype = s[:i]
++                        argname = s[i:].strip()
++                        break
++                if argtype is None:
++                    # fallback to simple split if no top-level whitespace found
++                    try:
++                        argtype, argname = s.split(None, 1)
++                    except ValueError:
++                        argtype = None
++                if argtype is not None:
++                    types.setdefault(typename, {})[argname] = [nodes.Text(argtype)]
+                     fieldarg = argname
+ 
+             translatable_content = nodes.inline(field_body.rawsource,
+2026-06-20 06:18:51,115 - INFO - Eval script for sphinx-doc__sphinx-9230 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sphinx-doc__sphinx-9230/eval.sh; copying to container...
+2026-06-20 06:18:55,473 - INFO - Test runtime: 4.30 seconds
+2026-06-20 06:18:55,473 - INFO - Test output for sphinx-doc__sphinx-9230 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sphinx-doc__sphinx-9230/test_output.txt
+2026-06-20 06:18:55,526 - INFO - Git diff after:
+diff --git a/sphinx/util/docfields.py b/sphinx/util/docfields.py
+index 3a3367ebe..74383cb18 100644
+--- a/sphinx/util/docfields.py
++++ b/sphinx/util/docfields.py
+@@ -297,13 +297,36 @@ class DocFieldTransformer:
+ 
+             # also support syntax like ``:param type name:``
+             if typedesc.is_typed:
+-                try:
+-                    argtype, argname = fieldarg.split(None, 1)
+-                except ValueError:
+-                    pass
+-                else:
+-                    types.setdefault(typename, {})[argname] = \
+-                        [nodes.Text(argtype)]
++                # Try to split a type and a name from the fieldarg, but be
++                # careful not to split on whitespace that occurs inside
++                # parentheses/brackets/etc. (e.g. "dict(str, str) name").
++                s = fieldarg
++                argtype = None
++                argname = None
++                stack: List[str] = []
++                pairs = {'(': ')', '[': ']', '{': '}', '<': '>'}
++                closing = {v: k for k, v in pairs.items()}
++                for i, ch in enumerate(s):
++                    if ch in pairs:
++                        stack.append(ch)
++                    elif ch in closing:
++                        if stack and stack[-1] == closing[ch]:
++                            stack.pop()
++                        else:
++                            # unmatched closer -- treat as literal
++                            pass
++                    elif ch.isspace() and not stack:
++                        argtype = s[:i]
++                        argname = s[i:].strip()
++                        break
++                if argtype is None:
++                    # fallback to simple split if no top-level whitespace found
++                    try:
++                        argtype, argname = s.split(None, 1)
++                    except ValueError:
++                        argtype = None
++                if argtype is not None:
++                    types.setdefault(typename, {})[argname] = [nodes.Text(argtype)]
+                     fieldarg = argname
+ 
+             translatable_content = nodes.inline(field_body.rawsource,
+2026-06-20 06:18:55,526 - INFO - Grading answer for sphinx-doc__sphinx-9230...
+2026-06-20 06:18:55,532 - INFO - report: {'sphinx-doc__sphinx-9230': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/test_domain_py.py::test_info_field_list'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/test_domain_py.py::test_function_signatures', 'tests/test_domain_py.py::test_domain_py_xrefs', 'tests/test_domain_py.py::test_domain_py_xrefs_abbreviations', 'tests/test_domain_py.py::test_domain_py_objects', 'tests/test_domain_py.py::test_resolve_xref_for_properties', 'tests/test_domain_py.py::test_domain_py_find_obj', 'tests/test_domain_py.py::test_domain_py_canonical', 'tests/test_domain_py.py::test_get_full_qualified_name', 'tests/test_domain_py.py::test_parse_annotation', 'tests/test_domain_py.py::test_pyfunction_signature', 'tests/test_domain_py.py::test_pyfunction_signature_full', 'tests/test_domain_py.py::test_pyfunction_signature_full_py38', 'tests/test_domain_py.py::test_pyfunction_with_number_literals', 'tests/test_domain_py.py::test_pyfunction_with_union_type_operator', 'tests/test_domain_py.py::test_optional_pyfunction_signature', 'tests/test_domain_py.py::test_pyexception_signature', 'tests/test_domain_py.py::test_exceptions_module_is_ignored', 'tests/test_domain_py.py::test_pydata_signature', 'tests/test_domain_py.py::test_pydata_signature_old', 'tests/test_domain_py.py::test_pydata_with_union_type_operator', 'tests/test_domain_py.py::test_pyobject_prefix', 'tests/test_domain_py.py::test_pydata', 'tests/test_domain_py.py::test_pyfunction', 'tests/test_domain_py.py::test_pyclass_options', 'tests/test_domain_py.py::test_pymethod_options', 'tests/test_domain_py.py::test_pyclassmethod', 'tests/test_domain_py.py::test_pystaticmethod', 'tests/test_domain_py.py::test_pyattribute', 'tests/test_domain_py.py::test_pyproperty', 'tests/test_domain_py.py::test_pydecorator_signature', 'tests/test_domain_py.py::test_pydecoratormethod_signature', 'tests/test_domain_py.py::test_canonical', 'tests/test_domain_py.py::test_canonical_definition_overrides', 'tests/test_domain_py.py::test_canonical_definition_skip', 'tests/test_domain_py.py::test_canonical_duplicated', 'tests/test_domain_py.py::test_info_field_list_var', 'tests/test_domain_py.py::test_module_index', 'tests/test_domain_py.py::test_module_index_submodule', 'tests/test_domain_py.py::test_module_index_not_collapsed', 'tests/test_domain_py.py::test_modindex_common_prefix', 'tests/test_domain_py.py::test_noindexentry', 'tests/test_domain_py.py::test_python_python_use_unqualified_type_names', 'tests/test_domain_py.py::test_python_python_use_unqualified_type_names_disabled', 'tests/test_domain_py.py::test_warn_missing_reference'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-9230: resolved: True
+2026-06-20 06:18:55,532 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-9230.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:19:10,799 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-9230.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:19:10,823 - INFO - Container sweb.eval.sphinx-doc__sphinx-9230.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 06:19:10,823 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9230:latest...
+2026-06-20 06:19:10,892 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9230:latest removed.

@@ -1,0 +1,38 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5950,6 +5950,35 @@
+ 
+                 factors.append((_factors_product(other), exp))
+ 
++    # Combine factors with the same multiplicity (for square-free factorization)
++    if method == 'sqf':
++        from collections import defaultdict
++        factors_by_mult = defaultdict(list)
++        for factor, mult in factors:
++            factors_by_mult[mult].append(factor)
++        
++        combined_factors = []
++        for mult in sorted(factors_by_mult.keys()):
++            factor_list = factors_by_mult[mult]
++            if len(factor_list) == 1:
++                combined_factors.append((factor_list[0], mult))
++            else:
++                # Combine multiple factors with the same multiplicity
++                combined = factor_list[0]
++                for f in factor_list[1:]:
++                    if hasattr(combined, 'mul'):
++                        combined = combined.mul(f)
++                    else:
++                        # For non-Poly factors, convert to Poly if needed
++                        try:
++                            p_combined, _ = _poly_from_expr(combined, opt)
++                            p_f, _ = _poly_from_expr(f, opt)
++                            combined = p_combined.mul(p_f)
++                        except PolificationFailed:
++                            combined = combined * f
++                combined_factors.append((combined, mult))
++        factors = combined_factors
++
+     return coeff, factors
+ 
+ 

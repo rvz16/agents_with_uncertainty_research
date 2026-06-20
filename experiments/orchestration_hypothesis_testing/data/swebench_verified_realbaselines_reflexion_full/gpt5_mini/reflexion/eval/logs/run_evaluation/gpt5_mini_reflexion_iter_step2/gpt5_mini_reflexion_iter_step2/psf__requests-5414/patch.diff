@@ -1,0 +1,14 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -440,7 +440,10 @@
+             else:
+                 query = enc_params
+ 
+-        url = requote_uri(urlunparse([scheme, netloc, path, None, query, fragment]))
++        try:
++            url = requote_uri(urlunparse([scheme, netloc, path, None, query, fragment]))
++        except UnicodeError:
++            raise InvalidURL('URL has an invalid label.')
+         self.url = url
+ 
+     def prepare_headers(self, headers):

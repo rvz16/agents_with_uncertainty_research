@@ -1,0 +1,15 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,12 @@
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        # Prevent the enum class from being auto-called in Django templates.
++        # Django's template system calls callables by default; marking the
++        # class with do_not_call_in_templates=True stops that behavior so that
++        # the YearInSchool class itself won't be invoked (which would raise
++        # TypeError because enum classes are callable with required arguments).
++        cls.do_not_call_in_templates = True
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):

@@ -1,0 +1,14 @@
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -304,7 +304,10 @@
+     def make_xrefs(self, rolename: str, domain: str, target: str,
+                    innernode: Type[TextlikeNode] = nodes.emphasis,
+                    contnode: Node = None, env: BuildEnvironment = None) -> List[Node]:
+-        delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+|\.\.\.)'
++        # split type expressions into parts so that multiple types like
++        # "str or int" or "str | int" are linked separately.  Also preserve
++        # common punctuation (brackets, commas, parentheses) and ellipsis.
++        delims = r'(\s*[\[\]\(\),\|](?:\s*or\s)?\s*|\s+or\s+|\.\.\.)'
+         delims_re = re.compile(delims)
+         sub_targets = re.split(delims, target)
+ 

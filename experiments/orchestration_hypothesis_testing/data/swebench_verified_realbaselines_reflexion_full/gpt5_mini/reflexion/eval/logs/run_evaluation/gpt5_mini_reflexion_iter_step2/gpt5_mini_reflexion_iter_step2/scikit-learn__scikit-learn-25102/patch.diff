@@ -1,0 +1,25 @@
+--- a/sklearn/feature_selection/_base.py
++++ b/sklearn/feature_selection/_base.py
+@@ -98,10 +98,21 @@
+                 " too noisy or the selection test too strict.",
+                 UserWarning,
+             )
++            # If X is a pandas-like DataFrame preserve the index and return
++            # an empty DataFrame with zero columns so that dtypes and index
++            # semantics are preserved for downstream pandas-based code.
++            if hasattr(X, "iloc"):
++                # iloc[:, :0] yields an empty DataFrame with the same index
++                # and no columns.
++                return X.iloc[:, :0].copy()
+             return np.empty(0, dtype=X.dtype).reshape((X.shape[0], 0))
+         if len(mask) != X.shape[1]:
+             raise ValueError("X has a different shape than during fitting.")
+-        return X[:, safe_mask(X, mask)]
++        # Use pandas .iloc when possible to preserve column dtypes and names
++        sel = safe_mask(X, mask)
++        if hasattr(X, "iloc"):
++            return X.iloc[:, sel]
++        return X[:, sel]
+ 
+     def inverse_transform(self, X):
+         """Reverse the transformation operation.

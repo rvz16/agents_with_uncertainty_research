@@ -1,0 +1,145 @@
+2026-06-20 05:42:35,029 - INFO - Creating container for astropy__astropy-8707...
+2026-06-20 05:42:35,153 - INFO - Container for astropy__astropy-8707 created: 833ddf5f8d0586c28c68ff5b1a7fe9636322573cc2c209fbf282e0e6b0078312
+2026-06-20 05:42:35,405 - INFO - Container for astropy__astropy-8707 started: 833ddf5f8d0586c28c68ff5b1a7fe9636322573cc2c209fbf282e0e6b0078312
+2026-06-20 05:42:35,405 - INFO - Intermediate patch for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/astropy__astropy-8707/patch.diff, now applying to container...
+2026-06-20 05:42:35,535 - INFO - >>>>> Applied Patch:
+Checking patch astropy/io/fits/card.py...
+Checking patch astropy/io/fits/header.py...
+Applied patch astropy/io/fits/card.py cleanly.
+Applied patch astropy/io/fits/header.py cleanly.
+
+2026-06-20 05:42:35,853 - INFO - Git diff before:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..d41e34356 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -5,7 +5,7 @@ import warnings
+ 
+ import numpy as np
+ 
+-from .util import _str_to_num, _is_int, translate, _words_group
++from .util import _str_to_num, _is_int, translate, _words_group, decode_ascii
+ from .verify import _Verify, _ErrList, VerifyError, VerifyWarning
+ 
+ from . import conf
+@@ -547,11 +547,14 @@ class Card(_Verify):
+     @classmethod
+     def fromstring(cls, image):
+         """
+-        Construct a `Card` object from a (raw) string. It will pad the string
+-        if it is not the length of a card image (80 columns).  If the card
+-        image is longer than 80 columns, assume it contains ``CONTINUE``
++        Construct a `Card` object from a (raw) string or bytes. It will pad the
++        string if it is not the length of a card image (80 columns).  If the
++        card image is longer than 80 columns, assume it contains ``CONTINUE``
+         card(s).
+         """
++        # Accept bytes/bytearray on Python 3 and decode to str using ASCII
++        if isinstance(image, (bytes, bytearray)):
++            image = decode_ascii(image)
+ 
+         card = cls()
+         card._image = _pad(image)
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52..ea1104c8f 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -334,10 +334,10 @@ class Header:
+ 
+         Parameters
+         ----------
+-        data : str
+-           String containing the entire header.
++        data : str or bytes
++           String or bytes containing the entire header.
+ 
+-        sep : str, optional
++        sep : str or bytes, optional
+             The string separating cards from each other, such as a newline.  By
+             default there is no card separator (as is the case in a raw FITS
+             file).
+@@ -347,6 +347,12 @@ class Header:
+         header
+             A new `Header` instance.
+         """
++        # Accept bytes/bytearray for both data and sep and decode to str using
++        # ASCII so that Header.fromstring can be used with binary data on Py3.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(data)
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(sep)
+ 
+         cards = []
+2026-06-20 05:42:35,853 - INFO - Eval script for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/astropy__astropy-8707/eval.sh; copying to container...
+2026-06-20 05:42:54,548 - INFO - Test runtime: 18.64 seconds
+2026-06-20 05:42:54,549 - INFO - Test output for astropy__astropy-8707 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/astropy__astropy-8707/test_output.txt
+2026-06-20 05:42:54,597 - INFO - Git diff after:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..d41e34356 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -5,7 +5,7 @@ import warnings
+ 
+ import numpy as np
+ 
+-from .util import _str_to_num, _is_int, translate, _words_group
++from .util import _str_to_num, _is_int, translate, _words_group, decode_ascii
+ from .verify import _Verify, _ErrList, VerifyError, VerifyWarning
+ 
+ from . import conf
+@@ -547,11 +547,14 @@ class Card(_Verify):
+     @classmethod
+     def fromstring(cls, image):
+         """
+-        Construct a `Card` object from a (raw) string. It will pad the string
+-        if it is not the length of a card image (80 columns).  If the card
+-        image is longer than 80 columns, assume it contains ``CONTINUE``
++        Construct a `Card` object from a (raw) string or bytes. It will pad the
++        string if it is not the length of a card image (80 columns).  If the
++        card image is longer than 80 columns, assume it contains ``CONTINUE``
+         card(s).
+         """
++        # Accept bytes/bytearray on Python 3 and decode to str using ASCII
++        if isinstance(image, (bytes, bytearray)):
++            image = decode_ascii(image)
+ 
+         card = cls()
+         card._image = _pad(image)
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index ad07e6d52..ea1104c8f 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -334,10 +334,10 @@ class Header:
+ 
+         Parameters
+         ----------
+-        data : str
+-           String containing the entire header.
++        data : str or bytes
++           String or bytes containing the entire header.
+ 
+-        sep : str, optional
++        sep : str or bytes, optional
+             The string separating cards from each other, such as a newline.  By
+             default there is no card separator (as is the case in a raw FITS
+             file).
+@@ -347,6 +347,12 @@ class Header:
+         header
+             A new `Header` instance.
+         """
++        # Accept bytes/bytearray for both data and sep and decode to str using
++        # ASCII so that Header.fromstring can be used with binary data on Py3.
++        if isinstance(data, (bytes, bytearray)):
++            data = decode_ascii(data)
++        if isinstance(sep, (bytes, bytearray)):
++            sep = decode_ascii(sep)
+ 
+         cards = []
+2026-06-20 05:42:54,597 - INFO - Grading answer for astropy__astropy-8707...
+2026-06-20 05:42:54,659 - INFO - report: {'astropy__astropy-8707': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_from_bytes']}, 'PASS_TO_PASS': {'success': ['astropy/io/fits/tests/test_header.py::test_shallow_copy', 'astropy/io/fits/tests/test_header.py::test_init_with_header', 'astropy/io/fits/tests/test_header.py::test_init_with_dict', 'astropy/io/fits/tests/test_header.py::test_init_with_ordereddict'], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_rename_keyword', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_constructor_default_args', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_string_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_boolean_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_long_integer_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_floating_point_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_complex_value_card']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-8707: resolved: False
+2026-06-20 05:42:54,659 - INFO - Attempting to stop container sweb.eval.astropy__astropy-8707.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:43:10,094 - INFO - Attempting to remove container sweb.eval.astropy__astropy-8707.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:43:10,117 - INFO - Container sweb.eval.astropy__astropy-8707.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 05:43:10,118 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest...
+2026-06-20 05:43:10,661 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest removed.

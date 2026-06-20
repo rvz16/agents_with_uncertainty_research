@@ -1,0 +1,102 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -550,6 +550,7 @@
+         Perform a COUNT() query using the current filter constraints.
+         """
+         obj = self.clone()
++        obj = obj._strip_unused_annotations()
+         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+         return obj.get_aggregation(using, ["__count"])["__count"]
+ 
+@@ -558,6 +559,7 @@
+ 
+     def exists(self, limit=True):
+         q = self.clone()
++        q = q._strip_unused_annotations()
+         if not (q.distinct and q.is_sliced):
+             if q.group_by is True:
+                 q.add_fields(
+@@ -2546,6 +2548,83 @@
+         self.set_select([f.get_col(select_alias) for f in select_fields])
+         return trimmed_prefix, contains_louter
+ 
++    def _collect_annotation_refs(self, expr):
++        """
++        Recursively collect annotation names referenced in an expression.
++        """
++        refs = set()
++        if isinstance(expr, Ref):
++            refs.add(expr.refs)
++        elif isinstance(expr, F):
++            # Check if F() references an annotation
++            if expr.name in self.annotations:
++                refs.add(expr.name)
++        elif hasattr(expr, "get_source_expressions"):
++            for source_expr in expr.get_source_expressions():
++                if source_expr:
++                    refs.update(self._collect_annotation_refs(source_expr))
++        return refs
++
++    def _strip_unused_annotations(self):
++        """
++        Remove annotations that are not referenced in filters, other annotations,
++        or ordering. This is useful for count() and exists() queries where
++        unnecessary annotations can impact performance.
++        """
++        if not self.annotations:
++            return self
++        
++        # Collect all annotation names that are used
++        used_annotations = set()
++        
++        # Check WHERE clause
++        for expr in self.where.children if hasattr(self.where, "children") else []:
++            used_annotations.update(self._collect_annotation_refs(expr))
++        
++        # Check ORDER BY
++        for expr in self.order_by:
++            if isinstance(expr, str):
++                # Handle string references like 'annotation_name' or '-annotation_name'
++                field_name = expr.lstrip("-")
++                if field_name in self.annotations:
++                    used_annotations.add(field_name)
++            else:
++                used_annotations.update(self._collect_annotation_refs(expr))
++        
++        # Check if annotations reference other annotations
++        annotations_to_check = list(self.annotations.keys())
++        changed = True
++        while changed:
++            changed = False
++            for alias in annotations_to_check:
++                if alias not in used_annotations and alias in self.annotations:
++                    # Check if any used annotation references this one
++                    for used_alias in list(used_annotations):
++                        if used_alias in self.annotations:
++                            refs = self._collect_annotation_refs(self.annotations[used_alias])
++                            if alias in refs:
++                                used_annotations.add(alias)
++                                changed = True
++                                break
++        
++        # If all annotations are used, no need to clone
++        unused_annotations = set(self.annotations.keys()) - used_annotations
++        if not unused_annotations:
++            return self
++        
++        # Clone and remove unused annotations
++        obj = self.clone()
++        for alias in unused_annotations:
++            del obj.annotations[alias]
++            # Also remove from annotation_select_mask if present
++            if obj.annotation_select_mask is not None:
++                obj.annotation_select_mask.discard(alias)
++        
++        # Clear the annotation select cache
++        obj._annotation_select_cache = None
++        
++        return obj
++
+     def is_nullable(self, field):
+         """
+         Check if the given field should be treated as nullable.

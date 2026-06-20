@@ -1,0 +1,30 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -429,6 +429,27 @@
+         self.connector = connector
+         self.lhs = lhs
+         self.rhs = rhs
++
++    def _resolve_output_field(self):
++        """
++        Special-case resolution for combined expressions.
++
++        - A subtraction between two temporal fields of the same type
++          (DateField/DateTimeField/TimeField) produces a DurationField.
++        Fall back to the base implementation for other cases.
++        """
++        datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
++        lhs_field = self.lhs._output_field_or_none
++        rhs_field = self.rhs._output_field_or_none
++        if lhs_field is not None and rhs_field is not None:
++            try:
++                lhs_internal = lhs_field.get_internal_type()
++                rhs_internal = rhs_field.get_internal_type()
++            except FieldError:
++                lhs_internal = rhs_internal = None
++            if self.connector == self.SUB and lhs_internal in datetime_fields and lhs_internal == rhs_internal:
++                return fields.DurationField()
++        return super()._resolve_output_field()
+ 
+     def __repr__(self):
+         return "<{}: {}>".format(self.__class__.__name__, self)

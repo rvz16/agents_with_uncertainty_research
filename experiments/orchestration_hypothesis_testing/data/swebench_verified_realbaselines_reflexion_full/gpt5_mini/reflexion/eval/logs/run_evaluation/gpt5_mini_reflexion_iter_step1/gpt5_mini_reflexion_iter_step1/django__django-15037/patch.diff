@@ -1,0 +1,54 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -124,6 +124,51 @@
+                             "self" if relations[column_name][1] == table_name
+                             else table2model(relations[column_name][1])
+                         )
++                        # Determine if this foreign key references a non-primary-key
++                        # column on the related table. If so, add a to_field parameter
++                        # so the generated ForeignKey points to the specific field.
++                        try:
++                            referenced_table = relations[column_name][1]
++                        except Exception:
++                            referenced_table = None
++                        if referenced_table and constraints:
++                            for c in constraints.values():
++                                fk = c.get('foreign_key')
++                                if not fk:
++                                    continue
++                                # Check if this constraint applies to our column.
++                                if column_name not in c.get('columns', []):
++                                    continue
++                                # Normalize fk representation: accept (table, column) tuples
++                                # or strings like 'table(column)' or 'table.column'.
++                                ref_table = ref_col = None
++                                if isinstance(fk, (list, tuple)) and len(fk) == 2:
++                                    ref_table, ref_col = fk
++                                elif isinstance(fk, str):
++                                    if '(' in fk and fk.endswith(')'):
++                                        # format: table(column)
++                                        ref_table, paren = fk.split('(', 1)
++                                        ref_col = paren[:-1]
++                                    elif '.' in fk:
++                                        ref_table, ref_col = fk.split('.', 1)
++                                if ref_table is None or ref_col is None:
++                                    continue
++                                # Ensure the referenced table matches what relations reports.
++                                if ref_table != referenced_table:
++                                    continue
++                                # If the referenced column is not the primary key of the
++                                # referenced table, emit a to_field parameter.
++                                try:
++                                    ref_pk = connection.introspection.get_primary_key_column(cursor, ref_table)
++                                except Exception:
++                                    ref_pk = None
++                                if ref_col and ref_col != ref_pk:
++                                    # to_field expects the name of the field on the related model.
++                                    # We don't have the related model's field-name mapping here,
++                                    # so use the column name as a best-effort default.
++                                    extra_params['to_field'] = ref_col
++                                break
++
+                         if rel_to in known_models:
+                             field_type = '%s(%s' % (rel_type, rel_to)
+                         else:

@@ -1,0 +1,22 @@
+--- a/django/db/models/sql/subqueries.py
++++ b/django/db/models/sql/subqueries.py
+@@ -60,7 +60,7 @@
+         would normally be set in __init__() should go here instead.
+         """
+         self.values = []
+-        self.related_ids = None
++        self.related_ids = {}
+         self.related_updates = {}
+ 
+     def clone(self):
+@@ -133,8 +133,8 @@
+         for model, values in self.related_updates.items():
+             query = UpdateQuery(model)
+             query.values = values
+-            if self.related_ids is not None:
+-                query.add_filter("pk__in", self.related_ids)
++            if self.related_ids and model in self.related_ids:
++                query.add_filter("pk__in", self.related_ids[model])
+             result.append(query)
+         return result
+ 

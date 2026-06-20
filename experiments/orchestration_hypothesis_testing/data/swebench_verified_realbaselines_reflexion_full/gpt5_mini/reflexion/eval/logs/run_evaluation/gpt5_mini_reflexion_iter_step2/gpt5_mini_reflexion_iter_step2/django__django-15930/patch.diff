@@ -1,0 +1,24 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1298,7 +1298,20 @@
+         connection.ops.check_expression_support(self)
+         template_params = extra_context
+         sql_params = []
+-        condition_sql, condition_params = compiler.compile(self.condition)
++        try:
++            condition_sql, condition_params = compiler.compile(self.condition)
++        except EmptyResultSet:
++            # If compiling the condition raises EmptyResultSet, use the
++            # condition's empty_result_set_value if provided. This mirrors
++            # Func.as_sql() handling for arguments that evaluate to an empty
++            # result set (see #33374, #26517). For example, ~Q(pk__in=[])
++            # should compile to a constant True value.
++            empty_result_set_value = getattr(
++                self.condition, "empty_result_set_value", NotImplemented
++            )
++            if empty_result_set_value is NotImplemented:
++                raise
++            condition_sql, condition_params = compiler.compile(Value(empty_result_set_value))
+         template_params["condition"] = condition_sql
+         sql_params.extend(condition_params)
+         result_sql, result_params = compiler.compile(self.result)

@@ -1,0 +1,62 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -352,8 +352,59 @@
+                             if self.check_dependency(op2, dep):
+                                 dependency_graph[op].add(op2)
+ 
++            # Handle field moving from parent to child class in same migration.
++            # Ensure RemoveField from parent executes before CreateModel for child.
++            self._handle_field_move_in_inheritance(ops, dependency_graph, app_label)
++
+             # we use a stable sort for deterministic tests & general behavior
+             self.generated_operations[app_label] = stable_topological_sort(ops, dependency_graph)
++
++    def _handle_field_move_in_inheritance(self, ops, dependency_graph, app_label):
++        """
++        Handle the case where a field is moved from a parent model to a child model
++        in the same migration. Ensure RemoveField from parent executes before
++        CreateModel for child to avoid FieldError about clashing fields.
++        """
++        # Find all RemoveField operations
++        remove_field_ops = [op for op in ops if isinstance(op, operations.RemoveField)]
++        # Find all CreateModel operations
++        create_model_ops = [op for op in ops if isinstance(op, operations.CreateModel)]
++
++        for remove_op in remove_field_ops:
++            # Get the model that's losing the field
++            parent_model_name = remove_op.model_name_lower
++            removed_field_name = remove_op.name_lower
++
++            # Check if any CreateModel is for a child of this parent model
++            # and defines the same field
++            for create_op in create_model_ops:
++                child_model_name = create_op.name_lower
++                # Check if this model has the field being removed
++                child_has_field = any(field_name_lower == removed_field_name 
++                                     for field_name_lower, _ in create_op.fields)
++                
++                if not child_has_field:
++                    continue
++
++                # Check if the child model inherits from the parent model
++                # by examining the bases
++                inherits_from_parent = False
++                for base in create_op.bases:
++                    if isinstance(base, str):
++                        # String reference like 'app.Model'
++                        if "." in base:
++                            base_app, base_model = base.split(".", 1)
++                            if base_app == app_label and base_model.lower() == parent_model_name:
++                                inherits_from_parent = True
++                                break
++                        elif base.lower() == parent_model_name:
++                            inherits_from_parent = True
++                            break
++
++                # If child inherits from parent and has the field, make RemoveField
++                # execute before CreateModel by adding dependency
++                if inherits_from_parent:
++                    dependency_graph[create_op].add(remove_op)
+ 
+     def _optimize_migrations(self):
+         # Add in internal dependencies among the migrations

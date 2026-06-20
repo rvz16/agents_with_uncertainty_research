@@ -1,0 +1,120 @@
+2026-06-20 02:50:41,883 - INFO - Creating container for astropy__astropy-13579...
+2026-06-20 02:50:42,231 - INFO - Container for astropy__astropy-13579 created: 5f8c824ae76c0e1e5101f7bdb8fda4cf37cda2525db0101f13b2a8b46a1fdcf2
+2026-06-20 02:50:42,375 - INFO - Container for astropy__astropy-13579 started: 5f8c824ae76c0e1e5101f7bdb8fda4cf37cda2525db0101f13b2a8b46a1fdcf2
+2026-06-20 02:50:42,375 - INFO - Intermediate patch for astropy__astropy-13579 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/astropy__astropy-13579/patch.diff, now applying to container...
+2026-06-20 02:50:42,519 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:7: trailing whitespace.
+        
+/tmp/patch.diff:22: trailing whitespace.
+            
+/tmp/patch.diff:25: trailing whitespace.
+            
+/tmp/patch.diff:30: trailing whitespace.
+        
+Checking patch astropy/wcs/wcsapi/wrappers/sliced_wcs.py...
+Applied patch astropy/wcs/wcsapi/wrappers/sliced_wcs.py cleanly.
+warning: 4 lines add whitespace errors.
+
+2026-06-20 02:50:42,877 - INFO - Git diff before:
+diff --git a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+index d7605b078..84fcc1625 100644
+--- a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
++++ b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+@@ -244,6 +244,31 @@ class SlicedLowLevelWCS(BaseWCSWrapper):
+ 
+     def world_to_pixel_values(self, *world_arrays):
+         world_arrays = tuple(map(np.asanyarray, world_arrays))
++        
++        # Compute the world coordinates for dropped dimensions
++        # by evaluating pixel_to_world at the slice positions
++        dropped_world_values = {}
++        if len(self._world_keep) < self._wcs.world_n_dim:
++            # Build pixel array with slice positions for dropped dims, 0 for kept dims
++            pixel_arrays_for_dropped = []
++            ipix_curr = -1
++            for ipix in range(self._wcs.pixel_n_dim):
++                if isinstance(self._slices_pixel[ipix], numbers.Integral):
++                    # Dropped dimension - use its slice index
++                    pixel_arrays_for_dropped.append(self._slices_pixel[ipix])
++                else:
++                    # Kept dimension - use 0 to get world coords at reference
++                    pixel_arrays_for_dropped.append(0)
++            
++            # Get world coordinates at these pixel positions
++            world_at_slice = self._wcs.pixel_to_world_values(*pixel_arrays_for_dropped)
++            
++            # Extract world values for dropped dimensions
++            for iworld in range(self._wcs.world_n_dim):
++                if iworld not in self._world_keep:
++                    dropped_world_values[iworld] = world_at_slice[iworld]
++        
++        # Reconstruct full world array for parent WCS
+         world_arrays_new = []
+         iworld_curr = -1
+         for iworld in range(self._wcs.world_n_dim):
+@@ -251,7 +276,7 @@ class SlicedLowLevelWCS(BaseWCSWrapper):
+                 iworld_curr += 1
+                 world_arrays_new.append(world_arrays[iworld_curr])
+             else:
+-                world_arrays_new.append(1.)
++                world_arrays_new.append(dropped_world_values[iworld])
+ 
+         world_arrays_new = np.broadcast_arrays(*world_arrays_new)
+         pixel_arrays = list(self._wcs.world_to_pixel_values(*world_arrays_new))
+2026-06-20 02:50:42,877 - INFO - Eval script for astropy__astropy-13579 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/astropy__astropy-13579/eval.sh; copying to container...
+2026-06-20 02:51:32,918 - INFO - Test runtime: 50.00 seconds
+2026-06-20 02:51:32,918 - INFO - Test output for astropy__astropy-13579 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/astropy__astropy-13579/test_output.txt
+2026-06-20 02:51:32,971 - INFO - Git diff after:
+diff --git a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+index d7605b078..84fcc1625 100644
+--- a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
++++ b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+@@ -244,6 +244,31 @@ class SlicedLowLevelWCS(BaseWCSWrapper):
+ 
+     def world_to_pixel_values(self, *world_arrays):
+         world_arrays = tuple(map(np.asanyarray, world_arrays))
++        
++        # Compute the world coordinates for dropped dimensions
++        # by evaluating pixel_to_world at the slice positions
++        dropped_world_values = {}
++        if len(self._world_keep) < self._wcs.world_n_dim:
++            # Build pixel array with slice positions for dropped dims, 0 for kept dims
++            pixel_arrays_for_dropped = []
++            ipix_curr = -1
++            for ipix in range(self._wcs.pixel_n_dim):
++                if isinstance(self._slices_pixel[ipix], numbers.Integral):
++                    # Dropped dimension - use its slice index
++                    pixel_arrays_for_dropped.append(self._slices_pixel[ipix])
++                else:
++                    # Kept dimension - use 0 to get world coords at reference
++                    pixel_arrays_for_dropped.append(0)
++            
++            # Get world coordinates at these pixel positions
++            world_at_slice = self._wcs.pixel_to_world_values(*pixel_arrays_for_dropped)
++            
++            # Extract world values for dropped dimensions
++            for iworld in range(self._wcs.world_n_dim):
++                if iworld not in self._world_keep:
++                    dropped_world_values[iworld] = world_at_slice[iworld]
++        
++        # Reconstruct full world array for parent WCS
+         world_arrays_new = []
+         iworld_curr = -1
+         for iworld in range(self._wcs.world_n_dim):
+@@ -251,7 +276,7 @@ class SlicedLowLevelWCS(BaseWCSWrapper):
+                 iworld_curr += 1
+                 world_arrays_new.append(world_arrays[iworld_curr])
+             else:
+-                world_arrays_new.append(1.)
++                world_arrays_new.append(dropped_world_values[iworld])
+ 
+         world_arrays_new = np.broadcast_arrays(*world_arrays_new)
+         pixel_arrays = list(self._wcs.world_to_pixel_values(*world_arrays_new))
+2026-06-20 02:51:32,971 - INFO - Grading answer for astropy__astropy-13579...
+2026-06-20 02:51:32,973 - INFO - report: {'astropy__astropy-13579': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_coupled_world_slicing'], 'failure': []}, 'PASS_TO_PASS': {'success': ['astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_invalid_slices', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_sanitize_slice[item0-4-expected0]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_sanitize_slice[item1-5-expected1]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_sanitize_slice[item2-10-expected2]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_ellipsis', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_pixel_to_world_broadcasting', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_world_to_pixel_broadcasting', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_spectral_slice', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_spectral_range', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_celestial_slice', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_celestial_range', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_celestial_range_rot', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_no_array_shape', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_ellipsis_none_types', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice10-slice20-expected0]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice11-slice21-expected1]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice12-slice22-expected2]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice13-slice23-expected3]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice14-slice24-expected4]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice15-slice25-expected5]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice16-slice26-expected6]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice17-slice27-expected7]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice18-slice28-expected8]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice19-slice29-expected9]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice110-slice210-expected10]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice111-slice211-expected11]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice112-slice212-expected12]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice113-slice213-expected13]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice114-slice214-expected14]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice115-slice215-expected15]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice116-3-3]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice117-3-5]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice118-3-3]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_combine_slices[slice119-3-5]', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_nested_slicing', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_too_much_slicing', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_1d_sliced_low_level', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_dropped_dimensions', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_dropped_dimensions_4d', 'astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_pixel_to_world_values_different_int_types'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-13579: resolved: True
+2026-06-20 02:51:32,973 - INFO - Attempting to stop container sweb.eval.astropy__astropy-13579.haiku45_reflexion_iter_step3...
+2026-06-20 02:51:49,992 - INFO - Attempting to remove container sweb.eval.astropy__astropy-13579.haiku45_reflexion_iter_step3...
+2026-06-20 02:51:50,018 - INFO - Container sweb.eval.astropy__astropy-13579.haiku45_reflexion_iter_step3 removed.
+2026-06-20 02:51:50,018 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-13579:latest...
+2026-06-20 02:51:50,357 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-13579:latest removed.

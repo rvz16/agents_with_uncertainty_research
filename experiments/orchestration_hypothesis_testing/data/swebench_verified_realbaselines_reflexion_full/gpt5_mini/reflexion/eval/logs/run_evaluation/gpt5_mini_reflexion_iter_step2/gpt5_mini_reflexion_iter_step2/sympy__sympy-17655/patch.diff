@@ -1,0 +1,30 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -32,6 +32,7 @@
+ from sympy.core.numbers import Float
+ from sympy.core.evaluate import global_evaluate
+ from sympy.core.add import Add
++from sympy.core.mul import Mul
+ from sympy.utilities.iterables import uniq
+ from sympy.utilities.misc import filldedent, func_name, Undecidable
+ 
+@@ -213,6 +214,19 @@
+         sympy.geometry.point.Point.translate
+ 
+         """
++        # Handle expressions like scalar * Point (e.g., 2*Point(1,1))
++        if isinstance(other, Mul):
++            pts = [arg for arg in other.args if isinstance(arg, Point)]
++            if len(pts) == 1:
++                pt = pts[0]
++                # factor is the product of non-point args
++                non_pts = [arg for arg in other.args if arg is not pt]
++                if non_pts:
++                    factor = Mul(*non_pts)
++                else:
++                    factor = S.One
++                other = pt * factor
++
+         try:
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:

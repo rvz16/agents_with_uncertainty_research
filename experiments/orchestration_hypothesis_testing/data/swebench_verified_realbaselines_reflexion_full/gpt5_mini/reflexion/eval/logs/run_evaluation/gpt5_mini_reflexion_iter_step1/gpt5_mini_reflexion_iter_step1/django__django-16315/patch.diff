@@ -1,0 +1,27 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1722,11 +1722,22 @@
+ 
+         placeholder_rows, param_rows = self.assemble_as_sql(fields, value_rows)
+ 
++        update_fields = (
++            [f.column for f in self.query.update_fields]
++            if self.query.update_fields is not None
++            else None
++        )
++        unique_fields = (
++            [f.column for f in self.query.unique_fields]
++            if self.query.unique_fields is not None
++            else None
++        )
++
+         on_conflict_suffix_sql = self.connection.ops.on_conflict_suffix_sql(
+             fields,
+             self.query.on_conflict,
+-            self.query.update_fields,
+-            self.query.unique_fields,
++            update_fields,
++            unique_fields,
+         )
+         if (
+             self.returning_fields

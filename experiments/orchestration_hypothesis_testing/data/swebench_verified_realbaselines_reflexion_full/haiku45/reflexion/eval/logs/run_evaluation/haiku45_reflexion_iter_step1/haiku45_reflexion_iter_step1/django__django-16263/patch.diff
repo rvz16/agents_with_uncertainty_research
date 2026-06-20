@@ -1,0 +1,123 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -551,6 +551,8 @@
+         """
+         obj = self.clone()
+         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
++        # Remove unused annotations to improve performance
++        obj = obj._strip_unused_annotations()
+         return obj.get_aggregation(using, ["__count"])["__count"]
+ 
+     def has_filters(self):
+@@ -576,6 +578,8 @@
+         if limit:
+             q.set_limits(high=1)
+         q.add_annotation(Value(1), "a")
++        # Remove unused annotations to improve performance
++        q = q._strip_unused_annotations()
+         return q
+ 
+     def has_results(self, using):
+@@ -2546,6 +2550,102 @@
+         self.set_select([f.get_col(select_alias) for f in select_fields])
+         return trimmed_prefix, contains_louter
+ 
++    def _strip_unused_annotations(self):
++        """
++        Remove annotations that are not referenced in filters, order_by, or
++        other annotations. This improves query performance by avoiding
++        unnecessary GROUP BY clauses.
++        """
++        if not self.annotations:
++            return self
++        
++        # Collect all annotation names that are referenced
++        used_annotations = set()
++        
++        # Check annotations that are in the annotation_select (selected in output)
++        if self.annotation_select_mask is not None:
++            used_annotations.update(self.annotation_select_mask)
++        else:
++            used_annotations.update(self.annotations.keys())
++        
++        # Check for annotations referenced in WHERE clause
++        where_refs = self._collect_annotation_refs(self.where)
++        used_annotations.update(where_refs)
++        
++        # Check for annotations referenced in ORDER BY
++        for order_item in self.order_by:
++            if isinstance(order_item, str):
++                # Handle string order_by like 'field_name' or '-field_name'
++                field_name = order_item.lstrip('-')
++                if field_name in self.annotations:
++                    used_annotations.add(field_name)
++            elif hasattr(order_item, 'get_source_expressions'):
++                # Handle OrderBy expressions
++                refs = self._collect_annotation_refs(order_item)
++                used_annotations.update(refs)
++        
++        # Check for annotations referenced by other annotations
++        changed = True
++        while changed:
++            changed = False
++            for alias, annotation in self.annotations.items():
++                if alias in used_annotations:
++                    refs = self._collect_annotation_refs(annotation)
++                    new_refs = refs - used_annotations
++                    if new_refs:
++                        used_annotations.update(new_refs)
++                        changed = True
++        
++        # Remove unused annotations
++        if len(used_annotations) < len(self.annotations):
++            obj = self.clone()
++            unused = set(obj.annotations.keys()) - used_annotations
++            for alias in unused:
++                del obj.annotations[alias]
++                if obj.annotation_select_mask is not None:
++                    obj.annotation_select_mask.discard(alias)
++            return obj
++        
++        return self
++    
++    def _collect_annotation_refs(self, node):
++        """
++        Recursively collect all annotation names referenced in an expression.
++        """
++        refs = set()
++        if node is None:
++            return refs
++        
++        # Handle F() references to annotations
++        if isinstance(node, F):
++            if node.name in self.annotations:
++                refs.add(node.name)
++            return refs
++        
++        # Handle Ref objects (references to annotations in subqueries)
++        if isinstance(node, Ref):
++            if node.refs in self.annotations:
++                refs.add(node.refs)
++            return refs
++        
++        # Recursively check source expressions
++        if hasattr(node, 'get_source_expressions'):
++            for expr in node.get_source_expressions():
++                refs.update(self._collect_annotation_refs(expr))
++        
++        # Handle WHERE node children
++        if hasattr(node, 'children'):
++            for child in node.children:
++                refs.update(self._collect_annotation_refs(child))
++        
++        # Handle lookup LHS and RHS
++        if hasattr(node, 'lhs'):
++            refs.update(self._collect_annotation_refs(node.lhs))
++        if hasattr(node, 'rhs'):
++            refs.update(self._collect_annotation_refs(node.rhs))
++        
++        return refs
++
+     def is_nullable(self, field):
+         """
+         Check if the given field should be treated as nullable.

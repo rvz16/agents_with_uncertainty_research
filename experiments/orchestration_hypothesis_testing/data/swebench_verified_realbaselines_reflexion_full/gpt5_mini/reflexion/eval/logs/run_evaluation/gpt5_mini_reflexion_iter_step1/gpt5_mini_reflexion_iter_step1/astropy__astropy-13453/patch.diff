@@ -1,0 +1,18 @@
+--- a/astropy/io/ascii/html.py
++++ b/astropy/io/ascii/html.py
+@@ -354,6 +354,15 @@
+             self.data.fill_values = [self.data.fill_values]
+ 
+         self.data._set_fill_values(cols)
++
++        # Apply any user-supplied formats to the column info so that
++        # iter_str_vals()/info.iter_str_vals() reflect the requested formatting.
++        # Some callers (and other writers) expect formats to be applied via
++        # self.data.formats; if present, set the Column.info.format accordingly.
++        if hasattr(self.data, 'formats') and self.data.formats:
++            for col in cols:
++                if col.info.name in self.data.formats:
++                    col.info.format = self.data.formats[col.info.name]
+ 
+         lines = []
+ 

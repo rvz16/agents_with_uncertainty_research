@@ -1,0 +1,24 @@
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -117,6 +117,21 @@
+         self._explicit_tearDown = None
+         self._testcase = self.parent.obj(self.name)
+         self._obj = getattr(self._testcase, self.name)
++        # If running with --pdb we want to postpone calling tearDown() so that entering
++        # the debugger still exposes the TestCase instance state. Do the override here
++        # (in setup) so it is in effect before unittest.TestCase.run() executes and can
++        # therefore also cover cases where unittest decides to skip the test without
++        # running setUp() (regression fixed).
++        if self.config.getoption("usepdb"):
++            try:
++                self._explicit_tearDown = getattr(self._testcase, "tearDown")
++            except Exception:
++                self._explicit_tearDown = None
++            try:
++                setattr(self._testcase, "tearDown", lambda *args: None)
++            except Exception:
++                # best-effort: if we cannot override, continue without crashing
++                pass
+         if hasattr(self, "_request"):
+             self._request._fillfixtures()
+ 

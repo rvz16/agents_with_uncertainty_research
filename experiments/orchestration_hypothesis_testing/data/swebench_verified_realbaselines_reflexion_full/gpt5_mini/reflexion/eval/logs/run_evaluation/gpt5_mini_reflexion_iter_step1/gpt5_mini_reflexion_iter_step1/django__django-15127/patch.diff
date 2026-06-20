@@ -1,0 +1,33 @@
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,30 @@
+ from django.apps import AppConfig
+ from django.utils.translation import gettext_lazy as _
++from django.test.signals import setting_changed
++import importlib
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # When MESSAGE_TAGS is overridden (for example via @override_settings in tests),
++        # the module-level LEVEL_TAGS in django.contrib.messages.storage.base must be
++        # updated so Message.level_tag picks up the new mapping. Listen for the
++        # setting_changed signal and reload the storage.base module when that happens.
++        def _update_level_tags(*args, **kwargs):
++            # setting_changed may provide the setting name as a kwarg or positional arg.
++            setting = kwargs.get('setting')
++            if setting is None and len(args) >= 1:
++                setting = args[0]
++            if setting != 'MESSAGE_TAGS':
++                return
++            try:
++                from django.contrib.messages.storage import base as base_mod
++                importlib.reload(base_mod)
++            except Exception:
++                # Best-effort; if reload fails, avoid raising during signal handling.
++                pass
++
++        setting_changed.connect(_update_level_tags)

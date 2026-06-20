@@ -1,0 +1,109 @@
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -390,7 +390,27 @@
+         if isinstance(obj, cached_property):
+             return True
+ 
+-    return isinstance(obj, property)
++    if isinstance(obj, property):
++        return True
++    
++    # Check for @classmethod @property or @staticmethod @property (Python 3.9+)
++    if isinstance(obj, classmethod):
++        # In Python 3.10+, classmethod has __wrapped__
++        if hasattr(obj, '__wrapped__'):
++            return isinstance(obj.__wrapped__, property)
++        # Fallback for Python 3.9: check __func__
++        if hasattr(obj, '__func__'):
++            return isinstance(obj.__func__, property)
++    
++    if isinstance(obj, staticmethod):
++        # In Python 3.10+, staticmethod has __wrapped__
++        if hasattr(obj, '__wrapped__'):
++            return isinstance(obj.__wrapped__, property)
++        # Fallback for Python 3.9: check __func__
++        if hasattr(obj, '__func__'):
++            return isinstance(obj.__func__, property)
++    
++    return False
+ 
+ 
+ def isgenericalias(obj: Any) -> bool:
+@@ -836,7 +856,20 @@
+     * partial functions
+     * inherited docstring
+     * inherited decorated methods
+-    """
++    * wrapped properties (classmethod/staticmethod wrapping property)
++    """
++    # Handle @classmethod @property and @staticmethod @property
++    if isinstance(obj, classmethod):
++        if hasattr(obj, '__func__') and isinstance(obj.__func__, property):
++            obj = obj.__func__
++        elif hasattr(obj, '__wrapped__') and isinstance(obj.__wrapped__, property):
++            obj = obj.__wrapped__
++    elif isinstance(obj, staticmethod):
++        if hasattr(obj, '__func__') and isinstance(obj.__func__, property):
++            obj = obj.__func__
++        elif hasattr(obj, '__wrapped__') and isinstance(obj.__wrapped__, property):
++            obj = obj.__wrapped__
++    
+     doc = attrgetter(obj, '__doc__', None)
+     if ispartial(obj) and doc == obj.__class__.__doc__:
+         return getdoc(obj.func)
+
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -2661,7 +2661,21 @@
+     @classmethod
+     def can_document_member(cls, member: Any, membername: str, isattr: bool, parent: Any
+                             ) -> bool:
+-        return inspect.isproperty(member) and isinstance(parent, ClassDocumenter)
++        if isinstance(parent, ClassDocumenter):
++            if inspect.isproperty(member):
++                return True
++            # Handle @classmethod @property and @staticmethod @property
++            if isinstance(member, classmethod):
++                if hasattr(member, '__func__') and isinstance(member.__func__, property):
++                    return True
++                if hasattr(member, '__wrapped__') and isinstance(member.__wrapped__, property):
++                    return True
++            if isinstance(member, staticmethod):
++                if hasattr(member, '__func__') and isinstance(member.__func__, property):
++                    return True
++                if hasattr(member, '__wrapped__') and isinstance(member.__wrapped__, property):
++                    return True
++        return False
+ 
+     def document_members(self, all_members: bool = False) -> None:
+         pass
+@@ -2673,12 +2687,26 @@
+     def add_directive_header(self, sig: str) -> None:
+         super().add_directive_header(sig)
+         sourcename = self.get_sourcename()
+-        if inspect.isabstractmethod(self.object):
++        
++        # Unwrap classmethod/staticmethod to get the actual property
++        obj = self.object
++        if isinstance(obj, classmethod):
++            if hasattr(obj, '__func__'):
++                obj = obj.__func__
++            elif hasattr(obj, '__wrapped__'):
++                obj = obj.__wrapped__
++        elif isinstance(obj, staticmethod):
++            if hasattr(obj, '__func__'):
++                obj = obj.__func__
++            elif hasattr(obj, '__wrapped__'):
++                obj = obj.__wrapped__
++        
++        if inspect.isabstractmethod(obj):
+             self.add_line('   :abstractmethod:', sourcename)
+ 
+-        if safe_getattr(self.object, 'fget', None) and self.config.autodoc_typehints != 'none':
++        if safe_getattr(obj, 'fget', None) and self.config.autodoc_typehints != 'none':
+             try:
+-                signature = inspect.signature(self.object.fget,
++                signature = inspect.signature(obj.fget,
+                                               type_aliases=self.config.autodoc_type_aliases)
+                 if signature.return_annotation is not Parameter.empty:
+                     objrepr = stringify_typehint(signature.return_annotation)

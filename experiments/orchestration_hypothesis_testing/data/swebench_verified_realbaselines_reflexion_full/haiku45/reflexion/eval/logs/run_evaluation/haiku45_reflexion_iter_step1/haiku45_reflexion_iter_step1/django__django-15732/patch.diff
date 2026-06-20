@@ -1,0 +1,23 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -568,6 +568,20 @@
+             exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs,
+         )
++        
++        # For unique_together constraints, filter by the expected naming pattern
++        # to distinguish from field-level unique=True or primary key constraints.
++        # unique_together constraints are named with pattern: table_fields_hash_uniq
++        if constraint_kwargs.get("unique") and len(fields) == 1:
++            # For single-field unique_together, look for the _uniq suffix
++            # to distinguish from other unique constraints
++            uniq_pattern_names = [
++                name for name in constraint_names 
++                if name.endswith("_uniq")
++            ]
++            if uniq_pattern_names:
++                constraint_names = uniq_pattern_names
++        
+         if len(constraint_names) != 1:
+             raise ValueError(
+                 "Found wrong number (%s) of constraints for %s(%s)"

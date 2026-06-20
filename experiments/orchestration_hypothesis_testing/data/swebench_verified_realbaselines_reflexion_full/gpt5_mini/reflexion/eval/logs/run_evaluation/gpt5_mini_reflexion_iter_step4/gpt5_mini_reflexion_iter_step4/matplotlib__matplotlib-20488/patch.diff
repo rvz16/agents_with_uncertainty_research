@@ -1,0 +1,31 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -533,8 +533,26 @@
+                 # that may have moved input values in/out of range
+                 s_vmin, s_vmax = vrange
+                 if isinstance(self.norm, mcolors.LogNorm):
+-                    if s_vmin < 0:
+-                        s_vmin = max(s_vmin, np.finfo(scaled_dtype).eps)
++                    # For LogNorm, vmin/vmax must be positive and finite.  Try to
++                    # defensively coerce extreme or non-finite bounds to safe,
++                    # representable positive numbers to avoid downstream
++                    # transform producing non-finite values (see #xxxx).
++                    eps = np.finfo(scaled_dtype).eps
++                    # Ensure s_vmin is finite and strictly positive.
++                    if not np.isfinite(s_vmin) or s_vmin <= 0:
++                        s_vmin = eps
++                    else:
++                        # Don't allow sub-epsilon positives which can still
++                        # cause numerical issues after scaling.
++                        s_vmin = max(s_vmin, eps)
++                    # Ensure s_vmax is finite and strictly greater than s_vmin.
++                    if not np.isfinite(s_vmax) or s_vmax <= s_vmin:
++                        # Make a small step above s_vmin while staying within
++                        # floating point range.
++                        s_vmax = s_vmin * (1.0 + 1e-6)
++                        if s_vmax == s_vmin:
++                            # Fallback if multiplication didn't change value
++                            s_vmax = s_vmin + eps
+                 with cbook._setattr_cm(self.norm,
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,

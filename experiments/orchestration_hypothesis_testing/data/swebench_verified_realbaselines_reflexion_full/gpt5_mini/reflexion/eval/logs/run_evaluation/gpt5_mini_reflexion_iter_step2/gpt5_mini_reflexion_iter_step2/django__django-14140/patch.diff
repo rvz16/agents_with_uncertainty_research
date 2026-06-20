@@ -1,0 +1,16 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -85,7 +85,12 @@
+         if path.startswith('django.db.models.query_utils'):
+             path = path.replace('django.db.models.query_utils', 'django.db.models')
+         args, kwargs = (), {}
+-        if len(self.children) == 1 and not isinstance(self.children[0], Q):
++        # Preserve the historical special-case for a single (field, value)
++        # child, but only treat it as a kwarg when the single child is
++        # explicitly a 2-tuple. This avoids attempting to subscript
++        # non-subscriptable conditional expressions (e.g. Exists()) passed
++        # to Q().
++        if len(self.children) == 1 and isinstance(self.children[0], tuple) and len(self.children[0]) == 2:
+             child = self.children[0]
+             kwargs = {child[0]: child[1]}
+         else:

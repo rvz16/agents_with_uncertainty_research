@@ -1,0 +1,47 @@
+--- a/sphinx/builders/html/transforms.py
++++ b/sphinx/builders/html/transforms.py
+@@ -42,21 +42,32 @@
+     def run(self, **kwargs: Any) -> None:
+         matcher = NodeMatcher(nodes.literal, classes=["kbd"])
+         for node in self.document.traverse(matcher):  # type: nodes.literal
+-            parts = self.pattern.split(node[-1].astext())
+-            if len(parts) == 1:
++            text = node[-1].astext()
++            parts = self.pattern.split(text)
++            
++            # parts structure after split: [key0, sep0, key1, sep1, key2, ...]
++            # Extract keystroke parts (even indices)
++            keystrokes = [parts[i] for i in range(0, len(parts), 2)]
++            # Extract separator parts (odd indices)
++            separators = [parts[i] for i in range(1, len(parts), 2)]
++            
++            # Filter to only non-empty keystrokes
++            non_empty_keystrokes = [k for k in keystrokes if k]
++            
++            # If only one keystroke (or none), don't transform
++            if len(non_empty_keystrokes) <= 1:
+                 continue
+ 
+             node.pop()
+-            while parts:
+-                key = parts.pop(0)
+-                node += nodes.literal('', key, classes=["kbd"])
+-
+-                try:
+-                    # key separator (ex. -, +, ^)
+-                    sep = parts.pop(0)
+-                    node += nodes.Text(sep)
+-                except IndexError:
+-                    pass
++            # Rebuild: add keystrokes and separators, skipping empty keystrokes
++            for i, key in enumerate(keystrokes):
++                if key:  # Only add non-empty keystrokes
++                    node += nodes.literal('', key, classes=["kbd"])
++                    # Add separator after this keystroke if one exists and next keystroke is non-empty
++                    if i < len(separators):
++                        next_keystroke_idx = i + 1
++                        if next_keystroke_idx < len(keystrokes) and keystrokes[next_keystroke_idx]:
++                            node += nodes.Text(separators[i])
+ 
+ 
+ def setup(app: Sphinx) -> Dict[str, Any]:

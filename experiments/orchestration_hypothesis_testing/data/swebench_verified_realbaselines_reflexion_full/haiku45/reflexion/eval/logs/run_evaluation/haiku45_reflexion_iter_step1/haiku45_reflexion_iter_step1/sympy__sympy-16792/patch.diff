@@ -1,0 +1,16 @@
+--- a/sympy/utilities/codegen.py
++++ b/sympy/utilities/codegen.py
+@@ -739,7 +739,12 @@
+                 try:
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # For MatrixSymbol arguments not in arg_list, we need to add dimensions
++                    if isinstance(symbol, MatrixSymbol):
++                        dims = tuple([(S.Zero, dim - 1) for dim in symbol.shape])
++                        new_args.append(InputArgument(symbol, dimensions=dims))
++                    else:
++                        new_args.append(InputArgument(symbol))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_val, local_vars, global_vars)

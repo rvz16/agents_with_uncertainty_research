@@ -1,0 +1,36 @@
+--- a/django/db/models/fields/related_descriptors.py
++++ b/django/db/models/fields/related_descriptors.py
+@@ -145,7 +145,16 @@
+         if not remote_field.multiple:
+             for rel_obj in queryset:
+                 instance = instances_dict[rel_obj_attr(rel_obj)]
+-                remote_field.set_cached_value(rel_obj, instance)
++                # Avoid overwriting an existing cached reverse relation. If a
++                # nested prefetch already populated the related instance (for
++                # example, with a different set of deferred fields), preserve
++                # that instance to prevent losing its state.
++                try:
++                    existing = remote_field.get_cached_value(rel_obj, default=None)
++                except KeyError:
++                    existing = None
++                if existing is None:
++                    remote_field.set_cached_value(rel_obj, instance)
+         return queryset, rel_obj_attr, instance_attr, True, self.field.get_cache_name(), False
+ 
+     def get_object(self, instance):
+@@ -377,7 +386,14 @@
+         # we must manage the reverse relation cache manually.
+         for rel_obj in queryset:
+             instance = instances_dict[rel_obj_attr(rel_obj)]
+-            self.related.field.set_cached_value(rel_obj, instance)
++            # Avoid overwriting an existing cached forward relation that may
++            # have been populated by a nested prefetch.
++            try:
++                existing = self.related.field.get_cached_value(rel_obj, default=None)
++            except KeyError:
++                existing = None
++            if existing is None:
++                self.related.field.set_cached_value(rel_obj, instance)
+         return queryset, rel_obj_attr, instance_attr, True, self.related.get_cache_name(), False
+ 
+     def __get__(self, instance, cls=None):

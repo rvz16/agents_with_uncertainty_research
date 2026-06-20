@@ -1,0 +1,18 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1533,7 +1533,14 @@
+         return sql, sql_params
+ 
+     def get_group_by_cols(self):
+-        return self.query.get_group_by_cols(wrapper=self)
++        # A subquery expression should not force GROUP BY on the outer query.
++        # When a Subquery is used as an expression (for example in a COUNT()
++        # wrapper or an EXISTS() wrapper), it must be treated as a scalar
++        # expression and must not introduce GROUP BY requirements into the
++        # outer query. Returning an empty list prevents propagating the inner
++        # query's grouping columns to the outer query and avoids generating
++        # unnecessary GROUP BY clauses (which can be very expensive).
++        return []
+ 
+ 
+ class Exists(Subquery):

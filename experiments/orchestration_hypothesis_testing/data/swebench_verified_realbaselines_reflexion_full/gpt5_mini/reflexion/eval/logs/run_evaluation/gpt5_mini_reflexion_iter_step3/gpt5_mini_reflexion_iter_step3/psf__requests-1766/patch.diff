@@ -1,0 +1,14 @@
+--- a/requests/auth.py
++++ b/requests/auth.py
+@@ -144,7 +144,10 @@
+         if entdig:
+             base += ', digest="%s"' % entdig
+         if qop:
+-            base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
++            # Per RFC2617 the qop-options value should be a quoted string.
++            # Use the qop value provided by the server (it may contain
++            # multiple comma-separated tokens like "auth,auth-int").
++            base += ', qop="%s", nc=%s, cnonce="%s"' % (qop, ncvalue, cnonce)
+ 
+         return 'Digest %s' % (base)
+ 

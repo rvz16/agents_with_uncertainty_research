@@ -1,0 +1,34 @@
+--- a/sphinx/ext/inheritance_diagram.py
++++ b/sphinx/ext/inheritance_diagram.py
+@@ -400,6 +400,8 @@
+     Output the graph for HTML.  This will insert a PNG with clickable
+     image map.
+     """
++    import posixpath
++    
+     graph = node['graph']
+ 
+     graph_hash = get_graph_hash(node)
+@@ -413,12 +415,20 @@
+     for child in pending_xrefs:
+         if child.get('refuri') is not None:
+             if graphviz_output_format == 'SVG':
+-                urls[child['reftitle']] = "../" + child.get('refuri')
++                # For SVG, compute relative path from current document to target
++                # Both paths are relative to docs root
++                target_uri = child.get('refuri')
++                # Compute relative path from current document to target
++                rel_path = posixpath.relpath(target_uri, posixpath.dirname(current_filename))
++                urls[child['reftitle']] = rel_path
+             else:
+                 urls[child['reftitle']] = child.get('refuri')
+         elif child.get('refid') is not None:
+             if graphviz_output_format == 'SVG':
+-                urls[child['reftitle']] = '../' + current_filename + '#' + child.get('refid')
++                # For SVG, compute relative path from current document to target
++                target_filename = current_filename + '#' + child.get('refid')
++                rel_path = posixpath.relpath(current_filename, posixpath.dirname(current_filename))
++                urls[child['reftitle']] = rel_path + '#' + child.get('refid')
+             else:
+                 urls[child['reftitle']] = '#' + child.get('refid')
+ 

@@ -1,0 +1,95 @@
+2026-06-20 02:51:08,525 - INFO - Creating container for astropy__astropy-7166...
+2026-06-20 02:51:08,641 - INFO - Container for astropy__astropy-7166 created: 90ce47a56db04ca05c08205fc1b06798a3e56fd2ea173e63799ac537d8ec8007
+2026-06-20 02:51:08,802 - INFO - Container for astropy__astropy-7166 started: 90ce47a56db04ca05c08205fc1b06798a3e56fd2ea173e63799ac537d8ec8007
+2026-06-20 02:51:08,802 - INFO - Intermediate patch for astropy__astropy-7166 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/astropy__astropy-7166/patch.diff, now applying to container...
+2026-06-20 02:51:08,894 - INFO - >>>>> Applied Patch:
+Checking patch astropy/utils/misc.py...
+Applied patch astropy/utils/misc.py cleanly.
+
+2026-06-20 02:51:09,138 - INFO - Git diff before:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..b7e5f0fca 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,15 +528,31 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
++            if not is_public_member(key):
++                continue
++
++            # Handle functions
++            if inspect.isfunction(val) and val.__doc__ is None:
+                 for base in cls.__mro__[1:]:
+                     super_method = getattr(base, key, None)
+                     if super_method is not None:
+                         val.__doc__ = super_method.__doc__
+                         break
+ 
++            # Handle properties and other data descriptors
++            elif isinstance(val, property) and val.__doc__ is None:
++                for base in cls.__mro__[1:]:
++                    super_prop = getattr(base, key, None)
++                    if super_prop is not None:
++                        # Reconstruct the property with the inherited docstring
++                        setattr(cls, key, property(
++                            fget=val.fget,
++                            fset=val.fset,
++                            fdel=val.fdel,
++                            doc=super_prop.__doc__
++                        ))
++                        break
++
+         super().__init__(name, bases, dct)
+2026-06-20 02:51:09,138 - INFO - Eval script for astropy__astropy-7166 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/astropy__astropy-7166/eval.sh; copying to container...
+2026-06-20 02:51:12,427 - INFO - Test runtime: 3.25 seconds
+2026-06-20 02:51:12,428 - INFO - Test output for astropy__astropy-7166 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/astropy__astropy-7166/test_output.txt
+2026-06-20 02:51:12,476 - INFO - Git diff after:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..b7e5f0fca 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,15 +528,31 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
++            if not is_public_member(key):
++                continue
++
++            # Handle functions
++            if inspect.isfunction(val) and val.__doc__ is None:
+                 for base in cls.__mro__[1:]:
+                     super_method = getattr(base, key, None)
+                     if super_method is not None:
+                         val.__doc__ = super_method.__doc__
+                         break
+ 
++            # Handle properties and other data descriptors
++            elif isinstance(val, property) and val.__doc__ is None:
++                for base in cls.__mro__[1:]:
++                    super_prop = getattr(base, key, None)
++                    if super_prop is not None:
++                        # Reconstruct the property with the inherited docstring
++                        setattr(cls, key, property(
++                            fget=val.fget,
++                            fset=val.fset,
++                            fdel=val.fdel,
++                            doc=super_prop.__doc__
++                        ))
++                        break
++
+         super().__init__(name, bases, dct)
+2026-06-20 02:51:12,476 - INFO - Grading answer for astropy__astropy-7166...
+2026-06-20 02:51:12,476 - INFO - report: {'astropy__astropy-7166': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_inherit_docstrings'], 'failure': []}, 'PASS_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_isiterable', 'astropy/utils/tests/test_misc.py::test_signal_number_to_name_no_failure', 'astropy/utils/tests/test_misc.py::test_skip_hidden', 'astropy/utils/tests/test_misc.py::test_JsonCustomEncoder', 'astropy/utils/tests/test_misc.py::test_check_broadcast', 'astropy/utils/tests/test_misc.py::test_dtype_bytes_or_chars'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-7166: resolved: True
+2026-06-20 02:51:12,477 - INFO - Attempting to stop container sweb.eval.astropy__astropy-7166.haiku45_reflexion_iter_step3...
+2026-06-20 02:51:27,751 - INFO - Attempting to remove container sweb.eval.astropy__astropy-7166.haiku45_reflexion_iter_step3...
+2026-06-20 02:51:27,767 - INFO - Container sweb.eval.astropy__astropy-7166.haiku45_reflexion_iter_step3 removed.
+2026-06-20 02:51:27,767 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest...
+2026-06-20 02:51:28,089 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest removed.

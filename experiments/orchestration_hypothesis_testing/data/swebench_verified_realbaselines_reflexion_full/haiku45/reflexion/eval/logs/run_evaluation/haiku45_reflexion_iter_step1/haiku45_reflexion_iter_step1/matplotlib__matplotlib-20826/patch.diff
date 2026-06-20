@@ -1,0 +1,98 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -778,12 +778,76 @@
+         self._major_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'major'))
+-
+     def _reset_minor_tick_kw(self):
+         self._minor_tick_kw.clear()
+         self._minor_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'minor'))
++
++    def _apply_tick_params_from_rcparams(self):
++        """
++        Apply tick parameters from rcParams to restore default tick settings.
++    
++        This is called during Axis.clear() to ensure ticks have proper
++        visibility and appearance defaults from rcParams.
++        """
++        name = self.__name__  # 'xaxis' or 'yaxis'
++        tick_name = name.replace('axis', 'tick')  # 'xtick' or 'ytick'
++    
++        # Get the default tick visibility settings from rcParams
++        kw = {}
++        if tick_name == 'xtick':
++            kw['bottom'] = mpl.rcParams.get(f'{tick_name}.bottom', True)
++            kw['top'] = mpl.rcParams.get(f'{tick_name}.top', True)
++            kw['labelbottom'] = mpl.rcParams.get(f'{tick_name}.labelbottom', True)
++            kw['labeltop'] = mpl.rcParams.get(f'{tick_name}.labeltop', False)
++        elif tick_name == 'ytick':
++            kw['left'] = mpl.rcParams.get(f'{tick_name}.left', True)
++            kw['right'] = mpl.rcParams.get(f'{tick_name}.right', True)
++            kw['labelleft'] = mpl.rcParams.get(f'{tick_name}.labelleft', True)
++            kw['labelright'] = mpl.rcParams.get(f'{tick_name}.labelright', False)
++    
++        if kw:
++            kwtrans = self._translate_tick_kw(kw)
++            # Update the tick keyword dicts so future ticks will have these settings
++            self._major_tick_kw.update(kwtrans)
++            self._minor_tick_kw.update(kwtrans)
++
++    def clear(self):
++    def _apply_tick_params_from_rcparams(self):
++        """
++        Apply tick parameters from rcParams to all existing ticks.
++        
++        This is called during Axis.clear() to restore default tick visibility
++        and appearance settings after the tick lists have been reset.
++        """
++        # Build the tick parameter dict from rcParams for this axis type
++        name = self.__name__  # e.g., 'xaxis' or 'yaxis'
++        tick_name = name.replace('axis', 'tick')  # e.g., 'xtick' or 'ytick'
++        
++        kw = {}
++        # Apply default tick visibility from rcParams
++        if f'{tick_name}.top' in mpl.rcParams or f'{tick_name}.bottom' in mpl.rcParams:
++            # For XAxis
++            if tick_name == 'xtick':
++                kw['top'] = mpl.rcParams.get(f'{tick_name}.top', True)
++                kw['bottom'] = mpl.rcParams.get(f'{tick_name}.bottom', True)
++                kw['labeltop'] = mpl.rcParams.get(f'{tick_name}.labeltop', False)
++                kw['labelbottom'] = mpl.rcParams.get(f'{tick_name}.labelbottom', True)
++            # For YAxis
++            elif tick_name == 'ytick':
++                kw['left'] = mpl.rcParams.get(f'{tick_name}.left', True)
++                kw['right'] = mpl.rcParams.get(f'{tick_name}.right', True)
++                kw['labelleft'] = mpl.rcParams.get(f'{tick_name}.labelleft', True)
++                kw['labelright'] = mpl.rcParams.get(f'{tick_name}.labelright', False)
++        
++        if kw:
++            # Apply these parameters to all existing ticks
++            kwtrans = self._translate_tick_kw(kw)
++            for tick in self.majorTicks:
++                tick._apply_params(**kwtrans)
++            for tick in self.minorTicks:
++                tick._apply_params(**kwtrans)
+ 
+     def clear(self):
+         """
+@@ -808,11 +872,17 @@
+ 
+         self._reset_major_tick_kw()
+         self._reset_minor_tick_kw()
++        self._apply_tick_params_from_rcparams()
+         self.reset_ticks()
+ 
+         self.converter = None
+         self.units = None
+         self.set_units(None)
++        self.stale = True
++        # Apply tick parameters from rcParams to restore default visibility settings
++        # This must happen after reset_ticks() to ensure new ticks get the defaults
++        self._apply_tick_params_from_rcparams()
++        
+         self.stale = True
+ 
+     @_api.deprecated("3.4", alternative="Axis.clear()")

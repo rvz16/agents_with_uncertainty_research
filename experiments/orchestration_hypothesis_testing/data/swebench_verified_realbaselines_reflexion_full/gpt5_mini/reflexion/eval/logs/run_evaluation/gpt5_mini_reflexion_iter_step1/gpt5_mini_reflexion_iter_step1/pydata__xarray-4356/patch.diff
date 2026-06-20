@@ -1,0 +1,32 @@
+--- a/xarray/core/nanops.py
++++ b/xarray/core/nanops.py
+@@ -26,13 +26,23 @@
+     """
+     xarray version of pandas.core.nanops._maybe_null_out
+     """
+-    if hasattr(axis, "__len__"):  # if tuple or list
+-        raise ValueError(
+-            "min_count is not available for reduction with more than one dimensions."
+-        )
+-
++    # Compute valid counts and null masking across possibly multiple axes
+     if axis is not None and getattr(result, "ndim", False):
+-        null_mask = (mask.shape[axis] - mask.sum(axis) - min_count) < 0
++        # axis may be an int or sequence of ints
++        if hasattr(axis, "__len__"):
++            # get total size along the reduced axes
++            try:
++                axis_size = int(np.prod(np.take(mask.shape, axis)))
++            except Exception:
++                # If shape info is unavailable (e.g., unknown dask shape), fall back
++                # to the previous behavior of raising to avoid silent incorrectness.
++                raise ValueError(
++                    "min_count is not available for reduction with more than one dimensions."
++                )
++        else:
++            axis_size = mask.shape[axis]
++
++        null_mask = (axis_size - mask.sum(axis=axis) - min_count) < 0
+         if null_mask.any():
+             dtype, fill_value = dtypes.maybe_promote(result.dtype)
+             result = result.astype(dtype)

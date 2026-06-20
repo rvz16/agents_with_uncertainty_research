@@ -1,0 +1,47 @@
+--- a/sphinx/environment/adapters/toctree.py
++++ b/sphinx/environment/adapters/toctree.py
+@@ -146,18 +146,32 @@
+                                            ref, ' <- '.join(parents),
+                                            location=ref, type='toc', subtype='circular')
+                             continue
+-                        refdoc = ref
+-                        toc = self.env.tocs[ref].deepcopy()
+-                        maxdepth = self.env.metadata[ref].get('tocdepth', 0)
+-                        if ref not in toctree_ancestors or (prune and maxdepth > 0):
+-                            self._toctree_prune(toc, 2, maxdepth, collapse)
+-                        process_only_nodes(toc, builder.tags)
+-                        if title and toc.children and len(toc.children) == 1:
+-                            child = toc.children[0]
+-                            for refnode in child.findall(nodes.reference):
+-                                if refnode['refuri'] == ref and \
+-                                   not refnode['anchorname']:
+-                                    refnode.children = [nodes.Text(title)]
++                        # Special-case generated index/search pages so that users
++                        # can reference them in toctree without getting warnings
++                        # when the corresponding source documents do not exist.
++                        if ref in ('genindex', 'modindex', 'search'):
++                            refdoc = ref
++                            # build a minimal TOC containing a single reference entry
++                            display_title = title or ref
++                            reference = nodes.reference('', '', internal=True,
++                                                        refuri=ref, anchorname='',
++                                                        *[nodes.Text(display_title)])
++                            para = addnodes.compact_paragraph('', '', reference)
++                            item = nodes.list_item('', para)
++                            toc = nodes.bullet_list('', item)
++                        else:
++                            refdoc = ref
++                            toc = self.env.tocs[ref].deepcopy()
++                            maxdepth = self.env.metadata[ref].get('tocdepth', 0)
++                            if ref not in toctree_ancestors or (prune and maxdepth > 0):
++                                self._toctree_prune(toc, 2, maxdepth, collapse)
++                            process_only_nodes(toc, builder.tags)
++                            if title and toc.children and len(toc.children) == 1:
++                                child = toc.children[0]
++                                for refnode in child.findall(nodes.reference):
++                                    if refnode['refuri'] == ref and \
++                                       not refnode['anchorname']:
++                                        refnode.children = [nodes.Text(title)]
+                     if not toc.children:
+                         # empty toc means: no titles will show up in the toctree
+                         logger.warning(__('toctree contains reference to document %r that '

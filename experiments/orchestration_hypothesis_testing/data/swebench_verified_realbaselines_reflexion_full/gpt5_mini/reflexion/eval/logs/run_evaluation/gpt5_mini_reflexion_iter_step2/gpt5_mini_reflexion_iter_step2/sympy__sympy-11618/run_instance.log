@@ -1,0 +1,85 @@
+2026-06-20 07:50:49,829 - INFO - Creating container for sympy__sympy-11618...
+2026-06-20 07:50:49,925 - INFO - Container for sympy__sympy-11618 created: 7fcd585eaf2cd9daf6359c8d20145f8e1cc091df53bc41d9964eeaaa87703f6c
+2026-06-20 07:50:50,055 - INFO - Container for sympy__sympy-11618 started: 7fcd585eaf2cd9daf6359c8d20145f8e1cc091df53bc41d9964eeaaa87703f6c
+2026-06-20 07:50:50,055 - INFO - Intermediate patch for sympy__sympy-11618 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-11618/patch.diff, now applying to container...
+2026-06-20 07:50:50,134 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-20 07:50:50,289 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 593048464..741ce03bf 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -21,6 +21,11 @@
+ from sympy.core.numbers import Float
+ from sympy.core.evaluate import global_evaluate
+ from sympy.core.add import Add
++try:
++    # itertools.zip_longest was renamed from izip_longest in Python 3
++    from itertools import zip_longest
++except ImportError:
++    from itertools import izip_longest as zip_longest
+ 
+ from .entity import GeometryEntity
+ 
+@@ -266,8 +271,13 @@ def distance(self, p):
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # ensure p is a Point so that .args exists and dimension handling is correct
++        p = Point(p)
++        # use zip_longest so that if the points have different dimensions the
++        # missing coordinates are treated as zeros rather than truncating to the
++        # shorter length (which would ignore higher dimensions)
++        return sqrt(sum((a - b)**2 for a, b in zip_longest(
++            self.args, p.args, fillvalue=S.Zero)))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.
+2026-06-20 07:50:50,289 - INFO - Eval script for sympy__sympy-11618 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-11618/eval.sh; copying to container...
+2026-06-20 07:50:52,371 - INFO - Test runtime: 2.05 seconds
+2026-06-20 07:50:52,372 - INFO - Test output for sympy__sympy-11618 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-11618/test_output.txt
+2026-06-20 07:50:52,416 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 593048464..741ce03bf 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -21,6 +21,11 @@
+ from sympy.core.numbers import Float
+ from sympy.core.evaluate import global_evaluate
+ from sympy.core.add import Add
++try:
++    # itertools.zip_longest was renamed from izip_longest in Python 3
++    from itertools import zip_longest
++except ImportError:
++    from itertools import izip_longest as zip_longest
+ 
+ from .entity import GeometryEntity
+ 
+@@ -266,8 +271,13 @@ def distance(self, p):
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # ensure p is a Point so that .args exists and dimension handling is correct
++        p = Point(p)
++        # use zip_longest so that if the points have different dimensions the
++        # missing coordinates are treated as zeros rather than truncating to the
++        # shorter length (which would ignore higher dimensions)
++        return sqrt(sum((a - b)**2 for a, b in zip_longest(
++            self.args, p.args, fillvalue=S.Zero)))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.
+2026-06-20 07:50:52,416 - INFO - Grading answer for sympy__sympy-11618...
+2026-06-20 07:50:52,419 - INFO - report: {'sympy__sympy-11618': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_11617'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_point3D', 'test_Point2D', 'test_issue_9214', 'test_transform'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-11618: resolved: True
+2026-06-20 07:50:52,419 - INFO - Attempting to stop container sweb.eval.sympy__sympy-11618.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:51:07,591 - INFO - Attempting to remove container sweb.eval.sympy__sympy-11618.gpt5_mini_reflexion_iter_step2...
+2026-06-20 07:51:07,607 - INFO - Container sweb.eval.sympy__sympy-11618.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-20 07:51:07,607 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-11618:latest...
+2026-06-20 07:51:07,637 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-11618:latest removed.

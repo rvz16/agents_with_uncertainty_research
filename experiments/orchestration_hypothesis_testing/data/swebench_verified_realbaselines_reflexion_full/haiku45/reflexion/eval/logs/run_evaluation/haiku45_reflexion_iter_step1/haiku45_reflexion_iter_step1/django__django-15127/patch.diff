@@ -1,0 +1,32 @@
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,29 @@
+ from django.apps import AppConfig
++from django.core.signals import setting_changed
++from django.dispatch import receiver
+ from django.utils.translation import gettext_lazy as _
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        from django.contrib.messages import constants
++        from django.contrib.messages.storage import base
++
++        @receiver(setting_changed)
++        def reset_level_tags(sender, setting, **kwargs):
++            if setting == 'MESSAGE_TAGS':
++                from django.conf import settings
++                # Rebuild LEVEL_TAGS by merging default constants with MESSAGE_TAGS
++                base.LEVEL_TAGS = {
++                    **{
++                        constants.DEBUG: 'debug',
++                        constants.INFO: 'info',
++                        constants.SUCCESS: 'success',
++                        constants.WARNING: 'warning',
++                        constants.ERROR: 'error',
++                    },
++                    **getattr(settings, 'MESSAGE_TAGS', {}),
++                }

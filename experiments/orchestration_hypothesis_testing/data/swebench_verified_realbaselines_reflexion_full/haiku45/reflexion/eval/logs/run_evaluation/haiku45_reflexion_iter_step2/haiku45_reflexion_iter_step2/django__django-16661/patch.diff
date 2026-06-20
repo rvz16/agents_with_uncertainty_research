@@ -1,0 +1,44 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -451,7 +451,6 @@
+                 fk_lookup
+             ).items():
+                 return True
+-
+         relation_parts = []
+         prev_field = None
+         for part in lookup.split(LOOKUP_SEP):
+@@ -464,9 +463,17 @@
+             # It is allowed to filter on values that would be found from local
+             # model anyways. For example, if you filter on employee__department__id,
+             # then the id value would be found already from employee__department_id.
++            # However, for multi-table inheritance parent links, we skip the field
++            # since it's implicitly followed to the parent model.
++            is_parent_link = (
++                getattr(field, "parent_link", False) and field.auto_created
++            )
+             if not prev_field or (
+                 prev_field.is_relation
+-                and field not in prev_field.path_infos[-1].target_fields
++                and (
++                    field not in prev_field.path_infos[-1].target_fields
++                    or not is_parent_link
++                )
+             ):
+                 relation_parts.append(part)
+             if not getattr(field, "path_infos", None):
+@@ -475,6 +482,14 @@
+                 break
+             prev_field = field
+             model = field.path_infos[-1].to_opts.model
++            # For multi-table inheritance, skip to the parent model. However,
++            # don't do this for OneToOneFields that are primary keys but not
++            # parent links (e.g., when a ForeignKey/OneToOneField is used as
++            # the primary key of a model).
++            if getattr(field, "parent_link", False) and field.auto_created:
++                model = field.path_infos[-1].to_opts.model
++            else:
++                model = field.path_infos[-1].to_opts.model
+ 
+         if len(relation_parts) <= 1:
+             # Either a local field filter, or no fields at all.

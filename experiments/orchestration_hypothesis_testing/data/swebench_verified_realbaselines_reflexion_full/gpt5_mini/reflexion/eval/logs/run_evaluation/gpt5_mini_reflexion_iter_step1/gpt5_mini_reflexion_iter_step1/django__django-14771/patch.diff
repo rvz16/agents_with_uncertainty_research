@@ -1,0 +1,29 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -215,11 +215,25 @@
+     Return the executable. This contains a workaround for Windows if the
+     executable is reported to not have the .exe extension which can cause bugs
+     on reloading.
++
++    Ensure that CPython -X options (available via sys._xoptions) are propagated
++    to the child process so behaviour controlled by -X (for example -X utf8)
++    is preserved across reloads.
+     """
+     import __main__
+     py_script = Path(sys.argv[0])
+ 
+-    args = [sys.executable] + ['-W%s' % o for o in sys.warnoptions]
++    # Propagate CPython -X options (sys._xoptions) if present.
++    xoptions = getattr(sys, "_xoptions", {}) or {}
++    xoption_args = []
++    for k, v in xoptions.items():
++        # -X name[=value]
++        if v in (None, ""):
++            xoption_args.append(f"-X{k}")
++        else:
++            xoption_args.append(f"-X{k}={v}")
++
++    args = [sys.executable] + xoption_args + ['-W%s' % o for o in sys.warnoptions]
+     # __spec__ is set when the server was started with the `-m` option,
+     # see https://docs.python.org/3/reference/import.html#main-spec
+     # __spec__ may not exist, e.g. when running in a Conda env.

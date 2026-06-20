@@ -1,0 +1,79 @@
+2026-06-19 20:12:56,205 - INFO - Creating container for sympy__sympy-14711...
+2026-06-19 20:12:56,337 - INFO - Container for sympy__sympy-14711 created: bf580884597426f5ca52fecd9cd7aeb80e2eb673c16c5f3d237aff4cf95ae541
+2026-06-19 20:12:56,546 - INFO - Container for sympy__sympy-14711 started: bf580884597426f5ca52fecd9cd7aeb80e2eb673c16c5f3d237aff4cf95ae541
+2026-06-19 20:12:56,546 - INFO - Intermediate patch for sympy__sympy-14711 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/sympy__sympy-14711/patch.diff, now applying to container...
+2026-06-19 20:12:56,644 - INFO - >>>>> Applied Patch:
+Checking patch sympy/physics/vector/vector.py...
+Applied patch sympy/physics/vector/vector.py cleanly.
+
+2026-06-19 20:12:56,829 - INFO - Git diff before:
+diff --git a/sympy/physics/vector/vector.py b/sympy/physics/vector/vector.py
+index a048ee57f..6e5dcace6 100644
+--- a/sympy/physics/vector/vector.py
++++ b/sympy/physics/vector/vector.py
+@@ -57,6 +57,8 @@ def __hash__(self):
+ 
+     def __add__(self, other):
+         """The add operator for Vector. """
++        if other == 0:
++            return self
+         other = _check_vector(other)
+         return Vector(self.args + other.args)
+ 
+@@ -446,10 +448,15 @@ def _det(mat):
+             outlist += _det(tempm).args
+         return Vector(outlist)
+ 
++    def __radd__(self, other):
++        """Right addition operator for Vector."""
++        if other == 0:
++            return self
++        return self.__add__(other)
++
+     _sympystr = __str__
+     _sympyrepr = _sympystr
+     __repr__ = __str__
+-    __radd__ = __add__
+     __rand__ = __and__
+     __rmul__ = __mul__
+2026-06-19 20:12:56,829 - INFO - Eval script for sympy__sympy-14711 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/sympy__sympy-14711/eval.sh; copying to container...
+2026-06-19 20:13:00,032 - INFO - Test runtime: 3.15 seconds
+2026-06-19 20:13:00,032 - INFO - Test output for sympy__sympy-14711 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/sympy__sympy-14711/test_output.txt
+2026-06-19 20:13:00,063 - INFO - Git diff after:
+diff --git a/sympy/physics/vector/vector.py b/sympy/physics/vector/vector.py
+index a048ee57f..6e5dcace6 100644
+--- a/sympy/physics/vector/vector.py
++++ b/sympy/physics/vector/vector.py
+@@ -57,6 +57,8 @@ def __hash__(self):
+ 
+     def __add__(self, other):
+         """The add operator for Vector. """
++        if other == 0:
++            return self
+         other = _check_vector(other)
+         return Vector(self.args + other.args)
+ 
+@@ -446,10 +448,15 @@ def _det(mat):
+             outlist += _det(tempm).args
+         return Vector(outlist)
+ 
++    def __radd__(self, other):
++        """Right addition operator for Vector."""
++        if other == 0:
++            return self
++        return self.__add__(other)
++
+     _sympystr = __str__
+     _sympyrepr = _sympystr
+     __repr__ = __str__
+-    __radd__ = __add__
+     __rand__ = __and__
+     __rmul__ = __mul__
+2026-06-19 20:13:00,063 - INFO - Grading answer for sympy__sympy-14711...
+2026-06-19 20:13:00,064 - INFO - report: {'sympy__sympy-14711': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_Vector'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_Vector_diffs', 'test_vector_var_in_dcm'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-14711: resolved: True
+2026-06-19 20:13:00,064 - INFO - Attempting to stop container sweb.eval.sympy__sympy-14711.haiku45_reflexion_iter_step1...
+2026-06-19 20:13:15,219 - INFO - Attempting to remove container sweb.eval.sympy__sympy-14711.haiku45_reflexion_iter_step1...
+2026-06-19 20:13:15,235 - INFO - Container sweb.eval.sympy__sympy-14711.haiku45_reflexion_iter_step1 removed.
+2026-06-19 20:13:15,235 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-14711:latest...
+2026-06-19 20:13:15,268 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-14711:latest removed.

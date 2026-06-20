@@ -1,0 +1,16 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1533,7 +1533,12 @@
+         return sql, sql_params
+ 
+     def get_group_by_cols(self):
+-        return self.query.get_group_by_cols(wrapper=self)
++        # The GROUP BY columns of a subquery should not be propagated to the
++        # outer query. When building COUNT()/EXISTS() subqueries, including
++        # the subquery's GROUP BY can cause unnecessary grouping and slowdowns.
++        # Returning an empty list ensures the outer query doesn't add those
++        # columns to its GROUP BY.
++        return []
+ 
+ 
+ class Exists(Subquery):

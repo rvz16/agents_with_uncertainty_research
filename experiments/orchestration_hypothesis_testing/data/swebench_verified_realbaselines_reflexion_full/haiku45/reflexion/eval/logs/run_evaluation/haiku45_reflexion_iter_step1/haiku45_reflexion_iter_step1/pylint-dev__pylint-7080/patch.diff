@@ -1,0 +1,26 @@
+--- a/pylint/lint/expand_modules.py
++++ b/pylint/lint/expand_modules.py
+@@ -75,8 +75,9 @@
+ 
+     for something in files_or_modules:
+         basename = os.path.basename(something)
++        normalized_something = os.path.normpath(something)
+         if _is_ignored_file(
+-            something, ignore_list, ignore_list_re, ignore_list_paths_re
++            normalized_something, ignore_list, ignore_list_re, ignore_list_paths_re
+         ):
+             continue
+         module_path = get_python_path(something)
+@@ -140,9 +141,10 @@
+             ):
+                 if filepath == subfilepath:
+                     continue
++                normalized_subfilepath = os.path.normpath(subfilepath)
+                 if _is_in_ignore_list_re(
+-                    os.path.basename(subfilepath), ignore_list_re
+-                ) or _is_in_ignore_list_re(subfilepath, ignore_list_paths_re):
++                    os.path.basename(normalized_subfilepath), ignore_list_re
++                ) or _is_in_ignore_list_re(normalized_subfilepath, ignore_list_paths_re):
+                     continue
+ 
+                 modpath = _modpath_from_file(

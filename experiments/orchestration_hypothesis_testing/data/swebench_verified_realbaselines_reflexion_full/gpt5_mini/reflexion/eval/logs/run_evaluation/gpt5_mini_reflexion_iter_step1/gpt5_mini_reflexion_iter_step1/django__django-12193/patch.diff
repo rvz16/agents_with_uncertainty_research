@@ -1,0 +1,13 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -522,8 +522,8 @@
+ 
+     def get_context(self, name, value, attrs):
+         if self.check_test(value):
+-            if attrs is None:
+-                attrs = {}
++            # Don't mutate the attrs dict that was passed in — copy it first.
++            attrs = {} if attrs is None else attrs.copy()
+             attrs['checked'] = True
+         return super().get_context(name, value, attrs)
+ 

@@ -1,0 +1,30 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -436,6 +436,12 @@
+             )
+             or having
+         )
++        # Check if any existing annotations contain window functions, as they
++        # require a subquery when aggregating over them.
++        has_window_functions = any(
++            getattr(annotation, "contains_window_functions", False)
++            for annotation in self.annotations.values()
++        )
+         # Decide if we need to use a subquery.
+         #
+         # Existing aggregations would cause incorrect results as
+@@ -446,10 +452,14 @@
+         # those operations must be done in a subquery so that the query
+         # aggregates on the limit and/or distinct results instead of applying
+         # the distinct and limit after the aggregation.
++        #
++        # Window functions also require a subquery because aggregate functions
++        # cannot contain window function calls in their arguments.
+         if (
+             isinstance(self.group_by, tuple)
+             or self.is_sliced
+             or has_existing_aggregation
++            or has_window_functions
+             or refs_subquery
+             or qualify
+             or self.distinct

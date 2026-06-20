@@ -1,0 +1,75 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -606,6 +606,21 @@
+ 
+                     for i, line in enumerate(self.process_doc(docstrings)):
+                         self.add_line(line, sourcename, i)
++                else:
++                    # Check if this is an inherited attribute by looking in base classes
++                    if inspect.isclass(self.parent):
++                        for base_cls in self.parent.__mro__[1:]:
++                            base_qualname = base_cls.__qualname__
++                            base_key = (base_qualname, self.objpath[-1])
++                            if base_key in attr_docs:
++                                no_docstring = True
++                                # make a copy of docstring for attributes to avoid cache
++                                # the change of autodoc-process-docstring event.
++                                docstrings = [list(attr_docs[base_key])]
++
++                                for i, line in enumerate(self.process_doc(docstrings)):
++                                    self.add_line(line, sourcename, i)
++                                break
+ 
+         # add content from docstrings
+         if not no_docstring:
+@@ -689,6 +704,23 @@
+         else:
+             attr_docs = {}
+ 
++        def find_attr_doc_in_class_or_bases(namespace: str, membername: str) -> bool:
++            """Check if attribute is documented in the class or any of its base classes."""
++            # Check current class first
++            if (namespace, membername) in attr_docs:
++                return True
++            
++            # For inherited members, check base classes
++            if inspect.isclass(self.object):
++                for base_cls in self.object.__mro__[1:]:
++                    # Build the namespace for the base class
++                    # The namespace in attr_docs is typically just the class name for class-level attributes
++                    base_namespace = base_cls.__qualname__
++                    if (base_namespace, membername) in attr_docs:
++                        return True
++            
++            return False
++
+         # process members and determine which to skip
+         for obj in members:
+             membername, member = obj
+@@ -746,7 +778,7 @@
+                         keep = has_doc or self.options.undoc_members
+                 else:
+                     keep = False
+-            elif (namespace, membername) in attr_docs:
++            elif find_attr_doc_in_class_or_bases(namespace, membername):
+                 if want_all and isprivate:
+                     if self.options.private_members is None:
+                         keep = False
+
+--- a/sphinx/ext/autodoc/importer.py
++++ b/sphinx/ext/autodoc/importer.py
+@@ -314,6 +314,14 @@
+             if namespace == ns and name not in members:
+                 members[name] = ClassAttribute(subject, name, INSTANCEATTR,
+                                                '\n'.join(docstring))
++        
++        # Also check base classes for inherited instance attributes
++        for base_cls in getmro(subject)[1:]:
++            base_namespace = base_cls.__qualname__
++            for (ns, name), docstring in analyzer.attr_docs.items():
++                if ns == base_namespace and name not in members:
++                    members[name] = ClassAttribute(base_cls, name, INSTANCEATTR,
++                                                   '\n'.join(docstring))
+ 
+     return members
+ 

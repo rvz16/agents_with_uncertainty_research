@@ -1,0 +1,25 @@
+--- a/django/db/models/sql/subqueries.py
++++ b/django/db/models/sql/subqueries.py
+@@ -66,6 +66,7 @@
+     def clone(self):
+         obj = super().clone()
+         obj.related_updates = self.related_updates.copy()
++        obj.related_ids = self.related_ids.copy() if self.related_ids is not None else None
+         return obj
+ 
+     def update_batch(self, pk_list, values, using):
+@@ -134,7 +135,13 @@
+             query = UpdateQuery(model)
+             query.values = values
+             if self.related_ids is not None:
+-                query.add_filter("pk__in", self.related_ids)
++                # related_ids may be a mapping from model -> list of ids
++                if isinstance(self.related_ids, dict):
++                    ids = self.related_ids.get(model, [])
++                    query.add_filter("pk__in", ids)
++                else:
++                    # Backwards compatibility: single list of ids
++                    query.add_filter("pk__in", self.related_ids)
+             result.append(query)
+         return result
+ 

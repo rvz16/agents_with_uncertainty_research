@@ -1,0 +1,46 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1411,14 +1411,39 @@
+                 cursor.execute(sql, params)
+             if not self.returning_fields:
+                 return []
++
++            # Apply DB converters (e.g. Field.from_db_value) to any values
++            # returned by the INSERT. This mirrors the conversion applied to
++            # SELECT results so that returned values maintain the same Python
++            # types as regular query results.
++            converters = self.get_converters(self.returning_fields)
++
+             if self.connection.features.can_return_rows_from_bulk_insert and len(self.query.objs) > 1:
+-                return self.connection.ops.fetch_returned_insert_rows(cursor)
++                rows = self.connection.ops.fetch_returned_insert_rows(cursor)
++                if converters:
++                    rows = list(self.apply_converters(rows, converters))
++                    rows = [tuple(r) for r in rows]
++                return rows
++
+             if self.connection.features.can_return_columns_from_insert:
+                 assert len(self.query.objs) == 1
+-                return [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
+-            return [(self.connection.ops.last_insert_id(
++                rows = [self.connection.ops.fetch_returned_insert_columns(cursor, self.returning_params)]
++                if converters:
++                    rows = list(self.apply_converters(rows, converters))
++                    rows = [tuple(r) for r in rows]
++                return rows
++
++            # Fallback for backends that don't support returning columns:
++            # synthesize a single-row result from last_insert_id and apply
++            # converters if necessary.
++            last_id = self.connection.ops.last_insert_id(
+                 cursor, self.query.get_meta().db_table, self.query.get_meta().pk.column
+-            ),)]
++            )
++            rows = [(last_id,)]
++            if converters:
++                rows = list(self.apply_converters(rows, converters))
++                rows = [tuple(r) for r in rows]
++            return rows
+ 
+ 
+ class SQLDeleteCompiler(SQLCompiler):

@@ -1,0 +1,23 @@
+--- a/sphinx/directives/code.py
++++ b/sphinx/directives/code.py
+@@ -184,6 +184,8 @@
+         ('diff', 'end-before'),
+         ('diff', 'start-at'),
+         ('diff', 'end-at'),
++        ('dedent', 'prepend'),
++        ('dedent', 'append'),
+     ]
+ 
+     def __init__(self, filename: str, options: Dict, config: Config) -> None:
+@@ -224,9 +226,9 @@
+                        self.start_filter,
+                        self.end_filter,
+                        self.lines_filter,
++                       self.dedent_filter,
+                        self.prepend_filter,
+-                       self.append_filter,
+-                       self.dedent_filter]
++                       self.append_filter]
+             lines = self.read_file(self.filename, location=location)
+             for func in filters:
+                 lines = func(lines, location=location)

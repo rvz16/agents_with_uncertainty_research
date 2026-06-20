@@ -1,0 +1,77 @@
+2026-06-20 06:18:50,269 - INFO - Creating container for sphinx-doc__sphinx-9461...
+2026-06-20 06:18:50,454 - INFO - Container for sphinx-doc__sphinx-9461 created: cc5717a5ecda2e549f0072c99131e8e942bb12fec68c6d7739cfc095ab47bc78
+2026-06-20 06:18:50,768 - INFO - Container for sphinx-doc__sphinx-9461 started: cc5717a5ecda2e549f0072c99131e8e942bb12fec68c6d7739cfc095ab47bc78
+2026-06-20 06:18:50,769 - INFO - Intermediate patch for sphinx-doc__sphinx-9461 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sphinx-doc__sphinx-9461/patch.diff, now applying to container...
+2026-06-20 06:18:50,929 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/util/inspect.py...
+Applied patch sphinx/util/inspect.py cleanly.
+
+2026-06-20 06:18:51,120 - INFO - Git diff before:
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index 23dd9e930..346098a46 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -384,11 +384,23 @@ def iscoroutinefunction(obj: Any) -> bool:
+ 
+ 
+ def isproperty(obj: Any) -> bool:
+-    """Check if the object is property."""
++    """Check if the object is property.
++
++    Also recognize a classmethod wrapping a property (e.g. @classmethod @property),
++    and a classmethod wrapping cached_property.  Such constructs became possible
++    in Python 3.9 and should be treated as properties by autodoc.
++    """
+     if sys.version_info >= (3, 8):
+         from functools import cached_property  # cached_property is available since py3.8
+         if isinstance(obj, cached_property):
+             return True
++        # classmethod wrapping a cached_property
++        if isinstance(obj, classmethod) and isinstance(getattr(obj, "__func__", None), cached_property):
++            return True
++
++    # classmethod wrapping a property (e.g. @classmethod @property)
++    if isinstance(obj, classmethod) and isinstance(getattr(obj, "__func__", None), property):
++        return True
+ 
+     return isinstance(obj, property)
+2026-06-20 06:18:51,121 - INFO - Eval script for sphinx-doc__sphinx-9461 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sphinx-doc__sphinx-9461/eval.sh; copying to container...
+2026-06-20 06:18:56,739 - INFO - Test runtime: 5.57 seconds
+2026-06-20 06:18:56,739 - INFO - Test output for sphinx-doc__sphinx-9461 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sphinx-doc__sphinx-9461/test_output.txt
+2026-06-20 06:18:56,797 - INFO - Git diff after:
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index 23dd9e930..346098a46 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -384,11 +384,23 @@ def iscoroutinefunction(obj: Any) -> bool:
+ 
+ 
+ def isproperty(obj: Any) -> bool:
+-    """Check if the object is property."""
++    """Check if the object is property.
++
++    Also recognize a classmethod wrapping a property (e.g. @classmethod @property),
++    and a classmethod wrapping cached_property.  Such constructs became possible
++    in Python 3.9 and should be treated as properties by autodoc.
++    """
+     if sys.version_info >= (3, 8):
+         from functools import cached_property  # cached_property is available since py3.8
+         if isinstance(obj, cached_property):
+             return True
++        # classmethod wrapping a cached_property
++        if isinstance(obj, classmethod) and isinstance(getattr(obj, "__func__", None), cached_property):
++            return True
++
++    # classmethod wrapping a property (e.g. @classmethod @property)
++    if isinstance(obj, classmethod) and isinstance(getattr(obj, "__func__", None), property):
++        return True
+ 
+     return isinstance(obj, property)
+2026-06-20 06:18:56,797 - INFO - Grading answer for sphinx-doc__sphinx-9461...
+2026-06-20 06:18:56,806 - INFO - report: {'sphinx-doc__sphinx-9461': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/test_domain_py.py::test_pyproperty', 'tests/test_ext_autodoc_autoclass.py::test_properties', 'tests/test_ext_autodoc_autoproperty.py::test_class_properties']}, 'PASS_TO_PASS': {'success': ['tests/test_domain_py.py::test_function_signatures', 'tests/test_domain_py.py::test_domain_py_xrefs', 'tests/test_domain_py.py::test_domain_py_xrefs_abbreviations', 'tests/test_domain_py.py::test_domain_py_objects', 'tests/test_domain_py.py::test_resolve_xref_for_properties', 'tests/test_domain_py.py::test_domain_py_find_obj', 'tests/test_domain_py.py::test_domain_py_canonical', 'tests/test_domain_py.py::test_get_full_qualified_name', 'tests/test_domain_py.py::test_parse_annotation', 'tests/test_domain_py.py::test_pyfunction_signature', 'tests/test_domain_py.py::test_pyfunction_signature_full', 'tests/test_domain_py.py::test_pyfunction_signature_full_py38', 'tests/test_domain_py.py::test_pyfunction_with_number_literals', 'tests/test_domain_py.py::test_pyfunction_with_union_type_operator', 'tests/test_domain_py.py::test_optional_pyfunction_signature', 'tests/test_domain_py.py::test_pyexception_signature', 'tests/test_domain_py.py::test_pydata_signature', 'tests/test_domain_py.py::test_pydata_signature_old', 'tests/test_domain_py.py::test_pydata_with_union_type_operator', 'tests/test_domain_py.py::test_pyobject_prefix', 'tests/test_domain_py.py::test_pydata', 'tests/test_domain_py.py::test_pyfunction', 'tests/test_domain_py.py::test_pyclass_options', 'tests/test_domain_py.py::test_pymethod_options', 'tests/test_domain_py.py::test_pyclassmethod', 'tests/test_domain_py.py::test_pystaticmethod', 'tests/test_domain_py.py::test_pyattribute', 'tests/test_domain_py.py::test_pydecorator_signature', 'tests/test_domain_py.py::test_pydecoratormethod_signature', 'tests/test_domain_py.py::test_canonical', 'tests/test_domain_py.py::test_canonical_definition_overrides', 'tests/test_domain_py.py::test_canonical_definition_skip', 'tests/test_domain_py.py::test_canonical_duplicated', 'tests/test_domain_py.py::test_info_field_list', 'tests/test_domain_py.py::test_info_field_list_piped_type', 'tests/test_domain_py.py::test_info_field_list_var', 'tests/test_domain_py.py::test_module_index', 'tests/test_domain_py.py::test_module_index_submodule', 'tests/test_domain_py.py::test_module_index_not_collapsed', 'tests/test_domain_py.py::test_modindex_common_prefix', 'tests/test_domain_py.py::test_noindexentry', 'tests/test_domain_py.py::test_python_python_use_unqualified_type_names', 'tests/test_domain_py.py::test_python_python_use_unqualified_type_names_disabled', 'tests/test_domain_py.py::test_warn_missing_reference', 'tests/test_ext_autodoc_autoclass.py::test_classes', 'tests/test_ext_autodoc_autoclass.py::test_instance_variable', 'tests/test_ext_autodoc_autoclass.py::test_inherited_instance_variable', 'tests/test_ext_autodoc_autoclass.py::test_uninitialized_attributes', 'tests/test_ext_autodoc_autoclass.py::test_undocumented_uninitialized_attributes', 'tests/test_ext_autodoc_autoclass.py::test_decorators', 'tests/test_ext_autodoc_autoclass.py::test_slots_attribute', 'tests/test_ext_autodoc_autoclass.py::test_show_inheritance_for_subclass_of_generic_type', 'tests/test_ext_autodoc_autoclass.py::test_autodoc_process_bases', 'tests/test_ext_autodoc_autoclass.py::test_class_doc_from_class', 'tests/test_ext_autodoc_autoclass.py::test_class_doc_from_init', 'tests/test_ext_autodoc_autoclass.py::test_class_doc_from_both', 'tests/test_ext_autodoc_autoclass.py::test_class_alias', 'tests/test_ext_autodoc_autoclass.py::test_class_alias_having_doccomment', 'tests/test_ext_autodoc_autoproperty.py::test_properties'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-9461: resolved: False
+2026-06-20 06:18:56,806 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-9461.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:19:12,056 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-9461.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:19:12,086 - INFO - Container sweb.eval.sphinx-doc__sphinx-9461.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 06:19:12,086 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9461:latest...
+2026-06-20 06:19:12,154 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-9461:latest removed.

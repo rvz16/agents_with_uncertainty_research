@@ -1,0 +1,40 @@
+--- a/django/db/models/fields/files.py
++++ b/django/db/models/fields/files.py
+@@ -227,8 +227,15 @@
+     def __init__(self, verbose_name=None, name=None, upload_to='', storage=None, **kwargs):
+         self._primary_key_set_explicitly = 'primary_key' in kwargs
+ 
++        # Preserve the original storage argument so deconstruct() can reference
++        # the callable without evaluating it. For runtime use, evaluate the
++        # callable (if any) and store the resulting Storage instance on
++        # self.storage.
++        self._storage = storage
+         self.storage = storage or default_storage
+         if callable(self.storage):
++            # Evaluate callable for runtime use, but keep original in
++            # self._storage so deconstruction can return the callable itself.
+             self.storage = self.storage()
+             if not isinstance(self.storage, Storage):
+                 raise TypeError(
+@@ -278,8 +285,19 @@
+         if kwargs.get("max_length") == 100:
+             del kwargs["max_length"]
+         kwargs['upload_to'] = self.upload_to
+-        if self.storage is not default_storage:
+-            kwargs['storage'] = self.storage
++        # If the original storage argument was provided and was a callable,
++        # return the callable itself so that runtime selection of storage is
++        # preserved (e.g., for makemigrations). Otherwise, include the storage
++        # argument only if it differs from the default_storage.
++        original_storage = getattr(self, '_storage', None)
++        if original_storage is not None:
++            if callable(original_storage):
++                kwargs['storage'] = original_storage
++            elif original_storage is not default_storage:
++                kwargs['storage'] = original_storage
++        else:
++            if self.storage is not default_storage:
++                kwargs['storage'] = self.storage
+         return name, path, args, kwargs
+ 
+     def get_internal_type(self):

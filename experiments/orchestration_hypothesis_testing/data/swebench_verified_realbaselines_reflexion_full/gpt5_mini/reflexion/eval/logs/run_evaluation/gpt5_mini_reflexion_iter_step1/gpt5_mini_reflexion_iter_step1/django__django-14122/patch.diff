@@ -1,0 +1,20 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -125,7 +125,16 @@
+             cols = expr.get_group_by_cols()
+             for col in cols:
+                 expressions.append(col)
+-        for expr, (sql, params, is_ref) in order_by:
++        # If ordering comes from Meta.ordering, don't include ordering fields
++        # in the GROUP BY clause. get_order_by() marks that situation by
++        # setting self._meta_ordering. In that case, ignore order_by here to
++        # avoid polluting GROUP BY with implicit model ordering (see #14122).
++        if self._meta_ordering:
++            order_by_iter = ()
++        else:
++            order_by_iter = order_by
++
++        for expr, (sql, params, is_ref) in order_by_iter:
+             # Skip References to the select clause, as all expressions in the
+             # select clause are already part of the group by.
+             if not is_ref:

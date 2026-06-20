@@ -1,0 +1,32 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -352,6 +352,29 @@
+                             if self.check_dependency(op2, dep):
+                                 dependency_graph[op].add(op2)
+ 
++            # Handle field moves from parent to child class: RemoveField must
++            # come before CreateModel to avoid field clash errors
++            for create_op in ops:
++                if isinstance(create_op, operations.CreateModel):
++                    # Get the bases of the created model
++                    create_model_bases = set()
++                    for base in create_op.bases:
++                        if isinstance(base, str) and "." in base:
++                            base_app_label, base_model_name = base.split(".", 1)
++                            if base_app_label == app_label:
++                                create_model_bases.add(base_model_name.lower())
++                    
++                    # Get fields being created in this model
++                    created_fields = {field_name for field_name, _ in create_op.fields}
++                    
++                    # Check if any RemoveField operations remove these fields from parent classes
++                    for remove_op in ops:
++                        if isinstance(remove_op, operations.RemoveField):
++                            if (remove_op.model_name_lower in create_model_bases and
++                                    remove_op.name_lower in created_fields):
++                                # RemoveField should come before CreateModel
++                                dependency_graph[create_op].add(remove_op)
++
+             # we use a stable sort for deterministic tests & general behavior
+             self.generated_operations[app_label] = stable_topological_sort(ops, dependency_graph)
+ 

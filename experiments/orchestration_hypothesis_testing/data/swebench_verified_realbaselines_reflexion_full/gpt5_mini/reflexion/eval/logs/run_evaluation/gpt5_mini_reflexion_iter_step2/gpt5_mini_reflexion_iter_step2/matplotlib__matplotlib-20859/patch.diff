@@ -1,0 +1,23 @@
+--- a/lib/matplotlib/legend.py
++++ b/lib/matplotlib/legend.py
+@@ -360,7 +360,10 @@
+         """
+         # local import only to avoid circularity
+         from matplotlib.axes import Axes
+-        from matplotlib.figure import Figure
++        # Import FigureBase to allow SubFigure (and other figure-like
++        # objects) to be parents of a Legend.  FigureBase is the common
++        # base for Figure and SubFigure.
++        from matplotlib.figure import Figure, FigureBase
+ 
+         super().__init__()
+ 
+@@ -434,7 +437,7 @@
+             self.isaxes = True
+             self.axes = parent
+             self.set_figure(parent.figure)
+-        elif isinstance(parent, Figure):
++        elif isinstance(parent, FigureBase):
+             self.isaxes = False
+             self.set_figure(parent)
+         else:

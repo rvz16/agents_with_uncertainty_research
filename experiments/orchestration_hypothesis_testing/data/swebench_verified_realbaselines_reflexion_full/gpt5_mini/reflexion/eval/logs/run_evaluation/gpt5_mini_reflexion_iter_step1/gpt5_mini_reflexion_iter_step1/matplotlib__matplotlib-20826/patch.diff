@@ -1,0 +1,25 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -806,8 +806,22 @@
+         # Clear the callback registry for this axis, or it may "leak"
+         self.callbacks = cbook.CallbackRegistry()
+ 
++        # When clearing an Axis (e.g., via Axes.clear()), avoid clobbering
++        # explicit tick/ticklabel visibility choices (tick1On/tick2On/
++        # label1On/label2On). This prevents un-hiding tick labels on
++        # sibling/shared axes. Preserve these keys across the reset but keep
++        # the normal behavior of _reset_* for other callers (like
++        # set_tick_params(reset=True)).
++        old_major = self._major_tick_kw.copy()
++        old_minor = self._minor_tick_kw.copy()
+         self._reset_major_tick_kw()
+         self._reset_minor_tick_kw()
++        for k in ['tick1On', 'tick2On', 'label1On', 'label2On']:
++            if k in old_major:
++                self._major_tick_kw[k] = old_major[k]
++            if k in old_minor:
++                self._minor_tick_kw[k] = old_minor[k]
++
+         self.reset_ticks()
+ 
+         self.converter = None

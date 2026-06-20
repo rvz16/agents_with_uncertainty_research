@@ -1,0 +1,24 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -153,6 +153,21 @@
+             else:
+                 return func(*self.__args, **self.__kw)
+ 
++        def __radd__(self, other):
++            # Support right-hand addition so that expressions like
++            # 'text' + lazy_str work as expected. Coerce the proxy to the
++            # appropriate type (text or bytes) before concatenation.
++            if isinstance(other, Promise):
++                other = other.__cast()
++            if self._delegate_text:
++                # Ensure both sides are text for concatenation.
++                return str(other) + str(self.__cast())
++            if self._delegate_bytes:
++                # Ensure both sides are bytes for concatenation.
++                return bytes(other) + self.__bytes_cast()
++            # Fallback: try to use the proxied object's value.
++            return other + self.__cast()
++
+         def __str__(self):
+             # object defines __str__(), so __prepare_class__() won't overload
+             # a __str__() method from the proxied class.

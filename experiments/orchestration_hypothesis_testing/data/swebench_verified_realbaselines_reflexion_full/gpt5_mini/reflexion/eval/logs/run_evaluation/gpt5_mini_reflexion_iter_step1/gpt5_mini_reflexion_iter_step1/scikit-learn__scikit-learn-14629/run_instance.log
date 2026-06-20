@@ -1,0 +1,103 @@
+2026-06-20 06:14:48,932 - INFO - Creating container for scikit-learn__scikit-learn-14629...
+2026-06-20 06:14:49,064 - INFO - Container for scikit-learn__scikit-learn-14629 created: 1abac56e97c883a69b0ce5d12b8e0eab9332be96f649a32717e526bae7d881d1
+2026-06-20 06:14:49,191 - INFO - Container for scikit-learn__scikit-learn-14629 started: 1abac56e97c883a69b0ce5d12b8e0eab9332be96f649a32717e526bae7d881d1
+2026-06-20 06:14:49,191 - INFO - Intermediate patch for scikit-learn__scikit-learn-14629 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-14629/patch.diff, now applying to container...
+2026-06-20 06:14:49,277 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/multioutput.py...
+Applied patch sklearn/multioutput.py cleanly.
+
+2026-06-20 06:14:49,496 - INFO - Git diff before:
+diff --git a/sklearn/multioutput.py b/sklearn/multioutput.py
+index 463b72d40..18a797875 100644
+--- a/sklearn/multioutput.py
++++ b/sklearn/multioutput.py
+@@ -325,6 +325,36 @@ class MultiOutputClassifier(MultiOutputEstimator, ClassifierMixin):
+     def __init__(self, estimator, n_jobs=None):
+         super().__init__(estimator, n_jobs)
+ 
++    @if_delegate_has_method('estimator')
++    def partial_fit(self, X, y, classes=None, sample_weight=None):
++        """Incrementally fit the model to data and collect classes_.
++
++        This wraps the MultiOutputEstimator.partial_fit to ensure that after
++        partial fitting the per-output classes_ attribute is available on the
++        meta-estimator (when the underlying estimators expose classes_).
++        """
++        super().partial_fit(X, y, classes=classes,
++                            sample_weight=sample_weight)
++        # collect classes_ from underlying estimators if present
++        if hasattr(self, "estimators_"):
++            self.classes_ = [getattr(est, "classes_", None)
++                             for est in self.estimators_]
++        return self
++
++    def fit(self, X, y, sample_weight=None):
++        """Fit the model to data and collect classes_.
++
++        After fitting the underlying estimators, this stores a list
++        self.classes_ containing the classes_ attribute of each fitted
++        estimator. This mirrors the behavior of other meta-estimators
++        (e.g. ClassifierChain) and is required by utilities such as
++        cross_val_predict(method='predict_proba').
++        """
++        super().fit(X, y, sample_weight=sample_weight)
++        # collect classes_ from underlying estimators
++        self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
+     def predict_proba(self, X):
+         """Probability estimates.
+         Returns prediction probabilities for each class of each output.
+2026-06-20 06:14:49,496 - INFO - Eval script for scikit-learn__scikit-learn-14629 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-14629/eval.sh; copying to container...
+2026-06-20 06:14:59,513 - INFO - Test runtime: 9.94 seconds
+2026-06-20 06:14:59,513 - INFO - Test output for scikit-learn__scikit-learn-14629 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-14629/test_output.txt
+2026-06-20 06:14:59,553 - INFO - Git diff after:
+diff --git a/sklearn/multioutput.py b/sklearn/multioutput.py
+index 463b72d40..18a797875 100644
+--- a/sklearn/multioutput.py
++++ b/sklearn/multioutput.py
+@@ -325,6 +325,36 @@ class MultiOutputClassifier(MultiOutputEstimator, ClassifierMixin):
+     def __init__(self, estimator, n_jobs=None):
+         super().__init__(estimator, n_jobs)
+ 
++    @if_delegate_has_method('estimator')
++    def partial_fit(self, X, y, classes=None, sample_weight=None):
++        """Incrementally fit the model to data and collect classes_.
++
++        This wraps the MultiOutputEstimator.partial_fit to ensure that after
++        partial fitting the per-output classes_ attribute is available on the
++        meta-estimator (when the underlying estimators expose classes_).
++        """
++        super().partial_fit(X, y, classes=classes,
++                            sample_weight=sample_weight)
++        # collect classes_ from underlying estimators if present
++        if hasattr(self, "estimators_"):
++            self.classes_ = [getattr(est, "classes_", None)
++                             for est in self.estimators_]
++        return self
++
++    def fit(self, X, y, sample_weight=None):
++        """Fit the model to data and collect classes_.
++
++        After fitting the underlying estimators, this stores a list
++        self.classes_ containing the classes_ attribute of each fitted
++        estimator. This mirrors the behavior of other meta-estimators
++        (e.g. ClassifierChain) and is required by utilities such as
++        cross_val_predict(method='predict_proba').
++        """
++        super().fit(X, y, sample_weight=sample_weight)
++        # collect classes_ from underlying estimators
++        self.classes_ = [estimator.classes_ for estimator in self.estimators_]
++        return self
++
+     def predict_proba(self, X):
+         """Probability estimates.
+         Returns prediction probabilities for each class of each output.
+2026-06-20 06:14:59,553 - INFO - Grading answer for scikit-learn__scikit-learn-14629...
+2026-06-20 06:14:59,553 - INFO - report: {'scikit-learn__scikit-learn-14629': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/tests/test_multioutput.py::test_multi_output_classes_[estimator1]'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/tests/test_multioutput.py::test_multi_target_regression', 'sklearn/tests/test_multioutput.py::test_multi_target_regression_partial_fit', 'sklearn/tests/test_multioutput.py::test_multi_target_regression_one_target', 'sklearn/tests/test_multioutput.py::test_multi_target_sparse_regression', 'sklearn/tests/test_multioutput.py::test_multi_target_sample_weights_api', 'sklearn/tests/test_multioutput.py::test_multi_target_sample_weight_partial_fit', 'sklearn/tests/test_multioutput.py::test_multi_target_sample_weights', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit_parallelism', 'sklearn/tests/test_multioutput.py::test_multi_output_predict_proba', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit_no_first_classes_exception', 'sklearn/tests/test_multioutput.py::test_multi_output_classification', 'sklearn/tests/test_multioutput.py::test_multiclass_multioutput_estimator', 'sklearn/tests/test_multioutput.py::test_multiclass_multioutput_estimator_predict_proba', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_sample_weights', 'sklearn/tests/test_multioutput.py::test_multi_output_classification_partial_fit_sample_weights', 'sklearn/tests/test_multioutput.py::test_multi_output_exceptions', 'sklearn/tests/test_multioutput.py::test_classifier_chain_fit_and_predict_with_linear_svc', 'sklearn/tests/test_multioutput.py::test_classifier_chain_fit_and_predict_with_sparse_data', 'sklearn/tests/test_multioutput.py::test_classifier_chain_vs_independent_models', 'sklearn/tests/test_multioutput.py::test_base_chain_fit_and_predict', 'sklearn/tests/test_multioutput.py::test_base_chain_fit_and_predict_with_sparse_data_and_cv', 'sklearn/tests/test_multioutput.py::test_base_chain_random_order', 'sklearn/tests/test_multioutput.py::test_base_chain_crossval_fit_and_predict', 'sklearn/tests/test_multioutput.py::test_multi_output_classes_[estimator0]', 'sklearn/tests/test_multioutput.py::test_multi_output_classes_[estimator2]'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-14629: resolved: True
+2026-06-20 06:14:59,553 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-14629.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:15:18,691 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-14629.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:15:18,715 - INFO - Container sweb.eval.scikit-learn__scikit-learn-14629.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 06:15:18,715 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14629:latest...
+2026-06-20 06:15:19,288 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14629:latest removed.

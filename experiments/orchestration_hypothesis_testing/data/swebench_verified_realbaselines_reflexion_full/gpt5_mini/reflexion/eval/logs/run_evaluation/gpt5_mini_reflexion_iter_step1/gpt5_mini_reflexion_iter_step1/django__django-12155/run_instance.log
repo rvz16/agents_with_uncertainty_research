@@ -1,0 +1,77 @@
+2026-06-20 05:48:30,119 - INFO - Creating container for django__django-12155...
+2026-06-20 05:48:30,256 - INFO - Container for django__django-12155 created: 748f42a705c1551a1b96c74689530082f75aa3c9cc7dbad30c4a6d0cf20f11a5
+2026-06-20 05:48:30,458 - INFO - Container for django__django-12155 started: 748f42a705c1551a1b96c74689530082f75aa3c9cc7dbad30c4a6d0cf20f11a5
+2026-06-20 05:48:30,458 - INFO - Intermediate patch for django__django-12155 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12155/patch.diff, now applying to container...
+2026-06-20 05:48:30,579 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/admindocs/utils.py...
+Applied patch django/contrib/admindocs/utils.py cleanly.
+
+2026-06-20 05:48:31,035 - INFO - Git diff before:
+diff --git a/django/contrib/admindocs/utils.py b/django/contrib/admindocs/utils.py
+index 4c0e7e2a56..5080fd3286 100644
+--- a/django/contrib/admindocs/utils.py
++++ b/django/contrib/admindocs/utils.py
+@@ -1,6 +1,7 @@
+ "Misc. utility functions/classes for admin documentation generator."
+ 
+ import re
++import inspect
+ from email.errors import HeaderParseError
+ from email.parser import HeaderParser
+ 
+@@ -32,11 +33,10 @@ def trim_docstring(docstring):
+     """
+     if not docstring or not docstring.strip():
+         return ''
+-    # Convert tabs to spaces and split into lines
+-    lines = docstring.expandtabs().splitlines()
+-    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())
+-    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]
+-    return "\n".join(trimmed).strip()
++    # Use inspect.cleandoc() which implements the algorithm defined in PEP 257.
++    # It correctly handles docstrings that start on the first line and normalises
++    # indentation across all lines.
++    return inspect.cleandoc(docstring).strip()
+ 
+ 
+ def parse_docstring(docstring):
+2026-06-20 05:48:31,035 - INFO - Eval script for django__django-12155 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12155/eval.sh; copying to container...
+2026-06-20 05:48:55,295 - INFO - Test runtime: 24.21 seconds
+2026-06-20 05:48:55,296 - INFO - Test output for django__django-12155 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12155/test_output.txt
+2026-06-20 05:48:55,361 - INFO - Git diff after:
+diff --git a/django/contrib/admindocs/utils.py b/django/contrib/admindocs/utils.py
+index 4c0e7e2a56..5080fd3286 100644
+--- a/django/contrib/admindocs/utils.py
++++ b/django/contrib/admindocs/utils.py
+@@ -1,6 +1,7 @@
+ "Misc. utility functions/classes for admin documentation generator."
+ 
+ import re
++import inspect
+ from email.errors import HeaderParseError
+ from email.parser import HeaderParser
+ 
+@@ -32,11 +33,10 @@ def trim_docstring(docstring):
+     """
+     if not docstring or not docstring.strip():
+         return ''
+-    # Convert tabs to spaces and split into lines
+-    lines = docstring.expandtabs().splitlines()
+-    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())
+-    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]
+-    return "\n".join(trimmed).strip()
++    # Use inspect.cleandoc() which implements the algorithm defined in PEP 257.
++    # It correctly handles docstrings that start on the first line and normalises
++    # indentation across all lines.
++    return inspect.cleandoc(docstring).strip()
+ 
+ 
+ def parse_docstring(docstring):
+2026-06-20 05:48:55,361 - INFO - Grading answer for django__django-12155...
+2026-06-20 05:48:55,361 - INFO - report: {'django__django-12155': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_parse_rst_with_docstring_no_leading_line_feed (admin_docs.test_utils.TestUtils)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_description_output (admin_docs.test_utils.TestUtils)', 'test_initial_header_level (admin_docs.test_utils.TestUtils)', 'test_parse_docstring (admin_docs.test_utils.TestUtils)', 'test_parse_rst (admin_docs.test_utils.TestUtils)', 'test_publish_parts (admin_docs.test_utils.TestUtils)', 'test_title_output (admin_docs.test_utils.TestUtils)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12155: resolved: True
+2026-06-20 05:48:55,361 - INFO - Attempting to stop container sweb.eval.django__django-12155.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:49:10,591 - INFO - Attempting to remove container sweb.eval.django__django-12155.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:49:10,612 - INFO - Container sweb.eval.django__django-12155.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 05:49:10,612 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12155:latest...
+2026-06-20 05:49:10,747 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12155:latest removed.

@@ -1,0 +1,106 @@
+--- a/django/db/backends/base/operations.py
++++ b/django/db/backends/base/operations.py
+@@ -579,8 +579,101 @@
+         return []
+ 
+     def convert_durationfield_value(self, value, expression, connection):
+-        if value is not None:
+-            return datetime.timedelta(0, 0, value)
++        """
++        Convert a database value to a datetime.timedelta.
++
++        Different backends/drivers may return durations in various formats:
++        - integer microseconds (int)
++        - floating microseconds (float)
++        - Decimal (either integral microseconds or fractional seconds)
++        - bytes/str (e.g. b'123456', '123456', or 'HH:MM:SS[.ffffff]')
++        - datetime.timedelta (already converted)
++
++        Prefer interpreting integer-like values as microseconds. For Decimal
++        values prefer treating exact integers as microseconds and decimals
++        with a fractional part as seconds. For strings, try integer
++        microseconds first, then 'HH:MM:SS[.ffffff]' parsing, then decimal
++        seconds as a last resort. If no conversion is possible, return the
++        original value (letting callers handle unexpected types).
++        """
++        if value is None:
++            return None
++
++        if isinstance(value, datetime.timedelta):
++            return value
++
++        # Integers -> microseconds
++        if isinstance(value, int):
++            return datetime.timedelta(microseconds=value)
++
++        # Floats -> microseconds (coerce to int microseconds)
++        if isinstance(value, float):
++            return datetime.timedelta(microseconds=int(value))
++
++        # Decimal handling: if integral, treat as microseconds; otherwise as seconds.
++        if isinstance(value, decimal.Decimal):
++            try:
++                integral = value == value.to_integral_value()
++            except Exception:
++                integral = False
++            if integral:
++                return datetime.timedelta(microseconds=int(value))
++            return datetime.timedelta(seconds=float(value))
++
++        # Decode bytes to str
++        if isinstance(value, (bytes, bytearray)):
++            try:
++                value = value.decode()
++            except Exception:
++                value = value.decode(errors='ignore')
++
++        # String handling
++        if isinstance(value, str):
++            s = value.strip()
++            # Try integer microseconds
++            try:
++                micros = int(s)
++            except Exception:
++                micros = None
++            if micros is not None:
++                return datetime.timedelta(microseconds=micros)
++
++            # Try '[-]HH:MM:SS[.ffffff]' (hours may exceed 23 for durations)
++            neg = s.startswith('-')
++            s2 = s[1:] if neg else s
++            if ':' in s2:
++                try:
++                    parts = s2.split(':')
++                    if len(parts) == 3:
++                        hours = int(parts[0])
++                        minutes = int(parts[1])
++                        sec_part = parts[2]
++                        if '.' in sec_part:
++                            sec_str, us_str = sec_part.split('.', 1)
++                            seconds = int(sec_str)
++                            microseconds = int((us_str + '000000')[:6])
++                        else:
++                            seconds = int(sec_part)
++                            microseconds = 0
++                        td = datetime.timedelta(
++                            hours=hours, minutes=minutes,
++                            seconds=seconds, microseconds=microseconds
++                        )
++                        return -td if neg else td
++                except Exception:
++                    # Fall through to next parsing attempt
++                    pass
++
++            # Try decimal seconds (e.g. "12.345" -> 12.345 seconds)
++            try:
++                d = decimal.Decimal(s)
++            except Exception:
++                d = None
++            if d is not None:
++                return datetime.timedelta(seconds=float(d))
++
++        # Unknown format: return as-is so the caller can decide what to do.
++        return value
+ 
+     def check_expression_support(self, expression):
+         """

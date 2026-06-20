@@ -1,0 +1,37 @@
+--- a/lib/matplotlib/image.py
++++ b/lib/matplotlib/image.py
+@@ -533,8 +533,32 @@
+                 # that may have moved input values in/out of range
+                 s_vmin, s_vmax = vrange
+                 if isinstance(self.norm, mcolors.LogNorm):
+-                    if s_vmin < 0:
+-                        s_vmin = max(s_vmin, np.finfo(scaled_dtype).eps)
++                    # Ensure vmin and vmax are positive and finite for LogNorm
++                    # Get the minimum positive finite value from the resampled data
++                    finite_mask = np.isfinite(A_resampled)
++                    if finite_mask.any():
++                        valid_data = A_resampled[finite_mask]
++                        positive_data = valid_data[valid_data > 0]
++                        if positive_data.size > 0:
++                            # Use positive data to set reasonable bounds
++                            data_min = positive_data.min()
++                            data_max = positive_data.max()
++                            # Ensure s_vmin and s_vmax are positive and finite
++                            s_vmin = max(s_vmin, data_min, np.finfo(scaled_dtype).eps)
++                            s_vmax = max(s_vmax, s_vmin * 1.1, np.finfo(scaled_dtype).eps)
++                        else:
++                            # No positive data, use safe defaults
++                            s_vmin = np.finfo(scaled_dtype).eps
++                            s_vmax = s_vmin * 10.0
++                    else:
++                        # All data is masked or non-finite, use safe defaults
++                        s_vmin = np.finfo(scaled_dtype).eps
++                        s_vmax = s_vmin * 10.0
++                    # Final safety checks
++                    if not np.isfinite(s_vmin):
++                        s_vmin = np.finfo(scaled_dtype).eps
++                    if not np.isfinite(s_vmax) or s_vmax <= s_vmin:
++                        s_vmax = s_vmin * 10.0
+                 with cbook._setattr_cm(self.norm,
+                                        vmin=s_vmin,
+                                        vmax=s_vmax,

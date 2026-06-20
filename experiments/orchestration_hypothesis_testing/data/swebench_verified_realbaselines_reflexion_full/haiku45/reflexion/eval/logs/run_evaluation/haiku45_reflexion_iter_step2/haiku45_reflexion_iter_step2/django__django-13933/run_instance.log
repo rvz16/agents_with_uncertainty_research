@@ -1,0 +1,73 @@
+2026-06-19 20:50:47,886 - INFO - Creating container for django__django-13933...
+2026-06-19 20:50:48,150 - INFO - Container for django__django-13933 created: 3d15fec8def794ec30dc2d4981ddcbf93e6e56f275304dd2b2b26265bac9dccf
+2026-06-19 20:50:48,327 - INFO - Container for django__django-13933 started: 3d15fec8def794ec30dc2d4981ddcbf93e6e56f275304dd2b2b26265bac9dccf
+2026-06-19 20:50:48,327 - INFO - Intermediate patch for django__django-13933 written to logs/run_evaluation/haiku45_reflexion_iter_step2/haiku45_reflexion_iter_step2/django__django-13933/patch.diff, now applying to container...
+2026-06-19 20:50:48,466 - INFO - >>>>> Applied Patch:
+Checking patch django/forms/models.py...
+Applied patch django/forms/models.py cleanly.
+
+2026-06-19 20:50:48,853 - INFO - Git diff before:
+diff --git a/django/forms/models.py b/django/forms/models.py
+index 422bc5d178..e03a3803cd 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1188,7 +1188,7 @@ class ModelChoiceField(ChoiceField):
+     # This class is a subclass of ChoiceField for purity, but it doesn't
+     # actually use any of ChoiceField's implementation.
+     default_error_messages = {
+-        'invalid_choice': _('Select a valid choice. That choice is not one of'
++        'invalid_choice': _('Select a valid choice. %(value)s is not one of'
+                             ' the available choices.'),
+     }
+     iterator = ModelChoiceIterator
+@@ -1284,7 +1284,11 @@ class ModelChoiceField(ChoiceField):
+                 value = getattr(value, key)
+             value = self.queryset.get(**{key: value})
+         except (ValueError, TypeError, self.queryset.model.DoesNotExist):
+-            raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
++            raise ValidationError(
++                self.error_messages['invalid_choice'],
++                code='invalid_choice',
++                params={'value': value},
++            )
+         return value
+ 
+     def validate(self, value):
+2026-06-19 20:50:48,853 - INFO - Eval script for django__django-13933 written to logs/run_evaluation/haiku45_reflexion_iter_step2/haiku45_reflexion_iter_step2/django__django-13933/eval.sh; copying to container...
+2026-06-19 20:50:51,348 - INFO - Test runtime: 2.45 seconds
+2026-06-19 20:50:51,348 - INFO - Test output for django__django-13933 written to logs/run_evaluation/haiku45_reflexion_iter_step2/haiku45_reflexion_iter_step2/django__django-13933/test_output.txt
+2026-06-19 20:50:51,395 - INFO - Git diff after:
+diff --git a/django/forms/models.py b/django/forms/models.py
+index 422bc5d178..e03a3803cd 100644
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1188,7 +1188,7 @@ class ModelChoiceField(ChoiceField):
+     # This class is a subclass of ChoiceField for purity, but it doesn't
+     # actually use any of ChoiceField's implementation.
+     default_error_messages = {
+-        'invalid_choice': _('Select a valid choice. That choice is not one of'
++        'invalid_choice': _('Select a valid choice. %(value)s is not one of'
+                             ' the available choices.'),
+     }
+     iterator = ModelChoiceIterator
+@@ -1284,7 +1284,11 @@ class ModelChoiceField(ChoiceField):
+                 value = getattr(value, key)
+             value = self.queryset.get(**{key: value})
+         except (ValueError, TypeError, self.queryset.model.DoesNotExist):
+-            raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
++            raise ValidationError(
++                self.error_messages['invalid_choice'],
++                code='invalid_choice',
++                params={'value': value},
++            )
+         return value
+ 
+     def validate(self, value):
+2026-06-19 20:50:51,395 - INFO - Grading answer for django__django-13933...
+2026-06-19 20:50:51,396 - INFO - report: {'django__django-13933': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_modelchoicefield_value_placeholder (forms_tests.tests.test_error_messages.ModelChoiceFieldErrorMessagesTestCase)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_modelchoicefield (forms_tests.tests.test_error_messages.ModelChoiceFieldErrorMessagesTestCase)', 'test_booleanfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_charfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_choicefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_datefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_datetimefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_decimalfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_emailfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_error_messages_escaping (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_filefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_floatfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_generic_ipaddressfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_integerfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_multiplechoicefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_regexfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_splitdatetimefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_subclassing_errorlist (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_timefield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)', 'test_urlfield (forms_tests.tests.test_error_messages.FormsErrorMessagesTestCase)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13933: resolved: True
+2026-06-19 20:50:51,396 - INFO - Attempting to stop container sweb.eval.django__django-13933.haiku45_reflexion_iter_step2...
+2026-06-19 20:51:06,579 - INFO - Attempting to remove container sweb.eval.django__django-13933.haiku45_reflexion_iter_step2...
+2026-06-19 20:51:06,597 - INFO - Container sweb.eval.django__django-13933.haiku45_reflexion_iter_step2 removed.
+2026-06-19 20:51:06,597 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13933:latest...
+2026-06-19 20:51:06,690 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13933:latest removed.

@@ -1,0 +1,91 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -550,6 +550,7 @@
+         Perform a COUNT() query using the current filter constraints.
+         """
+         obj = self.clone()
++        obj = obj._strip_unused_annotations()
+         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+         return obj.get_aggregation(using, ["__count"])["__count"]
+ 
+@@ -558,6 +559,7 @@
+ 
+     def exists(self, limit=True):
+         q = self.clone()
++        q = q._strip_unused_annotations()
+         if not (q.distinct and q.is_sliced):
+             if q.group_by is True:
+                 q.add_fields(
+@@ -2546,6 +2548,72 @@
+         self.set_select([f.get_col(select_alias) for f in select_fields])
+         return trimmed_prefix, contains_louter
+ 
++    def _collect_annotation_refs(self, expr):
++        """
++        Collect all annotation aliases referenced in the given expression.
++        """
++        refs = set()
++        if isinstance(expr, Ref):
++            refs.add(expr.refs)
++        elif hasattr(expr, "get_source_expressions"):
++            for source_expr in expr.get_source_expressions():
++                if source_expr:
++                    refs.update(self._collect_annotation_refs(source_expr))
++        return refs
++
++    def _strip_unused_annotations(self):
++        """
++        Remove annotations that are not referenced by filters, other annotations,
++        or ordering. This is used to optimize count() and exists() queries.
++        """
++        if not self.annotations:
++            return self
++
++        # Collect all annotation aliases that are referenced
++        used_annotations = set()
++
++        # Check WHERE clause
++        for child in self.where.children:
++            used_annotations.update(self._collect_annotation_refs(child))
++
++        # Check ORDER BY
++        for expr in self.order_by:
++            if isinstance(expr, str):
++                # Handle string order by references like 'annotation_name' or '-annotation_name'
++                order_field = expr.lstrip('-')
++                if order_field in self.annotations:
++                    used_annotations.add(order_field)
++            else:
++                used_annotations.update(self._collect_annotation_refs(expr))
++
++        # Check other annotations (they may reference each other)
++        for alias, annotation in self.annotations.items():
++            used_annotations.update(self._collect_annotation_refs(annotation))
++
++        # Check GROUP BY
++        if isinstance(self.group_by, tuple):
++            for expr in self.group_by:
++                used_annotations.update(self._collect_annotation_refs(expr))
++
++        # Check annotation_select_mask to see which annotations are explicitly selected
++        if self.annotation_select_mask is not None:
++            used_annotations.update(self.annotation_select_mask)
++
++        # Remove unused annotations
++        unused_annotations = set(self.annotations.keys()) - used_annotations
++        if not unused_annotations:
++            return self
++
++        obj = self.clone()
++        for alias in unused_annotations:
++            del obj.annotations[alias]
++            # Also remove from annotation_select_mask if present
++            if obj.annotation_select_mask is not None and alias in obj.annotation_select_mask:
++                obj.annotation_select_mask = obj.annotation_select_mask - {alias}
++        # Clear the cache
++        obj._annotation_select_cache = None
++        return obj
++
+     def is_nullable(self, field):
+         """
+         Check if the given field should be treated as nullable.

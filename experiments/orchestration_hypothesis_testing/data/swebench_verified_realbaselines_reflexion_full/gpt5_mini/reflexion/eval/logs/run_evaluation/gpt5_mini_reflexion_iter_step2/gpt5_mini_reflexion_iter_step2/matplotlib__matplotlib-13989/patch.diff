@@ -1,0 +1,15 @@
+--- a/lib/matplotlib/axes/_axes.py
++++ b/lib/matplotlib/axes/_axes.py
+@@ -6686,7 +6686,11 @@
+ 
+         density = bool(density) or bool(normed)
+         if density and not stacked:
+-            hist_kwargs = dict(density=density)
++            # Preserve any previously set hist_kwargs (e.g. 'range') and just
++            # add 'density'.  Previously this reassigned hist_kwargs which
++            # dropped 'range' when density=True, causing hist(..., range=...)
++            # to be ignored for density plots.
++            hist_kwargs['density'] = density
+ 
+         # List to store all the top coordinates of the histograms
+         tops = []

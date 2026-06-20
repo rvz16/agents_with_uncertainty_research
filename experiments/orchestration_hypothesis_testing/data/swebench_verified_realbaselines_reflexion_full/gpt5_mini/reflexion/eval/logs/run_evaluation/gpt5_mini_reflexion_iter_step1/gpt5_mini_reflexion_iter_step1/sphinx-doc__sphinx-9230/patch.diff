@@ -1,0 +1,46 @@
+--- a/sphinx/util/docfields.py
++++ b/sphinx/util/docfields.py
+@@ -297,13 +297,36 @@
+ 
+             # also support syntax like ``:param type name:``
+             if typedesc.is_typed:
+-                try:
+-                    argtype, argname = fieldarg.split(None, 1)
+-                except ValueError:
+-                    pass
+-                else:
+-                    types.setdefault(typename, {})[argname] = \
+-                        [nodes.Text(argtype)]
++                # Try to split a type and a name from the fieldarg, but be
++                # careful not to split on whitespace that occurs inside
++                # parentheses/brackets/etc. (e.g. "dict(str, str) name").
++                s = fieldarg
++                argtype = None
++                argname = None
++                stack: List[str] = []
++                pairs = {'(': ')', '[': ']', '{': '}', '<': '>'}
++                closing = {v: k for k, v in pairs.items()}
++                for i, ch in enumerate(s):
++                    if ch in pairs:
++                        stack.append(ch)
++                    elif ch in closing:
++                        if stack and stack[-1] == closing[ch]:
++                            stack.pop()
++                        else:
++                            # unmatched closer -- treat as literal
++                            pass
++                    elif ch.isspace() and not stack:
++                        argtype = s[:i]
++                        argname = s[i:].strip()
++                        break
++                if argtype is None:
++                    # fallback to simple split if no top-level whitespace found
++                    try:
++                        argtype, argname = s.split(None, 1)
++                    except ValueError:
++                        argtype = None
++                if argtype is not None:
++                    types.setdefault(typename, {})[argname] = [nodes.Text(argtype)]
+                     fieldarg = argname
+ 
+             translatable_content = nodes.inline(field_body.rawsource,

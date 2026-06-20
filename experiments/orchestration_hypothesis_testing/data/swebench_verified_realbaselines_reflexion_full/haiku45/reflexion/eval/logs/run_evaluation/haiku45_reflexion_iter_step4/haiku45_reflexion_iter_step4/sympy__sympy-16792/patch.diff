@@ -1,0 +1,35 @@
+--- a/sympy/utilities/codegen.py
++++ b/sympy/utilities/codegen.py
+@@ -713,6 +713,18 @@
+ 
+             arg_list.append(InputArgument(symbol, **metadata))
+ 
++        # Add any MatrixSymbol arguments from argument_sequence that weren't
++        # already added (e.g., unused arguments)
++        if argument_sequence is not None:
++            existing_arg_names = {arg.name for arg in arg_list}
++            for seq_arg in argument_sequence:
++                arg_name = seq_arg.label if isinstance(seq_arg, IndexedBase) else seq_arg
++                if arg_name not in existing_arg_names and isinstance(arg_name, MatrixSymbol):
++                    dims = []
++                    for dim in arg_name.shape:
++                        dims.append((S.Zero, dim - 1))
++                    arg_list.append(InputArgument(arg_name, dimensions=dims))
++
+         output_args.sort(key=lambda x: str(x.name))
+         arg_list.extend(output_args)
+ 
+@@ -739,7 +751,12 @@
+                 try:
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # Check if this is a MatrixSymbol that needs dimensions
++                    if isinstance(symbol, MatrixSymbol):
++                        dims = [(S.Zero, dim - 1) for dim in symbol.shape]
++                        new_args.append(InputArgument(symbol, dimensions=dims))
++                    else:
++                        new_args.append(InputArgument(symbol))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_val, local_vars, global_vars)

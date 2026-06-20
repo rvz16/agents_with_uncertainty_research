@@ -1,0 +1,21 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1776,7 +1776,18 @@
+         return condition, needed_inner
+ 
+     def set_empty(self):
++        # Mark this query as empty by adding a NothingNode to the where-clause.
++        # For queries that are combinations (e.g. union(), intersection()), the
++        # combined queries would otherwise still contribute rows. Clear any set
++        # operation state so that this query truly represents an empty result
++        # set.
+         self.where.add(NothingNode(), AND)
++        # Clear any set-combination state so that combined queries do not
++        # override the empty state (see issue where QuerySet.none() on
++        # combined/union queries returned all results).
++        self.combinator = None
++        self.combinator_all = False
++        self.combined_queries = ()
+ 
+     def is_empty(self):
+         return any(isinstance(c, NothingNode) for c in self.where.children)

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-20T01:48:39.484089+00:00",
+  "instance_id": "django__django-13315",
+  "step": 2,
+  "purpose": "reflect",
+  "model": "openai/gpt-5-mini",
+  "prompt": "Your previous attempt at solving this SWE-bench issue did not pass internal\nquality checks (syntax or LLM review).\n\n## Issue\nlimit_choices_to on a ForeignKey can render duplicate options in formfield\nDescription\n\t\nIf you pass a Q object as limit_choices_to on a ForeignKey field involving a join, you may end up with duplicate options in your form.\nSee regressiontest in patch for a clear view on the problem.\n\n\n## Your previous patch\n```\n--- a/django/forms/models.py\n+++ b/django/forms/models.py\n@@ -100,7 +100,22 @@\n     if hasattr(formfield, 'queryset') and hasattr(formfield, 'get_limit_choices_to'):\n         limit_choices_to = formfield.get_limit_choices_to()\n         if limit_choices_to is not None:\n-            formfield.queryset = formfield.queryset.complex_filter(limit_choices_to)\n+            qs = formfield.queryset.complex_filter(limit_choices_to)\n+            # Filtering with joins can produce duplicate rows. Try to\n+            # eliminate duplicates at the SQL level by grouping on the\n+            # primary key. An empty .annotate() forces a GROUP BY on the\n+            # selecting model's PK (supported on backends that implement\n+            # this optimization). If that isn't supported, fall back to\n+            # .distinct(). If both fail, leave the queryset as-is and\n+            # rely on higher-level de-duplication.\n+            try:\n+                qs = qs.annotate()\n+            except Exception:\n+                try:\n+                    qs = qs.distinct()\n+                except Exception:\n+                    pass\n+            formfield.queryset = qs\n \n \n def fields_for_model(model, fields=None, exclude=None, widgets=None,\n\n```\n\n## Internal feedback\nL0_syntax: True, L3_llm_review: False. These cheap proxies failed; the patch likely has problems with syntax, structure, or correctness.\n\nIn 2-3 sentences, reflect on what went wrong with your previous attempt and\nwhat strategy you should try next. Be specific and actionable, not vague.\nThis reflection will guide your next attempt.\n",
+  "response": "My previous patch tried to call qs.annotate() with no arguments (and caught all Exceptions), but empty annotate() is not a supported/portable way to force a GROUP",
+  "prompt_tokens": 451,
+  "completion_tokens": 500,
+  "cost_usd": 0.00111275
+}

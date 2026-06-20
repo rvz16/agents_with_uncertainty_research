@@ -1,0 +1,32 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -353,8 +353,8 @@
+ 
+         try:
+             host = idna.encode(host, uts46=True).decode('utf-8')
+-        except idna.IDNAError:
+-            raise UnicodeError
++        except idna.IDNAError as e:
++            raise InvalidURL('URL has an invalid label.')
+         return host
+ 
+     def prepare_url(self, url, params):
+@@ -401,10 +401,16 @@
+         if not unicode_is_ascii(host):
+             try:
+                 host = self._get_idna_encoded_host(host)
+-            except UnicodeError:
+-                raise InvalidURL('URL has an invalid label.')
++            except InvalidURL:
++                raise
+         elif host.startswith(u'*'):
+             raise InvalidURL('URL has an invalid label.')
++        else:
++            # Validate ASCII hostname for invalid labels (e.g., empty labels)
++            try:
++                self._get_idna_encoded_host(host)
++            except InvalidURL:
++                raise
+ 
+         # Carefully reconstruct the network location
+         netloc = auth or ''

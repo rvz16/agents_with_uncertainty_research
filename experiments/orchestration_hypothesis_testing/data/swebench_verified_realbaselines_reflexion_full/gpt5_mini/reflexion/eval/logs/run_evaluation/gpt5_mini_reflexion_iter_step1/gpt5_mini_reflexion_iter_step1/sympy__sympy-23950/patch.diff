@@ -1,0 +1,50 @@
+--- a/sympy/sets/contains.py
++++ b/sympy/sets/contains.py
+@@ -45,4 +45,46 @@
+             isinstance(i, (Eq, Ne))])
+ 
+     def as_set(self):
+-        raise NotImplementedError()
++        """
++        Return a Set corresponding to the values that make this Contains true.
++
++        For Contains(x, S):
++        - If x is a single Symbol, the set of values satisfying the predicate
++          is simply S itself (i.e. {x | x in S} == S).
++        - If x is an expression with one or more free symbols, return a
++          ConditionSet over those symbols with this Contains as the condition.
++        - If x has no free symbols, try to evaluate membership; return S or
++          EmptySet when possible, otherwise fall back to an EmptySet.
++        """
++        # Local import to avoid circular imports
++        from sympy.sets.sets import ConditionSet
++
++        x, s = self.args
++
++        # If the element is a single symbol, the set {x | x in S} is S.
++        if x.is_Symbol:
++            return s
++
++        free = x.free_symbols
++
++        # If exactly one free symbol, return a ConditionSet for that symbol.
++        if len(free) == 1:
++            v = next(iter(free))
++            return ConditionSet(v, self, s)
++
++        # If multiple free symbols, use a tuple of symbols for the ConditionSet.
++        if len(free) > 1:
++            syms = tuple(free)
++            return ConditionSet(syms, self, s)
++
++        # No free symbols: attempt to evaluate membership; the caller should
++        # normally have had this resolved in eval, but handle defensively.
++        ret = s.contains(x)
++        if ret is S.true:
++            return s
++        if ret is S.false:
++            return S.EmptySet
++        # Fallback: no clear set can be determined, return EmptySet as a safe
++        # default (this situation should be rare because eval handles
++        # determinate cases).
++        return S.EmptySet

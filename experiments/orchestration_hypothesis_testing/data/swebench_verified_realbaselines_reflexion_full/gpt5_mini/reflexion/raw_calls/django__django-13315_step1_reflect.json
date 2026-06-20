@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-20T01:48:18.616674+00:00",
+  "instance_id": "django__django-13315",
+  "step": 1,
+  "purpose": "reflect",
+  "model": "openai/gpt-5-mini",
+  "prompt": "Your previous attempt at solving this SWE-bench issue did not pass internal\nquality checks (syntax or LLM review).\n\n## Issue\nlimit_choices_to on a ForeignKey can render duplicate options in formfield\nDescription\n\t\nIf you pass a Q object as limit_choices_to on a ForeignKey field involving a join, you may end up with duplicate options in your form.\nSee regressiontest in patch for a clear view on the problem.\n\n\n## Your previous patch\n```\n--- a/django/forms/models.py\n+++ b/django/forms/models.py\n@@ -100,7 +100,21 @@\n     if hasattr(formfield, 'queryset') and hasattr(formfield, 'get_limit_choices_to'):\n         limit_choices_to = formfield.get_limit_choices_to()\n         if limit_choices_to is not None:\n-            formfield.queryset = formfield.queryset.complex_filter(limit_choices_to)\n+            qs = formfield.queryset.complex_filter(limit_choices_to)\n+            # Avoid duplicate choices introduced by joins when applying a\n+            # complex filter (e.g. a Q() involving related lookups). Using an\n+            # empty annotate() forces grouping by the model PK which is safe\n+            # for backends that can't compare custom DB types in DISTINCT.\n+            # If annotate() is not supported for this queryset, fall back to\n+            # distinct(); if that also fails, leave the queryset as-is.\n+            try:\n+                qs = qs.annotate()\n+            except Exception:\n+                try:\n+                    qs = qs.distinct()\n+                except Exception:\n+                    pass\n+            formfield.queryset = qs\n \n \n def fields_for_model(model, fields=None, exclude=None, widgets=None,\n\n```\n\n## Internal feedback\nL0_syntax: True, L3_llm_review: False. These cheap proxies failed; the patch likely has problems with syntax, structure, or correctness.\n\nIn 2-3 sentences, reflect on what went wrong with your previous attempt and\nwhat strategy you should try next. Be specific and actionable, not vague.\nThis reflection will guide your next attempt.\n",
+  "response": "",
+  "prompt_tokens": 442,
+  "completion_tokens": 448,
+  "cost_usd": 0.0010065
+}

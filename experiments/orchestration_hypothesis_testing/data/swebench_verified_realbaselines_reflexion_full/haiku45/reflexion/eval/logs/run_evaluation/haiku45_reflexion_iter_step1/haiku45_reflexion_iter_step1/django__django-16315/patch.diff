@@ -1,0 +1,13 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1725,8 +1725,8 @@
+         on_conflict_suffix_sql = self.connection.ops.on_conflict_suffix_sql(
+             fields,
+             self.query.on_conflict,
+-            self.query.update_fields,
+-            self.query.unique_fields,
++            [f.column for f in self.query.update_fields] if self.query.update_fields else [],
++            [f.column for f in self.query.unique_fields] if self.query.unique_fields else [],
+         )
+         if (
+             self.returning_fields

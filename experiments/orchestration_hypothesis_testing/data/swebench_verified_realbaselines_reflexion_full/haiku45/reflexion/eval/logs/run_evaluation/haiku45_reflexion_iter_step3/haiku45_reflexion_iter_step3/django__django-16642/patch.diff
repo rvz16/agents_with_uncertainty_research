@@ -1,0 +1,47 @@
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -605,14 +605,36 @@
+         filename = os.path.basename(self.filename or filename)
+         if self._no_explicit_content_type:
+             if filename:
+-                content_type, encoding = mimetypes.guess_type(filename)
+-                # Encoding isn't set to prevent browsers from automatically
+-                # uncompressing files.
+-                content_type = {
+-                    "bzip2": "application/x-bzip",
+-                    "gzip": "application/gzip",
+-                    "xz": "application/x-xz",
+-                }.get(encoding, content_type)
++                # Strip known compression extensions to guess the underlying file type
++                name_for_guessing = filename
++                compression_encoding_map = {
++                    ".Z": "compress",
++                    ".br": "br",
++                    ".gz": "gzip",
++                    ".bz2": "bzip2",
++                    ".xz": "xz",
++                }
++                detected_encoding = None
++                
++                for ext, encoding_name in compression_encoding_map.items():
++                    if name_for_guessing.lower().endswith(ext):
++                        name_for_guessing = name_for_guessing[:-len(ext)]
++                        detected_encoding = encoding_name
++                        break
++                
++                # Guess type from the stripped filename
++                content_type, _ = mimetypes.guess_type(name_for_guessing)
++                
++                # Map compression encoding to appropriate content-type
++                if detected_encoding:
++                    content_type = {
++                        "bzip2": "application/x-bzip",
++                        "gzip": "application/gzip",
++                        "xz": "application/x-xz",
++                        "compress": "application/x-compress",
++                        "br": "application/x-br",
++                    }.get(detected_encoding, content_type)
++                
+                 self.headers["Content-Type"] = (
+                     content_type or "application/octet-stream"
+                 )

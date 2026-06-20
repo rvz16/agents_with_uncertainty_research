@@ -1,0 +1,32 @@
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -5,3 +5,29 @@
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # Import here to avoid side effects at import time.
++        from django.conf import settings
++        from django.test.signals import setting_changed
++        from django.contrib.messages.storage import base as base_module
++
++        # Keep a copy of the default LEVEL_TAGS as defined on module import so we
++        # can merge any overrides from settings.MESSAGE_TAGS. Capturing this
++        # prevents losing the original defaults when settings are changed in tests.
++        default_level_tags = base_module.LEVEL_TAGS.copy()
++
++        def update_level_tags(setting, **kwargs):
++            if setting != 'MESSAGE_TAGS':
++                return
++            merged = default_level_tags.copy()
++            message_tags = getattr(settings, 'MESSAGE_TAGS', {}) or {}
++            merged.update(message_tags)
++            base_module.LEVEL_TAGS = merged
++
++        # Initialize LEVEL_TAGS from current settings and listen for changes
++        update_level_tags('MESSAGE_TAGS')
++        setting_changed.connect(
++            update_level_tags,
++            dispatch_uid='django.contrib.messages.update_level_tags',
++        )

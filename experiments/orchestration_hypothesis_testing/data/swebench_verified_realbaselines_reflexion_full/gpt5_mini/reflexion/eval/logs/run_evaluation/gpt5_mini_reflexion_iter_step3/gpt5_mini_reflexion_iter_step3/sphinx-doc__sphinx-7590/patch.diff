@@ -1,0 +1,21 @@
+--- a/sphinx/domains/c.py
++++ b/sphinx/domains/c.py
+@@ -2080,8 +2080,18 @@
+                       integer_literal_re, octal_literal_re]:
+             pos = self.pos
+             if self.match(regex):
++                # consume traditional suffix letters like u, U, l, L, f, F
+                 while self.current_char in 'uUlLfF':
+                     self.pos += 1
++                # consume C++ user-defined literal (UDL) identifier suffixes,
++                # e.g. 6.626e-34q_J where "q_J" is an identifier-like suffix
++                # (starts with a letter or underscore and continues with
++                # letters, digits or underscores).
++                # identifier_re is imported from sphinx.util.cfamily and
++                # matches identifiers; use match() to consume it if present.
++                if self.match(identifier_re):
++                    # matched and advanced; nothing else to do
++                    pass
+                 return ASTNumberLiteral(self.definition[pos:self.pos])
+ 
+         string = self._parse_string()

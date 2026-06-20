@@ -1,0 +1,18 @@
+--- a/xarray/core/computation.py
++++ b/xarray/core/computation.py
+@@ -1860,7 +1860,14 @@
+     if keep_attrs is True:
+         # keep the attributes of x, the second parameter, by default to
+         # be consistent with the `where` method of `DataArray` and `Dataset`
+-        keep_attrs = lambda attrs, context: getattr(x, "attrs", {})
++        def _keep_attrs_where(attrs, context):
++            # attrs is a list of attribute dicts from the input objects
++            # For where(cond, x, y), we want attributes from x (second positional arg)
++            # attrs list: [cond_attrs, x_attrs, y_attrs]
++            if len(attrs) >= 2:
++                return attrs[1]
++            return {}
++        keep_attrs = _keep_attrs_where
+ 
+     # alignment for three arguments is complicated, so don't support it yet
+     return apply_ufunc(

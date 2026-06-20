@@ -1,0 +1,25 @@
+--- a/django/db/backends/mysql/operations.py
++++ b/django/db/backends/mysql/operations.py
+@@ -296,6 +296,8 @@
+         elif internal_type == 'DateTimeField':
+             if settings.USE_TZ:
+                 converters.append(self.convert_datetimefield_value)
++        elif internal_type == 'DurationField':
++            converters.append(self.convert_durationfield_value)
+         elif internal_type == 'UUIDField':
+             converters.append(self.convert_uuidfield_value)
+         return converters
+@@ -308,6 +310,13 @@
+     def convert_datetimefield_value(self, value, expression, connection):
+         if value is not None:
+             value = timezone.make_aware(value, self.connection.timezone)
++        return value
++
++    def convert_durationfield_value(self, value, expression, connection):
++        if value is not None:
++            # MySQL INTERVAL arithmetic returns raw microseconds as a numeric value
++            # Convert it to a string in the format expected by the base converter
++            value = str(value)
+         return value
+ 
+     def convert_uuidfield_value(self, value, expression, connection):

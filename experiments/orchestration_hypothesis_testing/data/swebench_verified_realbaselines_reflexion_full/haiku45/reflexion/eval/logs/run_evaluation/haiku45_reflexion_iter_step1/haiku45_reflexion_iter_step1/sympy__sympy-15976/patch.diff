@@ -1,0 +1,60 @@
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -369,24 +369,24 @@
+         if len(supers) == 0:
+             if len(subs) == 0:
+                 ci.appendChild(self.dom.createTextNode(name))
++                return ci
+             else:
+                 msub = self.dom.createElement('mml:msub')
+                 msub.appendChild(mname)
+                 msub.appendChild(join(subs))
+-                ci.appendChild(msub)
++                return msub
+         else:
+             if len(subs) == 0:
+                 msup = self.dom.createElement('mml:msup')
+                 msup.appendChild(mname)
+                 msup.appendChild(join(supers))
+-                ci.appendChild(msup)
++                return msup
+             else:
+                 msubsup = self.dom.createElement('mml:msubsup')
+                 msubsup.appendChild(mname)
+                 msubsup.appendChild(join(subs))
+                 msubsup.appendChild(join(supers))
+-                ci.appendChild(msubsup)
+-        return ci
++                return msubsup
+ 
+     _print_MatrixSymbol = _print_Symbol
+     _print_RandomSymbol = _print_Symbol
+@@ -782,24 +782,24 @@
+         if len(supers) == 0:
+             if len(subs) == 0:
+                 x.appendChild(self.dom.createTextNode(name))
++                return x
+             else:
+                 msub = self.dom.createElement('msub')
+                 msub.appendChild(mname)
+                 msub.appendChild(join(subs))
+-                x.appendChild(msub)
++                return msub
+         else:
+             if len(subs) == 0:
+                 msup = self.dom.createElement('msup')
+                 msup.appendChild(mname)
+                 msup.appendChild(join(supers))
+-                x.appendChild(msup)
++                return msup
+             else:
+                 msubsup = self.dom.createElement('msubsup')
+                 msubsup.appendChild(mname)
+                 msubsup.appendChild(join(subs))
+                 msubsup.appendChild(join(supers))
+-                x.appendChild(msubsup)
+-        return x
++                return msubsup
+ 
+     def _print_MatrixSymbol(self, sym):
+         return self._print_Symbol(sym, style=self._settings['mat_symbol_style'])

@@ -1,0 +1,16 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -474,7 +474,12 @@
+                 # must be transforms.
+                 break
+             prev_field = field
+-            model = field.path_infos[-1].to_opts.model
++            # For multi-table inheritance parent links, skip to the parent model.
++            # Don't skip for OneToOneFields that are just primary keys (not parent links).
++            if getattr(field, "parent_link", False) and field.auto_created:
++                model = field.path_infos[-1].to_opts.model
++            elif getattr(field, "path_infos", None):
++                model = field.path_infos[-1].to_opts.model
+ 
+         if len(relation_parts) <= 1:
+             # Either a local field filter, or no fields at all.

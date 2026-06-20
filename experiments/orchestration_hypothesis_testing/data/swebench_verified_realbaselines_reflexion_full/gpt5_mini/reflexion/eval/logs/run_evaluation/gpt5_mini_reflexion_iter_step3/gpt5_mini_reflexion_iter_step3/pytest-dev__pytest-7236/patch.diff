@@ -1,0 +1,37 @@
+--- a/src/_pytest/unittest.py
++++ b/src/_pytest/unittest.py
+@@ -117,6 +117,16 @@
+         self._explicit_tearDown = None
+         self._testcase = self.parent.obj(self.name)
+         self._obj = getattr(self._testcase, self.name)
++        # When using pdb, postpone tearDown to allow debugging without teardown cleanup.
++        # Do this before filling fixtures so that pytest.skip() in autouse fixtures
++        # does not trigger the original tearDown on unittest.TestCase.
++        if getattr(self, "config", None) and self.config.getoption("usepdb"):
++            try:
++                self._explicit_tearDown = self._testcase.tearDown
++                setattr(self._testcase, "tearDown", lambda *args, **kwargs: None)
++            except Exception:
++                # if anything goes wrong, ensure explicit_tearDown remains None
++                self._explicit_tearDown = None
+         if hasattr(self, "_request"):
+             self._request._fillfixtures()
+ 
+@@ -214,15 +224,8 @@
+         if is_async_function(self.obj):
+             self._testcase(self)
+         else:
+-            # when --pdb is given, we want to postpone calling tearDown() otherwise
+-            # when entering the pdb prompt, tearDown() would have probably cleaned up
+-            # instance variables, which makes it difficult to debug
+-            # arguably we could always postpone tearDown(), but this changes the moment where the
+-            # TestCase instance interacts with the results object, so better to only do it
+-            # when absolutely needed
+-            if self.config.getoption("usepdb"):
+-                self._explicit_tearDown = self._testcase.tearDown
+-                setattr(self._testcase, "tearDown", lambda *args: None)
++            # tearDown postponement for pdb is handled in setup() so that
++            # skips raised by fixtures don't trigger the original tearDown.
+ 
+             # we need to update the actual bound method with self.obj, because
+             # wrap_pytest_function_for_tracing replaces self.obj by a wrapper

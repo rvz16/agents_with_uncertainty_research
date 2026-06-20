@@ -1,0 +1,35 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -353,8 +353,8 @@
+ 
+         try:
+             host = idna.encode(host, uts46=True).decode('utf-8')
+-        except idna.IDNAError:
+-            raise UnicodeError
++        except (idna.IDNAError, UnicodeError):
++            raise InvalidURL('URL has an invalid label.')
+         return host
+ 
+     def prepare_url(self, url, params):
+@@ -399,12 +399,17 @@
+         # behaviour. For strings containing only ASCII characters, we need to also verify
+         # it doesn't start with a wildcard (*), before allowing the unencoded hostname.
+         if not unicode_is_ascii(host):
+-            try:
+-                host = self._get_idna_encoded_host(host)
+-            except UnicodeError:
+-                raise InvalidURL('URL has an invalid label.')
++            host = self._get_idna_encoded_host(host)
+         elif host.startswith(u'*'):
+             raise InvalidURL('URL has an invalid label.')
++        else:
++            # For ASCII hostnames, validate that there are no empty labels
++            # (which can occur with leading/trailing dots like ".example.com")
++            try:
++                # Use IDNA encoding as validation for ASCII hostnames too
++                self._get_idna_encoded_host(host)
++            except InvalidURL:
++                raise
+ 
+         # Carefully reconstruct the network location
+         netloc = auth or ''

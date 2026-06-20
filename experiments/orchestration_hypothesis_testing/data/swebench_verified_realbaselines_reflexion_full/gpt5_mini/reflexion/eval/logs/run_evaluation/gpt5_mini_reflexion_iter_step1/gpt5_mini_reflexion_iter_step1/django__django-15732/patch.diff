@@ -1,0 +1,25 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -568,6 +568,22 @@
+             exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs,
+         )
++        # If multiple constraints are found, try to disambiguate using the
++        # suffix naming convention Django uses for generated names (e.g.
++        # "_uniq" for unique_together and "_idx" for index_together). This
++        # allows removing the intended composed constraint when the database
++        # also contains other unique/index constraints on the same columns
++        # (for example from unique=True or a primary key).
++        if len(constraint_names) != 1:
++            target_suffix = None
++            if constraint_kwargs.get("unique"):
++                target_suffix = "_uniq"
++            elif constraint_kwargs.get("index"):
++                target_suffix = "_idx"
++            if target_suffix:
++                filtered = [name for name in constraint_names if target_suffix in name]
++                if len(filtered) == 1:
++                    constraint_names = filtered
+         if len(constraint_names) != 1:
+             raise ValueError(
+                 "Found wrong number (%s) of constraints for %s(%s)"

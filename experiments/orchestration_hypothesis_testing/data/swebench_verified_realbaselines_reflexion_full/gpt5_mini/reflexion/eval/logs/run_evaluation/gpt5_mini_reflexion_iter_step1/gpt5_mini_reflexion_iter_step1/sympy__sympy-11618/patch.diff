@@ -1,0 +1,30 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -21,6 +21,11 @@
+ from sympy.core.numbers import Float
+ from sympy.core.evaluate import global_evaluate
+ from sympy.core.add import Add
++try:
++    # itertools.zip_longest was renamed from izip_longest in Python 3
++    from itertools import zip_longest
++except ImportError:
++    from itertools import izip_longest as zip_longest
+ 
+ from .entity import GeometryEntity
+ 
+@@ -266,8 +271,13 @@
+         sqrt(x**2 + y**2)
+ 
+         """
+-        return sqrt(sum([(a - b)**2 for a, b in zip(
+-            self.args, p.args if isinstance(p, Point) else p)]))
++        # ensure p is a Point so that .args exists and dimension handling is correct
++        p = Point(p)
++        # use zip_longest so that if the points have different dimensions the
++        # missing coordinates are treated as zeros rather than truncating to the
++        # shorter length (which would ignore higher dimensions)
++        return sqrt(sum((a - b)**2 for a, b in zip_longest(
++            self.args, p.args, fillvalue=S.Zero)))
+ 
+     def taxicab_distance(self, p):
+         """The Taxicab Distance from self to point p.

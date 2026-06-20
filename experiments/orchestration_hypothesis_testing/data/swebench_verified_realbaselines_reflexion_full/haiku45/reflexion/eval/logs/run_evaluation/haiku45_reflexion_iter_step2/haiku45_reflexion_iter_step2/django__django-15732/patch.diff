@@ -1,0 +1,20 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -568,6 +568,17 @@
+             exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs,
+         )
++        
++        # For unique_together constraints, filter to only those with the _uniq suffix
++        # to avoid deleting field-level unique constraints or primary keys
++        if constraint_kwargs.get("unique") and not constraint_kwargs.get("primary_key"):
++            # Filter to only unique_together constraints (which have _uniq suffix)
++            # and exclude primary key constraints
++            constraint_names = [
++                name for name in constraint_names 
++                if "_uniq" in name
++            ]
++        
+         if len(constraint_names) != 1:
+             raise ValueError(
+                 "Found wrong number (%s) of constraints for %s(%s)"

@@ -1,0 +1,81 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -592,36 +592,7 @@
+                           % self.__class__.__name__,
+                           RemovedInSphinx50Warning, stacklevel=2)
+ 
+-        # set sourcename and add content from attribute documentation
+-        sourcename = self.get_sourcename()
+-        if self.analyzer:
+-            attr_docs = self.analyzer.find_attr_docs()
+-            if self.objpath:
+-                key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+-                if key in attr_docs:
+-                    no_docstring = True
+-                    # make a copy of docstring for attributes to avoid cache
+-                    # the change of autodoc-process-docstring event.
+-                    docstrings = [list(attr_docs[key])]
+-
+-                    for i, line in enumerate(self.process_doc(docstrings)):
+-                        self.add_line(line, sourcename, i)
+-
+-        # add content from docstrings
+-        if not no_docstring:
+-            docstrings = self.get_doc()
+-            if not docstrings:
+-                # append at least a dummy docstring, so that the event
+-                # autodoc-process-docstring is fired and can add some
+-                # content if desired
+-                docstrings.append([])
+-            for i, line in enumerate(self.process_doc(docstrings)):
+-                self.add_line(line, sourcename, i)
+-
+-        # add additional content (e.g. from document), if present
+-        if more_content:
+-            for line, src in zip(more_content.data, more_content.items):
+-                self.add_line(line, src[0], src[1])
++        # set sourcename and add content from attribute
+ 
+     def get_object_members(self, want_all: bool) -> Tuple[bool, ObjectMembers]:
+         """Return `(members_check_module, members)` where `members` is a
+@@ -651,6 +622,31 @@
+             return False, [(m.name, m.value) for m in members.values()
+                            if m.directly_defined]
+ 
++    def _find_attr_doc(self, membername: str, attr_docs: Dict) -> bool:
++        """Check if attribute documentation exists in current or base classes."""
++        if not self.objpath:
++            return False
++    
++        # Check current class namespace
++        namespace = '.'.join(self.objpath)
++        if (namespace, membername) in attr_docs:
++            return True
++    
++        # Check base class namespaces for inherited attributes
++        if inspect.isclass(self.object):
++            for cls in self.object.__mro__[1:]:  # Skip the class itself
++                try:
++                    cls_module = self.get_attr(cls, '__module__', None)
++                    cls_qualname = self.get_attr(cls, '__qualname__', None)
++                    if cls_module and cls_qualname:
++                        base_namespace = cls_qualname
++                        if (base_namespace, membername) in attr_docs:
++                            return True
++                except AttributeError:
++                    pass
++    
++        return False
++
+     def filter_members(self, members: ObjectMembers, want_all: bool
+                        ) -> List[Tuple[str, Any, bool]]:
+         """Filter the given member list.
+@@ -746,7 +742,7 @@
+                         keep = has_doc or self.options.undoc_members
+                 else:
+                     keep = False
+-            elif (namespace, membername) in attr_docs:
++            elif self._find_attr_doc(membername, attr_docs):
+                 if want_all and isprivate:
+                     if self.options.private_members is None:
+                         keep = False

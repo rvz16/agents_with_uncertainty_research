@@ -1,0 +1,18 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -729,6 +729,15 @@
+             has_doc = bool(doc)
+ 
+             metadata = extract_metadata(doc)
++            
++            # Check attr_docs for metadata if not found in docstring
++            if not metadata and (namespace, membername) in attr_docs:
++                attr_doc_lines = attr_docs[(namespace, membername)]
++                if attr_doc_lines:
++                    # attr_docs contains a list of docstring lines
++                    attr_doc_text = '\n'.join(attr_doc_lines)
++                    metadata = extract_metadata(attr_doc_text)
++            
+             if 'private' in metadata:
+                 # consider a member private if docstring has "private" metadata
+                 isprivate = True

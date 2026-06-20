@@ -1,0 +1,173 @@
+2026-06-20 05:43:06,469 - INFO - Creating container for astropy__astropy-7166...
+2026-06-20 05:43:06,648 - INFO - Container for astropy__astropy-7166 created: 1c56bb5afb7e33e459b8d4afe0f3cac35e6be8ed5f9a9de75e34548a4638632a
+2026-06-20 05:43:06,848 - INFO - Container for astropy__astropy-7166 started: 1c56bb5afb7e33e459b8d4afe0f3cac35e6be8ed5f9a9de75e34548a4638632a
+2026-06-20 05:43:06,848 - INFO - Intermediate patch for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/astropy__astropy-7166/patch.diff, now applying to container...
+2026-06-20 05:43:07,006 - INFO - >>>>> Applied Patch:
+Checking patch astropy/utils/misc.py...
+Applied patch astropy/utils/misc.py cleanly.
+
+2026-06-20 05:43:07,350 - INFO - Git diff before:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..bf4b98aa6 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,14 +528,64 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
+-                for base in cls.__mro__[1:]:
+-                    super_method = getattr(base, key, None)
+-                    if super_method is not None:
+-                        val.__doc__ = super_method.__doc__
+-                        break
++            if not is_public_member(key):
++                continue
++
++            # Determine what object actually holds the docstring that we may
++            # want to set.  This covers plain functions, and also common
++            # descriptors such as classmethod, staticmethod and property.
++            target = None
++            if inspect.isfunction(val):
++                target = val
++            elif isinstance(val, (classmethod, staticmethod)):
++                # For (class|static)method the underlying function is in __func__
++                target = val.__func__
++            elif isinstance(val, property):
++                # For property the getter function carries the docstring
++                target = val.fget
++            elif inspect.isdatadescriptor(val):
++                # Generic data descriptor: try to set the descriptor itself.
++                target = val
++
++            if target is None:
++                continue
++
++            # Only try to inherit if there's no docstring already.
++            if getattr(target, '__doc__', None):
++                continue
++
++            # Walk the MRO to find a docstring to inherit.
++            for base in cls.__mro__[1:]:
++                super_method = getattr(base, key, None)
++                if super_method is None:
++                    continue
++
++                # Extract a sensible docstring from the superclass attribute,
++                # handling common descriptor types.
++                doc = None
++                if isinstance(super_method, property):
++                    doc = super_method.__doc__
++                elif isinstance(super_method, (classmethod, staticmethod)):
++                    func = getattr(super_method, '__func__', None)
++                    doc = getattr(func, '__doc__', None)
++                else:
++                    doc = getattr(super_method, '__doc__', None)
++
++                if not doc:
++                    continue
++
++                # Try to set the docstring on the target; if that fails,
++                # fall back to setting it on the original value in the
++                # class dict.
++                try:
++                    target.__doc__ = doc
++                except Exception:
++                    try:
++                        val.__doc__ = doc
++                    except Exception:
++                        # If even that fails, give up for this attribute.
++                        pass
++                break
+ 
+         super().__init__(name, bases, dct)
+2026-06-20 05:43:07,350 - INFO - Eval script for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/astropy__astropy-7166/eval.sh; copying to container...
+2026-06-20 05:43:11,337 - INFO - Test runtime: 3.94 seconds
+2026-06-20 05:43:11,337 - INFO - Test output for astropy__astropy-7166 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/astropy__astropy-7166/test_output.txt
+2026-06-20 05:43:11,385 - INFO - Git diff after:
+diff --git a/astropy/utils/misc.py b/astropy/utils/misc.py
+index de3fb01d1..bf4b98aa6 100644
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,14 +528,64 @@ class InheritDocstrings(type):
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
+-                for base in cls.__mro__[1:]:
+-                    super_method = getattr(base, key, None)
+-                    if super_method is not None:
+-                        val.__doc__ = super_method.__doc__
+-                        break
++            if not is_public_member(key):
++                continue
++
++            # Determine what object actually holds the docstring that we may
++            # want to set.  This covers plain functions, and also common
++            # descriptors such as classmethod, staticmethod and property.
++            target = None
++            if inspect.isfunction(val):
++                target = val
++            elif isinstance(val, (classmethod, staticmethod)):
++                # For (class|static)method the underlying function is in __func__
++                target = val.__func__
++            elif isinstance(val, property):
++                # For property the getter function carries the docstring
++                target = val.fget
++            elif inspect.isdatadescriptor(val):
++                # Generic data descriptor: try to set the descriptor itself.
++                target = val
++
++            if target is None:
++                continue
++
++            # Only try to inherit if there's no docstring already.
++            if getattr(target, '__doc__', None):
++                continue
++
++            # Walk the MRO to find a docstring to inherit.
++            for base in cls.__mro__[1:]:
++                super_method = getattr(base, key, None)
++                if super_method is None:
++                    continue
++
++                # Extract a sensible docstring from the superclass attribute,
++                # handling common descriptor types.
++                doc = None
++                if isinstance(super_method, property):
++                    doc = super_method.__doc__
++                elif isinstance(super_method, (classmethod, staticmethod)):
++                    func = getattr(super_method, '__func__', None)
++                    doc = getattr(func, '__doc__', None)
++                else:
++                    doc = getattr(super_method, '__doc__', None)
++
++                if not doc:
++                    continue
++
++                # Try to set the docstring on the target; if that fails,
++                # fall back to setting it on the original value in the
++                # class dict.
++                try:
++                    target.__doc__ = doc
++                except Exception:
++                    try:
++                        val.__doc__ = doc
++                    except Exception:
++                        # If even that fails, give up for this attribute.
++                        pass
++                break
+ 
+         super().__init__(name, bases, dct)
+2026-06-20 05:43:11,385 - INFO - Grading answer for astropy__astropy-7166...
+2026-06-20 05:43:11,385 - INFO - report: {'astropy__astropy-7166': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['astropy/utils/tests/test_misc.py::test_inherit_docstrings']}, 'PASS_TO_PASS': {'success': ['astropy/utils/tests/test_misc.py::test_isiterable', 'astropy/utils/tests/test_misc.py::test_signal_number_to_name_no_failure', 'astropy/utils/tests/test_misc.py::test_skip_hidden', 'astropy/utils/tests/test_misc.py::test_JsonCustomEncoder', 'astropy/utils/tests/test_misc.py::test_check_broadcast', 'astropy/utils/tests/test_misc.py::test_dtype_bytes_or_chars'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-7166: resolved: False
+2026-06-20 05:43:11,385 - INFO - Attempting to stop container sweb.eval.astropy__astropy-7166.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:43:26,672 - INFO - Attempting to remove container sweb.eval.astropy__astropy-7166.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:43:26,698 - INFO - Container sweb.eval.astropy__astropy-7166.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 05:43:26,698 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest...
+2026-06-20 05:43:26,774 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-7166:latest removed.

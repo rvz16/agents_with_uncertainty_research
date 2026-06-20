@@ -1,0 +1,30 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -65,11 +65,26 @@
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls, value[0])
++        obj._value_ = value if isinstance(value, int) else value[0]
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls, value[0])
++        obj._value_ = value if isinstance(value, str) else value[0]
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name

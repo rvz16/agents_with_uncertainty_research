@@ -1,0 +1,77 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1148,37 +1148,44 @@
+         # instantiated).
+         setattr(form.instance, self.fk.name, self.instance)
+         return super().save_new(form, commit=commit)
+-
+-    def add_fields(self, form, index):
+-        super().add_fields(form, index)
+-        if self._pk_field == self.fk:
+-            name = self._pk_field.name
+-            kwargs = {"pk_field": True}
++def add_fields(self, form, index):
++    from django.db.models import AutoField
++
++    super().add_fields(form, index)
++    if self._pk_field == self.fk:
++        name = self._pk_field.name
++        kwargs = {"pk_field": True}
++    else:
++        # The foreign key field might not be on the form, so we poke at the
++        # Model field to get the label, since we need that for error messages.
++        name = self.fk.name
++        kwargs = {
++            "label": getattr(
++                form.fields.get(name), "label", capfirst(self.fk.verbose_name)
++            )
++        }
++
++    # The InlineForeignKeyField assumes that the foreign key relation is
++    # based on the parent model's pk. If this isn't the case, set to_field
++    # to correctly resolve the initial form value.
++    if self.fk.remote_field.field_name != self.fk.remote_field.model._meta.pk.name:
++        kwargs["to_field"] = self.fk.remote_field.field_name
++
++    # If we're adding a new object, ignore a parent's auto-generated key
++    # as it will be regenerated on the save request.
++    if self.instance._state.adding:
++        if kwargs.get("to_field") is not None:
++            to_field = self.instance._meta.get_field(kwargs["to_field"])
+         else:
+-            # The foreign key field might not be on the form, so we poke at the
+-            # Model field to get the label, since we need that for error messages.
+-            name = self.fk.name
+-            kwargs = {
+-                "label": getattr(
+-                    form.fields.get(name), "label", capfirst(self.fk.verbose_name)
+-                )
+-            }
+-
+-        # The InlineForeignKeyField assumes that the foreign key relation is
+-        # based on the parent model's pk. If this isn't the case, set to_field
+-        # to correctly resolve the initial form value.
+-        if self.fk.remote_field.field_name != self.fk.remote_field.model._meta.pk.name:
+-            kwargs["to_field"] = self.fk.remote_field.field_name
+-
+-        # If we're adding a new object, ignore a parent's auto-generated key
+-        # as it will be regenerated on the save request.
+-        if self.instance._state.adding:
+-            if kwargs.get("to_field") is not None:
+-                to_field = self.instance._meta.get_field(kwargs["to_field"])
+-            else:
+-                to_field = self.instance._meta.pk
+-            if to_field.has_default():
+-                setattr(self.instance, to_field.attname, None)
++            to_field = self.instance._meta.pk
++        # Only reset auto-generated fields to None, not regular fields with defaults
++        if to_field.auto_created or isinstance(to_field, AutoField):
++            setattr(self.instance, to_field.attname, None)
++
++    form.fields[name] = InlineForeignKeyField(self.instance, **kwargs)
++CHANGE>>>
++
++Wait, I need to import AutoField. Let me check the imports at the top of the file and add it if needed.
+ 
+         form.fields[name] = InlineForeignKeyField(self.instance, **kwargs)
+ 

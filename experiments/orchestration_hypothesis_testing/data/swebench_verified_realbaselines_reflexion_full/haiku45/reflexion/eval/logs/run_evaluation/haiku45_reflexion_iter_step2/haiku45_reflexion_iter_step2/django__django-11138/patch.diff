@@ -1,0 +1,161 @@
+--- a/django/db/backends/mysql/operations.py
++++ b/django/db/backends/mysql/operations.py
+@@ -70,7 +70,10 @@
+ 
+     def _convert_field_to_tz(self, field_name, tzname):
+         if settings.USE_TZ:
+-            field_name = "CONVERT_TZ(%s, 'UTC', '%s')" % (field_name, tzname)
++            # Get the timezone the database stores datetimes in
++            db_tz = self.connection.timezone_name
++            if db_tz != tzname:
++                field_name = "CONVERT_TZ(%s, '%s', '%s')" % (field_name, db_tz, tzname)
+         return field_name
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+
+--- a/django/db/backends/oracle/operations.py
++++ b/django/db/backends/oracle/operations.py
+@@ -99,9 +99,14 @@
+             return field_name
+         if not self._tzname_re.match(tzname):
+             raise ValueError("Invalid time zone name: %s" % tzname)
+-        # Convert from UTC to local time, returning TIMESTAMP WITH TIME ZONE
+-        # and cast it back to TIMESTAMP to strip the TIME ZONE details.
+-        return "CAST((FROM_TZ(%s, '0:00') AT TIME ZONE '%s') AS TIMESTAMP)" % (field_name, tzname)
++        # Get the timezone the database stores datetimes in
++        db_tz = self.connection.timezone_name
++        if not self._tzname_re.match(db_tz):
++            raise ValueError("Invalid time zone name: %s" % db_tz)
++        # Convert from the database timezone to the target timezone.
++        # FROM_TZ marks the field as being in db_tz, then AT TIME ZONE converts to tzname.
++        # Cast back to TIMESTAMP to strip the TIME ZONE details.
++        return "CAST((FROM_TZ(%s, '%s') AT TIME ZONE '%s') AS TIMESTAMP)" % (field_name, db_tz, tzname)
+ 
+     def datetime_cast_date_sql(self, field_name, tzname):
+         field_name = self._convert_field_to_tz(field_name, tzname)
+
+--- a/django/db/backends/sqlite3/base.py
++++ b/django/db/backends/sqlite3/base.py
+@@ -191,56 +191,7 @@
+         kwargs.update({'check_same_thread': False, 'uri': True})
+         return kwargs
+ 
+-    def get_new_connection(self, conn_params):
+-        conn = Database.connect(**conn_params)
+-        conn.create_function("django_date_extract", 2, _sqlite_datetime_extract)
+-        conn.create_function("django_date_trunc", 2, _sqlite_date_trunc)
+-        conn.create_function("django_datetime_cast_date", 2, _sqlite_datetime_cast_date)
+-        conn.create_function("django_datetime_cast_time", 2, _sqlite_datetime_cast_time)
+-        conn.create_function("django_datetime_extract", 3, _sqlite_datetime_extract)
+-        conn.create_function("django_datetime_trunc", 3, _sqlite_datetime_trunc)
+-        conn.create_function("django_time_extract", 2, _sqlite_time_extract)
+-        conn.create_function("django_time_trunc", 2, _sqlite_time_trunc)
+-        conn.create_function("django_time_diff", 2, _sqlite_time_diff)
+-        conn.create_function("django_timestamp_diff", 2, _sqlite_timestamp_diff)
+-        conn.create_function("django_format_dtdelta", 3, _sqlite_format_dtdelta)
+-        conn.create_function('regexp', 2, _sqlite_regexp)
+-        conn.create_function('ACOS', 1, none_guard(math.acos))
+-        conn.create_function('ASIN', 1, none_guard(math.asin))
+-        conn.create_function('ATAN', 1, none_guard(math.atan))
+-        conn.create_function('ATAN2', 2, none_guard(math.atan2))
+-        conn.create_function('CEILING', 1, none_guard(math.ceil))
+-        conn.create_function('COS', 1, none_guard(math.cos))
+-        conn.create_function('COT', 1, none_guard(lambda x: 1 / math.tan(x)))
+-        conn.create_function('DEGREES', 1, none_guard(math.degrees))
+-        conn.create_function('EXP', 1, none_guard(math.exp))
+-        conn.create_function('FLOOR', 1, none_guard(math.floor))
+-        conn.create_function('LN', 1, none_guard(math.log))
+-        conn.create_function('LOG', 2, none_guard(lambda x, y: math.log(y, x)))
+-        conn.create_function('LPAD', 3, _sqlite_lpad)
+-        conn.create_function('MD5', 1, none_guard(lambda x: hashlib.md5(x.encode()).hexdigest()))
+-        conn.create_function('MOD', 2, none_guard(math.fmod))
+-        conn.create_function('PI', 0, lambda: math.pi)
+-        conn.create_function('POWER', 2, none_guard(operator.pow))
+-        conn.create_function('RADIANS', 1, none_guard(math.radians))
+-        conn.create_function('REPEAT', 2, none_guard(operator.mul))
+-        conn.create_function('REVERSE', 1, none_guard(lambda x: x[::-1]))
+-        conn.create_function('RPAD', 3, _sqlite_rpad)
+-        conn.create_function('SHA1', 1, none_guard(lambda x: hashlib.sha1(x.encode()).hexdigest()))
+-        conn.create_function('SHA224', 1, none_guard(lambda x: hashlib.sha224(x.encode()).hexdigest()))
+-        conn.create_function('SHA256', 1, none_guard(lambda x: hashlib.sha256(x.encode()).hexdigest()))
+-        conn.create_function('SHA384', 1, none_guard(lambda x: hashlib.sha384(x.encode()).hexdigest()))
+-        conn.create_function('SHA512', 1, none_guard(lambda x: hashlib.sha512(x.encode()).hexdigest()))
+-        conn.create_function('SIGN', 1, none_guard(lambda x: (x > 0) - (x < 0)))
+-        conn.create_function('SIN', 1, none_guard(math.sin))
+-        conn.create_function('SQRT', 1, none_guard(math.sqrt))
+-        conn.create_function('TAN', 1, none_guard(math.tan))
+-        conn.create_aggregate('STDDEV_POP', 1, list_aggregate(statistics.pstdev))
+-        conn.create_aggregate('STDDEV_SAMP', 1, list_aggregate(statistics.stdev))
+-        conn.create_aggregate('VAR_POP', 1, list_aggregate(statistics.pvariance))
+-        conn.create_aggregate('VAR_SAMP', 1, list_aggregate(statistics.variance))
+-        conn.execute('PRAGMA foreign_keys = ON')
+-        return conn
++    def get_new_connection(self
+ 
+     def init_connection_state(self):
+         pass
+@@ -398,7 +349,7 @@
+         return FORMAT_QMARK_REGEX.sub('?', query).replace('%%', '%')
+ 
+ 
+-def _sqlite_datetime_parse(dt, tzname=None):
++def _sqlite_datetime_parse(dt, tzname=None, db_tzname=None):
+     if dt is None:
+         return None
+     try:
+@@ -406,7 +357,14 @@
+     except (TypeError, ValueError):
+         return None
+     if tzname is not None:
+-        dt = timezone.localtime(dt, pytz.timezone(tzname))
++        # If we know the database timezone, interpret the naive datetime as being in that timezone
++        # before converting to the target timezone
++        if db_tzname is not None and db_tzname != tzname:
++            dt = pytz.timezone(db_tzname).localize(dt)
++            dt = dt.astimezone(pytz.timezone(tzname))
++        else:
++            # If no database timezone specified or it matches target, just localize to target
++            dt = timezone.localtime(dt, pytz.timezone(tzname))
+     return dt
+ 
+ 
+@@ -443,22 +401,22 @@
+         return "%02i:%02i:%02i" % (dt.hour, dt.minute, dt.second)
+ 
+ 
+-def _sqlite_datetime_cast_date(dt, tzname):
+-    dt = _sqlite_datetime_parse(dt, tzname)
++def _sqlite_datetime_cast_date(dt, tzname, db_tzname=None):
++    dt = _sqlite_datetime_parse(dt, tzname, db_tzname)
+     if dt is None:
+         return None
+     return dt.date().isoformat()
+ 
+ 
+-def _sqlite_datetime_cast_time(dt, tzname):
+-    dt = _sqlite_datetime_parse(dt, tzname)
++def _sqlite_datetime_cast_time(dt, tzname, db_tzname=None):
++    dt = _sqlite_datetime_parse(dt, tzname, db_tzname)
+     if dt is None:
+         return None
+     return dt.time().isoformat()
+ 
+ 
+-def _sqlite_datetime_extract(lookup_type, dt, tzname=None):
+-    dt = _sqlite_datetime_parse(dt, tzname)
++def _sqlite_datetime_extract(lookup_type, dt, tzname=None, db_tzname=None):
++    dt = _sqlite_datetime_parse(dt, tzname, db_tzname)
+     if dt is None:
+         return None
+     if lookup_type == 'week_day':
+@@ -473,8 +431,8 @@
+         return getattr(dt, lookup_type)
+ 
+ 
+-def _sqlite_datetime_trunc(lookup_type, dt, tzname):
+-    dt = _sqlite_datetime_parse(dt, tzname)
++def _sqlite_datetime_trunc(lookup_type, dt, tzname, db_tzname=None):
++    dt = _sqlite_datetime_parse(dt, tzname, db_tzname)
+     if dt is None:
+         return None
+     if lookup_type == 'year':

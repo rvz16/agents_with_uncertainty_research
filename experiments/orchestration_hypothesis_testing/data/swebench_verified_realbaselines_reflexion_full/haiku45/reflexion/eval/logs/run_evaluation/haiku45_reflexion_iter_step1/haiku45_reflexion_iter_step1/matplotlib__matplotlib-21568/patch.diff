@@ -1,0 +1,20 @@
+--- a/lib/matplotlib/dates.py
++++ b/lib/matplotlib/dates.py
+@@ -592,13 +592,10 @@
+ 
+ 
+ def _wrap_in_tex(text):
+-    p = r'([a-zA-Z]+)'
+-    ret_text = re.sub(p, r'}$\1$\\mathdefault{', text)
+-
+-    # Braces ensure dashes are not spaced like binary operators.
+-    ret_text = '$\\mathdefault{'+ret_text.replace('-', '{-}')+'}$'
+-    ret_text = ret_text.replace('$\\mathdefault{}$', '')
+-    return ret_text
++    # Braces ensure dashes, colons, and spaces are not spaced like binary operators.
++    # Use \; for spaces to preserve them in TeX rendering.
++    text = text.replace('-', '{-}').replace(':', r'{:}').replace(' ', r'\;')
++    return '$\\mathdefault{' + text + '}$'
+ 
+ 
+ ## date tickers and formatters ###

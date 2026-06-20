@@ -1,0 +1,75 @@
+--- a/astropy/utils/misc.py
++++ b/astropy/utils/misc.py
+@@ -528,14 +528,64 @@
+                 not key.startswith('_'))
+ 
+         for key, val in dct.items():
+-            if (inspect.isfunction(val) and
+-                is_public_member(key) and
+-                val.__doc__ is None):
+-                for base in cls.__mro__[1:]:
+-                    super_method = getattr(base, key, None)
+-                    if super_method is not None:
+-                        val.__doc__ = super_method.__doc__
+-                        break
++            if not is_public_member(key):
++                continue
++
++            # Determine what object actually holds the docstring that we may
++            # want to set.  This covers plain functions, and also common
++            # descriptors such as classmethod, staticmethod and property.
++            target = None
++            if inspect.isfunction(val):
++                target = val
++            elif isinstance(val, (classmethod, staticmethod)):
++                # For (class|static)method the underlying function is in __func__
++                target = val.__func__
++            elif isinstance(val, property):
++                # For property the getter function carries the docstring
++                target = val.fget
++            elif inspect.isdatadescriptor(val):
++                # Generic data descriptor: try to set the descriptor itself.
++                target = val
++
++            if target is None:
++                continue
++
++            # Only try to inherit if there's no docstring already.
++            if getattr(target, '__doc__', None):
++                continue
++
++            # Walk the MRO to find a docstring to inherit.
++            for base in cls.__mro__[1:]:
++                super_method = getattr(base, key, None)
++                if super_method is None:
++                    continue
++
++                # Extract a sensible docstring from the superclass attribute,
++                # handling common descriptor types.
++                doc = None
++                if isinstance(super_method, property):
++                    doc = super_method.__doc__
++                elif isinstance(super_method, (classmethod, staticmethod)):
++                    func = getattr(super_method, '__func__', None)
++                    doc = getattr(func, '__doc__', None)
++                else:
++                    doc = getattr(super_method, '__doc__', None)
++
++                if not doc:
++                    continue
++
++                # Try to set the docstring on the target; if that fails,
++                # fall back to setting it on the original value in the
++                # class dict.
++                try:
++                    target.__doc__ = doc
++                except Exception:
++                    try:
++                        val.__doc__ = doc
++                    except Exception:
++                        # If even that fails, give up for this attribute.
++                        pass
++                break
+ 
+         super().__init__(name, bases, dct)
+ 

@@ -1,0 +1,84 @@
+--- a/sympy/sets/handlers/issubset.py
++++ b/sympy/sets/handlers/issubset.py
+@@ -133,3 +133,61 @@
+ @dispatch(Rationals, Range)  # type: ignore # noqa:F811
+ def is_subset_sets(a, b): # noqa:F811
+     return False
++
++@dispatch(ProductSet, FiniteSet)  # type: ignore # noqa:F811
++def is_subset_sets(a_prod, b_fs): # noqa:F811
++    # Check if a ProductSet is a subset of a FiniteSet
++    # This works by checking if we can construct the ProductSet from the FiniteSet
++    from sympy.sets.sets import ProductSet
++    
++    # Try to convert the FiniteSet elements into a ProductSet structure
++    # and check if they match the original ProductSet
++    try:
++        # Collect all elements from the FiniteSet
++        fs_elements = set(b_fs.args)
++        
++        # For a ProductSet to be a subset of a FiniteSet, all tuples in the ProductSet
++        # must be in the FiniteSet. We check this by verifying:
++        # 1. All elements in FiniteSet are tuples of the right dimension
++        # 2. The tuples come from the Cartesian product of the ProductSet's sets
++        
++        if not fs_elements:
++            # Empty FiniteSet cannot contain non-empty ProductSet
++            return False if a_prod.sets else True
++        
++        # Check if all elements are tuples with matching dimension
++        sample = next(iter(fs_elements))
++        if not isinstance(sample, tuple):
++            return False
++        
++        if len(sample) != len(a_prod.sets):
++            return False
++        
++        # Check if each position's elements come from the corresponding ProductSet component
++        for i, component_set in enumerate(a_prod.sets):
++            # Get all elements at position i from FiniteSet tuples
++            position_elements = {elem[i] for elem in fs_elements if isinstance(elem, tuple) and len(elem) == len(a_prod.sets)}
++            
++            # Check if position_elements matches or contains the component_set
++            # For finite sets, we can check if component_set is a subset
++            if isinstance(component_set, FiniteSet):
++                component_elems = set(component_set.args)
++                if not component_elems.issubset(position_elements):
++                    return False
++            else:
++                # For infinite or complex component sets, we cannot easily verify
++                return None
++        
++        # Additional check: verify the ProductSet's cardinality matches FiniteSet's cardinality
++        # when both component sets are finite
++        if all(isinstance(s, FiniteSet) for s in a_prod.sets):
++            expected_size = 1
++            for s in a_prod.sets:
++                expected_size *= len(s.args)
++            if expected_size != len(fs_elements):
++                return False
++            return True
++        
++        return None
++    except (TypeError, AttributeError):
++        return None
+
+--- a/sympy/core/relational.py
++++ b/sympy/core/relational.py
+@@ -311,8 +311,14 @@
+             v = None
+             if dif.is_comparable:
+                 v = dif.n(2)
+-            elif dif.equals(0):  # XXX this is expensive
+-                v = S.Zero
++            else:
++                # Try to check if dif equals 0, but handle cases where equals() doesn't exist
++                try:
++                    if dif.equals(0):  # XXX this is expensive
++                        v = S.Zero
++                except AttributeError:
++                    # Some objects (like Complement) don't have equals method
++                    pass
+             if v is not None:
+                 r = r.func._eval_relation(v, S.Zero)
+             r = r.canonical

@@ -1,0 +1,33 @@
+--- a/xarray/core/rolling.py
++++ b/xarray/core/rolling.py
+@@ -270,11 +270,25 @@
+     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
+         if self.ndim > 1:
+             raise ValueError("__iter__ is only supported for 1d-rolling")
+-        stops = np.arange(1, len(self.window_labels) + 1)
+-        starts = stops - int(self.window[0])
+-        starts[: int(self.window[0])] = 0
+-        for (label, start, stop) in zip(self.window_labels, starts, stops):
+-            window = self.obj.isel({self.dim[0]: slice(start, stop)})
++        n = len(self.window_labels)
++        w = int(self.window[0])
++        labels = self.window_labels
++
++        if self.center[0]:
++            # center the window around each label; clip at array boundaries
++            centers = np.arange(n)
++            starts = centers - ((w - 1) // 2)
++            stops = starts + w
++            # clip to valid range [0, n]
++            starts = np.maximum(starts, 0)
++            stops = np.minimum(stops, n)
++        else:
++            stops = np.arange(1, n + 1)
++            starts = stops - w
++            starts[:w] = 0
++
++        for (label, start, stop) in zip(labels, starts, stops):
++            window = self.obj.isel({self.dim[0]: slice(int(start), int(stop))})
+ 
+             counts = window.count(dim=self.dim[0])
+             window = window.where(counts >= self.min_periods)

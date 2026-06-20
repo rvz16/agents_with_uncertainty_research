@@ -1,0 +1,64 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -514,18 +514,58 @@
+         return self.__class__(*args, **kwargs)
+ 
+     def __eq__(self, other):
+-        # Needed for @total_ordering
++        # Needed for @total_ordering.
++        # Fields are considered equal only if they have the same creation
++        # counter and are attached to the same model. Unbound fields
++        # (without a `model` attribute) compare equal only if their
++        # creation_counters are equal.
+         if isinstance(other, Field):
+-            return self.creation_counter == other.creation_counter
++            if self.creation_counter != other.creation_counter:
++                return False
++            self_has_model = hasattr(self, 'model')
++            other_has_model = hasattr(other, 'model')
++            if self_has_model and other_has_model:
++                return self.model is other.model
++            if not self_has_model and not other_has_model:
++                return True
++            # One field is bound to a model and the other isn't -> not equal.
++            return False
+         return NotImplemented
+ 
+     def __lt__(self, other):
+         # This is needed because bisect does not take a comparison function.
++        # Order primarily by creation_counter so existing ordering is preserved.
++        # When creation_counters are equal, use model identity (app_label,
++        # object_name) to provide a deterministic ordering for fields bound to
++        # different models. Unbound fields with equal creation_counters are
++        # considered equal and are not less-than one another.
+         if isinstance(other, Field):
+-            return self.creation_counter < other.creation_counter
++            if self.creation_counter != other.creation_counter:
++                return self.creation_counter < other.creation_counter
++            # creation_counter equal -- disambiguate by model presence/identity
++            self_has_model = hasattr(self, 'model')
++            other_has_model = hasattr(other, 'model')
++            if self_has_model and other_has_model:
++                self_label = (self.model._meta.app_label, self.model._meta.object_name)
++                other_label = (other.model._meta.app_label, other.model._meta.object_name)
++                if self_label != other_label:
++                    return self_label < other_label
++                # Same model -> fields are equal (not less-than).
++                return False
++            if not self_has_model and not other_has_model:
++                # Both unbound and same creation_counter -> consider equal.
++                return False
++            # Deterministic ordering when one is bound and the other isn't:
++            # unbound fields come before bound fields.
++            return (not self_has_model) and other_has_model
+         return NotImplemented
+ 
+     def __hash__(self):
++        # Hash must be consistent with __eq__. Include model identity when
++        # available to avoid collisions between fields from different models
++        # that happen to share the same creation_counter.
++        if hasattr(self, 'model'):
++            return hash((self.model, self.creation_counter))
+         return hash(self.creation_counter)
+ 
+     def __deepcopy__(self, memodict):

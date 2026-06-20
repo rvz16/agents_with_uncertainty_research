@@ -1,0 +1,68 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -601,27 +601,7 @@
+                 if key in attr_docs:
+                     no_docstring = True
+                     # make a copy of docstring for attributes to avoid cache
+-                    # the change of autodoc-process-docstring event.
+-                    docstrings = [list(attr_docs[key])]
+-
+-                    for i, line in enumerate(self.process_doc(docstrings)):
+-                        self.add_line(line, sourcename, i)
+-
+-        # add content from docstrings
+-        if not no_docstring:
+-            docstrings = self.get_doc()
+-            if not docstrings:
+-                # append at least a dummy docstring, so that the event
+-                # autodoc-process-docstring is fired and can add some
+-                # content if desired
+-                docstrings.append([])
+-            for i, line in enumerate(self.process_doc(docstrings)):
+-                self.add_line(line, sourcename, i)
+-
+-        # add additional content (e.g. from document), if present
+-        if more_content:
+-            for line, src in zip(more_content.data, more_content.items):
+-                self.add_line(line, src[0], src[1])
++                    # the change of auto
+ 
+     def get_object_members(self, want_all: bool) -> Tuple[bool, ObjectMembers]:
+         """Return `(members_check_module, members)` where `members` is a
+@@ -679,6 +659,27 @@
+ 
+             return False
+ 
++        def find_attr_doc(name: str) -> bool:
++            """Check if attribute documentation exists in current class or base classes."""
++            if not self.analyzer:
++                return False
++            
++            # Check current class namespace
++            if (namespace, name) in attr_docs:
++                return True
++            
++            # Check base class namespaces for inherited attributes
++            if inspect.isclass(self.object):
++                for cls in self.object.__mro__[1:]:  # Skip the class itself
++                    try:
++                        cls_namespace = '.'.join([cls.__module__, cls.__qualname__])
++                        if (cls_namespace, name) in attr_docs:
++                            return True
++                    except AttributeError:
++                        pass
++            
++            return False
++
+         ret = []
+ 
+         # search for members in source code too
+@@ -746,7 +747,7 @@
+                         keep = has_doc or self.options.undoc_members
+                 else:
+                     keep = False
+-            elif (namespace, membername) in attr_docs:
++            elif find_attr_doc(membername):
+                 if want_all and isprivate:
+                     if self.options.private_members is None:
+                         keep = False

@@ -1,0 +1,93 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -441,6 +441,32 @@
+ 
+     def set_source_expressions(self, exprs):
+         self.lhs, self.rhs = exprs
++
++    def _resolve_output_field(self):
++        """
++        Resolve the output field for combined expressions, with special handling
++        for temporal subtraction.
++        """
++        try:
++            lhs_type = self.lhs.output_field.get_internal_type()
++        except FieldError:
++            lhs_type = None
++        try:
++            rhs_type = self.rhs.output_field.get_internal_type()
++        except FieldError:
++            rhs_type = None
++        
++        # Handle temporal subtraction: DateTimeField - DateTimeField = DurationField
++        datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
++        if (
++            self.connector == self.SUB and 
++            lhs_type in datetime_fields and 
++            lhs_type == rhs_type
++        ):
++            return fields.DurationField()
++        
++        # Default behavior: use parent's implementation
++        return super()._resolve_output_field()
+ 
+     def as_sql(self, compiler, connection):
+         try:
+@@ -479,6 +505,57 @@
+         c.lhs = c.lhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
+         c.rhs = c.rhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
+         return c
++REPLACE
++    def as_sql(self, compiler, connection):
++        try:
++            lhs_type = self.lhs.output_field.get_internal_type()
++        except FieldError:
++            lhs_type = None
++        try:
++            rhs_type = self.rhs.output_field.get_internal_type()
++        except FieldError:
++            rhs_type = None
++        if (
++            not connection.features.has_native_duration_field and
++            'DurationField' in {lhs_type, rhs_type} and
++            lhs_type != rhs_type
++        ):
++            return DurationExpression(self.lhs, self.connector, self.rhs).as_sql(compiler, connection)
++        datetime_fields = {'DateField', 'DateTimeField', 'TimeField'}
++        if self.connector == self.SUB and lhs_type in datetime_fields and lhs_type == rhs_type:
++            return TemporalSubtraction(self.lhs, self.rhs).as_sql(compiler, connection)
++        expressions = []
++        expression_params = []
++        sql, params = compiler.compile(self.lhs)
++        expressions.append(sql)
++        expression_params.extend(params)
++        sql, params = compiler.compile(self.rhs)
++        expressions.append(sql)
++        expression_params.extend(params)
++        # order of precedence
++        expression_wrapper = '(%s)'
++        sql = connection.ops.combine_expression(self.connector, expressions)
++        return expression_wrapper % sql, expression_params
++
++    def resolve_expression(self, query=None, allow_joins=True, reuse=None, summarize=False, for_save=False):
++        c = self.copy()
++        c.is_summary = summarize
++        c.lhs = c.lhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
++        c.rhs = c.rhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
++        # Ensure output_field is set for temporal subtraction before further operations
++        if c.output_field is None:
++            try:
++                c.output_field = c._resolve_output_field()
++            except FieldError:
++                pass
++        return c
++
++    def resolve_expression(self, query=None, allow_joins=True, reuse=None, summarize=False, for_save=False):
++        c = self.copy()
++        c.is_summary = summarize
++        c.lhs = c.lhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
++        c.rhs = c.rhs.resolve_expression(query, allow_joins, reuse, summarize, for_save)
++        return c
+ 
+ 
+ class DurationExpression(CombinedExpression):

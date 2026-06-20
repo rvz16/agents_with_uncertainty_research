@@ -1,0 +1,23 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -425,12 +425,17 @@
+                 # If the columns list is limited, then all combined queries
+                 # must have the same columns list. Set the selects defined on
+                 # the query on all combined queries, if not already set.
+-                if not compiler.query.values_select and self.query.values_select:
+-                    compiler.query.set_values((
++                if self.query.values_select:
++                    # Determine what values should be set on the combined query
++                    combined_values_select = (
+                         *self.query.extra_select,
+                         *self.query.values_select,
+                         *self.query.annotation_select,
+-                    ))
++                    )
++                    # Only apply if the child query doesn't have values_select set,
++                    # or if it differs from what we're about to set
++                    if not compiler.query.values_select or compiler.query.values_select != combined_values_select:
++                        compiler.query.set_values(combined_values_select)
+                 part_sql, part_args = compiler.as_sql()
+                 if compiler.query.combinator:
+                     # Wrap in a subquery if wrapping in parentheses isn't

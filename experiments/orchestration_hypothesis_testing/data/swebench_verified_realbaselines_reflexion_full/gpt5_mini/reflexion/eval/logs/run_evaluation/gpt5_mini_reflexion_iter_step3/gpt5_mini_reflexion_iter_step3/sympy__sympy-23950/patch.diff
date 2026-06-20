@@ -1,0 +1,22 @@
+--- a/sympy/sets/contains.py
++++ b/sympy/sets/contains.py
+@@ -45,4 +45,18 @@
+             isinstance(i, (Eq, Ne))])
+ 
+     def as_set(self):
+-        raise NotImplementedError()
++        """
++        Return a Set corresponding to the predicate Contains(x, S).
++
++        If the element is a Symbol, {x | x in S} is just S, so return S.
++        Otherwise return a ConditionSet representing {x | Contains(x, S)}.
++        """
++        x, s = self.args
++        from sympy.sets.sets import ConditionSet
++
++        # If the element is a plain Symbol then {x | x in S} == S
++        if x.is_Symbol:
++            return s
++
++        # Otherwise return a ConditionSet for the predicate.
++        return ConditionSet(x, self)

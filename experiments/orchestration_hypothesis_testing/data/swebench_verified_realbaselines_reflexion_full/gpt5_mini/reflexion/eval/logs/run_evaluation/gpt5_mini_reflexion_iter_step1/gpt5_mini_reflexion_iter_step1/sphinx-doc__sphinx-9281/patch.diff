@@ -1,0 +1,21 @@
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -457,6 +457,18 @@
+         else:
+             return "frozenset({%s})" % ", ".join(object_description(x)
+                                                  for x in sorted_values)
++    # Special-case enum members to avoid the default repr() like "<MyEnum.Value: 1>"
++    # which is not a nice representation for signatures/default values.
++    try:
++        if isinstance(object, enum.Enum):
++            try:
++                return "%s.%s" % (object.__class__.__name__, object.name)
++            except Exception:
++                # Fallback to the generic repr() path below if anything goes wrong
++                pass
++    except Exception:
++        # In some weird environments isinstance() may raise; ignore and continue.
++        pass
+     try:
+         s = repr(object)
+     except Exception as exc:

@@ -1,0 +1,24 @@
+--- a/sklearn/impute/_iterative.py
++++ b/sklearn/impute/_iterative.py
+@@ -117,6 +117,13 @@
+         Which strategy to use to initialize the missing values. Same as the
+         `strategy` parameter in :class:`~sklearn.impute.SimpleImputer`.
+ 
++    fill_value : object, default=None
++        When ``initial_strategy='constant'``, the constant value used to fill
++        missing values for the initial imputation. If ``None``, the default
++        used by :class:`~sklearn.impute.SimpleImputer` is applied (0 for numeric
++        data and "missing_value" for strings/object dtypes). ``np.nan`` is
++        accepted as a valid value.
++
+     imputation_order : {'ascending', 'descending', 'roman', 'arabic', \
+             'random'}, default='ascending'
+         The order in which the features will be imputed. Possible values:
+@@ -281,6 +288,7 @@
+         "initial_strategy": [
+             StrOptions({"mean", "median", "most_frequent", "constant"})
+         ],
++        "fill_value": ["any"],
+         "imputation_order": [
+             StrOptions({"ascending", "descending", "roman", "arabic", "random"})
+         ],

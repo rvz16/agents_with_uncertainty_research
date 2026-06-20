@@ -1,0 +1,79 @@
+--- a/pylint/config/__init__.py
++++ b/pylint/config/__init__.py
+@@ -55,15 +55,38 @@
+     "UnsupportedAction",
+ ]
+ 
++
++def _get_default_pylint_home():
++    """Return the default directory for pylint data, following XDG Base Directory spec."""
++    # If PYLINTHOME is explicitly set, use it (for backward compatibility)
++    if "PYLINTHOME" in os.environ:
++        return os.environ["PYLINTHOME"]
++    
++    user_home = os.path.expanduser("~")
++    
++    # Check if user_home expansion failed (e.g., ~ couldn't be expanded)
++    if user_home == "~":
++        # Fall back to .pylint.d in current directory
++        return ".pylint.d"
++    
++    # Check for backward compatibility: if old .pylint.d exists, use it
++    old_pylint_home = os.path.join(user_home, ".pylint.d")
++    if os.path.isdir(old_pylint_home):
++        return old_pylint_home
++    
++    # Follow XDG Base Directory spec for cache data
++    # Use XDG_CACHE_HOME if set, otherwise default to ~/.cache
++    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
++    if xdg_cache_home:
++        cache_home = xdg_cache_home
++    else:
++        cache_home = os.path.join(user_home, ".cache")
++    
++    return os.path.join(cache_home, "pylint")
++
++
+ USER_HOME = os.path.expanduser("~")
+-if "PYLINTHOME" in os.environ:
+-    PYLINT_HOME = os.environ["PYLINTHOME"]
+-    if USER_HOME == "~":
+-        USER_HOME = os.path.dirname(PYLINT_HOME)
+-elif USER_HOME == "~":
+-    PYLINT_HOME = ".pylint.d"
+-else:
+-    PYLINT_HOME = os.path.join(USER_HOME, ".pylint.d")
++PYLINT_HOME = _get_default_pylint_home()
+ 
+ 
+ def _get_pdata_path(base_name, recurs):
+@@ -110,11 +133,15 @@
+ The following environment variables are used:
+     * PYLINTHOME
+     Path to the directory where persistent data for the run will be stored. If
+-not found, it defaults to ~/.pylint.d/ or .pylint.d (in the current working
+-directory).
++not found, it defaults to $XDG_CACHE_HOME/pylint or ~/.cache/pylint (following
++the XDG Base Directory Specification). For backward compatibility, if
++~/.pylint.d exists, it will be used instead.
+     * PYLINTRC
+     Path to the configuration file. See the documentation for the method used
+ to search for configuration file.
++    * XDG_CACHE_HOME
++    If set, pylint will store its cache data in $XDG_CACHE_HOME/pylint instead
++of ~/.cache/pylint.
+ """
+     % globals()  # type: ignore
+ )
+
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -48,6 +48,8 @@
+     toml>=0.7.1
+     colorama;sys_platform=="win32"
+ python_requires = ~=3.6
++
++[options.extras_require]
+ 
+ [options.packages.find]
+ include =

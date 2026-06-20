@@ -1,0 +1,42 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -806,9 +806,39 @@
+         # Clear the callback registry for this axis, or it may "leak"
+         self.callbacks = cbook.CallbackRegistry()
+ 
++        # Preserve tick visibility settings from existing ticks before resetting
++        # This is important for shared axes where tick visibility is set by the
++        # axes sharing mechanism.
++        major_tick_kw_backup = {}
++        minor_tick_kw_backup = {}
++        
++        if self.majorTicks:
++            tick = self.majorTicks[0]
++            major_tick_kw_backup = {
++                'tick1On': tick.tick1line.get_visible(),
++                'tick2On': tick.tick2line.get_visible(),
++                'label1On': tick.label1.get_visible(),
++                'label2On': tick.label2.get_visible(),
++            }
++        
++        if self.minorTicks:
++            tick = self.minorTicks[0]
++            minor_tick_kw_backup = {
++                'tick1On': tick.tick1line.get_visible(),
++                'tick2On': tick.tick2line.get_visible(),
++                'label1On': tick.label1.get_visible(),
++                'label2On': tick.label2.get_visible(),
++            }
++
+         self._reset_major_tick_kw()
+         self._reset_minor_tick_kw()
+         self.reset_ticks()
++
++        # Restore the preserved tick visibility settings
++        if major_tick_kw_backup:
++            self._major_tick_kw.update(major_tick_kw_backup)
++        if minor_tick_kw_backup:
++            self._minor_tick_kw.update(minor_tick_kw_backup)
+ 
+         self.converter = None
+         self.units = None

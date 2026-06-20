@@ -1,0 +1,72 @@
+--- a/sympy/parsing/sympy_parser.py
++++ b/sympy/parsing/sympy_parser.py
+@@ -1110,6 +1110,19 @@
+         ast.BitAnd: 'And',
+         ast.BitXor: 'Not',
+     }
++    # mapping for comparison operators
++    compare_operators = {
++        ast.Lt: 'Lt',
++        ast.LtE: 'Le',
++        ast.Gt: 'Gt',
++        ast.GtE: 'Ge',
++        ast.Eq: 'Eq',
++        ast.NotEq: 'Ne',
++        ast.Is: 'Eq',
++        ast.IsNot: 'Ne',
++        ast.In: 'Contains',
++        ast.NotIn: 'Contains',  # will be negated by Python semantics; keep as Contains for now
++    }
+     functions = (
+         'Abs', 'im', 're', 'sign', 'arg', 'conjugate',
+         'acos', 'acot', 'acsc', 'asec', 'asin', 'atan',
+@@ -1186,6 +1199,49 @@
+             return new_node
+         return node
+ 
++    def visit_Compare(self, node):
++        """
++        Transform Python comparison(s) into SymPy relational calls with
++        evaluate=False. For chained comparisons like a < b < c produce
++        And(Lt(a, b, evaluate=False), Lt(b, c, evaluate=False), evaluate=False).
++        """
++        left = self.visit(node.left)
++        calls = []
++        # ops and comparators are parallel: each op compares current left to comparator
++        for op, comp in zip(node.ops, node.comparators):
++            comp_visited = self.visit(comp)
++            op_cls = op.__class__
++            if op_cls in self.compare_operators:
++                sympy_class = self.compare_operators[op_cls]
++            else:
++                # Unknown comparison operator: leave node unchanged
++                return node
++            # Build the relational call
++            rel_call = ast.Call(
++                func=ast.Name(id=sympy_class, ctx=ast.Load()),
++                args=[left, comp_visited],
++                keywords=[ast.keyword(arg='evaluate', value=ast.NameConstant(value=False, ctx=ast.Load()))],
++                starargs=None,
++                kwargs=None
++            )
++            calls.append(rel_call)
++            # for chained comparisons, the next left is this comparator
++            left = comp_visited
++
++        if not calls:
++            return node
++        if len(calls) == 1:
++            return calls[0]
++        # Multiple comparisons -> combine with And(..., evaluate=False)
++        and_call = ast.Call(
++            func=ast.Name(id='And', ctx=ast.Load()),
++            args=calls,
++            keywords=[ast.keyword(arg='evaluate', value=ast.NameConstant(value=False, ctx=ast.Load()))],
++            starargs=None,
++            kwargs=None
++        )
++        return and_call
++
+     def visit_Call(self, node):
+         new_node = self.generic_visit(node)
+         if isinstance(node.func, ast.Name) and node.func.id in self.functions:

@@ -1,0 +1,30 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -451,7 +451,6 @@
+                 fk_lookup
+             ).items():
+                 return True
+-
+         relation_parts = []
+         prev_field = None
+         for part in lookup.split(LOOKUP_SEP):
+@@ -474,7 +473,18 @@
+                 # must be transforms.
+                 break
+             prev_field = field
+-            model = field.path_infos[-1].to_opts.model
++            # Only skip to parent model for multi-table inheritance parent links.
++            # Parent links are both parent_link=True and auto_created=True.
++            # OneToOneFields that are primary keys should not be treated as parent links.
++            if not (getattr(field, "parent_link", False) and field.auto_created):
++                model = field.path_infos[-1].to_opts.model
++            # Skip to the parent model only for multi-table inheritance parent links.
++            # Parent links have both parent_link=True and auto_created=True.
++            # OneToOneFields used as primary keys (not parent links) should not skip.
++            if getattr(field, "parent_link", False) and field.auto_created:
++                model = field.path_infos[-1].to_opts.model
++            else:
++                model = field.path_infos[-1].to_opts.model
+ 
+         if len(relation_parts) <= 1:
+             # Either a local field filter, or no fields at all.

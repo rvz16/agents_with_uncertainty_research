@@ -1,0 +1,30 @@
+--- a/django/contrib/staticfiles/storage.py
++++ b/django/contrib/staticfiles/storage.py
+@@ -220,6 +220,8 @@
+ 
+         # where to store the new paths
+         hashed_files = {}
++        # track the most recent hashed_name we've yielded for each original file
++        yielded_files = {}
+ 
+         # build a list of adjustable files
+         adjustable_paths = [
+@@ -230,13 +232,17 @@
+         # adjustable files.
+         for name, hashed_name, processed, _ in self._post_process(paths, adjustable_paths, hashed_files):
+             yield name, hashed_name, processed
++            yielded_files[name] = hashed_name
+ 
+         paths = {path: paths[path] for path in adjustable_paths}
+ 
+         for i in range(self.max_post_process_passes):
+             substitutions = False
+             for name, hashed_name, processed, subst in self._post_process(paths, adjustable_paths, hashed_files):
+-                yield name, hashed_name, processed
++                # Only yield if this file's hashed_name has changed from what we've already yielded
++                if name not in yielded_files or yielded_files[name] != hashed_name:
++                    yield name, hashed_name, processed
++                    yielded_files[name] = hashed_name
+                 substitutions = substitutions or subst
+ 
+             if not substitutions:

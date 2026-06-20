@@ -1,0 +1,11 @@
+--- a/xarray/core/dataset.py
++++ b/xarray/core/dataset.py
+@@ -4177,7 +4177,7 @@
+         }
+         variables.update(new_variables)
+ 
+-        coord_names = set(new_variables) | self._coord_names
++        coord_names = (set(new_variables) | self._coord_names) & variables.keys()
+ 
+         return self._replace(variables, coord_names=coord_names, indexes=indexes)
+ 

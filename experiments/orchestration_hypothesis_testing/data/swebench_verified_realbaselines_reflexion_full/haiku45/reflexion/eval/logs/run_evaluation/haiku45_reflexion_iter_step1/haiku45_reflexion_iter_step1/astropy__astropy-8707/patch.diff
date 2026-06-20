@@ -1,0 +1,24 @@
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -553,6 +553,10 @@
+         card(s).
+         """
+ 
++        # Support both bytes and str; decode bytes to str using ASCII encoding
++        if isinstance(image, bytes):
++            image = image.decode('ascii')
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+@@ -1269,6 +1273,10 @@
+ def _pad(input):
+     """Pad blank space to the input string to be multiple of 80."""
+ 
++    # Support both bytes and str; decode bytes to str using ASCII encoding
++    if isinstance(input, bytes):
++        input = input.decode('ascii')
++
+     _len = len(input)
+     if _len == Card.length:
+         return input

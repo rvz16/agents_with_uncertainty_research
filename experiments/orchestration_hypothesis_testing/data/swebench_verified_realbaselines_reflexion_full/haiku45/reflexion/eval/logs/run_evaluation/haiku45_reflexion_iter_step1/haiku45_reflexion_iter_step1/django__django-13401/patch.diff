@@ -1,0 +1,44 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -516,16 +516,39 @@
+     def __eq__(self, other):
+         # Needed for @total_ordering
+         if isinstance(other, Field):
+-            return self.creation_counter == other.creation_counter
++            if self.creation_counter != other.creation_counter:
++                return False
++            # If creation_counter is equal, check if they belong to the same model
++            # Fields without a model attribute are only equal if they're the same object
++            if hasattr(self, 'model') and hasattr(other, 'model'):
++                return self.model is other.model
++            # If either field doesn't have a model yet, fall back to identity comparison
++            return self is other
+         return NotImplemented
+ 
+     def __lt__(self, other):
+         # This is needed because bisect does not take a comparison function.
+         if isinstance(other, Field):
+-            return self.creation_counter < other.creation_counter
++            # Order by creation_counter first to maintain existing behavior
++            if self.creation_counter != other.creation_counter:
++                return self.creation_counter < other.creation_counter
++            # If creation_counter is equal, order by model for deterministic ordering
++            # Fields without models sort before fields with models
++            self_has_model = hasattr(self, 'model')
++            other_has_model = hasattr(other, 'model')
++            if self_has_model != other_has_model:
++                return not self_has_model
++            if self_has_model and other_has_model:
++                # Compare by model name for deterministic ordering
++                return self.model.__name__ < other.model.__name__
++            return False
+         return NotImplemented
+ 
+     def __hash__(self):
++        # Include model in hash if available to ensure fields from different models
++        # have different hashes
++        if hasattr(self, 'model'):
++            return hash((self.creation_counter, self.model))
+         return hash(self.creation_counter)
+ 
+     def __deepcopy__(self, memodict):

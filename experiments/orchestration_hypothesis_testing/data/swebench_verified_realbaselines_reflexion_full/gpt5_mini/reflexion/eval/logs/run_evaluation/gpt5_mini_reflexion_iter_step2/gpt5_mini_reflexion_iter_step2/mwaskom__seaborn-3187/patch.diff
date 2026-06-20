@@ -1,0 +1,35 @@
+--- a/seaborn/utils.py
++++ b/seaborn/utils.py
+@@ -706,6 +706,32 @@
+     # formatted_levels = formatter.format_ticks(raw_levels)
+     formatter.set_locs(raw_levels)
+     formatted_levels = [formatter(x) for x in raw_levels]
++
++    # Some formatters (ScalarFormatter) compute an "offset" text that is shown
++    # on the axis (for large or small numbers, e.g. "×1e6"). When generating
++    # legend entries we should include that offset so the numeric values are
++    # interpreted correctly. Retrieve the offset string from the formatter in
++    # a robust way that works across Matplotlib versions.
++    offset_str = ""
++    # Prefer the public API if available
++    get_offset = getattr(formatter, "get_offset", None)
++    if callable(get_offset):
++        try:
++            offset_str = get_offset()
++        except Exception:
++            offset_str = ""
++    # Fall back to the offset_text artist if present
++    if not offset_str:
++        offset_text = getattr(formatter, "offset_text", None)
++        if offset_text is not None:
++            try:
++                offset_str = offset_text.get_text()
++            except Exception:
++                offset_str = ""
++
++    # If an offset was found, append it to each formatted label (separated by a space)
++    if offset_str:
++        formatted_levels = [f"{str(lbl)} {offset_str}".strip() for lbl in formatted_levels]
+ 
+     return raw_levels, formatted_levels
+ 

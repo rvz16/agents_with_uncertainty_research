@@ -1,0 +1,73 @@
+2026-06-19 19:12:12,298 - INFO - Creating container for astropy__astropy-8707...
+2026-06-19 19:12:12,385 - INFO - Container for astropy__astropy-8707 created: 7367010eceb6235b915c56e42d2fd479b690f60d2e713ab4d1bc7f1de3d3e1d6
+2026-06-19 19:12:12,526 - INFO - Container for astropy__astropy-8707 started: 7367010eceb6235b915c56e42d2fd479b690f60d2e713ab4d1bc7f1de3d3e1d6
+2026-06-19 19:12:12,526 - INFO - Intermediate patch for astropy__astropy-8707 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/astropy__astropy-8707/patch.diff, now applying to container...
+2026-06-19 19:12:12,633 - INFO - >>>>> Applied Patch:
+Checking patch astropy/io/fits/card.py...
+Applied patch astropy/io/fits/card.py cleanly.
+
+2026-06-19 19:12:12,875 - INFO - Git diff before:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..52caea19b 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -553,6 +553,10 @@ class Card(_Verify):
+         card(s).
+         """
+ 
++        # Support both bytes and str; decode bytes to str using ASCII encoding
++        if isinstance(image, bytes):
++            image = image.decode('ascii')
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+@@ -1269,6 +1273,10 @@ def _format_float(value):
+ def _pad(input):
+     """Pad blank space to the input string to be multiple of 80."""
+ 
++    # Support both bytes and str; decode bytes to str using ASCII encoding
++    if isinstance(input, bytes):
++        input = input.decode('ascii')
++
+     _len = len(input)
+     if _len == Card.length:
+         return input
+2026-06-19 19:12:12,875 - INFO - Eval script for astropy__astropy-8707 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/astropy__astropy-8707/eval.sh; copying to container...
+2026-06-19 19:12:26,967 - INFO - Test runtime: 14.04 seconds
+2026-06-19 19:12:26,968 - INFO - Test output for astropy__astropy-8707 written to logs/run_evaluation/haiku45_reflexion_iter_step1/haiku45_reflexion_iter_step1/astropy__astropy-8707/test_output.txt
+2026-06-19 19:12:27,020 - INFO - Git diff after:
+diff --git a/astropy/io/fits/card.py b/astropy/io/fits/card.py
+index 8c1ac5d73..52caea19b 100644
+--- a/astropy/io/fits/card.py
++++ b/astropy/io/fits/card.py
+@@ -553,6 +553,10 @@ class Card(_Verify):
+         card(s).
+         """
+ 
++        # Support both bytes and str; decode bytes to str using ASCII encoding
++        if isinstance(image, bytes):
++            image = image.decode('ascii')
++
+         card = cls()
+         card._image = _pad(image)
+         card._verified = False
+@@ -1269,6 +1273,10 @@ def _format_float(value):
+ def _pad(input):
+     """Pad blank space to the input string to be multiple of 80."""
+ 
++    # Support both bytes and str; decode bytes to str using ASCII encoding
++    if isinstance(input, bytes):
++        input = input.decode('ascii')
++
+     _len = len(input)
+     if _len == Card.length:
+         return input
+2026-06-19 19:12:27,020 - INFO - Grading answer for astropy__astropy-8707...
+2026-06-19 19:12:27,090 - INFO - report: {'astropy__astropy-8707': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_from_bytes']}, 'PASS_TO_PASS': {'success': ['astropy/io/fits/tests/test_header.py::test_shallow_copy', 'astropy/io/fits/tests/test_header.py::test_init_with_header', 'astropy/io/fits/tests/test_header.py::test_init_with_dict', 'astropy/io/fits/tests/test_header.py::test_init_with_ordereddict'], 'failure': ['astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_rename_keyword', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_constructor_default_args', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_string_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_boolean_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_long_integer_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_floating_point_value_card', 'astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_complex_value_card']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for astropy__astropy-8707: resolved: False
+2026-06-19 19:12:27,091 - INFO - Attempting to stop container sweb.eval.astropy__astropy-8707.haiku45_reflexion_iter_step1...
+2026-06-19 19:12:42,391 - INFO - Attempting to remove container sweb.eval.astropy__astropy-8707.haiku45_reflexion_iter_step1...
+2026-06-19 19:12:42,412 - INFO - Container sweb.eval.astropy__astropy-8707.haiku45_reflexion_iter_step1 removed.
+2026-06-19 19:12:42,412 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest...
+2026-06-19 19:12:42,719 - INFO - Image swebench/sweb.eval.x86_64.astropy_1776_astropy-8707:latest removed.

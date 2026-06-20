@@ -1,0 +1,22 @@
+--- a/sphinx/ext/autodoc/importer.py
++++ b/sphinx/ext/autodoc/importer.py
+@@ -157,6 +157,19 @@
+     except AttributeError:
+         pass
+ 
++    # append module-level attributes documented in source (cf. #: attr)
++    try:
++        modname = safe_getattr(module, '__name__')
++        analyzer = ModuleAnalyzer.for_module(modname)
++        analyzer.analyze()
++        namespace = modname
++        for (ns, name) in analyzer.find_attr_docs():
++            if namespace == ns and name not in members:
++                members[name] = (name, INSTANCEATTR)
++    except (AttributeError, PycodeError):
++        # ignore if analyzer cannot be created or analyzed
++        pass
++
+     return sorted(list(members.values()))
+ 
+ 

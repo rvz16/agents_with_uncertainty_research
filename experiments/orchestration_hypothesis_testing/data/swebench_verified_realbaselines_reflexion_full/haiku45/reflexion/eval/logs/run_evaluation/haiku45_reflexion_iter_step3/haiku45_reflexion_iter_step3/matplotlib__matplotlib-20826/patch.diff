@@ -1,0 +1,29 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -778,12 +778,26 @@
+         self._major_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'major'))
++        self._apply_default_tick_params(self._major_tick_kw, major=True)
+ 
+     def _reset_minor_tick_kw(self):
+         self._minor_tick_kw.clear()
+         self._minor_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'minor'))
++        self._apply_default_tick_params(self._minor_tick_kw, major=False)
++
++    def _apply_default_tick_params(self, tick_kw, major=True):
++        """Apply default tick parameters from rcParams to tick_kw dict."""
++        major_minor = "major" if major else "minor"
++        axis_name = self.axis_name
++        # Set default visibility for ticks and labels based on axis position
++        # For x-axis: tick1 is bottom, tick2 is top
++        # For y-axis: tick1 is left, tick2 is right
++        tick_kw.setdefault('tick1On', True)
++        tick_kw.setdefault('tick2On', True)
++        tick_kw.setdefault('label1On', True)
++        tick_kw.setdefault('label2On', False)
+ 
+     def clear(self):
+         """

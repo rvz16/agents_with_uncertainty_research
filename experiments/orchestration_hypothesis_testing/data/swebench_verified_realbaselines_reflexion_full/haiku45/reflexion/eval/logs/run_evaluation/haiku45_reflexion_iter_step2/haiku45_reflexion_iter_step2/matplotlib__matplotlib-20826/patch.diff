@@ -1,0 +1,25 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -778,12 +778,22 @@
+         self._major_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'major'))
++        # Set default tick visibility from rcParams
++        self._major_tick_kw['tick1On'] = True
++        self._major_tick_kw['tick2On'] = True
++        self._major_tick_kw['label1On'] = True
++        self._major_tick_kw['label2On'] = False
+ 
+     def _reset_minor_tick_kw(self):
+         self._minor_tick_kw.clear()
+         self._minor_tick_kw['gridOn'] = (
+                 mpl.rcParams['axes.grid'] and
+                 mpl.rcParams['axes.grid.which'] in ('both', 'minor'))
++        # Set default tick visibility from rcParams
++        self._minor_tick_kw['tick1On'] = True
++        self._minor_tick_kw['tick2On'] = True
++        self._minor_tick_kw['label1On'] = True
++        self._minor_tick_kw['label2On'] = False
+ 
+     def clear(self):
+         """

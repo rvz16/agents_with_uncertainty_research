@@ -1,0 +1,20 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -548,8 +548,16 @@
+ 
+     def as_sql(self, compiler, connection):
+         # Avoid the extract operation if the rhs is a direct value to allow
+-        # indexes to be used.
++        # indexes to be used. However, do not apply this optimization for
++        # ISO year extraction (EXTRACT('isoyear' ...)), which has different
++        # semantics and bounds.
+         if self.rhs_is_direct_value():
++            # If the LHS is a Func-based extract with function 'isoyear',
++            # don't optimize to BETWEEN as it would produce incorrect results
++            # for ISO year lookups.
++            func_name = getattr(self.lhs, 'function', None)
++            if isinstance(func_name, str) and func_name.lower() == 'isoyear':
++                return super().as_sql(compiler, connection)
+             # Skip the extract part by directly using the originating field,
+             # that is self.lhs.lhs.
+             lhs_sql, params = self.process_lhs(compiler, connection, self.lhs.lhs)

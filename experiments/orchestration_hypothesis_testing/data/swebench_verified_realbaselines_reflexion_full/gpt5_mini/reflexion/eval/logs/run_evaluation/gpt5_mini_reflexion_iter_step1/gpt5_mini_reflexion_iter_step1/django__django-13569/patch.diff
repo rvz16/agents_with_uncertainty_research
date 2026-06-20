@@ -1,0 +1,15 @@
+--- a/django/db/models/functions/math.py
++++ b/django/db/models/functions/math.py
+@@ -144,6 +144,12 @@
+ class Random(NumericOutputFieldMixin, Func):
+     function = 'RANDOM'
+     arity = 0
++    # Random() should not be promoted into GROUP BY clauses when present in
++    # ordering (e.g. order_by('?')). Marking it as containing an aggregate-like
++    # behavior prevents the SQL compiler from treating it as a simple
++    # non-ref ordering expression to be added to GROUP BY. This avoids queries
++    # like "GROUP BY ..., RANDOM()".
++    contains_aggregate = True
+ 
+     def as_mysql(self, compiler, connection, **extra_context):
+         return super().as_sql(compiler, connection, function='RAND', **extra_context)

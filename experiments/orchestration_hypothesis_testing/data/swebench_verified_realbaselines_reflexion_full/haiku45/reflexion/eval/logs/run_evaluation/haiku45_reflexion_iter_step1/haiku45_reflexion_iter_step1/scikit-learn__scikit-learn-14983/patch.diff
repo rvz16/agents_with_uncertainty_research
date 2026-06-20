@@ -1,0 +1,22 @@
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -1162,6 +1162,9 @@
+         cv = self.cv(random_state=rng, shuffle=True,
+                      **self.cvargs)
+         return cv.get_n_splits(X, y, groups) * self.n_repeats
++
++    def __repr__(self):
++        return _build_repr(self)
+ 
+ 
+ class RepeatedKFold(_RepeatedSplits):
+@@ -2163,6 +2166,9 @@
+                 continue
+         finally:
+             warnings.filters.pop(0)
++        # For _RepeatedSplits subclasses, check cvargs for the parameter
++        if value is None and hasattr(self, 'cvargs') and key in self.cvargs:
++            value = self.cvargs[key]
+         params[key] = value
+ 
+     return '%s(%s)' % (class_name, _pprint(params, offset=len(class_name)))

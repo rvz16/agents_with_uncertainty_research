@@ -1,0 +1,51 @@
+--- a/pylint/checkers/variables.py
++++ b/pylint/checkers/variables.py
+@@ -855,6 +855,8 @@
+         if node.type_comment_args:
+             for argument_annotation in node.type_comment_args:
+                 self._store_type_annotation_node(argument_annotation)
++        if node.type_comment:
++            self._store_type_comment_names(node.type_comment)
+ 
+         not_consumed = self._to_consume.pop().to_consume
+         if not (
+@@ -1241,9 +1243,13 @@
+ 
+     def leave_assign(self, node):
+         self._store_type_annotation_names(node)
++        if node.type_comment:
++            self._store_type_comment_names(node.type_comment)
+ 
+     def leave_with(self, node):
+         self._store_type_annotation_names(node)
++        if node.type_comment:
++            self._store_type_comment_names(node.type_comment)
+ 
+     def visit_arguments(self, node):
+         for annotation in node.type_comment_args:
+@@ -1848,6 +1854,25 @@
+             return
+         self._store_type_annotation_node(node.type_annotation)
+ 
++    def _store_type_comment_names(self, type_comment):
++        """Given a type comment string, extract and store all names it refers to"""
++        if not type_comment:
++            return
++        try:
++            # Parse the type comment as an expression
++            type_comment_ast = astroid.parse(type_comment)
++            # Extract all Name nodes from the parsed comment
++            for name_node in type_comment_ast.nodes_of_class(astroid.Name):
++                self._type_annotation_names.append(name_node.name)
++            # Extract all Attribute nodes to handle cases like abc.ABC
++            for attr_node in type_comment_ast.nodes_of_class(astroid.Attribute):
++                # For abc.ABC, we want to store 'abc'
++                if isinstance(attr_node.expr, astroid.Name):
++                    self._type_annotation_names.append(attr_node.expr.name)
++        except astroid.AstroidSyntaxError:
++            # If we can't parse the type comment, skip it
++            pass
++
+     def _check_self_cls_assign(self, node):
+         """Check that self/cls don't get assigned"""
+         assign_names = {

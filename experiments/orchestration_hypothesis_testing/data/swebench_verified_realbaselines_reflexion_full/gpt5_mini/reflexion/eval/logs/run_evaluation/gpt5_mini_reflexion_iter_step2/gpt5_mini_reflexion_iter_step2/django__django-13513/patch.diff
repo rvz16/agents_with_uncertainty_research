@@ -1,0 +1,29 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -396,10 +396,13 @@
+ 
+     def get_traceback_frames(self):
+         def explicit_or_implicit_cause(exc_value):
+-            explicit = getattr(exc_value, '__cause__', None)
+-            suppress_context = getattr(exc_value, '__suppress_context__', None)
+-            implicit = getattr(exc_value, '__context__', None)
+-            return explicit or (None if suppress_context else implicit)
++            # Prefer the explicit cause (__cause__) if present. If there is no
++            # explicit cause, use the implicit context (__context__) unless it
++            # was suppressed via __suppress_context__ (PEP 415).
++            explicit = exc_value.__cause__
++            if explicit is not None:
++                return explicit
++            return None if exc_value.__suppress_context__ else exc_value.__context__
+ 
+         # Get the exception and all its causes
+         exceptions = []
+@@ -446,7 +449,7 @@
+                 post_context = []
+             frames.append({
+                 'exc_cause': explicit_or_implicit_cause(exc_value),
+-                'exc_cause_explicit': getattr(exc_value, '__cause__', True),
++                'exc_cause_explicit': getattr(exc_value, '__cause__', None) is not None,
+                 'tb': tb,
+                 'type': 'django' if module_name.startswith('django.') else 'user',
+                 'filename': filename,

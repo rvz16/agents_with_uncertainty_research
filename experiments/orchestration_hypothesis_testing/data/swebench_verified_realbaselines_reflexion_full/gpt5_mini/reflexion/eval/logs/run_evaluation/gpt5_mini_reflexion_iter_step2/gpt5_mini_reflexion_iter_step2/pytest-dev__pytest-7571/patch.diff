@@ -1,0 +1,42 @@
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -346,6 +346,10 @@
+         self._item = item
+         # dict of log name -> log level
+         self._initial_logger_levels = {}  # type: Dict[Optional[str], int]
++        # remember the initial level of the handler (if modified by set_level)
++        self._initial_handler_level = None  # type: Optional[int]
++        # keep a direct reference to the handler in case the plugin removes it
++        self._handler_ref = None  # type: Optional[LogCaptureHandler]
+ 
+     def _finalize(self) -> None:
+         """Finalizes the fixture.
+@@ -356,6 +360,15 @@
+         for logger_name, level in self._initial_logger_levels.items():
+             logger = logging.getLogger(logger_name)
+             logger.setLevel(level)
++        # restore handler level if we changed it via set_level
++        if getattr(self, "_handler_ref", None) is not None and getattr(
++            self, "_initial_handler_level", None
++        ) is not None:
++            try:
++                self._handler_ref.setLevel(self._initial_handler_level)
++            except Exception:
++                # be tolerant if handler is already removed/closed
++                pass
+ 
+     @property
+     def handler(self) -> LogCaptureHandler:
+@@ -434,7 +447,11 @@
+         # save the original log-level to restore it during teardown
+         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+         logger_obj.setLevel(level)
+-        self.handler.setLevel(level)
++        # remember the handler reference and its original level so it can be restored
++        if getattr(self, "_handler_ref", None) is None:
++            self._handler_ref = self.handler
++        if getattr(self, "_initial_handler_level", None) is None and self._handler_ref is not None:
++            self._initial_handler_level = self._handler
+ 
+     @contextmanager
+     def at_level(

@@ -1,0 +1,55 @@
+2026-06-20 05:48:29,793 - INFO - Creating container for django__django-12304...
+2026-06-20 05:48:30,054 - INFO - Container for django__django-12304 created: ca74a1f7de91c2d9009f7e09706dc3cc1a9092e97b3c7c3910e2393ec115b6ce
+2026-06-20 05:48:30,235 - INFO - Container for django__django-12304 started: ca74a1f7de91c2d9009f7e09706dc3cc1a9092e97b3c7c3910e2393ec115b6ce
+2026-06-20 05:48:30,236 - INFO - Intermediate patch for django__django-12304 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12304/patch.diff, now applying to container...
+2026-06-20 05:48:30,362 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/enums.py...
+Applied patch django/db/models/enums.py cleanly.
+
+2026-06-20 05:48:30,878 - INFO - Git diff before:
+diff --git a/django/db/models/enums.py b/django/db/models/enums.py
+index f48143ddaf..84ed9df3dc 100644
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,12 @@ class ChoicesMeta(enum.EnumMeta):
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        # Prevent the enum class from being auto-called in Django templates.
++        # Django's template system calls callables by default; marking the
++        # class with do_not_call_in_templates=True stops that behavior so that
++        # the YearInSchool class itself won't be invoked (which would raise
++        # TypeError because enum classes are callable with required arguments).
++        cls.do_not_call_in_templates = True
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):
+2026-06-20 05:48:30,878 - INFO - Eval script for django__django-12304 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12304/eval.sh; copying to container...
+2026-06-20 05:48:54,960 - INFO - Test runtime: 24.04 seconds
+2026-06-20 05:48:54,960 - INFO - Test output for django__django-12304 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12304/test_output.txt
+2026-06-20 05:48:55,011 - INFO - Git diff after:
+diff --git a/django/db/models/enums.py b/django/db/models/enums.py
+index f48143ddaf..84ed9df3dc 100644
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,12 @@ class ChoicesMeta(enum.EnumMeta):
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        # Prevent the enum class from being auto-called in Django templates.
++        # Django's template system calls callables by default; marking the
++        # class with do_not_call_in_templates=True stops that behavior so that
++        # the YearInSchool class itself won't be invoked (which would raise
++        # TypeError because enum classes are callable with required arguments).
++        cls.do_not_call_in_templates = True
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):
+2026-06-20 05:48:55,011 - INFO - Grading answer for django__django-12304...
+2026-06-20 05:48:55,011 - INFO - report: {'django__django-12304': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_templates (model_enums.tests.ChoicesTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_integerchoices (model_enums.tests.ChoicesTests)', 'test_integerchoices_auto_label (model_enums.tests.ChoicesTests)', 'test_integerchoices_containment (model_enums.tests.ChoicesTests)', 'test_integerchoices_empty_label (model_enums.tests.ChoicesTests)', 'test_integerchoices_functional_api (model_enums.tests.ChoicesTests)', 'test_invalid_definition (model_enums.tests.ChoicesTests)', 'test_str (model_enums.tests.ChoicesTests)', 'test_textchoices (model_enums.tests.ChoicesTests)', 'test_textchoices_auto_label (model_enums.tests.ChoicesTests)', 'test_textchoices_blank_value (model_enums.tests.ChoicesTests)', 'test_textchoices_containment (model_enums.tests.ChoicesTests)', 'test_textchoices_empty_label (model_enums.tests.ChoicesTests)', 'test_textchoices_functional_api (model_enums.tests.ChoicesTests)', 'test_bool_unsupported (model_enums.tests.CustomChoicesTests)', 'test_labels_valid (model_enums.tests.CustomChoicesTests)', 'test_timezone_unsupported (model_enums.tests.CustomChoicesTests)', 'test_uuid_unsupported (model_enums.tests.CustomChoicesTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12304: resolved: True
+2026-06-20 05:48:55,011 - INFO - Attempting to stop container sweb.eval.django__django-12304.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:49:10,188 - INFO - Attempting to remove container sweb.eval.django__django-12304.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:49:10,211 - INFO - Container sweb.eval.django__django-12304.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 05:49:10,211 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12304:latest...
+2026-06-20 05:49:10,308 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12304:latest removed.

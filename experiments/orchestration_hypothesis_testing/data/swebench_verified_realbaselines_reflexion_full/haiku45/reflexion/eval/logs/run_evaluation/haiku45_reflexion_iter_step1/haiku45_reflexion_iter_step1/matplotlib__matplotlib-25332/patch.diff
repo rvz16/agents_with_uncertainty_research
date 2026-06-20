@@ -1,0 +1,24 @@
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -181,16 +181,17 @@
+         self._pickled_cids = set()
+ 
+     def __getstate__(self):
+-        return {
+-            **vars(self),
++        state = {k: v for k, v in vars(self).items() if k != "_func_cid_map"}
++        state.update({
+             # In general, callbacks may not be pickled, so we just drop them,
+             # unless directed otherwise by self._pickled_cids.
+             "callbacks": {s: {cid: proxy() for cid, proxy in d.items()
+-                              if cid in self._pickled_cids}
++                              if cid in self._pickled_cids and proxy() is not None}
+                           for s, d in self.callbacks.items()},
+             # It is simpler to reconstruct this from callbacks in __setstate__.
+             "_func_cid_map": None,
+-        }
++        })
++        return state
+ 
+     def __setstate__(self, state):
+         vars(self).update(state)

@@ -1,0 +1,13 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -402,6 +402,10 @@
+             return (placeholder, sqls_params)
+         else:
+             if not getattr(self.rhs, 'has_select_fields', True):
++                # Clone the queryset to avoid modifying the original, which can
++                # cause issues when the same queryset is used in multiple places
++                # (e.g., in OR'd Q objects where it may be processed multiple times)
++                self.rhs = self.rhs.query.chain(self.rhs.model)
+                 self.rhs.clear_select_clause()
+                 self.rhs.add_fields(['pk'])
+             return super().process_rhs(compiler, connection)

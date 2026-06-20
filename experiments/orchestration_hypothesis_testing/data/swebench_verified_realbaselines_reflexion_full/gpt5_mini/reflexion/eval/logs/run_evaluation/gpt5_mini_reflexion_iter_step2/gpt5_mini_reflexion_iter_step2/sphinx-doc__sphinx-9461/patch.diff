@@ -1,0 +1,27 @@
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -384,11 +384,23 @@
+ 
+ 
+ def isproperty(obj: Any) -> bool:
+-    """Check if the object is property."""
++    """Check if the object is property.
++
++    Also recognize a classmethod wrapping a property (e.g. @classmethod @property),
++    and a classmethod wrapping cached_property.  Such constructs became possible
++    in Python 3.9 and should be treated as properties by autodoc.
++    """
+     if sys.version_info >= (3, 8):
+         from functools import cached_property  # cached_property is available since py3.8
+         if isinstance(obj, cached_property):
+             return True
++        # classmethod wrapping a cached_property
++        if isinstance(obj, classmethod) and isinstance(getattr(obj, "__func__", None), cached_property):
++            return True
++
++    # classmethod wrapping a property (e.g. @classmethod @property)
++    if isinstance(obj, classmethod) and isinstance(getattr(obj, "__func__", None), property):
++        return True
+ 
+     return isinstance(obj, property)
+ 

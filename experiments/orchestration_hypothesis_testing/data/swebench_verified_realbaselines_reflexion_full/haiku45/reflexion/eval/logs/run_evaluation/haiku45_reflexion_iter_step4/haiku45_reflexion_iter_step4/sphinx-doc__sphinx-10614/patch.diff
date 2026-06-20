@@ -1,0 +1,53 @@
+--- a/sphinx/ext/inheritance_diagram.py
++++ b/sphinx/ext/inheritance_diagram.py
+@@ -400,6 +400,9 @@
+     Output the graph for HTML.  This will insert a PNG with clickable
+     image map.
+     """
++    from os.path import dirname
++    from posixpath import relpath as posixpath_relpath
++    
+     graph = node['graph']
+ 
+     graph_hash = get_graph_hash(node)
+@@ -412,15 +415,36 @@
+     pending_xrefs = cast(Iterable[addnodes.pending_xref], node)
+     for child in pending_xrefs:
+         if child.get('refuri') is not None:
++            refuri = child.get('refuri')
+             if graphviz_output_format == 'SVG':
+-                urls[child['reftitle']] = "../" + child.get('refuri')
++                # For SVG, compute relative path from current document's directory
++                # to the target document
++                current_dir = dirname(current_filename)
++                target_dir = dirname(refuri)
++                target_file = refuri.split('#')[0]  # Remove anchor if present
++                
++                # Compute relative path from current doc directory to target
++                rel_path = posixpath_relpath(target_file, current_dir or '.')
++                
++                # Preserve anchor if present
++                if '#' in refuri:
++                    rel_path = rel_path + '#' + refuri.split('#')[1]
++                urls[child['reftitle']] = rel_path
+             else:
+-                urls[child['reftitle']] = child.get('refuri')
++                urls[child['reftitle']] = refuri
+         elif child.get('refid') is not None:
++            refid = child.get('refid')
+             if graphviz_output_format == 'SVG':
+-                urls[child['reftitle']] = '../' + current_filename + '#' + child.get('refid')
++                # For SVG, compute relative path from current document's directory
++                # to the target document (same document in this case)
++                current_dir = dirname(current_filename)
++                target_file = current_filename
++                
++                # Compute relative path from current doc directory to target
++                rel_path = posixpath_relpath(target_file, current_dir or '.')
++                urls[child['reftitle']] = rel_path + '#' + refid
+             else:
+-                urls[child['reftitle']] = '#' + child.get('refid')
++                urls[child['reftitle']] = '#' + refid
+ 
+     dotcode = graph.generate_dot(name, urls, env=self.builder.env)
+     render_dot_html(self, node, dotcode, {}, 'inheritance', 'inheritance',

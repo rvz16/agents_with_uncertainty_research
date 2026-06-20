@@ -1,0 +1,53 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1158,7 +1158,17 @@
+         # Can't use iterator() when queryset uses prefetch_related()
+         if not queryset._prefetch_related_lookups:
+             queryset = queryset.iterator()
++        # Track seen prepared values (typically PKs or values from to_field_name)
++        # to avoid yielding duplicate choices when the queryset contains duplicate
++        # rows due to joins (see ticket regarding limit_choices_to producing
++        # duplicate options). Use stringification to handle unhashable types
++        # consistently.
++        seen = set()
+         for obj in queryset:
++            val = str(self.field.prepare_value(obj))
++            if val in seen:
++                continue
++            seen.add(val)
+             yield self.choice(obj)
+ 
+     def __len__(self):
+@@ -1272,14 +1282,26 @@
+     def to_python(self, value):
+         if value in self.empty_values:
+             return None
++        key = self.to_field_name or 'pk'
++        # If a model instance was passed, use its key value.
++        if isinstance(value, self.queryset.model):
++            try:
++                value = getattr(value, key)
++            except Exception:
++                # Fall through to validation below.
++                pass
++        # Use filter().first() instead of get() to avoid MultipleObjectsReturned
++        # when the underlying queryset produces duplicate rows due to joins.
++        # Treat invalid lookups (ValueError/TypeError) and missing results as
++        # invalid choices.
+         try:
+-            key = self.to_field_name or 'pk'
+-            if isinstance(value, self.queryset.model):
+-                value = getattr(value, key)
+-            value = self.queryset.get(**{key: value})
+-        except (ValueError, TypeError, self.queryset.model.DoesNotExist):
++            qs = self.queryset.filter(**{key: value})
++        except (ValueError, TypeError):
+             raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
+-        return value
++        obj = qs.first()
++        if obj is None:
++            raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
++        return obj
+ 
+     def validate(self, value):
+         return Field.validate(self, value)

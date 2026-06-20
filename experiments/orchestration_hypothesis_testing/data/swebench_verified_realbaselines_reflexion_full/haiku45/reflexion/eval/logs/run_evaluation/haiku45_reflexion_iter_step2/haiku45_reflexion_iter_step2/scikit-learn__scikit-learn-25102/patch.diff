@@ -1,0 +1,50 @@
+--- a/sklearn/base.py
++++ b/sklearn/base.py
+@@ -431,6 +431,12 @@
+                 # Delete the attribute when the estimator is fitted on a new dataset
+                 # that has no feature names.
+                 delattr(self, "feature_names_in_")
++            
++            # Also store dtypes for pandas DataFrames to enable dtype preservation
++            if hasattr(X, "dtypes"):
++                self.dtypes_in_ = X.dtypes.to_dict()
++            elif hasattr(self, "dtypes_in_"):
++                delattr(self, "dtypes_in_")
+             return
+ 
+         fitted_feature_names = getattr(self, "feature_names_in_", None)
+@@ -859,6 +865,34 @@
+     defining :term:`get_feature_names_out`.
+     """
+ 
++    def _check_input_dtypes(self, X, *, reset):
++        """Set or check the `dtypes_in_` attribute for pandas DataFrames.
++
++        .. versionadded:: 1.3
++
++        Parameters
++        ----------
++        X : {ndarray, dataframe} of shape (n_samples, n_features)
++            The input samples.
++
++        reset : bool
++            Whether to reset the `dtypes_in_` attribute.
++            If False, the input will be checked for consistency with
++            dtypes of data provided when reset was last True.
++        """
++        if reset:
++            if hasattr(X, "dtypes"):
++                # Store dtypes for pandas DataFrame
++                self.dtypes_in_ = X.dtypes.to_dict()
++            elif hasattr(self, "dtypes_in_"):
++                # Delete the attribute when the estimator is fitted on a new dataset
++                # that is not a DataFrame
++                delattr(self, "dtypes_in_")
++            return
++
++        # No validation needed on subsequent calls for now
++        return
++
+     def fit_transform(self, X, y=None, **fit_params):
+         """
+         Fit to data, then transform it.

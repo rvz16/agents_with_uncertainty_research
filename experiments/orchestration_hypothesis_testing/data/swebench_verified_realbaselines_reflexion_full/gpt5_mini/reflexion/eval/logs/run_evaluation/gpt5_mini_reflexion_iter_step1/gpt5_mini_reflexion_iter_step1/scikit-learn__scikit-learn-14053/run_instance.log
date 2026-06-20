@@ -1,0 +1,85 @@
+2026-06-20 06:14:45,040 - INFO - Creating container for scikit-learn__scikit-learn-14053...
+2026-06-20 06:14:45,116 - INFO - Container for scikit-learn__scikit-learn-14053 created: 8b5a202b0fe39d1d35b71d9c39eeaa3ce55d9d4c2426262c8180512e488e3f58
+2026-06-20 06:14:45,282 - INFO - Container for scikit-learn__scikit-learn-14053 started: 8b5a202b0fe39d1d35b71d9c39eeaa3ce55d9d4c2426262c8180512e488e3f58
+2026-06-20 06:14:45,282 - INFO - Intermediate patch for scikit-learn__scikit-learn-14053 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-14053/patch.diff, now applying to container...
+2026-06-20 06:14:45,392 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/tree/export.py...
+Applied patch sklearn/tree/export.py cleanly.
+
+2026-06-20 06:14:45,552 - INFO - Git diff before:
+diff --git a/sklearn/tree/export.py b/sklearn/tree/export.py
+index 1fe11e596..5872ed590 100644
+--- a/sklearn/tree/export.py
++++ b/sklearn/tree/export.py
+@@ -889,10 +889,14 @@ def export_text(decision_tree, feature_names=None, max_depth=10,
+     else:
+         value_fmt = "{}{} value: {}\n"
+ 
+-    if feature_names:
+-        feature_names_ = [feature_names[i] for i in tree_.feature]
++    if feature_names is not None:
++        # feature_names is expected to be a sequence of length n_features.
++        # Use it directly as a mapping from feature index -> name.
++        feature_names_ = list(feature_names)
+     else:
+-        feature_names_ = ["feature_{}".format(i) for i in tree_.feature]
++        # Create generic feature names "feature_0", "feature_1", ...
++        feature_names_ = ["feature_{}".format(i)
++                          for i in range(tree_.n_features)]
+ 
+     export_text.report = ""
+ 
+@@ -928,7 +932,8 @@ def export_text(decision_tree, feature_names=None, max_depth=10,
+             info_fmt_right = info_fmt
+ 
+             if tree_.feature[node] != _tree.TREE_UNDEFINED:
+-                name = feature_names_[node]
++                # Look up the feature name by the feature index for this node.
++                name = feature_names_[tree_.feature[node]]
+                 threshold = tree_.threshold[node]
+                 threshold = "{1:.{0}f}".format(decimals, threshold)
+                 export_text.report += right_child_fmt.format(indent,
+2026-06-20 06:14:45,552 - INFO - Eval script for scikit-learn__scikit-learn-14053 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-14053/eval.sh; copying to container...
+2026-06-20 06:14:48,796 - INFO - Test runtime: 3.21 seconds
+2026-06-20 06:14:48,796 - INFO - Test output for scikit-learn__scikit-learn-14053 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-14053/test_output.txt
+2026-06-20 06:14:48,855 - INFO - Git diff after:
+diff --git a/sklearn/tree/export.py b/sklearn/tree/export.py
+index 1fe11e596..5872ed590 100644
+--- a/sklearn/tree/export.py
++++ b/sklearn/tree/export.py
+@@ -889,10 +889,14 @@ def export_text(decision_tree, feature_names=None, max_depth=10,
+     else:
+         value_fmt = "{}{} value: {}\n"
+ 
+-    if feature_names:
+-        feature_names_ = [feature_names[i] for i in tree_.feature]
++    if feature_names is not None:
++        # feature_names is expected to be a sequence of length n_features.
++        # Use it directly as a mapping from feature index -> name.
++        feature_names_ = list(feature_names)
+     else:
+-        feature_names_ = ["feature_{}".format(i) for i in tree_.feature]
++        # Create generic feature names "feature_0", "feature_1", ...
++        feature_names_ = ["feature_{}".format(i)
++                          for i in range(tree_.n_features)]
+ 
+     export_text.report = ""
+ 
+@@ -928,7 +932,8 @@ def export_text(decision_tree, feature_names=None, max_depth=10,
+             info_fmt_right = info_fmt
+ 
+             if tree_.feature[node] != _tree.TREE_UNDEFINED:
+-                name = feature_names_[node]
++                # Look up the feature name by the feature index for this node.
++                name = feature_names_[tree_.feature[node]]
+                 threshold = tree_.threshold[node]
+                 threshold = "{1:.{0}f}".format(decimals, threshold)
+                 export_text.report += right_child_fmt.format(indent,
+2026-06-20 06:14:48,856 - INFO - Grading answer for scikit-learn__scikit-learn-14053...
+2026-06-20 06:14:48,857 - INFO - report: {'scikit-learn__scikit-learn-14053': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/tree/tests/test_export.py::test_export_text'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/tree/tests/test_export.py::test_graphviz_toy', 'sklearn/tree/tests/test_export.py::test_graphviz_errors', 'sklearn/tree/tests/test_export.py::test_friedman_mse_in_graphviz', 'sklearn/tree/tests/test_export.py::test_precision', 'sklearn/tree/tests/test_export.py::test_export_text_errors'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-14053: resolved: True
+2026-06-20 06:14:48,857 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-14053.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:15:04,215 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-14053.gpt5_mini_reflexion_iter_step1...
+2026-06-20 06:15:04,234 - INFO - Container sweb.eval.scikit-learn__scikit-learn-14053.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 06:15:04,234 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14053:latest...
+2026-06-20 06:15:04,279 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-14053:latest removed.

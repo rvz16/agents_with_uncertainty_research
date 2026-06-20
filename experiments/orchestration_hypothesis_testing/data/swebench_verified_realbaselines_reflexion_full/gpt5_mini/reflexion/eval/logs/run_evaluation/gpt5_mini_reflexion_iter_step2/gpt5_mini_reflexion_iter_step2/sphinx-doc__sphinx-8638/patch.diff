@@ -1,0 +1,40 @@
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -1161,19 +1161,29 @@
+                                    if oname.endswith(searchname) and
+                                    self.objects[oname].objtype in objtypes]
+         else:
+-            # NOTE: searching for exact match, object type is not considered
++        # NOTE: searching for exact match, object type is not considered
++        # Prefer more specific namespaces first to avoid linking a plain name
++        # (e.g. a module-level variable) when a more specific object exists
++        # (e.g. a class attribute with the same name).
++        # For module role, only exact matches are allowed.
++        if type == 'mod':
++            # only exact matches allowed for modules
+             if name in self.objects:
+                 newname = name
+-            elif type == 'mod':
+-                # only exact matches allowed for modules
++            else:
+                 return []
+-            elif classname and classname + '.' + name in self.objects:
++        else:
++            # Check fully-qualified module.class.name first, then class.name,
++            # then module.name, and finally the plain name.
++            if modname and classname and \
++                    (modname + '.' + classname + '.' + name) in self.objects:
++                newname = modname + '.' + classname + '.' + name
++            elif classname and (classname + '.' + name) in self.objects:
+                 newname = classname + '.' + name
+-            elif modname and modname + '.' + name in self.objects:
++            elif modname and (modname + '.' + name) in self.objects:
+                 newname = modname + '.' + name
+-            elif modname and classname and \
+-                    modname + '.' + classname + '.' + name in self.objects:
+-                newname = modname + '.' + classname + '.' + name
++            elif name in self.objects:
++                newname = name
+         if newname is not None:
+             matches.append((newname, self.objects[newname]))
+         return matches

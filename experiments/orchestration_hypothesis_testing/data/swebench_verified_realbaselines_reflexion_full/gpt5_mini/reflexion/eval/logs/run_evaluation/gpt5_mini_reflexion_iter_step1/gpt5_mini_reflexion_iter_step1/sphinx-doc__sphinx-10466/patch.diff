@@ -1,0 +1,28 @@
+--- a/sphinx/builders/gettext.py
++++ b/sphinx/builders/gettext.py
+@@ -57,8 +57,23 @@
+ 
+     def __iter__(self) -> Generator[Message, None, None]:
+         for message in self.messages:
+-            positions = [(source, line) for source, line, uuid in self.metadata[message]]
+-            uuids = [uuid for source, line, uuid in self.metadata[message]]
++            # Normalize and deduplicate locations while preserving insertion order.
++            # Different representations of the same path (absolute vs relative,
++            # different separators) caused duplicate location entries in the POT
++            # output. Normalize paths to an absolute, canonical form for
++            # de-duplication; the renderer will make them relative again for
++            # display.
++            seen = set()
++            positions: List[Tuple[str, int]] = []
++            uuids: List[str] = []
++            for source, line, uuid in self.metadata[message]:
++                norm_source = canon_path(path.abspath(source)) if source else source
++                key = (norm_source, line)
++                if key in seen:
++                    continue
++                seen.add(key)
++                positions.append((norm_source, line))
++                uuids.append(uuid)
+             yield Message(message, positions, uuids)
+ 
+ 

@@ -1,0 +1,16 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -563,6 +563,13 @@
+                 if isinstance(base, str) and "." in base:
+                     base_app_label, base_name = base.split(".", 1)
+                     dependencies.append((base_app_label, base_name, None, True))
++                    # If a field is being moved from the base class to this model,
++                    # we need to depend on the removal of that field from the base
++                    if (base_app_label, base_name) in self.from_state.models:
++                        base_model_state = self.from_state.models[base_app_label, base_name]
++                        for field_name in model_state.fields:
++                            if field_name in base_model_state.fields:
++                                dependencies.append((base_app_label, base_name, field_name, False))
+             # Depend on the other end of the primary key if it's a relation
+             if primary_key_rel:
+                 dependencies.append((

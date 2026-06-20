@@ -1,0 +1,91 @@
+2026-06-20 05:57:24,085 - INFO - Creating container for django__django-15127...
+2026-06-20 05:57:24,340 - INFO - Container for django__django-15127 created: c8a31613242995bcf330d0b2d328cc3e674d80138997eac6bd2632e0b9a456f8
+2026-06-20 05:57:24,619 - INFO - Container for django__django-15127 started: c8a31613242995bcf330d0b2d328cc3e674d80138997eac6bd2632e0b9a456f8
+2026-06-20 05:57:24,619 - INFO - Intermediate patch for django__django-15127 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-15127/patch.diff, now applying to container...
+2026-06-20 05:57:24,741 - INFO - >>>>> Applied Patch:
+Checking patch django/contrib/messages/apps.py...
+Applied patch django/contrib/messages/apps.py cleanly.
+
+2026-06-20 05:57:25,432 - INFO - Git diff before:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..5f35e328fd 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,30 @@
+ from django.apps import AppConfig
+ from django.utils.translation import gettext_lazy as _
++from django.test.signals import setting_changed
++import importlib
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # When MESSAGE_TAGS is overridden (for example via @override_settings in tests),
++        # the module-level LEVEL_TAGS in django.contrib.messages.storage.base must be
++        # updated so Message.level_tag picks up the new mapping. Listen for the
++        # setting_changed signal and reload the storage.base module when that happens.
++        def _update_level_tags(*args, **kwargs):
++            # setting_changed may provide the setting name as a kwarg or positional arg.
++            setting = kwargs.get('setting')
++            if setting is None and len(args) >= 1:
++                setting = args[0]
++            if setting != 'MESSAGE_TAGS':
++                return
++            try:
++                from django.contrib.messages.storage import base as base_mod
++                importlib.reload(base_mod)
++            except Exception:
++                # Best-effort; if reload fails, avoid raising during signal handling.
++                pass
++
++        setting_changed.connect(_update_level_tags)
+2026-06-20 05:57:25,433 - INFO - Eval script for django__django-15127 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-15127/eval.sh; copying to container...
+2026-06-20 05:57:30,953 - INFO - Test runtime: 5.47 seconds
+2026-06-20 05:57:30,953 - INFO - Test output for django__django-15127 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-15127/test_output.txt
+2026-06-20 05:57:30,999 - INFO - Git diff after:
+diff --git a/django/contrib/messages/apps.py b/django/contrib/messages/apps.py
+index 0ff25d3885..5f35e328fd 100644
+--- a/django/contrib/messages/apps.py
++++ b/django/contrib/messages/apps.py
+@@ -1,7 +1,30 @@
+ from django.apps import AppConfig
+ from django.utils.translation import gettext_lazy as _
++from django.test.signals import setting_changed
++import importlib
+ 
+ 
+ class MessagesConfig(AppConfig):
+     name = 'django.contrib.messages'
+     verbose_name = _("Messages")
++
++    def ready(self):
++        # When MESSAGE_TAGS is overridden (for example via @override_settings in tests),
++        # the module-level LEVEL_TAGS in django.contrib.messages.storage.base must be
++        # updated so Message.level_tag picks up the new mapping. Listen for the
++        # setting_changed signal and reload the storage.base module when that happens.
++        def _update_level_tags(*args, **kwargs):
++            # setting_changed may provide the setting name as a kwarg or positional arg.
++            setting = kwargs.get('setting')
++            if setting is None and len(args) >= 1:
++                setting = args[0]
++            if setting != 'MESSAGE_TAGS':
++                return
++            try:
++                from django.contrib.messages.storage import base as base_mod
++                importlib.reload(base_mod)
++            except Exception:
++                # Best-effort; if reload fails, avoid raising during signal handling.
++                pass
++
++        setting_changed.connect(_update_level_tags)
+2026-06-20 05:57:30,999 - INFO - Grading answer for django__django-15127...
+2026-06-20 05:57:31,000 - INFO - report: {'django__django-15127': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_override_settings_level_tags (messages_tests.tests.TestLevelTags)']}, 'PASS_TO_PASS': {'success': ['test_eq (messages_tests.tests.MessageTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15127: resolved: False
+2026-06-20 05:57:31,000 - INFO - Attempting to stop container sweb.eval.django__django-15127.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:57:46,192 - INFO - Attempting to remove container sweb.eval.django__django-15127.gpt5_mini_reflexion_iter_step1...
+2026-06-20 05:57:46,214 - INFO - Container sweb.eval.django__django-15127.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-20 05:57:46,214 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15127:latest...
+2026-06-20 05:57:46,365 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15127:latest removed.
