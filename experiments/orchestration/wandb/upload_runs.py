@@ -77,6 +77,11 @@ ORCH_CALIBRATION_BENCHMARKS = [
     ("codecontests", "codecontests_calibration"),
     ("swe_lite",     "swebench_lite"),
     ("swe_verified", "swebench_verified"),
+    # `<bench>_calibration_full/<gen>/` — the Jun 2026 batch wrote per-cell
+    # trees under this naming with likelihood_tables.json + critic_results.jsonl
+    # already populated. transition_kernel_iid_baseline.json is optional.
+    ("swe_lite",     "swebench_lite_calibration_full"),
+    ("swe_verified", "swebench_verified_calibration_full"),
 ]
 
 ORCH_ITER_BENCHMARKS = [
@@ -108,6 +113,14 @@ ORCH_REALBASELINES_BENCHMARKS = [
     ("humaneval",    "humaneval_iter"),
     ("humanevalfix", "humanevalfix_iter"),
     ("codecontests", "codecontests_iter"),
+    # `<bench>_realbaselines_<method>_full/<gen>/<method>/` — the Jun 2026
+    # batch (qwen3_coder + sonnet45 SWE runs) wrote per-cell trees under this
+    # naming. Each subdir only holds its own method subtree, so the
+    # selfrefine/reflexion inner loop silently skips the absent half.
+    ("swe_lite",     "swebench_lite_realbaselines_selfrefine_full"),
+    ("swe_lite",     "swebench_lite_realbaselines_reflexion_full"),
+    ("swe_verified", "swebench_verified_realbaselines_selfrefine_full"),
+    ("swe_verified", "swebench_verified_realbaselines_reflexion_full"),
 ]
 
 POLICY_NAMES = [
