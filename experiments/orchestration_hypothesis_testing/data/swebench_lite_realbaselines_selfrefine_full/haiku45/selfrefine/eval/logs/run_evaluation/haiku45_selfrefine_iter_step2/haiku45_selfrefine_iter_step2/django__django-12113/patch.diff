@@ -1,0 +1,12 @@
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -98,4 +98,9 @@
+         sig = [self.connection.settings_dict['NAME']]
+         if self.is_in_memory_db(test_database_name):
+             sig.append(self.connection.alias)
++        else:
++            # Include the test database name in the signature for persistent
++            # databases to ensure each test database is properly identified as
++            # distinct, preventing connection reuse and locking issues.
++            sig.append(test_database_name)
+         return tuple(sig)

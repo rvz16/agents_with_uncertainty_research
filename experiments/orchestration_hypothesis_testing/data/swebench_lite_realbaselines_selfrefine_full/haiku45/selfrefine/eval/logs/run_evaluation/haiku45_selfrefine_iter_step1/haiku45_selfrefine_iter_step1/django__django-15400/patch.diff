@@ -1,0 +1,37 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -373,6 +373,34 @@
+     __len__ = new_method_proxy(len)
+     __contains__ = new_method_proxy(operator.contains)
+ 
++    # Arithmetic operators
++    __add__ = new_method_proxy(operator.add)
++    __radd__ = new_method_proxy(lambda wrapped, other: other + wrapped)
++    __sub__ = new_method_proxy(operator.sub)
++    __rsub__ = new_method_proxy(lambda wrapped, other: other - wrapped)
++    __mul__ = new_method_proxy(operator.mul)
++    __rmul__ = new_method_proxy(lambda wrapped, other: other * wrapped)
++    __truediv__ = new_method_proxy(operator.truediv)
++    __rtruediv__ = new_method_proxy(lambda wrapped, other: other / wrapped)
++    __floordiv__ = new_method_proxy(operator.floordiv)
++    __rfloordiv__ = new_method_proxy(lambda wrapped, other: other // wrapped)
++    __mod__ = new_method_proxy(operator.mod)
++    __rmod__ = new_method_proxy(lambda wrapped, other: other % wrapped)
++    __pow__ = new_method_proxy(operator.pow)
++    __rpow__ = new_method_proxy(lambda wrapped, other: other ** wrapped)
++
++    # Bitwise operators
++    __and__ = new_method_proxy(operator.and_)
++    __rand__ = new_method_proxy(lambda wrapped, other: other & wrapped)
++    __or__ = new_method_proxy(operator.or_)
++    __ror__ = new_method_proxy(lambda wrapped, other: other | wrapped)
++    __xor__ = new_method_proxy(operator.xor)
++    __rxor__ = new_method_proxy(lambda wrapped, other: other ^ wrapped)
++    __lshift__ = new_method_proxy(operator.lshift)
++    __rlshift__ = new_method_proxy(lambda wrapped, other: other << wrapped)
++    __rshift__ = new_method_proxy(operator.rshift)
++    __rrshift__ = new_method_proxy(lambda wrapped, other: other >> wrapped)
++
+ 
+ def unpickle_lazyobject(wrapped):
+     """

@@ -1,0 +1,133 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -59,22 +59,34 @@
+ 
+     @property
+     def _css(self):
+-        css = self._css_lists[0]
+-        # filter(None, ...) avoids calling merge with empty dicts.
+-        for obj in filter(None, self._css_lists[1:]):
+-            css = {
+-                medium: self.merge(css.get(medium, []), obj.get(medium, []))
+-                for medium in css.keys() | obj.keys()
+-            }
++        # Collect all non-empty css dicts
++        css_lists = [css for css in self._css_lists if css]
++        if not css_lists:
++            return {}
++        if len(css_lists) == 1:
++            return dict(css_lists[0])
++        # Merge all lists at once per medium to avoid creating artificial ordering constraints
++        css = {}
++        # Get all media types across all dicts
++        all_media = set()
++        for css_dict in css_lists:
++            all_media.update(css_dict.keys())
++        # For each medium, collect all lists and merge them together
++        for medium in all_media:
++            medium_lists = [css_dict.get(medium, []) for css_dict in css_lists]
++            css[medium] = self.merge_multiple(*[lst for lst in medium_lists if lst])
+         return css
+ 
+     @property
+     def _js(self):
+-        js = self._js_lists[0]
+-        # filter(None, ...) avoids calling merge() with empty lists.
+-        for obj in filter(None, self._js_lists[1:]):
+-            js = self.merge(js, obj)
+-        return js
++        # Collect all non-empty js lists
++        js_lists = [js for js in self._js_lists if js]
++        if not js_lists:
++            return []
++        if len(js_lists) == 1:
++            return list(js_lists[0])
++        # Merge all lists at once to avoid creating artificial ordering constraints
++        return self.merge_multiple(*js_lists)
+ 
+     def render(self):
+         return mark_safe('\n'.join(chain.from_iterable(getattr(self, 'render_' + name)() for name in MEDIA_TYPES)))
+@@ -148,6 +160,83 @@
+                 # that the following elements are inserted in front of this one.
+                 last_insert_index = index
+         return combined_list
++
++    @staticmethod
++    def merge_multiple(*lists):
++        """
++        Merge multiple lists while trying to keep the relative order of elements.
++        This is used instead of sequentially calling merge() to avoid creating
++        artificial ordering constraints from intermediate results.
++
++        Args:
++            *lists: Variable number of lists to merge
++
++        Returns:
++            A single merged list with duplicates removed and ordering preserved.
++        """
++        if not lists:
++            return []
++        if len(lists) == 1:
++            return list(lists[0])
++
++        # Build a dependency graph: for each item, track what items must come before it
++        # based on the original lists
++        dependencies = {}  # item -> set of items that must come before it
++        first_occurrence = {}  # item -> index of first occurrence across all lists
++        all_items = []
++        item_index = 0
++
++        for sublist in lists:
++            for i, item in enumerate(sublist):
++                if item not in first_occurrence:
++                    first_occurrence[item] = item_index
++                    item_index += 1
++                    all_items.append(item)
++                    dependencies[item] = set()
++
++                # Add dependency: if there's a previous item in this sublist,
++                # it must come before the current item
++                if i > 0:
++                    prev_item = sublist[i - 1]
++                    dependencies[item].add(prev_item)
++
++        # Now perform a topological sort with cycle detection
++        result = []
++        visited = set()
++        visiting = set()  # For cycle detection
++
++        def visit(item):
++            if item in visited:
++                return True
++            if item in visiting:
++                # Cycle detected - we have conflicting orderings
++                return False
++
++            visiting.add(item)
++            for dep in dependencies[item]:
++                if not visit(dep):
++                    # Cycle detected in dependency chain
++                    visiting.discard(item)
++                    return False
++            visiting.discard(item)
++            visited.add(item)
++            result.append(item)
++            return True
++
++        # Visit items in order of first occurrence
++        for item in all_items:
++            if item not in visited:
++                if not visit(item):
++                    # If we hit a cycle, warn and break out
++                    # Fall back to a simpler merge strategy
++                    warnings.warn(
++                        'Detected conflicting Media file orderings that cannot be resolved.',
++                        MediaOrderConflictWarning,
++                    )
++                    # Return items in order of first occurrence as fallback
++                    return all_items
++
++        return result
+ 
+     def __add__(self, other):
+         combined = Media()

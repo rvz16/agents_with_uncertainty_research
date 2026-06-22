@@ -1,0 +1,20 @@
+--- a/django/contrib/auth/management/__init__.py
++++ b/django/contrib/auth/management/__init__.py
+@@ -95,11 +95,12 @@
+         .values_list("content_type", "codename")
+     )
+ 
+-    perms = [
+-        Permission(codename=codename, name=name, content_type=ct)
+-        for ct, (codename, name) in searched_perms
+-        if (ct.pk, codename) not in all_perms
+-    ]
++    perms = []
++    for ct, (codename, name) in searched_perms:
++        if (ct.pk, codename) not in all_perms:
++            permission = Permission(codename=codename, name=name, content_type=ct)
++            permission._state.db = using
++            perms.append(permission)
+     Permission.objects.using(using).bulk_create(perms)
+     if verbosity >= 2:
+         for perm in perms:

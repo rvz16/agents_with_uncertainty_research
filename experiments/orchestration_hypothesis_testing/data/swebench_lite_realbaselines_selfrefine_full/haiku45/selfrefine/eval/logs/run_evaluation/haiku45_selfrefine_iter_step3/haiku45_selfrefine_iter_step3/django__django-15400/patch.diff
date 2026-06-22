@@ -1,0 +1,25 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -373,6 +373,22 @@
+     __len__ = new_method_proxy(len)
+     __contains__ = new_method_proxy(operator.contains)
+ 
++    # Arithmetic operations
++    __add__ = new_method_proxy(operator.add)
++    __radd__ = new_method_proxy(lambda wrapped, other: other + wrapped)
++    __sub__ = new_method_proxy(operator.sub)
++    __rsub__ = new_method_proxy(lambda wrapped, other: other - wrapped)
++    __mul__ = new_method_proxy(operator.mul)
++    __rmul__ = new_method_proxy(lambda wrapped, other: other * wrapped)
++    __truediv__ = new_method_proxy(operator.truediv)
++    __rtruediv__ = new_method_proxy(lambda wrapped, other: other / wrapped)
++    __floordiv__ = new_method_proxy(operator.floordiv)
++    __rfloordiv__ = new_method_proxy(lambda wrapped, other: other // wrapped)
++    __mod__ = new_method_proxy(operator.mod)
++    __rmod__ = new_method_proxy(lambda wrapped, other: other % wrapped)
++    __pow__ = new_method_proxy(operator.pow)
++    __rpow__ = new_method_proxy(lambda wrapped, other: other ** wrapped)
++
+ 
+ def unpickle_lazyobject(wrapped):
+     """

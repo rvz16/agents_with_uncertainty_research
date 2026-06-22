@@ -1,0 +1,47 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -31,7 +31,15 @@
+ 
+ class ResolverMatch:
+     def __init__(self, func, args, kwargs, url_name=None, app_names=None, namespaces=None, route=None, tried=None):
++        # Unwrap functools.partial objects to get the underlying function
+         self.func = func
++        partial_args = []
++        partial_kwargs = {}
++        while isinstance(self.func, functools.partial):
++            partial_kwargs = {**self.func.keywords, **partial_kwargs}
++            partial_args = list(self.func.args) + partial_args
++            self.func = self.func.func
++        
+         self.args = args
+         self.kwargs = kwargs
+         self.url_name = url_name
+@@ -45,12 +53,25 @@
+         self.namespaces = [x for x in namespaces if x] if namespaces else []
+         self.namespace = ':'.join(self.namespaces)
+ 
+-        if not hasattr(func, '__name__'):
++        if not hasattr(self.func, '__name__'):
+             # A class-based view
+-            self._func_path = func.__class__.__module__ + '.' + func.__class__.__name__
++            self._func_path = self.func.__class__.__module__ + '.' + self.func.__class__.__name__
+         else:
+             # A function-based view
+-            self._func_path = func.__module__ + '.' + func.__name__
++            self._func_path = self.func.__module__ + '.' + self.func.__name__
++
++        # Build the function path representation including partial arguments
++        if partial_args or partial_kwargs:
++            partial_args_repr = ', '.join(repr(arg) for arg in partial_args)
++            partial_kwargs_repr = ', '.join(
++                '%s=%r' % (k, v) for k, v in sorted(partial_kwargs.items())
++            )
++            all_partial_args = ', '.join(
++                filter(None, [partial_args_repr, partial_kwargs_repr])
++            )
++            self._func_path = 'functools.partial(%s, %s)' % (
++                self._func_path, all_partial_args
++            )
+ 
+         view_path = url_name or self._func_path
+         self.view_name = ':'.join(self.namespaces + [view_path])

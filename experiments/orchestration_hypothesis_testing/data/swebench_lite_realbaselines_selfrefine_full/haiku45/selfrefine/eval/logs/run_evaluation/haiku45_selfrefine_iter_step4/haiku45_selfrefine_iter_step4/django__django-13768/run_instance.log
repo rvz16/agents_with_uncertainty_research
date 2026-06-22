@@ -1,0 +1,133 @@
+2026-06-22 07:08:13,967 - INFO - Creating container for django__django-13768...
+2026-06-22 07:08:14,366 - INFO - Container for django__django-13768 created: 153984c2a916ee8555133c8d59432b87d4ebc7912959610a46ff2164b6e94ef4
+2026-06-22 07:08:14,514 - INFO - Container for django__django-13768 started: 153984c2a916ee8555133c8d59432b87d4ebc7912959610a46ff2164b6e94ef4
+2026-06-22 07:08:14,514 - INFO - Intermediate patch for django__django-13768 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-13768/patch.diff, now applying to container...
+2026-06-22 07:08:14,623 - INFO - >>>>> Applied Patch:
+Checking patch django/dispatch/dispatcher.py...
+Applied patch django/dispatch/dispatcher.py cleanly.
+
+2026-06-22 07:08:15,006 - INFO - Git diff before:
+diff --git a/django/dispatch/dispatcher.py b/django/dispatch/dispatcher.py
+index b7d9d26389..065ea0afcb 100644
+--- a/django/dispatch/dispatcher.py
++++ b/django/dispatch/dispatcher.py
+@@ -1,3 +1,4 @@
++import logging
+ import threading
+ import warnings
+ import weakref
+@@ -5,6 +6,8 @@ import weakref
+ from django.utils.deprecation import RemovedInDjango40Warning
+ from django.utils.inspect import func_accepts_kwargs
+ 
++logger = logging.getLogger(__name__)
++
+ 
+ def _make_id(target):
+     if hasattr(target, '__func__'):
+@@ -12,6 +15,25 @@ def _make_id(target):
+     return id(target)
+ 
+ 
++def _get_receiver_name(receiver):
++    """
++    Get a readable name for a receiver callable.
++    """
++    # Try to get the qualified name for functions and methods
++    if hasattr(receiver, '__qualname__'):
++        return receiver.__qualname__
++    # For bound methods, try to construct a readable name
++    if hasattr(receiver, '__self__') and hasattr(receiver, '__func__'):
++        if hasattr(receiver.__func__, '__qualname__'):
++            return f'{receiver.__self__.__class__.__name__}.{receiver.__func__.__qualname__}'
++    # For callable objects/classes, use the class name
++    if hasattr(receiver, '__class__'):
++        if receiver.__class__.__name__ != 'function':
++            return f'{receiver.__class__.__module__}.{receiver.__class__.__name__}'
++    # Fallback to repr
++    return repr(receiver)
++
++
+ NONE_ID = _make_id(None)
+ 
+ # A marker for caching
+@@ -208,6 +230,11 @@ class Signal:
+             try:
+                 response = receiver(signal=self, sender=sender, **named)
+             except Exception as err:
++                logger.exception(
++                    'Error calling %s in Signal.send_robust() (%s)',
++                    _get_receiver_name(receiver),
++                    self.__class__.__name__,
++                )
+                 responses.append((receiver, err))
+             else:
+                 responses.append((receiver, response))
+2026-06-22 07:08:15,006 - INFO - Eval script for django__django-13768 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-13768/eval.sh; copying to container...
+2026-06-22 07:08:23,699 - INFO - Test runtime: 8.66 seconds
+2026-06-22 07:08:23,699 - INFO - Test output for django__django-13768 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-13768/test_output.txt
+2026-06-22 07:08:23,731 - INFO - Git diff after:
+diff --git a/django/dispatch/dispatcher.py b/django/dispatch/dispatcher.py
+index b7d9d26389..065ea0afcb 100644
+--- a/django/dispatch/dispatcher.py
++++ b/django/dispatch/dispatcher.py
+@@ -1,3 +1,4 @@
++import logging
+ import threading
+ import warnings
+ import weakref
+@@ -5,6 +6,8 @@ import weakref
+ from django.utils.deprecation import RemovedInDjango40Warning
+ from django.utils.inspect import func_accepts_kwargs
+ 
++logger = logging.getLogger(__name__)
++
+ 
+ def _make_id(target):
+     if hasattr(target, '__func__'):
+@@ -12,6 +15,25 @@ def _make_id(target):
+     return id(target)
+ 
+ 
++def _get_receiver_name(receiver):
++    """
++    Get a readable name for a receiver callable.
++    """
++    # Try to get the qualified name for functions and methods
++    if hasattr(receiver, '__qualname__'):
++        return receiver.__qualname__
++    # For bound methods, try to construct a readable name
++    if hasattr(receiver, '__self__') and hasattr(receiver, '__func__'):
++        if hasattr(receiver.__func__, '__qualname__'):
++            return f'{receiver.__self__.__class__.__name__}.{receiver.__func__.__qualname__}'
++    # For callable objects/classes, use the class name
++    if hasattr(receiver, '__class__'):
++        if receiver.__class__.__name__ != 'function':
++            return f'{receiver.__class__.__module__}.{receiver.__class__.__name__}'
++    # Fallback to repr
++    return repr(receiver)
++
++
+ NONE_ID = _make_id(None)
+ 
+ # A marker for caching
+@@ -208,6 +230,11 @@ class Signal:
+             try:
+                 response = receiver(signal=self, sender=sender, **named)
+             except Exception as err:
++                logger.exception(
++                    'Error calling %s in Signal.send_robust() (%s)',
++                    _get_receiver_name(receiver),
++                    self.__class__.__name__,
++                )
+                 responses.append((receiver, err))
+             else:
+                 responses.append((receiver, response))
+2026-06-22 07:08:23,731 - INFO - Grading answer for django__django-13768...
+2026-06-22 07:08:23,731 - INFO - report: {'django__django-13768': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_send_robust_fail (dispatch.tests.DispatcherTests)']}, 'PASS_TO_PASS': {'success': ['test_receiver_signal_list (dispatch.tests.ReceiverTestCase)', 'test_receiver_single_signal (dispatch.tests.ReceiverTestCase)', 'test_cached_garbaged_collected (dispatch.tests.DispatcherTests)', 'test_cannot_connect_no_kwargs (dispatch.tests.DispatcherTests)', 'test_cannot_connect_non_callable (dispatch.tests.DispatcherTests)', 'test_disconnection (dispatch.tests.DispatcherTests)', 'test_garbage_collected (dispatch.tests.DispatcherTests)', 'test_has_listeners (dispatch.tests.DispatcherTests)', 'test_multiple_registration (dispatch.tests.DispatcherTests)', 'test_send (dispatch.tests.DispatcherTests)', 'test_send_connected_no_sender (dispatch.tests.DispatcherTests)', 'test_send_different_no_sender (dispatch.tests.DispatcherTests)', 'test_send_no_receivers (dispatch.tests.DispatcherTests)', 'test_send_robust_ignored_sender (dispatch.tests.DispatcherTests)', 'test_send_robust_no_receivers (dispatch.tests.DispatcherTests)', 'test_send_robust_success (dispatch.tests.DispatcherTests)', 'test_uid_registration (dispatch.tests.DispatcherTests)', 'test_values_returned_by_disconnection (dispatch.tests.DispatcherTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13768: resolved: False
+2026-06-22 07:08:23,732 - INFO - Attempting to stop container sweb.eval.django__django-13768.haiku45_selfrefine_iter_step4...
+2026-06-22 07:08:38,913 - INFO - Attempting to remove container sweb.eval.django__django-13768.haiku45_selfrefine_iter_step4...
+2026-06-22 07:08:38,930 - INFO - Container sweb.eval.django__django-13768.haiku45_selfrefine_iter_step4 removed.
+2026-06-22 07:08:38,930 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13768:latest...
+2026-06-22 07:08:39,215 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13768:latest removed.

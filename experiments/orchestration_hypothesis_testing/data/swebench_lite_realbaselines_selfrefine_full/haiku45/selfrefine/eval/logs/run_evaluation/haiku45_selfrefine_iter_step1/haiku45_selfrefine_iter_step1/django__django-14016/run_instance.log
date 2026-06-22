@@ -1,0 +1,81 @@
+2026-06-22 03:35:45,246 - INFO - Creating container for django__django-14016...
+2026-06-22 03:35:45,404 - INFO - Container for django__django-14016 created: fd7416e9ae59e1b137d27427ab13cbc7142c9a63b74152b3025f8699c2a9dc0f
+2026-06-22 03:35:45,585 - INFO - Container for django__django-14016 started: fd7416e9ae59e1b137d27427ab13cbc7142c9a63b74152b3025f8699c2a9dc0f
+2026-06-22 03:35:45,585 - INFO - Intermediate patch for django__django-14016 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-14016/patch.diff, now applying to container...
+2026-06-22 03:35:45,697 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/query_utils.py...
+Applied patch django/db/models/query_utils.py cleanly.
+
+2026-06-22 03:35:46,118 - INFO - Git diff before:
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index c2623f099f..d22a6890be 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -38,7 +38,24 @@ class Q(tree.Node):
+     conditional = True
+ 
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+-        super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
++        # Normalize non-pickleable types to pickleable equivalents
++        normalized_kwargs = {}
++        for key, value in kwargs.items():
++            normalized_kwargs[key] = self._normalize_value(value)
++        super().__init__(children=[*args, *sorted(normalized_kwargs.items())], connector=_connector, negated=_negated)
++
++    @staticmethod
++    def _normalize_value(value):
++        """
++        Convert non-pickleable types to pickleable equivalents.
++        This ensures Q objects can be pickled/deepcopied when combined with operators.
++        """
++        # Convert dict_keys, dict_values, set, and other non-pickleable iterables to list
++        if isinstance(value, (type({}.keys()), type({}.values()))):
++            return list(value)
++        elif isinstance(value, set):
++            return list(value)
++        return value
+ 
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
+2026-06-22 03:35:46,118 - INFO - Eval script for django__django-14016 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-14016/eval.sh; copying to container...
+2026-06-22 03:35:50,123 - INFO - Test runtime: 3.97 seconds
+2026-06-22 03:35:50,124 - INFO - Test output for django__django-14016 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-14016/test_output.txt
+2026-06-22 03:35:50,168 - INFO - Git diff after:
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index c2623f099f..d22a6890be 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -38,7 +38,24 @@ class Q(tree.Node):
+     conditional = True
+ 
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+-        super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
++        # Normalize non-pickleable types to pickleable equivalents
++        normalized_kwargs = {}
++        for key, value in kwargs.items():
++            normalized_kwargs[key] = self._normalize_value(value)
++        super().__init__(children=[*args, *sorted(normalized_kwargs.items())], connector=_connector, negated=_negated)
++
++    @staticmethod
++    def _normalize_value(value):
++        """
++        Convert non-pickleable types to pickleable equivalents.
++        This ensures Q objects can be pickled/deepcopied when combined with operators.
++        """
++        # Convert dict_keys, dict_values, set, and other non-pickleable iterables to list
++        if isinstance(value, (type({}.keys()), type({}.values()))):
++            return list(value)
++        elif isinstance(value, set):
++            return list(value)
++        return value
+ 
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
+2026-06-22 03:35:50,168 - INFO - Grading answer for django__django-14016...
+2026-06-22 03:35:50,168 - INFO - report: {'django__django-14016': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_combine_and_empty (queries.test_q.QTests)', 'test_combine_or_empty (queries.test_q.QTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_combine_and_both_empty (queries.test_q.QTests)', 'test_combine_not_q_object (queries.test_q.QTests)', 'test_combine_or_both_empty (queries.test_q.QTests)', 'test_deconstruct (queries.test_q.QTests)', 'test_deconstruct_and (queries.test_q.QTests)', 'test_deconstruct_multiple_kwargs (queries.test_q.QTests)', 'test_deconstruct_negated (queries.test_q.QTests)', 'test_deconstruct_nested (queries.test_q.QTests)', 'test_deconstruct_or (queries.test_q.QTests)', 'test_reconstruct (queries.test_q.QTests)', 'test_reconstruct_and (queries.test_q.QTests)', 'test_reconstruct_negated (queries.test_q.QTests)', 'test_reconstruct_or (queries.test_q.QTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14016: resolved: True
+2026-06-22 03:35:50,168 - INFO - Attempting to stop container sweb.eval.django__django-14016.haiku45_selfrefine_iter_step1...
+2026-06-22 03:36:05,376 - INFO - Attempting to remove container sweb.eval.django__django-14016.haiku45_selfrefine_iter_step1...
+2026-06-22 03:36:05,396 - INFO - Container sweb.eval.django__django-14016.haiku45_selfrefine_iter_step1 removed.
+2026-06-22 03:36:05,397 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14016:latest...
+2026-06-22 03:36:05,522 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14016:latest removed.

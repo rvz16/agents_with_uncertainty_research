@@ -1,0 +1,39 @@
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -125,9 +125,33 @@
+     def serialize(self):
+         enum_class = self.value.__class__
+         module = enum_class.__module__
+-        return (
+-            "%s.%s[%r]" % (module, enum_class.__qualname__, self.value.name),
+-            {"import %s" % module},
++        
++        # Try to serialize using the enum member's name
++        if self.value.name is not None:
++            return (
++                "%s.%s[%r]" % (module, enum_class.__qualname__, self.value.name),
++                {"import %s" % module},
++            )
++        
++        # For combined flags, decompose into individual members
++        # Use enum._decompose which is the standard internal mechanism
++        members, uncovered = enum._decompose(enum_class, self.value._value_)
++        
++        if members:
++            # Generate code like: module.EnumClass['MEMBER1'] | module.EnumClass['MEMBER2']
++            member_names = [member.name for member in members]
++            class_path = "%s.%s" % (module, enum_class.__qualname__)
++            combined = " | ".join(
++                "%s[%r]" % (class_path, name) for name in member_names
++            )
++            return (
++                combined,
++                {"import %s" % module},
++            )
++        
++        # Fallback: shouldn't normally reach here for valid flag combinations
++        raise ValueError(
++            "Cannot serialize %r, it is not a valid %s" % (self.value, enum_class)
+         )
+ 
+ 

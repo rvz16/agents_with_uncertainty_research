@@ -1,0 +1,40 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -1091,6 +1091,7 @@
+                 (app_label, model_name, field_name, "order_wrt_unset"),
+                 (app_label, model_name, field_name, "foo_together_change"),
+             ],
++            beginning=False,
+         )
+ 
+     def generate_altered_fields(self):
+@@ -1471,7 +1472,7 @@
+                     dependencies,
+                 )
+ 
+-    def _generate_removed_altered_foo_together(self, operation):
++    def _generate_removed_altered_foo_together(self, operation, beginning=False):
+         for (
+             old_value,
+             new_value,
+@@ -1494,13 +1495,18 @@
+                         name=model_name, **{operation.option_name: removal_value}
+                     ),
+                     dependencies=dependencies,
++                    beginning=beginning,
+                 )
+ 
+     def generate_removed_altered_unique_together(self):
+-        self._generate_removed_altered_foo_together(operations.AlterUniqueTogether)
++        self._generate_removed_altered_foo_together(
++            operations.AlterUniqueTogether, beginning=True
++        )
+ 
+     def generate_removed_altered_index_together(self):
+-        self._generate_removed_altered_foo_together(operations.AlterIndexTogether)
++        self._generate_removed_altered_foo_together(
++            operations.AlterIndexTogether, beginning=True
++        )
+ 
+     def _generate_altered_foo_together(self, operation):
+         for (

@@ -1,0 +1,35 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1220,6 +1220,19 @@
+ 
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
++            # Handle empty input arrays
++            if xy.shape[0] == 0:
++                # Return empty arrays with the correct shape and number of axes
++                # The output should have the same number of axes as the WCS
++                if ra_dec_order and sky == 'output':
++                    # For ra_dec_order output, return a tuple of two arrays
++                    return (np.array([], dtype=np.float64).reshape(axes[0].shape),
++                            np.array([], dtype=np.float64).reshape(axes[0].shape))
++                else:
++                    # For normal output, return a list of arrays, one for each axis
++                    return [np.array([], dtype=np.float64).reshape(axes[0].shape)
++                            for _ in range(self.naxis)]
++
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+             output = func(xy, origin)
+@@ -1235,6 +1248,12 @@
+                 raise ValueError(
+                     "When providing two arguments, the array must be "
+                     "of shape (N, {0})".format(self.naxis))
++            
++            # Handle empty input arrays
++            if xy.shape[0] == 0:
++                # Return an empty array with the correct shape
++                return np.empty((0, self.naxis), dtype=np.float64)
++            
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+             result = func(xy, origin)

@@ -1,0 +1,28 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -139,9 +139,11 @@
+         path = Path(filename)
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+-        except FileNotFoundError:
++        except (FileNotFoundError, ValueError, OSError):
+             # The module could have been removed, don't fail loudly if this
+-            # is the case.
++            # is the case. ValueError can be raised if the path contains a null
++            # byte (see #29585). OSError can be raised for other filesystem
++            # issues such as broken symlinks or inaccessible network shares.
+             continue
+         results.add(resolved_path)
+     return frozenset(results)
+@@ -187,7 +189,10 @@
+         path = Path(path)
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+-        except FileNotFoundError:
++        except (FileNotFoundError, ValueError, OSError):
++            # ValueError can be raised if the path contains a null byte.
++            # OSError can be raised for other filesystem issues such as broken
++            # symlinks or inaccessible network shares.
+             continue
+         # If the path is a file (like a zip file), watch the parent directory.
+         if resolved_path.is_file():

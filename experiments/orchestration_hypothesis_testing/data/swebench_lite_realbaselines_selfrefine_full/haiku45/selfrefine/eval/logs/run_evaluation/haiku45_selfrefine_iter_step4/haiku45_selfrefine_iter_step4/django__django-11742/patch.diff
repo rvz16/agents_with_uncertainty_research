@@ -1,0 +1,44 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -280,7 +280,7 @@
+             if isinstance(choices_group, str):
+                 break
+         else:
+-            return []
++            return [*self._check_choices_max_length()]
+ 
+         return [
+             checks.Error(
+@@ -290,6 +290,32 @@
+                 id='fields.E005',
+             )
+         ]
++
++    def _check_choices_max_length(self):
++        """
++        Check that max_length is large enough to fit the longest choice value.
++        """
++        if self.max_length is None:
++            return []
++
++        errors = []
++        for choice_value, choice_display in self.flatchoices:
++            if isinstance(choice_display, (list, tuple)):
++                # This shouldn't happen if _check_choices passed, but be safe
++                continue
++            choice_str = str(choice_value)
++            if len(choice_str) > self.max_length:
++                errors.append(
++                    checks.Error(
++                        "'max_length' is too small to fit the longest choice value "
++                        "(%r has %d characters, but max_length is %d)." % (
++                            choice_str, len(choice_str), self.max_length
++                        ),
++                        obj=self,
++                        id='fields.E012',
++                    )
++                )
++        return errors
+ 
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):

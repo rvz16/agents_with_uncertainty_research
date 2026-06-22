@@ -1,0 +1,73 @@
+2026-06-22 06:12:06,051 - INFO - Creating container for django__django-15789...
+2026-06-22 06:12:06,177 - INFO - Container for django__django-15789 created: bade8793134deecbea47aa963612f7c7b547ca7199350cda36a16d1a4896c96d
+2026-06-22 06:12:06,312 - INFO - Container for django__django-15789 started: bade8793134deecbea47aa963612f7c7b547ca7199350cda36a16d1a4896c96d
+2026-06-22 06:12:06,312 - INFO - Intermediate patch for django__django-15789 written to logs/run_evaluation/haiku45_selfrefine_iter_step3/haiku45_selfrefine_iter_step3/django__django-15789/patch.diff, now applying to container...
+2026-06-22 06:12:06,419 - INFO - >>>>> Applied Patch:
+Checking patch django/utils/html.py...
+Applied patch django/utils/html.py cleanly.
+
+2026-06-22 06:12:06,771 - INFO - Git diff before:
+diff --git a/django/utils/html.py b/django/utils/html.py
+index d0bc97be80..8e929b49b5 100644
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -59,15 +59,19 @@ _json_script_escapes = {
+ }
+ 
+ 
+-def json_script(value, element_id=None):
++def json_script(value, element_id=None, encoder=None):
+     """
+     Escape all the HTML/XML special characters with their unicode escapes, so
+     value is safe to be output anywhere except for inside a tag attribute. Wrap
+     the escaped JSON in a script tag.
++
++    If encoder is None, use DjangoJSONEncoder.
+     """
+     from django.core.serializers.json import DjangoJSONEncoder
+ 
+-    json_str = json.dumps(value, cls=DjangoJSONEncoder).translate(_json_script_escapes)
++    if encoder is None:
++        encoder = DjangoJSONEncoder
++    json_str = json.dumps(value, cls=encoder).translate(_json_script_escapes)
+     if element_id:
+         template = '<script id="{}" type="application/json">{}</script>'
+         args = (element_id, mark_safe(json_str))
+2026-06-22 06:12:06,771 - INFO - Eval script for django__django-15789 written to logs/run_evaluation/haiku45_selfrefine_iter_step3/haiku45_selfrefine_iter_step3/django__django-15789/eval.sh; copying to container...
+2026-06-22 06:12:10,970 - INFO - Test runtime: 4.15 seconds
+2026-06-22 06:12:10,971 - INFO - Test output for django__django-15789 written to logs/run_evaluation/haiku45_selfrefine_iter_step3/haiku45_selfrefine_iter_step3/django__django-15789/test_output.txt
+2026-06-22 06:12:11,016 - INFO - Git diff after:
+diff --git a/django/utils/html.py b/django/utils/html.py
+index d0bc97be80..8e929b49b5 100644
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -59,15 +59,19 @@ _json_script_escapes = {
+ }
+ 
+ 
+-def json_script(value, element_id=None):
++def json_script(value, element_id=None, encoder=None):
+     """
+     Escape all the HTML/XML special characters with their unicode escapes, so
+     value is safe to be output anywhere except for inside a tag attribute. Wrap
+     the escaped JSON in a script tag.
++
++    If encoder is None, use DjangoJSONEncoder.
+     """
+     from django.core.serializers.json import DjangoJSONEncoder
+ 
+-    json_str = json.dumps(value, cls=DjangoJSONEncoder).translate(_json_script_escapes)
++    if encoder is None:
++        encoder = DjangoJSONEncoder
++    json_str = json.dumps(value, cls=encoder).translate(_json_script_escapes)
+     if element_id:
+         template = '<script id="{}" type="application/json">{}</script>'
+         args = (element_id, mark_safe(json_str))
+2026-06-22 06:12:11,016 - INFO - Grading answer for django__django-15789...
+2026-06-22 06:12:11,017 - INFO - report: {'django__django-15789': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_json_script_custom_encoder (utils_tests.test_html.TestUtilsHtml)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_conditional_escape (utils_tests.test_html.TestUtilsHtml)', 'test_escape (utils_tests.test_html.TestUtilsHtml)', 'test_escapejs (utils_tests.test_html.TestUtilsHtml)', 'test_format_html (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe_defines_html_error (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe_doesnt_define_str (utils_tests.test_html.TestUtilsHtml)', 'test_html_safe_subclass (utils_tests.test_html.TestUtilsHtml)', 'test_json_script (utils_tests.test_html.TestUtilsHtml)', 'test_json_script_without_id (utils_tests.test_html.TestUtilsHtml)', 'test_linebreaks (utils_tests.test_html.TestUtilsHtml)', 'test_smart_urlquote (utils_tests.test_html.TestUtilsHtml)', 'test_strip_spaces_between_tags (utils_tests.test_html.TestUtilsHtml)', 'test_strip_tags (utils_tests.test_html.TestUtilsHtml)', 'test_strip_tags_files (utils_tests.test_html.TestUtilsHtml)', 'test_urlize (utils_tests.test_html.TestUtilsHtml)', 'test_urlize_unchanged_inputs (utils_tests.test_html.TestUtilsHtml)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15789: resolved: True
+2026-06-22 06:12:11,017 - INFO - Attempting to stop container sweb.eval.django__django-15789.haiku45_selfrefine_iter_step3...
+2026-06-22 06:12:26,170 - INFO - Attempting to remove container sweb.eval.django__django-15789.haiku45_selfrefine_iter_step3...
+2026-06-22 06:12:26,188 - INFO - Container sweb.eval.django__django-15789.haiku45_selfrefine_iter_step3 removed.
+2026-06-22 06:12:26,188 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15789:latest...
+2026-06-22 06:12:26,298 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15789:latest removed.

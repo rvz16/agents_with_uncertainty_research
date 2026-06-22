@@ -1,0 +1,22 @@
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -25,6 +25,9 @@
+         module in locale.localeconv() LC_NUMERIC grouping (e.g. (3, 2, 0)).
+     * thousand_sep: Thousand separator symbol (for example ",")
+     """
++    # Handle None values
++    if number is None:
++        return mark_safe("")
+     use_grouping = (
+         use_l10n or (use_l10n is None and settings.USE_L10N)
+     ) and settings.USE_THOUSAND_SEPARATOR
+@@ -68,6 +71,9 @@
+             str_number = "{:f}".format(number)
+     else:
+         str_number = str(number)
++    # Handle None and empty strings
++    if not str_number:
++        return mark_safe("")
+     if str_number[0] == "-":
+         sign = "-"
+         str_number = str_number[1:]

@@ -1,0 +1,33 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1220,6 +1220,30 @@
+ 
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
++            # Handle empty input: return empty arrays with correct shape
++            if xy.shape[0] == 0:
++                # Determine output shape from axes
++                output_shape = axes[0].shape
++                # Call func with a dummy single point to determine output structure
++                # We need to know how many output axes there are
++                dummy_xy = np.atleast_2d(xy[0:1]) if xy.shape[0] == 0 else xy[0:1]
++                if dummy_xy.shape[0] == 0:
++                    # Create a dummy coordinate to probe output structure
++                    dummy_xy = np.zeros((1, len(axes)), dtype=np.float64)
++                try:
++                    dummy_output = func(dummy_xy, origin)
++                    n_outputs = dummy_output.shape[1]
++                except (IndexError, TypeError):
++                    # If we can't determine output shape, assume same as input
++                    n_outputs = len(axes)
++                
++                # Return empty arrays for each output axis
++                if ra_dec_order and sky == 'output':
++                    return (np.empty(output_shape, dtype=np.float64),
++                            np.empty(output_shape, dtype=np.float64))
++                return [np.empty(output_shape, dtype=np.float64)
++                        for i in range(n_outputs)]
++
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+             output = func(xy, origin)

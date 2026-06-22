@@ -1,0 +1,14 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -398,6 +398,11 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
++    elif isinstance(field, models.JSONField):
++        # Use the widget's prepare_value to properly serialize JSONField values
++        # This handles both normal JSON values and InvalidJSONInput cases
++        widget = field.formfield().widget
++        return widget.prepare_value(value)
+     else:
+         return display_for_value(value, empty_value_display)
+ 

@@ -1,0 +1,66 @@
+2026-06-22 03:34:51,200 - INFO - Creating container for django__django-13925...
+2026-06-22 03:34:52,490 - INFO - Container for django__django-13925 created: c435d30a10bcaea5920271b7821b5e820e4d1ccdb31bc848b7d7dca6b44d1d70
+2026-06-22 03:34:52,643 - INFO - Container for django__django-13925 started: c435d30a10bcaea5920271b7821b5e820e4d1ccdb31bc848b7d7dca6b44d1d70
+2026-06-22 03:34:52,643 - INFO - Intermediate patch for django__django-13925 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-13925/patch.diff, now applying to container...
+2026-06-22 03:34:52,748 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:16: trailing whitespace.
+            
+Checking patch django/db/models/base.py...
+Applied patch django/db/models/base.py cleanly.
+warning: 1 line adds whitespace errors.
+
+2026-06-22 03:34:53,110 - INFO - Git diff before:
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 4038859cfa..c6ae562844 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1302,6 +1302,16 @@ class Model(metaclass=ModelBase):
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+             not cls._meta.app_config._is_default_auto_field_overridden
+         ):
++            # Check if the primary key is inherited from a non-abstract parent.
++            # If it is, don't raise the warning since the parent defined it.
++            for parent in cls._meta.get_parent_list():
++                if (
++                    parent._meta.pk is cls._meta.pk and
++                    not parent._meta.abstract
++                ):
++                    # PK is inherited from a non-abstract parent
++                    return []
++            
+             return [
+                 checks.Warning(
+                     f"Auto-created primary key used when not defining a "
+2026-06-22 03:34:53,111 - INFO - Eval script for django__django-13925 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-13925/eval.sh; copying to container...
+2026-06-22 03:34:55,316 - INFO - Test runtime: 2.16 seconds
+2026-06-22 03:34:55,316 - INFO - Test output for django__django-13925 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-13925/test_output.txt
+2026-06-22 03:34:55,363 - INFO - Git diff after:
+diff --git a/django/db/models/base.py b/django/db/models/base.py
+index 4038859cfa..c6ae562844 100644
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1302,6 +1302,16 @@ class Model(metaclass=ModelBase):
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+             not cls._meta.app_config._is_default_auto_field_overridden
+         ):
++            # Check if the primary key is inherited from a non-abstract parent.
++            # If it is, don't raise the warning since the parent defined it.
++            for parent in cls._meta.get_parent_list():
++                if (
++                    parent._meta.pk is cls._meta.pk and
++                    not parent._meta.abstract
++                ):
++                    # PK is inherited from a non-abstract parent
++                    return []
++            
+             return [
+                 checks.Warning(
+                     f"Auto-created primary key used when not defining a "
+2026-06-22 03:34:55,363 - INFO - Grading answer for django__django-13925...
+2026-06-22 03:34:55,364 - INFO - report: {'django__django-13925': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_auto_created_inherited_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_explicit_inherited_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)']}, 'PASS_TO_PASS': {'success': ['test_app_default_auto_field (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_auto_created_inherited_parent_link (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_auto_created_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_default_auto_field_setting (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_explicit_inherited_parent_link (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_explicit_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)', 'test_collision_abstract_model (check_framework.test_model_checks.IndexNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_collision_abstract_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_across_apps_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_proxy_models (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_unmanaged_models (check_framework.test_model_checks.DuplicateDBTableTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13925: resolved: False
+2026-06-22 03:34:55,364 - INFO - Attempting to stop container sweb.eval.django__django-13925.haiku45_selfrefine_iter_step1...
+2026-06-22 03:35:10,594 - INFO - Attempting to remove container sweb.eval.django__django-13925.haiku45_selfrefine_iter_step1...
+2026-06-22 03:35:10,610 - INFO - Container sweb.eval.django__django-13925.haiku45_selfrefine_iter_step1 removed.
+2026-06-22 03:35:10,610 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13925:latest...
+2026-06-22 03:35:10,706 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13925:latest removed.

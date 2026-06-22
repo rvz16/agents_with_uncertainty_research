@@ -1,0 +1,42 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -211,6 +211,39 @@
+                         **self.options,
+                         "order_with_respect_to": operation.order_with_respect_to,
+                     },
++                    bases=self.bases,
++                    managers=self.managers,
++                ),
++            ]
++        elif (
++            isinstance(operation, RenameIndex)
++            and self.name_lower == operation.model_name_lower
++            and operation.old_fields
++        ):
++            # Convert index_together to indexes when squashing migrations
++            options = self.options.copy()
++            index_together = options.pop("index_together", None)
++            indexes = list(options.get("indexes", []))
++            
++            if index_together:
++                # Find and convert matching index_together entries to Index objects
++                old_fields_tuple = tuple(operation.old_fields)
++                for fields in index_together:
++                    if tuple(fields) == old_fields_tuple:
++                        # Create an Index object for this entry
++                        indexes.append(
++                            models.Index(fields=list(fields), name=operation.new_name)
++                        )
++                        break
++            
++            if indexes:
++                options["indexes"] = indexes
++            
++            return [
++                CreateModel(
++                    self.name,
++                    fields=self.fields,
++                    options=options,
+                     bases=self.bases,
+                     managers=self.managers,
+                 ),

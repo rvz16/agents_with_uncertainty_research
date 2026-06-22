@@ -1,0 +1,28 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -965,6 +965,25 @@
+                             preserve_default = False
+                     else:
+                         field = new_field
++                    # Check if the only difference is due to a renamed to_field on a related model.
++                    # In that case, we don't need an AlterField operation as RenameField handles it.
++                    if hasattr(new_field, "remote_field") and getattr(new_field.remote_field, "model", None):
++                        # Make a copy to test with the old to_field name
++                        test_field = new_field.clone()
++                        if hasattr(test_field.remote_field, 'field_name'):
++                            rename_key = (
++                                test_field.remote_field.model._meta.app_label,
++                                test_field.remote_field.model._meta.model_name,
++                            )
++                            remote_field_name = test_field.remote_field.field_name
++                            to_field_rename_key = rename_key + (remote_field_name,)
++                            if to_field_rename_key in self.renamed_fields:
++                                old_name = self.renamed_fields[to_field_rename_key]
++                                test_field.remote_field.field_name = old_name
++                                test_field_dec = self.deep_deconstruct(test_field)
++                                if old_field_dec == test_field_dec:
++                                    # The only difference was the renamed to_field, skip AlterField
++                                    continue
+                     self.add_operation(
+                         app_label,
+                         operations.AlterField(

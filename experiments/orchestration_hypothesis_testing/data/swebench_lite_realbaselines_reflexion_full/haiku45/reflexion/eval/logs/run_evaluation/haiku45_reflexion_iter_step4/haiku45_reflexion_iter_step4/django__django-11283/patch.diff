@@ -1,0 +1,18 @@
+--- a/django/contrib/auth/migrations/0011_update_proxy_permissions.py
++++ b/django/contrib/auth/migrations/0011_update_proxy_permissions.py
+@@ -24,6 +24,15 @@
+         proxy_content_type = ContentType.objects.get_for_model(Model, for_concrete_model=False)
+         old_content_type = proxy_content_type if reverse else concrete_content_type
+         new_content_type = concrete_content_type if reverse else proxy_content_type
++        
++        # Delete any permissions that already exist with the new content_type
++        # to avoid unique constraint violations when updating.
++        Permission.objects.filter(
++            permissions_query,
++            content_type=new_content_type,
++        ).delete()
++        
++        # Update permissions from the old content_type to the new one.
+         Permission.objects.filter(
+             permissions_query,
+             content_type=old_content_type,

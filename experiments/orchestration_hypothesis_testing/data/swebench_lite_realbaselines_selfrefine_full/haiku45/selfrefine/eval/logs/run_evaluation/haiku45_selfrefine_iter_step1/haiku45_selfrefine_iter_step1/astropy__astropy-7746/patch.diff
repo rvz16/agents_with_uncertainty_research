@@ -1,0 +1,34 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1218,6 +1218,19 @@
+                 raise ValueError(
+                     "Coordinate arrays are not broadcastable to each other")
+ 
++            # Handle empty input: return empty arrays with correct shape
++            if axes[0].size == 0:
++                # Return empty arrays matching the input shape
++                output_shape = axes[0].shape
++                if ra_dec_order and sky == 'output':
++                    # For RA/DEC output, return tuple of two arrays
++                    return (np.empty(output_shape, dtype=np.float64),
++                            np.empty(output_shape, dtype=np.float64))
++                else:
++                    # Return list of empty arrays, one per axis
++                    return [np.empty(output_shape, dtype=np.float64)
++                            for _ in range(len(axes))]
++
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
+             if ra_dec_order and sky == 'input':
+@@ -1235,6 +1248,11 @@
+                 raise ValueError(
+                     "When providing two arguments, the array must be "
+                     "of shape (N, {0})".format(self.naxis))
++            
++            # Handle empty input: return empty array with correct shape
++            if xy.shape[0] == 0:
++                return np.empty((0, self.naxis), dtype=np.float64)
++            
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+             result = func(xy, origin)

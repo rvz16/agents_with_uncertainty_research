@@ -1,0 +1,25 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -13,6 +13,12 @@
+ from django.utils.regex_helper import _lazy_re_compile
+ from django.utils.text import capfirst
+ from django.utils.translation import ngettext, override as translation_override
++
++# Import JSONField if available (Django 3.1+)
++try:
++    from django.db.models import JSONField
++except ImportError:
++    JSONField = None
+ 
+ QUOTE_MAP = {i: '_%02X' % i for i in b'":/_#?;@&=+$,"[]<>%\n\\'}
+ UNQUOTE_MAP = {v: chr(k) for k, v in QUOTE_MAP.items()}
+@@ -398,6 +404,9 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
++    elif JSONField is not None and isinstance(field, JSONField):
++        # Use prepare_value() to get proper JSON serialization
++        return field.prepare_value(value)
+     else:
+         return display_for_value(value, empty_value_display)
+ 

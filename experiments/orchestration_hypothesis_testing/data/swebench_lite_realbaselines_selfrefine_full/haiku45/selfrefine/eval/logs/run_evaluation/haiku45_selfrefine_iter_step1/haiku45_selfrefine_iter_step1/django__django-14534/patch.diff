@@ -1,0 +1,12 @@
+--- a/django/forms/boundfield.py
++++ b/django/forms/boundfield.py
+@@ -277,6 +277,9 @@
+ 
+     @property
+     def id_for_label(self):
++        id_ = self.data['attrs'].get('id') if self.data.get('attrs') else None
++        if id_:
++            return id_
+         return 'id_%s_%s' % (self.data['name'], self.data['index'])
+ 
+     @property

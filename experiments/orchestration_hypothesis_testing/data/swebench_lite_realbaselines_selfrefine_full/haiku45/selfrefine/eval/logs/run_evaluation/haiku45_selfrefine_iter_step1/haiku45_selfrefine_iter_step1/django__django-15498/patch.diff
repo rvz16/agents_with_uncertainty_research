@@ -1,0 +1,11 @@
+--- a/django/views/static.py
++++ b/django/views/static.py
+@@ -126,7 +126,7 @@
+       This is the size of the item we're talking about.
+     """
+     try:
+-        if header is None:
++        if header is None or not header.strip():
+             raise ValueError
+         matches = re.match(r"^([^;]+)(; length=([0-9]+))?$", header, re.IGNORECASE)
+         header_mtime = parse_http_date(matches[1])

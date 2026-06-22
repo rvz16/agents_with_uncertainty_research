@@ -1,0 +1,52 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_choices_fit_max_length(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -290,6 +291,41 @@
+                 id='fields.E005',
+             )
+         ]
++
++    def _check_choices_fit_max_length(self):
++        """
++        Check that max_length is large enough for the longest choice value.
++        """
++        if not self.choices or self.max_length is None:
++            return []
++
++        def get_choice_values(choices):
++            """Flatten choice values from grouped or flat choice format."""
++            for choice_value, choice_display in choices:
++                if isinstance(choice_display, (list, tuple)):
++                    # This is an optgroup, recurse into it
++                    for nested_value, nested_display in choice_display:
++                        yield nested_value
++                else:
++                    yield choice_value
++
++        errors = []
++        for choice_value in get_choice_values(self.choices):
++            # Convert to string to check length
++            choice_str = str(choice_value)
++            if len(choice_str) > self.max_length:
++                errors.append(
++                    checks.Error(
++                        f"'max_length' is too small to fit the longest value in "
++                        f"'choices' ({choice_str!r} has length {len(choice_str)}).",
++                        obj=self,
++                        id='fields.E012',
++                    )
++                )
++                # Only report the first error to avoid spam
++                break
++
++        return errors
+ 
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):

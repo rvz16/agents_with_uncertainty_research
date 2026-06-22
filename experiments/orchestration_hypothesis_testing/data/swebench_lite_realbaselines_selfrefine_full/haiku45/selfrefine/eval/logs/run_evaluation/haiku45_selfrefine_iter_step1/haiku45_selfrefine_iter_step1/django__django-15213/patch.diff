@@ -1,0 +1,31 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -952,8 +952,8 @@
+ class BooleanField(Field):
+     empty_strings_allowed = False
+     default_error_messages = {
+-        'invalid': _('“%(value)s” value must be either True or False.'),
+-        'invalid_nullable': _('“%(value)s” value must be either True, False, or None.'),
++        'invalid': _('"%(value)s" value must be either True or False.'),
++        'invalid_nullable': _('"%(value)s" value must be either True, False, or None.'),
+     }
+     description = _("Boolean (Either True or False)")
+ 
+@@ -981,6 +981,17 @@
+         if value is None:
+             return None
+         return self.to_python(value)
++
++    def select_format(self, compiler, sql, params):
++        """
++        Custom format for select clauses. Ensure that empty SQL expressions
++        are replaced with a proper boolean value (1 for TRUE).
++        """
++        sql, params = super().select_format(compiler, sql, params)
++        # Handle the case where sql is empty (e.g., from ~Q(pk__in=[]))
++        if not sql or not sql.strip():
++            sql = '1'
++        return sql, params
+ 
+     def formfield(self, **kwargs):
+         if self.choices is not None:

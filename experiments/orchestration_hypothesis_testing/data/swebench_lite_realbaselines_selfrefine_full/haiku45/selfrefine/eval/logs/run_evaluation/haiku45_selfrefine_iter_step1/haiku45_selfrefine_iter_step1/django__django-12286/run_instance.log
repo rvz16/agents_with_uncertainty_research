@@ -1,0 +1,51 @@
+2026-06-22 03:24:05,596 - INFO - Creating container for django__django-12286...
+2026-06-22 03:24:05,741 - INFO - Container for django__django-12286 created: 3c0183abcf5446fe4233fb82d197c6018e5b70370deb896f1ac4bf5c72b164c1
+2026-06-22 03:24:05,867 - INFO - Container for django__django-12286 started: 3c0183abcf5446fe4233fb82d197c6018e5b70370deb896f1ac4bf5c72b164c1
+2026-06-22 03:24:05,867 - INFO - Intermediate patch for django__django-12286 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-12286/patch.diff, now applying to container...
+2026-06-22 03:24:05,973 - INFO - >>>>> Applied Patch:
+Checking patch django/core/checks/translation.py...
+Applied patch django/core/checks/translation.py cleanly.
+
+2026-06-22 03:24:06,339 - INFO - Git diff before:
+diff --git a/django/core/checks/translation.py b/django/core/checks/translation.py
+index 138ed07ff8..76db8e5689 100644
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -57,5 +57,9 @@ def check_language_settings_consistent(app_configs, **kwargs):
+     """Error if language settings are not consistent with each other."""
+     available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+     if settings.LANGUAGE_CODE not in available_tags:
+-        return [E004]
++        # Check if the base language is available for sublanguages
++        # e.g., if LANGUAGE_CODE is 'de-at', check if 'de' is available
++        base_language = settings.LANGUAGE_CODE.split('-')[0]
++        if base_language not in available_tags:
++            return [E004]
+     return []
+2026-06-22 03:24:06,339 - INFO - Eval script for django__django-12286 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-12286/eval.sh; copying to container...
+2026-06-22 03:24:14,408 - INFO - Test runtime: 8.05 seconds
+2026-06-22 03:24:14,408 - INFO - Test output for django__django-12286 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-12286/test_output.txt
+2026-06-22 03:24:14,460 - INFO - Git diff after:
+diff --git a/django/core/checks/translation.py b/django/core/checks/translation.py
+index 138ed07ff8..76db8e5689 100644
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -57,5 +57,9 @@ def check_language_settings_consistent(app_configs, **kwargs):
+     """Error if language settings are not consistent with each other."""
+     available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+     if settings.LANGUAGE_CODE not in available_tags:
+-        return [E004]
++        # Check if the base language is available for sublanguages
++        # e.g., if LANGUAGE_CODE is 'de-at', check if 'de' is available
++        base_language = settings.LANGUAGE_CODE.split('-')[0]
++        if base_language not in available_tags:
++            return [E004]
+     return []
+2026-06-22 03:24:14,461 - INFO - Grading answer for django__django-12286...
+2026-06-22 03:24:14,461 - INFO - report: {'django__django-12286': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_valid_variant_consistent_language_settings (check_framework.test_translation.TranslationCheckTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_inconsistent_language_settings (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_language_code (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_languages (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_languages_bidi (check_framework.test_translation.TranslationCheckTests)', 'test_valid_language_code (check_framework.test_translation.TranslationCheckTests)', 'test_valid_languages (check_framework.test_translation.TranslationCheckTests)', 'test_valid_languages_bidi (check_framework.test_translation.TranslationCheckTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12286: resolved: True
+2026-06-22 03:24:14,461 - INFO - Attempting to stop container sweb.eval.django__django-12286.haiku45_selfrefine_iter_step1...
+2026-06-22 03:24:29,751 - INFO - Attempting to remove container sweb.eval.django__django-12286.haiku45_selfrefine_iter_step1...
+2026-06-22 03:24:29,773 - INFO - Container sweb.eval.django__django-12286.haiku45_selfrefine_iter_step1 removed.
+2026-06-22 03:24:29,773 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12286:latest...
+2026-06-22 03:24:29,875 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12286:latest removed.

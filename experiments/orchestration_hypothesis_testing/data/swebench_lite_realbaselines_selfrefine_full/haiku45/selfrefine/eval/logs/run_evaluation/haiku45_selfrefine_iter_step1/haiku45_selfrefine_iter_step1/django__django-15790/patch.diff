@@ -1,0 +1,20 @@
+--- a/django/core/checks/templates.py
++++ b/django/core/checks/templates.py
+@@ -61,12 +61,15 @@
+         libraries[module_name].append(module_path)
+ 
+     for library_name, items in libraries.items():
+-        if len(items) > 1:
++        # Deduplicate items to avoid false positives when the same library
++        # is both auto-discovered and explicitly configured.
++        unique_items = list(set(items))
++        if len(unique_items) > 1:
+             errors.append(
+                 Error(
+                     E003.msg.format(
+                         repr(library_name),
+-                        ", ".join(repr(item) for item in items),
++                        ", ".join(repr(item) for item in unique_items),
+                     ),
+                     id=E003.id,
+                 )

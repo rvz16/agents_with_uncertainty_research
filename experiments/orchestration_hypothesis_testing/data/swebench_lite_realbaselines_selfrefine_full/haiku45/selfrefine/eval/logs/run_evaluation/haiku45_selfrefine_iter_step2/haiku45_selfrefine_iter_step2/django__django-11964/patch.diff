@@ -1,0 +1,44 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,13 @@
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        
++        # Ensure enum members behave as their base types
++        if issubclass(cls, (str, int)):
++            def __reduce_ex__(self, proto):
++                return self.value
++            cls.__reduce_ex__ = __reduce_ex__
++        
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):
+@@ -65,11 +72,26 @@
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls)
++        obj._value_ = value
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls)
++        obj._value_ = value
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name

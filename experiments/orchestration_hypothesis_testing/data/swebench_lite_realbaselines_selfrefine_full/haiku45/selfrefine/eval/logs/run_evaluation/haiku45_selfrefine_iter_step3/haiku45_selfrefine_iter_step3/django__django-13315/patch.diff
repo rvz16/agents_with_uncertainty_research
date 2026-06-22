@@ -1,0 +1,19 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -101,6 +101,16 @@
+         limit_choices_to = formfield.get_limit_choices_to()
+         if limit_choices_to is not None:
+             formfield.queryset = formfield.queryset.complex_filter(limit_choices_to)
++            # Eliminate duplicate rows that can occur when limit_choices_to involves joins.
++            # An empty annotate() forces GROUP BY on the primary key, which naturally
++            # deduplicates the results. This approach works with all database backends
++            # and custom fields, unlike DISTINCT which can fail in some cases.
++            formfield.queryset = formfield.queryset.annotate()
++            # Eliminate duplicate rows that can occur when limit_choices_to involves joins.
++            # Use annotate() to force GROUP BY on the primary key, which is guaranteed to be
++            # unique and works across all database backends (unlike DISTINCT which can fail
++            # with custom fields that don't support comparison).
++            formfield.queryset = formfield.queryset.annotate().distinct()
+ 
+ 
+ def fields_for_model(model, fields=None, exclude=None, widgets=None,

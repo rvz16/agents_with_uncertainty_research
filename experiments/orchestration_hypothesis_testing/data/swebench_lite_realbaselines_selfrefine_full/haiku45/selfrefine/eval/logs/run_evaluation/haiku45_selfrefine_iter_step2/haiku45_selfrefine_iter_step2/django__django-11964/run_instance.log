@@ -1,0 +1,118 @@
+2026-06-22 04:54:00,489 - INFO - Creating container for django__django-11964...
+2026-06-22 04:54:00,644 - INFO - Container for django__django-11964 created: c384b7dc9ce47915e5b1d970198e3b939396981fcb799dbada566ff3f9c12d7d
+2026-06-22 04:54:00,821 - INFO - Container for django__django-11964 started: c384b7dc9ce47915e5b1d970198e3b939396981fcb799dbada566ff3f9c12d7d
+2026-06-22 04:54:00,821 - INFO - Intermediate patch for django__django-11964 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-11964/patch.diff, now applying to container...
+2026-06-22 04:54:00,927 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:7: trailing whitespace.
+        
+/tmp/patch.diff:13: trailing whitespace.
+        
+Checking patch django/db/models/enums.py...
+Applied patch django/db/models/enums.py cleanly.
+warning: 2 lines add whitespace errors.
+
+2026-06-22 04:54:01,290 - INFO - Git diff before:
+diff --git a/django/db/models/enums.py b/django/db/models/enums.py
+index bbe362a6ab..a922322818 100644
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,13 @@ class ChoicesMeta(enum.EnumMeta):
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        
++        # Ensure enum members behave as their base types
++        if issubclass(cls, (str, int)):
++            def __reduce_ex__(self, proto):
++                return self.value
++            cls.__reduce_ex__ = __reduce_ex__
++        
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):
+@@ -65,11 +72,26 @@ class Choices(enum.Enum, metaclass=ChoicesMeta):
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls)
++        obj._value_ = value
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls)
++        obj._value_ = value
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name
+2026-06-22 04:54:01,290 - INFO - Eval script for django__django-11964 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-11964/eval.sh; copying to container...
+2026-06-22 04:54:09,727 - INFO - Test runtime: 8.40 seconds
+2026-06-22 04:54:09,727 - INFO - Test output for django__django-11964 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-11964/test_output.txt
+2026-06-22 04:54:09,779 - INFO - Git diff after:
+diff --git a/django/db/models/enums.py b/django/db/models/enums.py
+index bbe362a6ab..a922322818 100644
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,13 @@ class ChoicesMeta(enum.EnumMeta):
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        
++        # Ensure enum members behave as their base types
++        if issubclass(cls, (str, int)):
++            def __reduce_ex__(self, proto):
++                return self.value
++            cls.__reduce_ex__ = __reduce_ex__
++        
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):
+@@ -65,11 +72,26 @@ class Choices(enum.Enum, metaclass=ChoicesMeta):
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls)
++        obj._value_ = value
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls)
++        obj._value_ = value
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name
+2026-06-22 04:54:09,779 - INFO - Grading answer for django__django-11964...
+2026-06-22 04:54:09,780 - INFO - report: {'django__django-11964': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_str (model_enums.tests.ChoicesTests)', 'test_textchoices (model_enums.tests.ChoicesTests)']}, 'PASS_TO_PASS': {'success': ['test_integerchoices (model_enums.tests.ChoicesTests)', 'test_integerchoices_auto_label (model_enums.tests.ChoicesTests)', 'test_integerchoices_containment (model_enums.tests.ChoicesTests)', 'test_integerchoices_empty_label (model_enums.tests.ChoicesTests)', 'test_integerchoices_functional_api (model_enums.tests.ChoicesTests)', 'test_textchoices_auto_label (model_enums.tests.ChoicesTests)', 'test_textchoices_blank_value (model_enums.tests.ChoicesTests)', 'test_textchoices_containment (model_enums.tests.ChoicesTests)', 'test_textchoices_empty_label (model_enums.tests.ChoicesTests)', 'test_textchoices_functional_api (model_enums.tests.ChoicesTests)', 'test_bool_unsupported (model_enums.tests.CustomChoicesTests)', 'test_labels_valid (model_enums.tests.CustomChoicesTests)', 'test_timezone_unsupported (model_enums.tests.CustomChoicesTests)', 'test_uuid_unsupported (model_enums.tests.CustomChoicesTests)'], 'failure': ['test_invalid_definition (model_enums.tests.ChoicesTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11964: resolved: False
+2026-06-22 04:54:09,781 - INFO - Attempting to stop container sweb.eval.django__django-11964.haiku45_selfrefine_iter_step2...
+2026-06-22 04:54:25,070 - INFO - Attempting to remove container sweb.eval.django__django-11964.haiku45_selfrefine_iter_step2...
+2026-06-22 04:54:25,100 - INFO - Container sweb.eval.django__django-11964.haiku45_selfrefine_iter_step2 removed.
+2026-06-22 04:54:25,100 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11964:latest...
+2026-06-22 04:54:25,212 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11964:latest removed.

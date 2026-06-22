@@ -1,0 +1,20 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2040,7 +2040,16 @@
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # If verbose_name was explicitly set, derive verbose_name_plural from it
++            # This mirrors the behavior of model Meta classes
++            if 'verbose_name' in self.__class__.__dict__:
++                self.verbose_name_plural = ngettext(
++                    self.verbose_name,
++                    self.verbose_name + 's',
++                    2
++                )
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

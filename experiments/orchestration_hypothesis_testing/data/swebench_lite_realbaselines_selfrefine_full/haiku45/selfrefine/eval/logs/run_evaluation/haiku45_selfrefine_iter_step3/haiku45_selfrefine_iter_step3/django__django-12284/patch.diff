@@ -1,0 +1,14 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -764,7 +764,10 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            if not hasattr(cls, 'get_%s_display' % self.name):
++            # Only check if the method is defined on this class itself, not on
++            # parent classes. This allows child classes to override choices and
++            # get their own get_*_display method.
++            if 'get_%s_display' % self.name not in cls.__dict__:
+                 setattr(
+                     cls,
+                     'get_%s_display' % self.name,

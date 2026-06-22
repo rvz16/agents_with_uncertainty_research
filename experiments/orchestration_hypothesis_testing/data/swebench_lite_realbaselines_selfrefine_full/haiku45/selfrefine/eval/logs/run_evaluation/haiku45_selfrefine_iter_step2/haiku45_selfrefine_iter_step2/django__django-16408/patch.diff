@@ -1,0 +1,33 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1274,6 +1274,11 @@
+                 if from_obj:
+                     final_field.remote_field.set_cached_value(from_obj, obj)
+ 
++            def no_local_setter(obj, from_obj):
++                # For multi-level filtered relations, the intermediate objects
++                # are not fetched, so we can't set cached values on them.
++                pass
++
+             def remote_setter(name, obj, from_obj):
+                 setattr(from_obj, name, obj)
+ 
+@@ -1291,11 +1296,17 @@
+                     from_parent = (
+                         issubclass(model, opts.model) and model is not opts.model
+                     )
++                    # For multi-level filtered relations (len(joins) > 2), the
++                    # intermediate objects are not fetched in the SELECT clause,
++                    # so we should not attempt to set cached values on them.
++                    local_setter_func = (
++                        no_local_setter if len(joins) > 2 else partial(local_setter, final_field)
++                    )
+                     klass_info = {
+                         "model": model,
+                         "field": final_field,
+                         "reverse": True,
+-                        "local_setter": partial(local_setter, final_field),
++                        "local_setter": local_setter_func,
+                         "remote_setter": partial(remote_setter, name),
+                         "from_parent": from_parent,
+                     }

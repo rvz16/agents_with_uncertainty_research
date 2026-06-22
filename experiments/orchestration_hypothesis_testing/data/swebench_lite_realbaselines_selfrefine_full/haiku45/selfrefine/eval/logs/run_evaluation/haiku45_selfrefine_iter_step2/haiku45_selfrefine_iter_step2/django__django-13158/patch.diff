@@ -1,0 +1,16 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1777,6 +1777,13 @@
+ 
+     def set_empty(self):
+         self.where.add(NothingNode(), AND)
++        # For combined queries, clear the combined_queries and combinator
++        # so that the query becomes truly empty instead of returning all
++        # results from the combined queries.
++        if self.combinator:
++            self.combinator = None
++            self.combinator_all = False
++            self.combined_queries = ()
+ 
+     def is_empty(self):
+         return any(isinstance(c, NothingNode) for c in self.where.children)

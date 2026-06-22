@@ -1,0 +1,48 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -60,16 +60,43 @@
+ 
+ class Choices(enum.Enum, metaclass=ChoicesMeta):
+     """Class for creating enumerated choices."""
+-    pass
++
++    def __init__(self, value):
++        # Store the original value
++        self._value_ = value[0] if isinstance(value, (list, tuple)) else value
++    def __get__(self, obj, objtype=None):
++        """
++        Support instance attribute access.
++        Return the value of the enum member when accessed via an instance.
++        """
++        if obj is None:
++            return self
++        # Return the primitive value, not the enum member
++        return self.value
+ 
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls, value[0] if isinstance(value, (list, tuple)) else value)
++        obj._value_ = value[0] if isinstance(value, (list, tuple)) else value
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls, value[0] if isinstance(value, (list, tuple)) else value)
++        obj._value_ = value[0] if isinstance(value, (list, tuple)) else value
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name

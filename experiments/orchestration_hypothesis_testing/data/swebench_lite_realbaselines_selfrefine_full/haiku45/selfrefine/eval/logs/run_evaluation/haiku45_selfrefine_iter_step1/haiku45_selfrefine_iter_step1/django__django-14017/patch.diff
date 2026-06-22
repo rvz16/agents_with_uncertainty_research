@@ -1,0 +1,15 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -63,6 +63,12 @@
+ 
+     def __and__(self, other):
+         return self._combine(other, self.AND)
++
++    def __ror__(self, other):
++        return self.__or__(other)
++
++    def __rand__(self, other):
++        return self.__and__(other)
+ 
+     def __invert__(self):
+         obj = type(self)()

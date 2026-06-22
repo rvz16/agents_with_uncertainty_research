@@ -1,0 +1,121 @@
+2026-06-22 01:34:46,033 - INFO - Creating container for django__django-11964...
+2026-06-22 01:34:46,197 - INFO - Container for django__django-11964 created: b5de1f9e1fabce8fb17055ddf422becb19e7c741502a0cd6bcf83b3ad8a017ea
+2026-06-22 01:34:46,389 - INFO - Container for django__django-11964 started: b5de1f9e1fabce8fb17055ddf422becb19e7c741502a0cd6bcf83b3ad8a017ea
+2026-06-22 01:34:46,389 - INFO - Intermediate patch for django__django-11964 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/django__django-11964/patch.diff, now applying to container...
+2026-06-22 01:34:46,494 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/enums.py...
+Applied patch django/db/models/enums.py cleanly.
+
+2026-06-22 01:34:46,858 - INFO - Git diff before:
+diff --git a/django/db/models/enums.py b/django/db/models/enums.py
+index bbe362a6ab..59c3fe3b61 100644
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -60,16 +60,43 @@ class ChoicesMeta(enum.EnumMeta):
+ 
+ class Choices(enum.Enum, metaclass=ChoicesMeta):
+     """Class for creating enumerated choices."""
+-    pass
++
++    def __init__(self, value):
++        # Store the original value
++        self._value_ = value[0] if isinstance(value, (list, tuple)) else value
++    def __get__(self, obj, objtype=None):
++        """
++        Support instance attribute access.
++        Return the value of the enum member when accessed via an instance.
++        """
++        if obj is None:
++            return self
++        # Return the primitive value, not the enum member
++        return self.value
+ 
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls, value[0] if isinstance(value, (list, tuple)) else value)
++        obj._value_ = value[0] if isinstance(value, (list, tuple)) else value
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls, value[0] if isinstance(value, (list, tuple)) else value)
++        obj._value_ = value[0] if isinstance(value, (list, tuple)) else value
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name
+2026-06-22 01:34:46,859 - INFO - Eval script for django__django-11964 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/django__django-11964/eval.sh; copying to container...
+2026-06-22 01:34:59,093 - INFO - Test runtime: 12.19 seconds
+2026-06-22 01:34:59,093 - INFO - Test output for django__django-11964 written to logs/run_evaluation/haiku45_reflexion_iter_step3/haiku45_reflexion_iter_step3/django__django-11964/test_output.txt
+2026-06-22 01:34:59,141 - INFO - Git diff after:
+diff --git a/django/db/models/enums.py b/django/db/models/enums.py
+index bbe362a6ab..59c3fe3b61 100644
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -60,16 +60,43 @@ class ChoicesMeta(enum.EnumMeta):
+ 
+ class Choices(enum.Enum, metaclass=ChoicesMeta):
+     """Class for creating enumerated choices."""
+-    pass
++
++    def __init__(self, value):
++        # Store the original value
++        self._value_ = value[0] if isinstance(value, (list, tuple)) else value
++    def __get__(self, obj, objtype=None):
++        """
++        Support instance attribute access.
++        Return the value of the enum member when accessed via an instance.
++        """
++        if obj is None:
++            return self
++        # Return the primitive value, not the enum member
++        return self.value
+ 
+ 
+ class IntegerChoices(int, Choices):
+     """Class for creating enumerated integer choices."""
+-    pass
++
++    def __new__(cls, value):
++        if isinstance(value, int):
++            obj = int.__new__(cls, value)
++        else:
++            obj = int.__new__(cls, value[0] if isinstance(value, (list, tuple)) else value)
++        obj._value_ = value[0] if isinstance(value, (list, tuple)) else value
++        return obj
+ 
+ 
+ class TextChoices(str, Choices):
+     """Class for creating enumerated string choices."""
+ 
++    def __new__(cls, value):
++        if isinstance(value, str):
++            obj = str.__new__(cls, value)
++        else:
++            obj = str.__new__(cls, value[0] if isinstance(value, (list, tuple)) else value)
++        obj._value_ = value[0] if isinstance(value, (list, tuple)) else value
++        return obj
++
+     def _generate_next_value_(name, start, count, last_values):
+         return name
+2026-06-22 01:34:59,141 - INFO - Grading answer for django__django-11964...
+2026-06-22 01:34:59,142 - INFO - report: {'django__django-11964': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_str (model_enums.tests.ChoicesTests)', 'test_textchoices (model_enums.tests.ChoicesTests)']}, 'PASS_TO_PASS': {'success': [], 'failure': ['test_integerchoices (model_enums.tests.ChoicesTests)', 'test_integerchoices_auto_label (model_enums.tests.ChoicesTests)', 'test_integerchoices_containment (model_enums.tests.ChoicesTests)', 'test_integerchoices_empty_label (model_enums.tests.ChoicesTests)', 'test_integerchoices_functional_api (model_enums.tests.ChoicesTests)', 'test_invalid_definition (model_enums.tests.ChoicesTests)', 'test_textchoices_auto_label (model_enums.tests.ChoicesTests)', 'test_textchoices_blank_value (model_enums.tests.ChoicesTests)', 'test_textchoices_containment (model_enums.tests.ChoicesTests)', 'test_textchoices_empty_label (model_enums.tests.ChoicesTests)', 'test_textchoices_functional_api (model_enums.tests.ChoicesTests)', 'test_bool_unsupported (model_enums.tests.CustomChoicesTests)', 'test_labels_valid (model_enums.tests.CustomChoicesTests)', 'test_timezone_unsupported (model_enums.tests.CustomChoicesTests)', 'test_uuid_unsupported (model_enums.tests.CustomChoicesTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11964: resolved: False
+2026-06-22 01:34:59,142 - INFO - Attempting to stop container sweb.eval.django__django-11964.haiku45_reflexion_iter_step3...
+2026-06-22 01:35:14,353 - INFO - Attempting to remove container sweb.eval.django__django-11964.haiku45_reflexion_iter_step3...
+2026-06-22 01:35:14,370 - INFO - Container sweb.eval.django__django-11964.haiku45_reflexion_iter_step3 removed.
+2026-06-22 01:35:14,370 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11964:latest...
+2026-06-22 01:35:14,631 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11964:latest removed.

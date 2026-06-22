@@ -1,0 +1,21 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2040,7 +2040,17 @@
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # If verbose_name was explicitly set on this InlineModelAdmin class
++            # (i.e., it differs from the model's verbose_name), derive the plural
++            # form from the inline's verbose_name rather than the model's.
++            if self.verbose_name != self.model._meta.verbose_name:
++                self.verbose_name_plural = ngettext(
++                    self.verbose_name,
++                    self.verbose_name + 's',
++                    2
++                )
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

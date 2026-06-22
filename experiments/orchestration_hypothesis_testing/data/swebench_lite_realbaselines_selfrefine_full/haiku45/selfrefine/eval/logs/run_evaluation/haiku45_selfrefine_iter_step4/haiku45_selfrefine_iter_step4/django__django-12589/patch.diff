@@ -1,0 +1,48 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1929,6 +1929,30 @@
+         """
+         group_by = list(self.select)
+         if self.annotation_select:
++            # Collect all column names from joined tables to detect collisions
++            # with annotation aliases
++            table_column_names = set()
++            for join_alias in self.alias_map:
++                join = self.alias_map[join_alias]
++                if join.table_name:
++                    try:
++                        # Get the model for this table if possible
++                        for model in [self.model] + [
++                            f.related_model for f in self.model._meta.get_fields()
++                            if hasattr(f, 'related_model') and f.related_model
++                        ]:
++                            if model and model._meta.db_table == join.table_name:
++                                # Collect field names and their column names
++                                for field in model._meta.get_fields():
++                                    if hasattr(field, 'column'):
++                                        table_column_names.add(field.column)
++                                    if hasattr(field, 'attname'):
++                                        table_column_names.add(field.attname)
++                                break
++                    except (AttributeError, TypeError):
++                        # If we can't determine the model, skip this join
++                        pass
++            
+             for alias, annotation in self.annotation_select.items():
+                 signature = inspect.signature(annotation.get_group_by_cols)
+                 if 'alias' not in signature.parameters:
+@@ -1940,9 +1964,11 @@
+                     warnings.warn(msg, category=RemovedInDjango40Warning)
+                     group_by_cols = annotation.get_group_by_cols()
+                 else:
+-                    if not allow_aliases:
+-                        alias = None
+-                    group_by_cols = annotation.get_group_by_cols(alias=alias)
++                    # Disable alias if it collides with a column name from joined tables
++                    annotation_alias = alias
++                    if allow_aliases and alias in table_column_names:
++                        annotation_alias = None
++                    group_by_cols = annotation.get_group_by_cols(alias=annotation_alias)
+                 group_by.extend(group_by_cols)
+         self.group_by = tuple(group_by)
+ 

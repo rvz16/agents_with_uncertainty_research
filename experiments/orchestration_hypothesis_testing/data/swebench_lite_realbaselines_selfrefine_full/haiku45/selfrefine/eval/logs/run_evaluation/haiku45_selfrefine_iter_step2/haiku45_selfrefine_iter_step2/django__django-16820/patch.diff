@@ -1,0 +1,33 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -187,14 +187,26 @@
+             isinstance(operation, AlterTogetherOptionOperation)
+             and self.name_lower == operation.name_lower
+         ):
++            options = {**self.options}
++            # Convert index_together to indexes to avoid deprecation warnings
++            if isinstance(operation, AlterIndexTogether):
++                # Remove index_together from options and convert to indexes
++                options.pop("index_together", None)
++                if operation.option_value:
++                    # Convert index_together tuples to Index objects
++                    indexes = list(options.get("indexes", []))
++                    for fields in operation.option_value:
++                        indexes.append(
++                            models.Index(fields=list(fields), name=None)
++                        )
++                    options["indexes"] = indexes
++            else:
++                options[operation.option_name] = operation.option_value
+             return [
+                 CreateModel(
+                     self.name,
+                     fields=self.fields,
+-                    options={
+-                        **self.options,
+-                        **{operation.option_name: operation.option_value},
+-                    },
++                    options=options,
+                     bases=self.bases,
+                     managers=self.managers,
+                 ),

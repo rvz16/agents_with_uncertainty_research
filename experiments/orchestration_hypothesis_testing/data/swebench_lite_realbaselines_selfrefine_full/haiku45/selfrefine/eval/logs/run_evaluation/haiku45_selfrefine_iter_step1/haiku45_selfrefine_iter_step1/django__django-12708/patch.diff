@@ -1,0 +1,33 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -403,8 +403,29 @@
+         meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
++        
++        # Exclude unique_together and index_together constraints from meta
++        exclude_names = meta_constraint_names | meta_index_names
++        for field_names in model._meta.unique_together:
++            if tuple(field_names) == tuple(fields):
++                # Get the unique constraint name for these fields
++                unique_columns = [model._meta.get_field(field).column for field in field_names]
++                unique_names = self._constraint_names(
++                    model, unique_columns, unique=True, exclude=exclude_names
++                )
++                exclude_names |= set(unique_names)
++        
++        for field_names in model._meta.index_together:
++            if tuple(field_names) == tuple(fields):
++                # Get the index constraint name for these fields
++                index_columns = [model._meta.get_field(field).column for field in field_names]
++                index_names = self._constraint_names(
++                    model, index_columns, index=True, exclude=exclude_names
++                )
++                exclude_names |= set(index_names)
++        
+         constraint_names = self._constraint_names(
+-            model, columns, exclude=meta_constraint_names | meta_index_names,
++            model, columns, exclude=exclude_names,
+             **constraint_kwargs
+         )
+         if len(constraint_names) != 1:

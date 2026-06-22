@@ -1,0 +1,51 @@
+2026-06-22 03:41:26,173 - INFO - Creating container for django__django-15388...
+2026-06-22 03:41:26,305 - INFO - Container for django__django-15388 created: 6a49d4726c438a5d21577faa5b3d5c4ec1ae0dbc1ddd1db940c7ad8190b384da
+2026-06-22 03:41:26,433 - INFO - Container for django__django-15388 started: 6a49d4726c438a5d21577faa5b3d5c4ec1ae0dbc1ddd1db940c7ad8190b384da
+2026-06-22 03:41:26,433 - INFO - Intermediate patch for django__django-15388 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-15388/patch.diff, now applying to container...
+2026-06-22 03:41:26,509 - INFO - >>>>> Applied Patch:
+Checking patch django/template/autoreload.py...
+Applied patch django/template/autoreload.py cleanly.
+
+2026-06-22 03:41:26,880 - INFO - Git diff before:
+diff --git a/django/template/autoreload.py b/django/template/autoreload.py
+index cf1b20ba95..24e83ad26d 100644
+--- a/django/template/autoreload.py
++++ b/django/template/autoreload.py
+@@ -50,5 +50,10 @@ def watch_for_template_changes(sender, **kwargs):
+ def template_changed(sender, file_path, **kwargs):
+     for template_dir in get_template_directories():
+         if template_dir in file_path.parents:
++            # Don't treat Python files as template changes; let them be handled
++            # by the normal Python file watching mechanism. This prevents issues
++            # when template directories overlap with the project root.
++            if file_path.suffix == '.py':
++                return
+             reset_loaders()
+             return True
+2026-06-22 03:41:26,880 - INFO - Eval script for django__django-15388 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-15388/eval.sh; copying to container...
+2026-06-22 03:41:30,332 - INFO - Test runtime: 3.43 seconds
+2026-06-22 03:41:30,333 - INFO - Test output for django__django-15388 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-15388/test_output.txt
+2026-06-22 03:41:30,379 - INFO - Git diff after:
+diff --git a/django/template/autoreload.py b/django/template/autoreload.py
+index cf1b20ba95..24e83ad26d 100644
+--- a/django/template/autoreload.py
++++ b/django/template/autoreload.py
+@@ -50,5 +50,10 @@ def watch_for_template_changes(sender, **kwargs):
+ def template_changed(sender, file_path, **kwargs):
+     for template_dir in get_template_directories():
+         if template_dir in file_path.parents:
++            # Don't treat Python files as template changes; let them be handled
++            # by the normal Python file watching mechanism. This prevents issues
++            # when template directories overlap with the project root.
++            if file_path.suffix == '.py':
++                return
+             reset_loaders()
+             return True
+2026-06-22 03:41:30,379 - INFO - Grading answer for django__django-15388...
+2026-06-22 03:41:30,380 - INFO - report: {'django__django-15388': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_non_template_changed_in_template_directory (template_tests.test_autoreloader.TemplateReloadTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_get_template_directories (template_tests.test_autoreloader.Jinja2TemplateReloadTests)', 'test_reset_all_loaders (template_tests.test_autoreloader.Jinja2TemplateReloadTests)', 'test_watch_for_template_changes (template_tests.test_autoreloader.Jinja2TemplateReloadTests)', 'test_get_template_directories (template_tests.test_autoreloader.TemplateReloadTests)', 'test_non_template_changed (template_tests.test_autoreloader.TemplateReloadTests)', 'test_reset_all_loaders (template_tests.test_autoreloader.TemplateReloadTests)', 'test_template_changed (template_tests.test_autoreloader.TemplateReloadTests)', 'test_template_dirs_normalized_to_paths (template_tests.test_autoreloader.TemplateReloadTests)', 'test_watch_for_template_changes (template_tests.test_autoreloader.TemplateReloadTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15388: resolved: True
+2026-06-22 03:41:30,380 - INFO - Attempting to stop container sweb.eval.django__django-15388.haiku45_selfrefine_iter_step1...
+2026-06-22 03:41:45,699 - INFO - Attempting to remove container sweb.eval.django__django-15388.haiku45_selfrefine_iter_step1...
+2026-06-22 03:41:45,729 - INFO - Container sweb.eval.django__django-15388.haiku45_selfrefine_iter_step1 removed.
+2026-06-22 03:41:45,729 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15388:latest...
+2026-06-22 03:41:45,868 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15388:latest removed.

@@ -1,0 +1,49 @@
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -1926,6 +1926,46 @@
+                         id='models.W038',
+                     )
+                 )
++        
++        # Check constraint field references
++        errors.extend(cls._check_constraint_fields())
++        return errors
++
++    @classmethod
++    def _check_constraint_fields(cls):
++        """Check that constraint fields exist."""
++        errors = []
++        for constraint in cls._meta.constraints:
++            if isinstance(constraint, UniqueConstraint):
++                errors.extend(
++                    cls._check_local_fields(
++                        constraint.fields,
++                        'constraints.UniqueConstraint.fields',
++                    )
++                )
++            elif isinstance(constraint, CheckConstraint):
++                # Extract field names from the check condition
++                field_names = set()
++                
++                def extract_field_names(node):
++                    """Recursively extract field names from a Q object."""
++                    if isinstance(node, Q):
++                        for child in node.children:
++                            if isinstance(child, tuple) and len(child) == 2:
++                                # It's a (field_name, value) tuple
++                                field_name = child[0].split('__')[0]
++                                field_names.add(field_name)
++                            elif isinstance(child, Q):
++                                extract_field_names(child)
++                
++                extract_field_names(constraint.check)
++                
++                errors.extend(
++                    cls._check_local_fields(
++                        field_names,
++                        'constraints.CheckConstraint.check',
++                    )
++                )
+         return errors
+ 
+ 

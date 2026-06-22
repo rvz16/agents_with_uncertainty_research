@@ -1,0 +1,30 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -44,7 +44,7 @@
+ from django.utils.http import urlencode
+ from django.utils.safestring import mark_safe
+ from django.utils.text import (
+-    capfirst, format_lazy, get_text_list, smart_split, unescape_string_literal,
++    capfirst, format_lazy, get_text_list, pluralize, smart_split, unescape_string_literal,
+ )
+ from django.utils.translation import gettext as _, ngettext
+ from django.views.decorators.csrf import csrf_protect
+@@ -2040,7 +2040,17 @@
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # Check if verbose_name was explicitly set on this Inline class
++            if 'verbose_name' in self.__class__.__dict__:
++                # Use pluralized form of the Inline's verbose_name
++                self.verbose_name_plural = ngettext(
++                    self.verbose_name, 
++                    self.verbose_name + 's',
++                    2
++                )
++            else:
++                # Fall back to model's verbose_name_plural
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

@@ -1,0 +1,24 @@
+--- a/django/contrib/admin/checks.py
++++ b/django/contrib/admin/checks.py
+@@ -916,6 +916,21 @@
+                         id="admin.E108",
+                     )
+                 ]
++            else:
++                # Check if it's a reverse relationship (ManyToOneRel or ManyToManyRel)
++                from django.db.models.fields.reverse_related import (
++                    ForeignObjectRel,
++                )
++                if isinstance(field, ForeignObjectRel):
++                    return [
++                        checks.Error(
++                            f"The value of '{label}' must not be a many-to-many field or a "
++                            f"reverse foreign key.",
++                            obj=obj.__class__,
++                            id="admin.E109",
++                        )
++                    ]
++                return []
+         if isinstance(field, models.ManyToManyField) or (
+             getattr(field, "rel", None) and field.rel.field.many_to_one
+         ):

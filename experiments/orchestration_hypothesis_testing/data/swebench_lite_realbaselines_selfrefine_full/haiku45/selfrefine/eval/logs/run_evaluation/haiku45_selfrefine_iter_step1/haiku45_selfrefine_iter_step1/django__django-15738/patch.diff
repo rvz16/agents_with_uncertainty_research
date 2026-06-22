@@ -1,0 +1,23 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -1487,6 +1487,20 @@
+                     not in self.renamed_index_together_values[app_label, model_name]
+                 }
+             removal_value = new_value.intersection(old_value)
++            
++            # Check for fields that have changed to incompatible types
++            # (e.g., ForeignKey to ManyToManyField)
++            new_model_state = self.to_state.models[app_label, model_name]
++            for foo_together_tuple in new_value:
++                for field_name in foo_together_tuple:
++                    try:
++                        new_field = new_model_state.get_field(field_name)
++                        # ManyToManyField cannot be in unique_together or index_together
++                        if new_field.many_to_many and operation == operations.AlterUniqueTogether:
++                            removal_value.discard(foo_together_tuple)
++                    except (KeyError, AttributeError):
++                        pass
++            
+             if removal_value or old_value:
+                 self.add_operation(
+                     app_label,

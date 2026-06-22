@@ -1,0 +1,51 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -952,13 +952,23 @@
+ class BooleanField(Field):
+     empty_strings_allowed = False
+     default_error_messages = {
+-        'invalid': _('“%(value)s” value must be either True or False.'),
+-        'invalid_nullable': _('“%(value)s” value must be either True, False, or None.'),
++        'invalid': _('"%(value)s" value must be either True or False.'),
++        'invalid_nullable': _('"%(value)s" value must be either True, False, or None.'),
+     }
+     description = _("Boolean (Either True or False)")
+ 
+     def get_internal_type(self):
+         return "BooleanField"
++
++    def select_format(self, compiler, sql, params):
++        """
++        Ensure that empty SQL expressions are handled properly for boolean fields.
++        This prevents issues with negated empty Q objects producing invalid SQL.
++        """
++        if not sql or sql.strip() == '':
++            # If sql is empty, return a valid boolean expression
++            return '0', params
++        return sql, params
+ 
+     def to_python(self, value):
+         if self.null and value in self.empty_values:
+@@ -1739,9 +1749,21 @@
+             ) from e
+ 
+     def get_internal_type(self):
+-        return "FloatField"
++        return "BooleanField"
++
++    def select_format(self, compiler, sql, params):
++        """
++        Ensure that boolean field expressions are properly formatted.
++        Handle edge cases where negated empty Q objects might produce empty SQL.
++        """
++        sql = sql.strip() if sql else ''
++        if not sql:
++            # Return a safe default for empty expressions
++            sql = '0'
++        return sql, params
+ 
+     def to_python(self, value):
++    REPLACE
+         if value is None:
+             return value
+         try:

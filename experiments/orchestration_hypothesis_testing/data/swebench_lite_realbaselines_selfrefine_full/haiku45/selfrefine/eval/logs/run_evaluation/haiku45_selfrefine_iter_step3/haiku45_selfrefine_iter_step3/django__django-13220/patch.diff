@@ -1,0 +1,45 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -141,6 +141,42 @@
+             self.params = params
+             self.error_list = [self]
+ 
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++        
++        # Compare error_dict structures
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for field in self.error_dict:
++                if not self._error_lists_equal(self.error_dict[field], other.error_dict[field]):
++                    return False
++            return True
++        
++        # Compare error_list structures
++        if hasattr(self, 'error_list') and hasattr(other, 'error_list'):
++            if not hasattr(self, 'error_dict') and not hasattr(other, 'error_dict'):
++                return self._error_lists_equal(self.error_list, other.error_list)
++        
++        return False
++    
++    def _error_lists_equal(self, list1, list2):
++        """Compare two error lists, independent of order."""
++        if len(list1) != len(list2):
++            return False
++        
++        # Convert each error to a comparable tuple
++        def error_to_tuple(error):
++            if hasattr(error, 'message'):
++                return (error.message, error.code, error.params)
++            return (str(error), None, None)
++        
++        tuples1 = sorted([error_to_tuple(e) for e in list1])
++        tuples2 = sorted([error_to_tuple(e) for e in list2])
++        
++        return tuples1 == tuples2
++
+     @property
+     def message_dict(self):
+         # Trigger an AttributeError if this ValidationError

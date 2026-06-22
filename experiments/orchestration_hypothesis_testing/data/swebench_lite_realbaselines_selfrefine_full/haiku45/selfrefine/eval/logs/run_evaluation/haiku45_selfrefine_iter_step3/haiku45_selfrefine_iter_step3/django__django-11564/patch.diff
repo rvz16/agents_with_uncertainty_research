@@ -1,0 +1,53 @@
+--- a/django/conf/__init__.py
++++ b/django/conf/__init__.py
+@@ -17,7 +17,7 @@
+ from django.conf import global_settings
+ from django.core.exceptions import ImproperlyConfigured
+ from django.utils.deprecation import RemovedInDjango40Warning
+-from django.utils.functional import LazyObject, empty
++from django.utils.functional import LazyObject, empty, lazy
+ 
+ ENVIRONMENT_VARIABLE = "DJANGO_SETTINGS_MODULE"
+ 
+@@ -113,6 +113,41 @@
+     def configured(self):
+         """Return True if the settings have already been configured."""
+         return self._wrapped is not empty
++
++    def _get_url_with_script_prefix(self, setting_name):
++        """
++        Return a URL setting value with SCRIPT_NAME prepended if appropriate.
++        
++        This is used for STATIC_URL and MEDIA_URL to support dynamic SCRIPT_NAME
++        values from WSGI. Only applies to relative URLs (starting with /).
++        Absolute URLs (with scheme) are returned unchanged.
++        """
++        from django.utils.http import get_script_prefix
++        
++        url = getattr(self, setting_name)
++        if not url:
++            return url
++        
++        # Don't modify absolute URLs (with scheme like http://)
++        if '://' in url:
++            return url
++        
++        # For relative URLs, prepend script prefix if not already present
++        if url.startswith('/'):
++            script_prefix = get_script_prefix()
++            # Avoid double-prepending: check if script_prefix is already at the start
++            if script_prefix and script_prefix != '/' and not url.startswith(script_prefix):
++                return script_prefix.rstrip('/') + url
++        
++        return url
++
++    def get_static_url(self):
++        """Return STATIC_URL with SCRIPT_NAME prefix applied if appropriate."""
++        return self._get_url_with_script_prefix('STATIC_URL')
++    
++    def get_media_url(self):
++        """Return MEDIA_URL with SCRIPT_NAME prefix applied if appropriate."""
++        return self._get_url_with_script_prefix('MEDIA_URL')
+ 
+     @property
+     def PASSWORD_RESET_TIMEOUT_DAYS(self):

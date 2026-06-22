@@ -1,0 +1,96 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -70,11 +70,15 @@
+ 
+     @property
+     def _js(self):
+-        js = self._js_lists[0]
+-        # filter(None, ...) avoids calling merge() with empty lists.
+-        for obj in filter(None, self._js_lists[1:]):
+-            js = self.merge(js, obj)
+-        return js
++        # Collect all non-empty js lists
++        lists = [lst for lst in self._js_lists if lst]
++        if not lists:
++            return []
++        if len(lists) == 1:
++            return list(lists[0])
++        # Merge all lists at once to avoid creating artificial constraints
++        # from sequential merging of intermediate results
++        return self.merge_multiple(*lists)
+ 
+     def render(self):
+         return mark_safe('\n'.join(chain.from_iterable(getattr(self, 'render_' + name)() for name in MEDIA_TYPES)))
+@@ -148,6 +152,72 @@
+                 # that the following elements are inserted in front of this one.
+                 last_insert_index = index
+         return combined_list
++
++    @staticmethod
++    def merge_multiple(*lists):
++        """
++        Merge multiple lists while respecting ordering constraints from each list.
++        
++        This method builds a dependency graph from all input lists and produces
++        a final ordering that respects the relative order of elements within
++        each input list. It avoids creating artificial ordering constraints
++        that would result from sequential pairwise merging.
++        """
++        # Filter out empty lists
++        lists = [lst for lst in lists if lst]
++        if not lists:
++            return []
++        if len(lists) == 1:
++            return list(lists[0])
++        
++        # Build a dependency graph and collect all unique items in order of first appearance
++        from collections import OrderedDict
++        dependencies = {}  # item -> set of items that must come before it
++        item_order = OrderedDict()  # track order of first appearance
++        
++        for lst in lists:
++            for i, item in enumerate(lst):
++                if item not in item_order:
++                    item_order[item] = len(item_order)
++                    dependencies[item] = set()
++                # Add dependency: previous item must come before current item
++                if i > 0:
++                    prev_item = lst[i - 1]
++                    dependencies[item].add(prev_item)
++        
++        # Topological sort with cycle detection
++        result = []
++        visited = set()
++        visiting = set()
++        
++        def visit(item):
++            if item in visited:
++                return True
++            if item in visiting:
++                # Cycle detected - we have conflicting orderings
++                return False
++            
++            visiting.add(item)
++            for dep in dependencies.get(item, set()):
++                if not visit(dep):
++                    return False
++            visiting.remove(item)
++            visited.add(item)
++            result.append(item)
++            return True
++        
++        # Visit items in order of first appearance
++        for item in item_order:
++            if not visit(item):
++                # Cycle detected - warn and return items in order of first appearance
++                warnings.warn(
++                    'Detected duplicate Media files in an opposite order:\n'
++                    'Conflicting dependencies detected during merge.',
++                    MediaOrderConflictWarning,
++                )
++                return list(item_order.keys())
++        
++        return result
+ 
+     def __add__(self, other):
+         combined = Media()

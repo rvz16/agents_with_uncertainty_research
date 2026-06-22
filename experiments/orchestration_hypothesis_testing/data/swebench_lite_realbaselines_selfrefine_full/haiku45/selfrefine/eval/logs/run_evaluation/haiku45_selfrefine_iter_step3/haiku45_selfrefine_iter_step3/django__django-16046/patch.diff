@@ -1,0 +1,21 @@
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -33,6 +33,9 @@
+     # Make the common case fast
+     if isinstance(number, int) and not use_grouping and not decimal_pos:
+         return mark_safe(number)
++    # Handle None values
++    if number is None:
++        return mark_safe("")
+     # sign
+     sign = ""
+     # Treat potentially very large/small floats as Decimals.
+@@ -68,7 +71,7 @@
+             str_number = "{:f}".format(number)
+     else:
+         str_number = str(number)
+-    if str_number[0] == "-":
++    if str_number and str_number[0] == "-":
+         sign = "-"
+         str_number = str_number[1:]
+     # decimal part

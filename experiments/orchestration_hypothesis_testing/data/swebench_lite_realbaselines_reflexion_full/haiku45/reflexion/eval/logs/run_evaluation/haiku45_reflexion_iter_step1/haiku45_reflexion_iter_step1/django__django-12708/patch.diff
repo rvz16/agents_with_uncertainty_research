@@ -1,0 +1,38 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -403,8 +403,34 @@
+         meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
++        
++        # Build a set of constraint names to exclude
++        exclude = meta_constraint_names | meta_index_names
++        
++        # When deleting an index, also exclude unique constraints from unique_together
++        if constraint_kwargs.get('index'):
++            for unique_fields in model._meta.unique_together:
++                unique_columns = [model._meta.get_field(f).column for f in unique_fields]
++                if unique_columns == columns:
++                    # Generate the constraint name that would be created for this unique_together
++                    unique_name = self._create_index_name(
++                        model._meta.db_table, unique_columns, suffix='_uniq'
++                    )
++                    exclude.add(unique_name)
++        
++        # When deleting a unique constraint, also exclude indexes from index_together
++        if constraint_kwargs.get('unique'):
++            for index_fields in model._meta.index_together:
++                index_columns = [model._meta.get_field(f).column for f in index_fields]
++                if index_columns == columns:
++                    # Generate the constraint name that would be created for this index_together
++                    index_name = self._create_index_name(
++                        model._meta.db_table, index_columns, suffix='_idx'
++                    )
++                    exclude.add(index_name)
++        
+         constraint_names = self._constraint_names(
+-            model, columns, exclude=meta_constraint_names | meta_index_names,
++            model, columns, exclude=exclude,
+             **constraint_kwargs
+         )
+         if len(constraint_names) != 1:

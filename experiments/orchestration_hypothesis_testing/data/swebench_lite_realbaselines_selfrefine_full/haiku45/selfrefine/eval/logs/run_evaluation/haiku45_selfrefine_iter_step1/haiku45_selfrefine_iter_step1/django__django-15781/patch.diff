@@ -1,0 +1,29 @@
+--- a/django/core/management/base.py
++++ b/django/core/management/base.py
+@@ -129,6 +129,14 @@
+ 
+     def add_arguments(self, actions):
+         super().add_arguments(self._reordered_actions(actions))
++
++    def _fill_text(self, text, width, indent):
++        """
++        Preserve newlines in text by not reflowing paragraphs.
++        """
++        return "".join(
++            indent + line for line in text.splitlines(keepends=True)
++        )
+ 
+ 
+ class OutputWrapper(TextIOBase):
+@@ -286,10 +294,10 @@
+         Create and return the ``ArgumentParser`` which will be used to
+         parse the arguments to this command.
+         """
++        kwargs.setdefault("formatter_class", DjangoHelpFormatter)
+         parser = CommandParser(
+             prog="%s %s" % (os.path.basename(prog_name), subcommand),
+             description=self.help or None,
+-            formatter_class=DjangoHelpFormatter,
+             missing_args_message=getattr(self, "missing_args_message", None),
+             called_from_command_line=getattr(self, "_called_from_command_line", None),
+             **kwargs,

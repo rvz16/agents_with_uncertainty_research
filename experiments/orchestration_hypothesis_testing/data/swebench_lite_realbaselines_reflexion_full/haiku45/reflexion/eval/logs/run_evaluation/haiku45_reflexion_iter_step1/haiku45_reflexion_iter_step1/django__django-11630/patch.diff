@@ -1,0 +1,107 @@
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -5,6 +5,80 @@
+ 
+ from django.apps import apps
+ from django.core.checks import Error, Tags, register
++from django.db import DEFAULT_DB_ALIAS, connections
++
++
++def _get_model_databases(model):
++    """
++    Get the set of database aliases that a model might use.
++    Returns a set of database alias strings.
++    """
++    from django.db.models import Model
++    
++    # Check if model has a custom database router
++    db_for_read = None
++    db_for_write = None
++    
++    # Try to get database routing information
++    from django.db import router as db_router
++    
++    # Get all possible databases this model could use
++    databases = set()
++    
++    # Check if the model has an explicit database specified
++    if hasattr(model, '_state') and hasattr(model._state, 'db'):
++        if model._state.db:
++            databases.add(model._state.db)
++    
++    # Use the router to determine possible databases
++    for alias in connections:
++        # A model could potentially use any database that a router allows
++        databases.add(alias)
++    
++    return databases if databases else {DEFAULT_DB_ALIAS}
++
++
++def _models_use_same_database(model_labels):
++    """
++    Check if all models with the given labels use overlapping databases.
++    Returns True if there's potential overlap, False if they definitely use different databases.
++    """
++    from django.db import router as db_router
++    
++    models_list = []
++    for label in model_labels:
++        try:
++            model = apps.get_model(label)
++            models_list.append(model)
++        except LookupError:
++            # Model not found, assume potential conflict
++            return True
++    
++    if len(models_list) <= 1:
++        return True
++    
++    # Get the database(s) for each model based on the router
++    model_dbs = []
++    for model in models_list:
++        dbs = set()
++        # Check read and write databases via router
++        read_db = db_router.db_for_read(model)
++        write_db = db_router.db_for_write(model)
++        if read_db:
++            dbs.add(read_db)
++        if write_db:
++            dbs.add(write_db)
++        if not dbs:
++            dbs.add(DEFAULT_DB_ALIAS)
++        model_dbs.append(dbs)
++    
++    # Check if all models share at least one common database
++    common_dbs = model_dbs[0]
++    for dbs in model_dbs[1:]:
++        common_dbs = common_dbs & dbs
++    
++    # If there's no common database, they're on different databases
++    return len(common_dbs) > 0
+ 
+ 
+ @register(Tags.models)
+@@ -37,14 +111,16 @@
+             constraints[model_constraint.name].append(model._meta.label)
+     for db_table, model_labels in db_table_models.items():
+         if len(model_labels) != 1:
+-            errors.append(
+-                Error(
+-                    "db_table '%s' is used by multiple models: %s."
+-                    % (db_table, ', '.join(db_table_models[db_table])),
+-                    obj=db_table,
+-                    id='models.E028',
++            # Only report an error if models use overlapping databases
++            if _models_use_same_database(model_labels):
++                errors.append(
++                    Error(
++                        "db_table '%s' is used by multiple models: %s."
++                        % (db_table, ', '.join(db_table_models[db_table])),
++                        obj=db_table,
++                        id='models.E028',
++                    )
+                 )
+-            )
+     for index_name, model_labels in indexes.items():
+         if len(model_labels) > 1:
+             model_labels = set(model_labels)

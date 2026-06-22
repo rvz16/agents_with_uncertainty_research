@@ -1,0 +1,45 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -133,7 +133,24 @@
+                 known_models.append(table2model(table_name))
+                 used_column_names = []  # Holds column names used in the table so far
+                 column_to_field_name = {}  # Maps column names to names of model fields
++                
++                # Count relations to each target model to detect multiple relations
++                # to the same model within this table
++                relation_counts = {}
+                 for row in table_description:
++                    column_name = row.name
++                    if column_name in relations:
++                        ref_db_column, ref_db_table = relations[column_name]
++                        rel_to = (
++                            "self"
++                            if ref_db_table == table_name
++                            else table2model(ref_db_table)
++                        )
++                        relation_counts[rel_to] = relation_counts.get(rel_to, 0) + 1
++                
++                for row in table_description:
++REPLACE
++>>>
+                     comment_notes = (
+                         []
+                     )  # Holds Field notes, to be displayed in a Python comment.
+@@ -182,10 +199,17 @@
+                             if ref_db_table == table_name
+                             else table2model(ref_db_table)
+                         )
++                        
++                        # Add related_name if there are multiple relations to the same model
++                        if relation_counts.get(rel_to, 0) > 1:
++                            extra_params["related_name"] = att_name
++                        
+                         if rel_to in known_models:
+                             field_type = "%s(%s" % (rel_type, rel_to)
+                         else:
+                             field_type = "%s('%s'" % (rel_type, rel_to)
++REPLACE
++>>>
+                     else:
+                         # Calling `get_field_type` to get the field type string and any
+                         # additional parameters and notes.

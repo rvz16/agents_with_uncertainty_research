@@ -1,0 +1,52 @@
+--- a/django/dispatch/dispatcher.py
++++ b/django/dispatch/dispatcher.py
+@@ -1,15 +1,37 @@
++import logging
+ import threading
+ import warnings
+ import weakref
+ 
+ from django.utils.deprecation import RemovedInDjango40Warning
+ from django.utils.inspect import func_accepts_kwargs
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ def _make_id(target):
+     if hasattr(target, '__func__'):
+         return (id(target.__self__), id(target.__func__))
+     return id(target)
++
++
++def _get_receiver_name(receiver):
++    """
++    Get a readable name for a receiver callable.
++    """
++    # Try to get the qualified name for functions and methods
++    if hasattr(receiver, '__qualname__'):
++        return receiver.__qualname__
++    # For bound methods, try to construct a readable name
++    if hasattr(receiver, '__self__') and hasattr(receiver, '__func__'):
++        if hasattr(receiver.__func__, '__qualname__'):
++            return f'{receiver.__self__.__class__.__name__}.{receiver.__func__.__qualname__}'
++    # For callable objects/classes, use the class name
++    if hasattr(receiver, '__class__'):
++        if receiver.__class__.__name__ != 'function':
++            return f'{receiver.__class__.__module__}.{receiver.__class__.__name__}'
++    # Fallback to repr
++    return repr(receiver)
+ 
+ 
+ NONE_ID = _make_id(None)
+@@ -208,6 +230,11 @@
+             try:
+                 response = receiver(signal=self, sender=sender, **named)
+             except Exception as err:
++                logger.exception(
++                    'Error calling %s in Signal.send_robust() (%s)',
++                    _get_receiver_name(receiver),
++                    self.__class__.__name__,
++                )
+                 responses.append((receiver, err))
+             else:
+                 responses.append((receiver, response))

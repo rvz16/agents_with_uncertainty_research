@@ -1,0 +1,28 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -143,6 +143,12 @@
+             # The module could have been removed, don't fail loudly if this
+             # is the case.
+             continue
++        except ValueError as e:
++            # This can happen with certain filesystem conditions, such as
++            # unstable mounts or symlinks with embedded null bytes.
++            # See https://code.djangoproject.com/ticket/29895
++            logger.debug('Unable to resolve path %s: %s', filename, e)
++            continue
+         results.add(resolved_path)
+     return frozenset(results)
+ 
+@@ -188,6 +194,12 @@
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+         except FileNotFoundError:
++            continue
++        except ValueError as e:
++            # This can happen with certain filesystem conditions, such as
++            # unstable mounts or symlinks with embedded null bytes.
++            # See https://code.djangoproject.com/ticket/29895
++            logger.debug('Unable to resolve path %s: %s', path, e)
+             continue
+         # If the path is a file (like a zip file), watch the parent directory.
+         if resolved_path.is_file():

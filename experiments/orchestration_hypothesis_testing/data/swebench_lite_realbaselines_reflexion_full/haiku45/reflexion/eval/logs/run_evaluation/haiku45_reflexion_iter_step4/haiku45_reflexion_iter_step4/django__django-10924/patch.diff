@@ -1,0 +1,25 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -1668,6 +1668,13 @@
+         kwargs.setdefault('max_length', 100)
+         super().__init__(verbose_name, name, **kwargs)
+ 
++    def _resolve_path(self):
++        """Resolve the path, calling it if it's a callable."""
++        path = self.path
++        if callable(path):
++            path = path()
++        return path
++
+     def check(self, **kwargs):
+         return [
+             *super().check(**kwargs),
+@@ -1709,7 +1716,7 @@
+ 
+     def formfield(self, **kwargs):
+         return super().formfield(**{
+-            'path': self.path,
++            'path': self._resolve_path(),
+             'match': self.match,
+             'recursive': self.recursive,
+             'form_class': forms.FilePathField,

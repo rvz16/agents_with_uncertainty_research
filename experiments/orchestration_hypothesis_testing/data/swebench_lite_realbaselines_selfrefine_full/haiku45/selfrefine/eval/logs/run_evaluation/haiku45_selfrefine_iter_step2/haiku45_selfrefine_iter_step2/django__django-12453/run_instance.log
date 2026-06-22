@@ -1,0 +1,71 @@
+2026-06-22 04:55:38,571 - INFO - Creating container for django__django-12453...
+2026-06-22 04:55:38,695 - INFO - Container for django__django-12453 created: 11cca1c575f07f9c6680f5e82234d0a3b731a6b9dbef460d5b11ef87591cc833
+2026-06-22 04:55:38,892 - INFO - Container for django__django-12453 started: 11cca1c575f07f9c6680f5e82234d0a3b731a6b9dbef460d5b11ef87591cc833
+2026-06-22 04:55:38,892 - INFO - Intermediate patch for django__django-12453 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-12453/patch.diff, now applying to container...
+2026-06-22 04:55:39,005 - INFO - >>>>> Applied Patch:
+Checking patch django/db/backends/base/creation.py...
+Applied patch django/db/backends/base/creation.py cleanly.
+
+2026-06-22 04:55:39,372 - INFO - Git diff before:
+diff --git a/django/db/backends/base/creation.py b/django/db/backends/base/creation.py
+index c50fc90171..5cf1f5b3c2 100644
+--- a/django/db/backends/base/creation.py
++++ b/django/db/backends/base/creation.py
+@@ -5,7 +5,7 @@ from io import StringIO
+ from django.apps import apps
+ from django.conf import settings
+ from django.core import serializers
+-from django.db import router
++from django.db import router, transaction
+ 
+ # The prefix to put on the default database name when creating
+ # the test database.
+@@ -126,8 +126,9 @@ class BaseDatabaseCreation:
+         the serialize_db_to_string() method.
+         """
+         data = StringIO(data)
+-        for obj in serializers.deserialize("json", data, using=self.connection.alias):
+-            obj.save()
++        with transaction.atomic(using=self.connection.alias):
++            for obj in serializers.deserialize("json", data, using=self.connection.alias):
++                obj.save()
+ 
+     def _get_database_display_str(self, verbosity, database_name):
+         """
+2026-06-22 04:55:39,372 - INFO - Eval script for django__django-12453 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-12453/eval.sh; copying to container...
+2026-06-22 04:55:48,482 - INFO - Test runtime: 9.06 seconds
+2026-06-22 04:55:48,482 - INFO - Test output for django__django-12453 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-12453/test_output.txt
+2026-06-22 04:55:48,531 - INFO - Git diff after:
+diff --git a/django/db/backends/base/creation.py b/django/db/backends/base/creation.py
+index c50fc90171..5cf1f5b3c2 100644
+--- a/django/db/backends/base/creation.py
++++ b/django/db/backends/base/creation.py
+@@ -5,7 +5,7 @@ from io import StringIO
+ from django.apps import apps
+ from django.conf import settings
+ from django.core import serializers
+-from django.db import router
++from django.db import router, transaction
+ 
+ # The prefix to put on the default database name when creating
+ # the test database.
+@@ -126,8 +126,9 @@ class BaseDatabaseCreation:
+         the serialize_db_to_string() method.
+         """
+         data = StringIO(data)
+-        for obj in serializers.deserialize("json", data, using=self.connection.alias):
+-            obj.save()
++        with transaction.atomic(using=self.connection.alias):
++            for obj in serializers.deserialize("json", data, using=self.connection.alias):
++                obj.save()
+ 
+     def _get_database_display_str(self, verbosity, database_name):
+         """
+2026-06-22 04:55:48,531 - INFO - Grading answer for django__django-12453...
+2026-06-22 04:55:48,532 - INFO - report: {'django__django-12453': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_circular_reference (backends.base.test_creation.TestDeserializeDbFromString)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_custom_test_name (backends.base.test_creation.TestDbSignatureTests)', 'test_custom_test_name_with_test_prefix (backends.base.test_creation.TestDbSignatureTests)', 'test_default_name (backends.base.test_creation.TestDbSignatureTests)', 'test_migrate_test_setting_false (backends.base.test_creation.TestDbCreationTests)', 'test_migrate_test_setting_true (backends.base.test_creation.TestDbCreationTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12453: resolved: True
+2026-06-22 04:55:48,532 - INFO - Attempting to stop container sweb.eval.django__django-12453.haiku45_selfrefine_iter_step2...
+2026-06-22 04:56:03,713 - INFO - Attempting to remove container sweb.eval.django__django-12453.haiku45_selfrefine_iter_step2...
+2026-06-22 04:56:03,732 - INFO - Container sweb.eval.django__django-12453.haiku45_selfrefine_iter_step2 removed.
+2026-06-22 04:56:03,732 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12453:latest...
+2026-06-22 04:56:03,836 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12453:latest removed.

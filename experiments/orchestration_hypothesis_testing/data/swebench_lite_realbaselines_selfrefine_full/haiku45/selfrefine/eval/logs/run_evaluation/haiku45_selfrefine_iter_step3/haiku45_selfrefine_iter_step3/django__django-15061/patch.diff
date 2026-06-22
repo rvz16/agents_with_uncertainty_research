@@ -1,0 +1,18 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -849,9 +849,12 @@
+         return context
+ 
+     def id_for_label(self, id_):
+-        if id_:
+-            id_ += '_0'
+-        return id_
++        """
++        Return an empty string to avoid rendering a `for` attribute on the
++        label element. MultiWidget renders multiple input elements, so there's
++        no single element to point the label to.
++        """
++        return ''
+ 
+     def value_from_datadict(self, data, files, name):
+         return [

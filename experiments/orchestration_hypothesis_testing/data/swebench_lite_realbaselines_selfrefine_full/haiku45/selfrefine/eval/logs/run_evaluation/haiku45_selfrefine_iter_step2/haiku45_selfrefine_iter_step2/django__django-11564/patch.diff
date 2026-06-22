@@ -1,0 +1,28 @@
+--- a/django/conf/__init__.py
++++ b/django/conf/__init__.py
+@@ -184,6 +184,25 @@
+     def is_overridden(self, setting):
+         return setting in self._explicit_settings
+ 
++    def _get_url_with_script_name(self, url, script_name):
++        """
++        Prepend SCRIPT_NAME to a relative URL if applicable.
++        Only prepends if the URL is relative (starts with /) and doesn't
++        already start with the script name.
++        """
++        if not url or not script_name:
++            return url
++        # Don't modify absolute URLs (with scheme)
++        if '://' in url:
++            return url
++        # Only prepend script_name if URL is relative and doesn't already have it
++        if url.startswith('/') and not url.startswith(script_name):
++            # Ensure script_name ends with / and url starts with /
++            script_name = script_name.rstrip('/') + '/'
++            url = url.lstrip('/')
++            return script_name + url
++        return url
++
+     def __repr__(self):
+         return '<%(cls)s "%(settings_module)s">' % {
+             'cls': self.__class__.__name__,

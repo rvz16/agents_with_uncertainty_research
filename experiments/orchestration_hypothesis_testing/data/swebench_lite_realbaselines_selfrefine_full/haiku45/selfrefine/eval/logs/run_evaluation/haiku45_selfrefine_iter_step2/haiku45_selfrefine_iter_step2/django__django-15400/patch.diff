@@ -1,0 +1,13 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -373,6 +373,10 @@
+     __len__ = new_method_proxy(len)
+     __contains__ = new_method_proxy(operator.contains)
+ 
++    # Arithmetic operations
++    __add__ = new_method_proxy(operator.add)
++    __radd__ = new_method_proxy(lambda wrapped, other: operator.add(other, wrapped))
++
+ 
+ def unpickle_lazyobject(wrapped):
+     """

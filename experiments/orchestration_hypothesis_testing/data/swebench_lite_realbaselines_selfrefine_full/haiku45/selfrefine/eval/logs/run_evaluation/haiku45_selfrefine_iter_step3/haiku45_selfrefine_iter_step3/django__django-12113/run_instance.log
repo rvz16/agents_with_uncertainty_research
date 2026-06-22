@@ -1,0 +1,49 @@
+2026-06-22 06:00:34,351 - INFO - Creating container for django__django-12113...
+2026-06-22 06:00:34,859 - INFO - Container for django__django-12113 created: 3bfbd7a9d01e2c2439da7b5e3e04c681b12f11a4921f2d00973a38809d8face9
+2026-06-22 06:00:35,033 - INFO - Container for django__django-12113 started: 3bfbd7a9d01e2c2439da7b5e3e04c681b12f11a4921f2d00973a38809d8face9
+2026-06-22 06:00:35,033 - INFO - Intermediate patch for django__django-12113 written to logs/run_evaluation/haiku45_selfrefine_iter_step3/haiku45_selfrefine_iter_step3/django__django-12113/patch.diff, now applying to container...
+2026-06-22 06:00:35,172 - INFO - >>>>> Applied Patch:
+Checking patch django/db/backends/sqlite3/creation.py...
+Applied patch django/db/backends/sqlite3/creation.py cleanly.
+
+2026-06-22 06:00:35,576 - INFO - Git diff before:
+diff --git a/django/db/backends/sqlite3/creation.py b/django/db/backends/sqlite3/creation.py
+index d97052f52d..2be028d901 100644
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -96,6 +96,7 @@ class DatabaseCreation(BaseDatabaseCreation):
+         """
+         test_database_name = self._get_test_db_name()
+         sig = [self.connection.settings_dict['NAME']]
+-        if self.is_in_memory_db(test_database_name):
+-            sig.append(self.connection.alias)
++        # Include the alias to distinguish between different database aliases
++        # using persistent test databases, preventing connection conflicts.
++        sig.append(self.connection.alias)
+         return tuple(sig)
+2026-06-22 06:00:35,577 - INFO - Eval script for django__django-12113 written to logs/run_evaluation/haiku45_selfrefine_iter_step3/haiku45_selfrefine_iter_step3/django__django-12113/eval.sh; copying to container...
+2026-06-22 06:00:55,778 - INFO - Test runtime: 20.16 seconds
+2026-06-22 06:00:55,778 - INFO - Test output for django__django-12113 written to logs/run_evaluation/haiku45_selfrefine_iter_step3/haiku45_selfrefine_iter_step3/django__django-12113/test_output.txt
+2026-06-22 06:00:55,826 - INFO - Git diff after:
+diff --git a/django/db/backends/sqlite3/creation.py b/django/db/backends/sqlite3/creation.py
+index d97052f52d..2be028d901 100644
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -96,6 +96,7 @@ class DatabaseCreation(BaseDatabaseCreation):
+         """
+         test_database_name = self._get_test_db_name()
+         sig = [self.connection.settings_dict['NAME']]
+-        if self.is_in_memory_db(test_database_name):
+-            sig.append(self.connection.alias)
++        # Include the alias to distinguish between different database aliases
++        # using persistent test databases, preventing connection conflicts.
++        sig.append(self.connection.alias)
+         return tuple(sig)
+2026-06-22 06:00:55,826 - INFO - Grading answer for django__django-12113...
+2026-06-22 06:00:55,827 - INFO - report: {'django__django-12113': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_custom_test_name (backends.sqlite.test_creation.TestDbSignatureTests)']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12113: resolved: False
+2026-06-22 06:00:55,827 - INFO - Attempting to stop container sweb.eval.django__django-12113.haiku45_selfrefine_iter_step3...
+2026-06-22 06:01:11,010 - INFO - Attempting to remove container sweb.eval.django__django-12113.haiku45_selfrefine_iter_step3...
+2026-06-22 06:01:11,033 - INFO - Container sweb.eval.django__django-12113.haiku45_selfrefine_iter_step3 removed.
+2026-06-22 06:01:11,033 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12113:latest...
+2026-06-22 06:01:11,149 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12113:latest removed.

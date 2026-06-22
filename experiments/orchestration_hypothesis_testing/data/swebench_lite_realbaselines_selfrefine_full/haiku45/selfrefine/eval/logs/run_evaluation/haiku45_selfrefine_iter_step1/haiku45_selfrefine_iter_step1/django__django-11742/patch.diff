@@ -1,0 +1,29 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -976,7 +976,26 @@
+                 )
+             ]
+         else:
++            return [*self._check_choices_fit_in_max_length()]
++
++    def _check_choices_fit_in_max_length(self):
++        if not self.choices:
+             return []
++
++        errors = []
++        for choice_value, choice_display in self.flatchoices:
++            # Only check string-like values
++            if isinstance(choice_value, str):
++                if len(choice_value) > self.max_length:
++                    errors.append(
++                        checks.Error(
++                            f"The value of choice '{choice_value}' has {len(choice_value)} "
++                            f"characters, which exceeds the max_length of {self.max_length}.",
++                            obj=self,
++                            id='fields.E122',
++                        )
++                    )
++        return errors
+ 
+     def cast_db_type(self, connection):
+         if self.max_length is None:

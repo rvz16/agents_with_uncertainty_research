@@ -1,0 +1,15 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -163,7 +163,11 @@
+         super().__init__(*args, **kwargs)
+         password = self.fields.get("password")
+         if password:
+-            password.help_text = password.help_text.format("../password/")
++            if self.instance.pk:
++                password_change_url = f"../{self.instance.pk}/password/"
++            else:
++                password_change_url = "../password/"
++            password.help_text = password.help_text.format(password_change_url)
+         user_permissions = self.fields.get("user_permissions")
+         if user_permissions:
+             user_permissions.queryset = user_permissions.queryset.select_related(

@@ -1,0 +1,73 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -179,8 +179,68 @@
+             return repr(dict(self))
+         return repr(list(self))
+ 
+-    def __repr__(self):
+-        return 'ValidationError(%s)' % self
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++        
++        # Both have error_dict
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for field in self.error_dict:
++                if not self._compare_error_lists(
++                    self.error_dict[field], other.error_dict[field]
++                ):
++                    return False
++            return True
++        
++        # Both have error_list (no error_dict)
++        if not hasattr(self, 'error_dict') and not hasattr(other, 'error_dict'):
++            return self._compare_error_lists(self.error_list, other.error_list)
++        
++        # One has error_dict and the other doesn't
++        return False
++
++    def _compare_error_lists(self, list1, list2):
++        """Compare two error lists, ignoring order."""
++        if len(list1) != len(list2):
++            return False
++        
++        # Convert error_list items to comparable tuples
++        def error_to_comparable(error):
++            if isinstance(error, ValidationError):
++                # For a ValidationError, extract message, code, params
++                return (error.message, error.code, self._params_to_comparable(error.params))
++            else:
++                # Shouldn't happen in normal flow, but handle it
++                return (str(error), None, None)
++        
++        tuples1 = sorted(
++            [error_to_comparable(e) for e in list1],
++            key=lambda x: (str(x[0]), str(x[1]), str(x[2]))
++        )
++        tuples2 = sorted(
++            [error_to_comparable(e) for e in list2],
++            key=lambda x: (str(x[0]), str(x[1]), str(x[2]))
++        )
++        
++        return tuples1 == tuples2
++
++    def _params_to_comparable(self, params):
++        """Convert params to a comparable form."""
++        if params is None:
++            return None
++        if isinstance(params, dict):
++            return tuple(sorted(params.items()))
++        if isinstance(params, (list, tuple)):
++            return tuple(params)
++        return params
++
++    def __hash__(self):
++        # ValidationError is mutable (error_list/error_dict can be modified)
++        # and is typically used in exception handling, not in sets/dicts
++        # Raise TypeError to make it explicitly unhashable
++        raise TypeError('unhashable type: \'ValidationError\'')
+ 
+ 
+ class EmptyResultSet(Exception):

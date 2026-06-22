@@ -1,0 +1,53 @@
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -97,10 +97,11 @@
+         """
+         # The django_migrations table must be present to record applied
+         # migrations.
+-        self.recorder.ensure_schema()
+-
+         if plan is None:
+             plan = self.migration_plan(targets)
++        # Only ensure schema if we have migrations to record
++        if plan:
++            self.recorder.ensure_schema()
+         # Create the forwards plan Django would follow on an empty database
+         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
+ 
+@@ -245,6 +246,13 @@
+         return state
+ 
+     def record_migration(self, migration):
++        # Check if we're allowed to migrate this app on this database
++        if not router.allow_migrate(
++            self.connection.alias,
++            migration.app_label,
++            model_name=None,
++        ):
++            return
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -259,11 +267,17 @@
+         if not fake:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+-        # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Check if we're allowed to migrate this app on this database
++        if router.allow_migrate(
++            self.connection.alias,
++            migration.app_label,
++            model_name=None,
++        ):
++            # For replacement migrations, also record individual statuses.
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)

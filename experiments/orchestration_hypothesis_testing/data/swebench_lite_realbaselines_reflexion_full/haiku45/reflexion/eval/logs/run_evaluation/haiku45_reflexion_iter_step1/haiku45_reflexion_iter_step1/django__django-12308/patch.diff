@@ -1,0 +1,19 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -1,5 +1,6 @@
+ import datetime
+ import decimal
++import json
+ from collections import defaultdict
+ 
+ from django.core.exceptions import FieldDoesNotExist
+@@ -398,6 +399,9 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
++    elif isinstance(field, models.JSONField):
++        prepared_value = field.prepare_value(value)
++        return json.dumps(prepared_value, ensure_ascii=False)
+     else:
+         return display_for_value(value, empty_value_display)
+ 

@@ -1,0 +1,25 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1220,6 +1220,22 @@
+ 
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
++            # Handle empty input arrays
++            if xy.shape[0] == 0:
++                # Call func once to get the output structure, but with a single dummy point
++                dummy_xy = np.zeros((1, xy.shape[1]))
++                dummy_output = func(dummy_xy, origin)
++                
++                # Create empty output arrays with the correct shape and dtype
++                if ra_dec_order and sky == 'output':
++                    # For ra_dec_order output, we return 2 arrays
++                    return (np.empty(axes[0].shape, dtype=dummy_output.dtype),
++                            np.empty(axes[0].shape, dtype=dummy_output.dtype))
++                else:
++                    # Return one array per output axis
++                    return [np.empty(axes[0].shape, dtype=dummy_output.dtype)
++                            for i in range(dummy_output.shape[1])]
++
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+             output = func(xy, origin)

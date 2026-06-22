@@ -1,0 +1,43 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -9,6 +9,7 @@
+ import functools
+ import inspect
+ from collections import namedtuple
++from collections.abc import KeysView, ValuesView
+ 
+ from django.core.exceptions import FieldError
+ from django.db.models.constants import LOOKUP_SEP
+@@ -38,7 +39,31 @@
+     conditional = True
+ 
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+-        super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
++        # Normalize non-pickleable types to pickleable equivalents
++        normalized_kwargs = {}
++        for key, value in kwargs.items():
++            normalized_kwargs[key] = self._normalize_value(value)
++        
++        normalized_args = [
++            self._normalize_value(arg) if isinstance(arg, tuple) and len(arg) == 2 
++            else arg 
++            for arg in args
++        ]
++        
++        super().__init__(children=[*normalized_args, *sorted(normalized_kwargs.items())], connector=_connector, negated=_negated)
++
++    @staticmethod
++    def _normalize_value(value):
++        """
++        Normalize non-pickleable types to pickleable equivalents.
++        """
++        if isinstance(value, KeysView):
++            return tuple(value)
++        elif isinstance(value, ValuesView):
++            return tuple(value)
++        elif isinstance(value, set):
++            return tuple(value)
++        return value
+ 
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):

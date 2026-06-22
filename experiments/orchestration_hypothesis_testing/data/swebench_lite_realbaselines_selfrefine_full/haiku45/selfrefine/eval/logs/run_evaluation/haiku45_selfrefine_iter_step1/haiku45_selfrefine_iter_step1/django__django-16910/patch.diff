@@ -1,0 +1,41 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -743,7 +743,11 @@
+                 if not field.is_relation:
+                     raise FieldError(next(iter(field_mask)))
+                 field_select_mask = select_mask.setdefault(field, {})
+-                related_model = field.remote_field.model._meta.concrete_model
++                # For reverse relations, get the related model from the field
++                if hasattr(field, 'related_model'):
++                    related_model = field.related_model._meta.concrete_model
++                else:
++                    related_model = field.remote_field.model._meta.concrete_model
+                 self._get_defer_select_mask(
+                     related_model._meta, field_mask, field_select_mask
+                 )
+@@ -766,7 +770,11 @@
+                     continue
+                 field = reverse_rel.field
+                 field_select_mask = select_mask.setdefault(field, {})
+-            related_model = field.model._meta.concrete_model
++            # For reverse relations, get the related model correctly
++            if hasattr(field, 'model'):
++                related_model = field.model._meta.concrete_model
++            else:
++                related_model = field.remote_field.model._meta.concrete_model
+             self._get_defer_select_mask(
+                 related_model._meta, field_mask, field_select_mask
+             )
+@@ -783,7 +791,11 @@
+             if field_mask:
+                 if not field.is_relation:
+                     raise FieldError(next(iter(field_mask)))
+-                related_model = field.remote_field.model._meta.concrete_model
++                # For reverse relations, get the related model from the field
++                if hasattr(field, 'related_model'):
++                    related_model = field.related_model._meta.concrete_model
++                else:
++                    related_model = field.remote_field.model._meta.concrete_model
+                 self._get_only_select_mask(
+                     related_model._meta, field_mask, field_select_mask
+                 )

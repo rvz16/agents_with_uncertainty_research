@@ -1,0 +1,15 @@
+--- a/django/template/autoreload.py
++++ b/django/template/autoreload.py
+@@ -48,6 +48,12 @@
+ 
+ @receiver(file_changed, dispatch_uid='template_loaders_file_changed')
+ def template_changed(sender, file_path, **kwargs):
++    # Don't handle Python files here - let the normal Python file watcher
++    # handle them. This allows server restarts when Python files change,
++    # even if they're located in template directories.
++    if file_path.suffix == '.py':
++        return
++    
+     for template_dir in get_template_directories():
+         if template_dir in file_path.parents:
+             reset_loaders()

@@ -1,0 +1,15 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -49,6 +49,12 @@
+                     summary.append({'label': gettext(key), 'value': value_})
+         context['summary'] = summary
+         return context
++
++    @property
++    def id_for_label(self):
++        # Return empty string to prevent the label's for attribute from being
++        # rendered, since this widget doesn't render a labelable element.
++        return ""
+ 
+ 
+ class ReadOnlyPasswordHashField(forms.Field):

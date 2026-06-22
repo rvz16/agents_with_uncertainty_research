@@ -1,0 +1,50 @@
+--- a/django/conf/__init__.py
++++ b/django/conf/__init__.py
+@@ -241,3 +241,47 @@
+ 
+ 
+ settings = LazySettings()
++
++
++def get_script_prefix_from_request(request):
++    """
++    Return the script prefix from the request's SCRIPT_NAME WSGI variable.
++    
++    This is used to support serving static files and media from a subpath
++    when using WSGI with SCRIPT_NAME. Returns empty string if SCRIPT_NAME
++    is not set or is '/'.
++    
++    Args:
++        request: A Django HttpRequest object
++        
++    Returns:
++        The SCRIPT_NAME value if present and not '/', otherwise empty string
++    """
++    if request is None:
++        return ''
++    
++    script_name = request.META.get('SCRIPT_NAME', '')
++    # Return empty string for root path
++    if script_name == '/':
++        return ''
++    return script_name
++
++
++def get_script_prefix():
++    """
++    Return the script prefix for the current request from SCRIPT_NAME,
++    or an empty string if not available.
++    
++    This is used to support serving static files and media from a subpath
++    when using WSGI with SCRIPT_NAME.
++    """
++    from django.http import HttpRequest
++    from threading import local
++    
++    # Try to get from thread-local request context if available
++    _request_local = local()
++    if hasattr(_request_local, 'request') and _request_local.request:
++        script_name = _request_local.request.META.get('SCRIPT_NAME', '')
++        return script_name if script_name else ''
++    
++    return ''

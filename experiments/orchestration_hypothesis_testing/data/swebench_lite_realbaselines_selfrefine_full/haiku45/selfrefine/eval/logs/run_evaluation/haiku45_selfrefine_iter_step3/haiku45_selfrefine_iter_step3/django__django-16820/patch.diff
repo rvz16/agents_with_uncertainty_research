@@ -1,0 +1,52 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -6,6 +6,18 @@
+ from django.utils.functional import cached_property
+ 
+ from .fields import AddField, AlterField, FieldOperation, RemoveField, RenameField
++
++
++def _convert_index_together_to_indexes(index_together):
++    """Convert index_together tuples to Index objects."""
++    if not index_together:
++        return []
++    indexes = []
++    for index_fields in index_together:
++        # Create an Index with fields but no explicit name
++        # The name will be auto-generated during migration
++        indexes.append(models.Index(fields=list(index_fields)))
++    return indexes
+ 
+ 
+ def _check_for_duplicates(arg_name, objs):
+@@ -181,6 +193,30 @@
+                     options=self.options,
+                     bases=self.bases,
+                     managers=operation.managers,
++                ),
++            ]
++        elif (
++            isinstance(operation, AlterIndexTogether)
++            and self.name_lower == operation.name_lower
++        ):
++            # Convert index_together to indexes to avoid deprecation warnings
++            options = {**self.options}
++            # Remove index_together from options
++            options.pop("index_together", None)
++            # Convert index_together tuples to Index objects and add to indexes
++            new_indexes = _convert_index_together_to_indexes(operation.option_value)
++            existing_indexes = options.get("indexes", [])
++            if existing_indexes:
++                options["indexes"] = list(existing_indexes) + new_indexes
++            else:
++                options["indexes"] = new_indexes
++            return [
++                CreateModel(
++                    self.name,
++                    fields=self.fields,
++                    options=options,
++                    bases=self.bases,
++                    managers=self.managers,
+                 ),
+             ]
+         elif (

@@ -1,0 +1,17 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -783,7 +783,13 @@
+             if field_mask:
+                 if not field.is_relation:
+                     raise FieldError(next(iter(field_mask)))
+-                related_model = field.remote_field.model._meta.concrete_model
++                # For forward relations, use remote_field.model
++                # For reverse relations, use field.model
++                if hasattr(field, "remote_field") and field.remote_field:
++                    related_model = field.remote_field.model._meta.concrete_model
++                else:
++                    # This is a reverse relation
++                    related_model = field.field.model._meta.concrete_model
+                 self._get_only_select_mask(
+                     related_model._meta, field_mask, field_select_mask
+                 )

@@ -1,0 +1,13 @@
+--- a/django/template/autoreload.py
++++ b/django/template/autoreload.py
+@@ -50,5 +50,10 @@
+ def template_changed(sender, file_path, **kwargs):
+     for template_dir in get_template_directories():
+         if template_dir in file_path.parents:
++            # Don't treat Python files as template changes; let them be handled
++            # by the normal Python file watching mechanism. This prevents issues
++            # when template directories overlap with the project root.
++            if file_path.suffix == '.py':
++                return
+             reset_loaders()
+             return True

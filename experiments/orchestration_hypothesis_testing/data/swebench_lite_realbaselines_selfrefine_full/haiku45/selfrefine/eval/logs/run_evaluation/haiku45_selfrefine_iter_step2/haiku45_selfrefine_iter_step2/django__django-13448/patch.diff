@@ -1,0 +1,28 @@
+--- a/django/db/backends/base/creation.py
++++ b/django/db/backends/base/creation.py
+@@ -69,6 +69,25 @@
+                 database=self.connection.alias,
+                 run_syncdb=True,
+             )
++        else:
++            # If migrations are disabled, we still need to create tables for
++            # all apps using syncdb so that serialization can work.
++            # We do this by temporarily disabling MIGRATION_MODULES for all apps.
++            old_migration_modules = settings.MIGRATION_MODULES
++            try:
++                settings.MIGRATION_MODULES = {
++                    app.label: None
++                    for app in apps.get_app_configs()
++                }
++                call_command(
++                    'migrate',
++                    verbosity=max(verbosity - 1, 0),
++                    interactive=False,
++                    database=self.connection.alias,
++                    run_syncdb=True,
++                )
++            finally:
++                settings.MIGRATION_MODULES = old_migration_modules
+ 
+         # We then serialize the current state of the database into a string
+         # and store it on the connection. This slightly horrific process is so people

@@ -1,0 +1,52 @@
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -125,10 +125,45 @@
+     def serialize(self):
+         enum_class = self.value.__class__
+         module = enum_class.__module__
+-        return (
+-            "%s.%s[%r]" % (module, enum_class.__qualname__, self.value.name),
+-            {"import %s" % module},
+-        )
++        imports = {"import %s" % module}
++        
++        # Try to get the name directly (works for simple enum members)
++        if self.value.name is not None:
++            return (
++                "%s.%s[%r]" % (module, enum_class.__qualname__, self.value.name),
++                imports,
++            )
++        
++        # For combined flags without a direct name, decompose and reconstruct
++        # using bitwise OR of the constituent members
++        try:
++            # Use _decompose to get the members that make up this value
++            members, uncovered = enum._decompose(enum_class, self.value._value_)
++            if uncovered != 0:
++                raise ValueError(
++                    "Cannot serialize %s.%s: unable to decompose value %r"
++                    % (module, enum_class.__qualname__, self.value._value_)
++                )
++            
++            # Build expression by ORing the member names together
++            member_names = [
++                "%s.%s.%s" % (module, enum_class.__qualname__, member.name)
++                for member in members
++            ]
++            
++            if not member_names:
++                raise ValueError(
++                    "Cannot serialize %s.%s: no members in decomposition"
++                    % (module, enum_class.__qualname__)
++                )
++            
++            return " | ".join(member_names), imports
++        except (AttributeError, ValueError):
++            # Fallback: if decomposition fails, raise an error
++            raise ValueError(
++                "Cannot serialize %s.%s: unable to serialize enum value %r"
++                % (module, enum_class.__qualname__, self.value)
++            )
+ 
+ 
+ class FloatSerializer(BaseSimpleSerializer):

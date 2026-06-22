@@ -1,0 +1,42 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -955,6 +955,7 @@
+         return [
+             *super().check(**kwargs),
+             *self._check_max_length_attribute(**kwargs),
++            *self._check_choices_fit_max_length(**kwargs),
+         ]
+ 
+     def _check_max_length_attribute(self, **kwargs):
+@@ -977,6 +978,31 @@
+             ]
+         else:
+             return []
++
++    def _check_choices_fit_max_length(self, **kwargs):
++        if not self.choices:
++            return []
++
++        errors = []
++        for choice_value, choice_display in self.flatchoices:
++            # Convert choice_value to string to check its length
++            choice_str = str(choice_value)
++            if len(choice_str) > self.max_length:
++                errors.append(
++                    checks.Error(
++                        "The longest choice value is %d characters long, but "
++                        "'max_length' is set to %d." % (
++                            len(choice_str),
++                            self.max_length,
++                        ),
++                        hint="Increase 'max_length' to at least %d." % len(choice_str),
++                        obj=self,
++                        id='fields.E122',
++                    )
++                )
++                # Only report the first error to avoid spam
++                break
++        return errors
+ 
+     def cast_db_type(self, connection):
+         if self.max_length is None:

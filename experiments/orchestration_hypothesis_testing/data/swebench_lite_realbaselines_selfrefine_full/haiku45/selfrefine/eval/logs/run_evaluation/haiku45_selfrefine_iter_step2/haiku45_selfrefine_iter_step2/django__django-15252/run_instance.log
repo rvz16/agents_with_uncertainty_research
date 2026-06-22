@@ -1,0 +1,199 @@
+2026-06-22 05:02:59,195 - INFO - Creating container for django__django-15252...
+2026-06-22 05:02:59,321 - INFO - Container for django__django-15252 created: 6ce53eb4cb187702d0d24cf77abe8811101e715fcb3679d20c36a12f0c20a9b6
+2026-06-22 05:02:59,437 - INFO - Container for django__django-15252 started: 6ce53eb4cb187702d0d24cf77abe8811101e715fcb3679d20c36a12f0c20a9b6
+2026-06-22 05:02:59,437 - INFO - Intermediate patch for django__django-15252 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-15252/patch.diff, now applying to container...
+2026-06-22 05:02:59,550 - INFO - >>>>> Applied Patch:
+Checking patch django/db/migrations/executor.py...
+Applied patch django/db/migrations/executor.py cleanly.
+
+2026-06-22 05:02:59,941 - INFO - Git diff before:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..3abf672889 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -95,16 +95,17 @@ class MigrationExecutor:
+         Django first needs to create all project states before a migration is
+         (un)applied and in a second step run all the database operations.
+         """
+-        # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
+-
+         if plan is None:
+             plan = self.migration_plan(targets)
++
++        # The django_migrations table must be present to record applied
++        # migrations, but only if migrations are allowed on this database.
++        if plan and self._should_record_migrations(plan):
++            self.recorder.ensure_schema()
+         # Create the forwards plan Django would follow on an empty database
+         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
+ 
+-        all_forwards = all(not backwards for mig, backwards in plan)
++        all_forwards = all(not backwards for mig, backwards in plan) if plan else True
+         all_backwards = all(backwards for mig, backwards in plan)
+ 
+         if not plan:
+@@ -244,13 +245,32 @@ class MigrationExecutor:
+             self.progress_callback("apply_success", migration, fake)
+         return state
+ 
++    def _should_record_migrations(self, plan):
++        """
++        Check if any migrations in the plan should be recorded on this database.
++        """
++        for migration, _ in plan:
++            if router.allow_migrate(
++                self.connection.alias,
++                migration.app_label,
++                model_name=None,
++            ):
++                return True
++        return False
++
+     def record_migration(self, migration):
+-        # For replacement migrations, record individual statuses
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_applied(app_label, name)
+-        else:
+-            self.recorder.record_applied(migration.app_label, migration.name)
++        # Only record migration if it's allowed on this database
++        if router.allow_migrate(
++            self.connection.alias,
++            migration.app_label,
++            model_name=None,
++        ):
++            # For replacement migrations, record individual statuses
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_applied(app_label, name)
++            else:
++                self.recorder.record_applied(migration.app_label, migration.name)
+ 
+     def unapply_migration(self, state, migration, fake=False):
+         """Run a migration backwards."""
+@@ -259,11 +279,17 @@ class MigrationExecutor:
+         if not fake:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+-        # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only record unapplied if migration was allowed on this database
++        if router.allow_migrate(
++            self.connection.alias,
++            migration.app_label,
++            model_name=None,
++        ):
++            # For replacement migrations, also record individual statuses.
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+2026-06-22 05:02:59,941 - INFO - Eval script for django__django-15252 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-15252/eval.sh; copying to container...
+2026-06-22 05:03:04,510 - INFO - Test runtime: 4.53 seconds
+2026-06-22 05:03:04,510 - INFO - Test output for django__django-15252 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-15252/test_output.txt
+2026-06-22 05:03:04,550 - INFO - Git diff after:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..3abf672889 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -95,16 +95,17 @@ class MigrationExecutor:
+         Django first needs to create all project states before a migration is
+         (un)applied and in a second step run all the database operations.
+         """
+-        # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
+-
+         if plan is None:
+             plan = self.migration_plan(targets)
++
++        # The django_migrations table must be present to record applied
++        # migrations, but only if migrations are allowed on this database.
++        if plan and self._should_record_migrations(plan):
++            self.recorder.ensure_schema()
+         # Create the forwards plan Django would follow on an empty database
+         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
+ 
+-        all_forwards = all(not backwards for mig, backwards in plan)
++        all_forwards = all(not backwards for mig, backwards in plan) if plan else True
+         all_backwards = all(backwards for mig, backwards in plan)
+ 
+         if not plan:
+@@ -244,13 +245,32 @@ class MigrationExecutor:
+             self.progress_callback("apply_success", migration, fake)
+         return state
+ 
++    def _should_record_migrations(self, plan):
++        """
++        Check if any migrations in the plan should be recorded on this database.
++        """
++        for migration, _ in plan:
++            if router.allow_migrate(
++                self.connection.alias,
++                migration.app_label,
++                model_name=None,
++            ):
++                return True
++        return False
++
+     def record_migration(self, migration):
+-        # For replacement migrations, record individual statuses
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_applied(app_label, name)
+-        else:
+-            self.recorder.record_applied(migration.app_label, migration.name)
++        # Only record migration if it's allowed on this database
++        if router.allow_migrate(
++            self.connection.alias,
++            migration.app_label,
++            model_name=None,
++        ):
++            # For replacement migrations, record individual statuses
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_applied(app_label, name)
++            else:
++                self.recorder.record_applied(migration.app_label, migration.name)
+ 
+     def unapply_migration(self, state, migration, fake=False):
+         """Run a migration backwards."""
+@@ -259,11 +279,17 @@ class MigrationExecutor:
+         if not fake:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+-        # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only record unapplied if migration was allowed on this database
++        if router.allow_migrate(
++            self.connection.alias,
++            migration.app_label,
++            model_name=None,
++        ):
++            # For replacement migrations, also record individual statuses.
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+2026-06-22 05:03:04,550 - INFO - Grading answer for django__django-15252...
+2026-06-22 05:03:04,551 - INFO - report: {'django__django-15252': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_migrate_test_setting_false_ensure_schema (backends.base.test_creation.TestDbCreationTests)', 'The django_migrations table is not created if there are no migrations'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_mark_expected_failures_and_skips (backends.base.test_creation.TestMarkTests)', 'test_custom_test_name (backends.base.test_creation.TestDbSignatureTests)', 'test_custom_test_name_with_test_prefix (backends.base.test_creation.TestDbSignatureTests)', 'test_default_name (backends.base.test_creation.TestDbSignatureTests)', 'If the current state satisfies the given target, do nothing.', 'Minimize unnecessary rollbacks in connected apps.', 'Minimize rollbacks when target has multiple in-app children.', "mark_expected_failures_and_skips() isn't called unless", 'test_migrate_test_setting_false (backends.base.test_creation.TestDbCreationTests)', 'test_migrate_test_setting_true (backends.base.test_creation.TestDbCreationTests)', 'test_circular_reference (backends.base.test_creation.TestDeserializeDbFromString)', 'test_circular_reference_with_natural_key (backends.base.test_creation.TestDeserializeDbFromString)', 'test_self_reference (backends.base.test_creation.TestDeserializeDbFromString)', 'test_serialize_db_to_string_base_manager (backends.base.test_creation.TestDeserializeDbFromString)', 'test_alter_id_type_with_fk (migrations.test_executor.ExecutorTests)', 'Applying all replaced migrations marks replacement as applied (#24628).', 'An atomic operation is properly rolled back inside a non-atomic', 'Regression test for #22325 - references to a custom user model defined in the', 'executor.detect_soft_applied() detects ManyToManyField tables from an', "Re-planning a full migration of a fully-migrated set doesn't", 'test_migrate_backward_to_squashed_migration (migrations.test_executor.ExecutorTests)', 'A new squash migration will be marked as applied even if all its', 'test_migrate_marks_replacement_unapplied (migrations.test_executor.ExecutorTests)', 'Migrations are applied and recorded atomically.', 'Migrations are not recorded if deferred SQL application fails.', 'Although the MigrationExecutor interfaces allows for mixed migration', 'Applying a non-atomic migration works as expected.', '#24129 - Tests callback process', 'Tests running a simple set of migrations.', 'Tests running a squashed migration from zero (should ignore what it replaces)', 'Tests detection of initial migrations already having been applied.', '#26647 - Unrelated applied migrations should be part of the final', '#24123 - All models of apps being unapplied which are', '#24123 - All models of apps already applied which are'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15252: resolved: True
+2026-06-22 05:03:04,551 - INFO - Attempting to stop container sweb.eval.django__django-15252.haiku45_selfrefine_iter_step2...
+2026-06-22 05:03:19,755 - INFO - Attempting to remove container sweb.eval.django__django-15252.haiku45_selfrefine_iter_step2...
+2026-06-22 05:03:19,772 - INFO - Container sweb.eval.django__django-15252.haiku45_selfrefine_iter_step2 removed.
+2026-06-22 05:03:19,772 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15252:latest...
+2026-06-22 05:03:20,089 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15252:latest removed.

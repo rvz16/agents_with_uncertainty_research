@@ -1,0 +1,31 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -127,6 +127,18 @@
+                     yield "# The error was: %s" % e
+                     continue
+ 
++                # Detect which related models have multiple incoming relations
++                # to determine which fields need related_name
++                related_model_counts = {}
++                for column_name in relations:
++                    ref_db_column, ref_db_table = relations[column_name]
++                    rel_to = (
++                        "self"
++                        if ref_db_table == table_name
++                        else table2model(ref_db_table)
++                    )
++                    related_model_counts[rel_to] = related_model_counts.get(rel_to, 0) + 1
++
+                 yield ""
+                 yield ""
+                 yield "class %s(models.Model):" % table2model(table_name)
+@@ -182,6 +194,9 @@
+                             if ref_db_table == table_name
+                             else table2model(ref_db_table)
+                         )
++                        # Add related_name if this model has multiple relations to the same target
++                        if related_model_counts.get(rel_to, 0) > 1:
++                            extra_params["related_name"] = att_name
+                         if rel_to in known_models:
+                             field_type = "%s(%s" % (rel_type, rel_to)
+                         else:

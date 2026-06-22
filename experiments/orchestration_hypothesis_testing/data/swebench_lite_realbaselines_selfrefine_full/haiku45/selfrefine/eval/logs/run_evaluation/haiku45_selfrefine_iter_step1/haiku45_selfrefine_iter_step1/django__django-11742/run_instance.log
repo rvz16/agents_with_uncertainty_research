@@ -1,0 +1,85 @@
+2026-06-22 03:20:38,260 - INFO - Creating container for django__django-11742...
+2026-06-22 03:20:38,410 - INFO - Container for django__django-11742 created: 40287fd4f0b190102d7fad742b78fcdac5ba48666ab3408ffca5d6e9476d5516
+2026-06-22 03:20:38,578 - INFO - Container for django__django-11742 started: 40287fd4f0b190102d7fad742b78fcdac5ba48666ab3408ffca5d6e9476d5516
+2026-06-22 03:20:38,578 - INFO - Intermediate patch for django__django-11742 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-11742/patch.diff, now applying to container...
+2026-06-22 03:20:38,695 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/fields/__init__.py...
+Applied patch django/db/models/fields/__init__.py cleanly.
+
+2026-06-22 03:20:39,071 - INFO - Git diff before:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..16db0afefb 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -976,8 +976,27 @@ class CharField(Field):
+                 )
+             ]
+         else:
++            return [*self._check_choices_fit_in_max_length()]
++
++    def _check_choices_fit_in_max_length(self):
++        if not self.choices:
+             return []
+ 
++        errors = []
++        for choice_value, choice_display in self.flatchoices:
++            # Only check string-like values
++            if isinstance(choice_value, str):
++                if len(choice_value) > self.max_length:
++                    errors.append(
++                        checks.Error(
++                            f"The value of choice '{choice_value}' has {len(choice_value)} "
++                            f"characters, which exceeds the max_length of {self.max_length}.",
++                            obj=self,
++                            id='fields.E122',
++                        )
++                    )
++        return errors
++
+     def cast_db_type(self, connection):
+         if self.max_length is None:
+             return connection.ops.cast_char_field_without_max_length
+2026-06-22 03:20:39,072 - INFO - Eval script for django__django-11742 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-11742/eval.sh; copying to container...
+2026-06-22 03:20:47,800 - INFO - Test runtime: 8.69 seconds
+2026-06-22 03:20:47,800 - INFO - Test output for django__django-11742 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-11742/test_output.txt
+2026-06-22 03:20:47,857 - INFO - Git diff after:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..16db0afefb 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -976,8 +976,27 @@ class CharField(Field):
+                 )
+             ]
+         else:
++            return [*self._check_choices_fit_in_max_length()]
++
++    def _check_choices_fit_in_max_length(self):
++        if not self.choices:
+             return []
+ 
++        errors = []
++        for choice_value, choice_display in self.flatchoices:
++            # Only check string-like values
++            if isinstance(choice_value, str):
++                if len(choice_value) > self.max_length:
++                    errors.append(
++                        checks.Error(
++                            f"The value of choice '{choice_value}' has {len(choice_value)} "
++                            f"characters, which exceeds the max_length of {self.max_length}.",
++                            obj=self,
++                            id='fields.E122',
++                        )
++                    )
++        return errors
++
+     def cast_db_type(self, connection):
+         if self.max_length is None:
+             return connection.ops.cast_char_field_without_max_length
+2026-06-22 03:20:47,857 - INFO - Grading answer for django__django-11742...
+2026-06-22 03:20:47,858 - INFO - report: {'django__django-11742': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_choices_in_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group (invalid_models_tests.test_ordinary_fields.CharFieldTests)']}, 'PASS_TO_PASS': {'success': ['test_non_nullable_blank (invalid_models_tests.test_ordinary_fields.GenericIPAddressFieldTests)', 'test_forbidden_files_and_folders (invalid_models_tests.test_ordinary_fields.FilePathFieldTests)', 'test_max_length_warning (invalid_models_tests.test_ordinary_fields.IntegerFieldTests)', 'test_primary_key (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_upload_to_callable_not_checked (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_upload_to_starts_with_slash (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_valid_case (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_valid_default_case (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_str_default_value (invalid_models_tests.test_ordinary_fields.BinaryFieldTests)', 'test_valid_default_value (invalid_models_tests.test_ordinary_fields.BinaryFieldTests)', 'test_max_length_warning (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_primary_key (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_valid_case (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.DateTimeFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.DateTimeFieldTests)', 'test_auto_now_and_auto_now_add_raise_error (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.TimeFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.TimeFieldTests)', 'test_bad_values_of_max_digits_and_decimal_places (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_decimal_places_greater_than_max_digits (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_negative_max_digits_and_decimal_places (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_required_attributes (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_valid_field (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_bad_db_index_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_bad_max_length_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_bad_validators (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_containing_lazy (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_bad_structure (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_lazy (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_iterable_of_iterable_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_lazy_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_missing_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_negative_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', "Two letters isn't a valid choice pair.", 'test_str_max_length_type (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_str_max_length_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_valid_field (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_pillow_installed (invalid_models_tests.test_ordinary_fields.ImageFieldTests)'], 'failure': ['test_choices_containing_non_pairs (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_non_pairs (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_non_iterable_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11742: resolved: False
+2026-06-22 03:20:47,858 - INFO - Attempting to stop container sweb.eval.django__django-11742.haiku45_selfrefine_iter_step1...
+2026-06-22 03:21:03,346 - INFO - Attempting to remove container sweb.eval.django__django-11742.haiku45_selfrefine_iter_step1...
+2026-06-22 03:21:03,365 - INFO - Container sweb.eval.django__django-11742.haiku45_selfrefine_iter_step1 removed.
+2026-06-22 03:21:03,365 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11742:latest...
+2026-06-22 03:21:03,725 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11742:latest removed.

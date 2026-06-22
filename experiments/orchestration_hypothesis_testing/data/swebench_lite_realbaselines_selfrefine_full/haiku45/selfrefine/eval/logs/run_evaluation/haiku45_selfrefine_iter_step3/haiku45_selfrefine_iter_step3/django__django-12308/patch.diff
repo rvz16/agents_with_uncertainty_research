@@ -1,0 +1,47 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -1,5 +1,6 @@
+ import datetime
+ import decimal
++import json
+ from collections import defaultdict
+ 
+ from django.core.exceptions import FieldDoesNotExist
+@@ -398,12 +399,17 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
++    elif isinstance(field, models.JSONField):
++        return display_for_value(value, empty_value_display)
++    else:
++        return display_for_value(value, empty_value_display)
+     else:
+         return display_for_value(value, empty_value_display)
+ 
+ 
+ def display_for_value(value, empty_value_display, boolean=False):
+     from django.contrib.admin.templatetags.admin_list import _boolean_icon
++    import json
+ 
+     if boolean:
+         return _boolean_icon(value)
+@@ -417,8 +423,18 @@
+         return formats.localize(value)
+     elif isinstance(value, (int, decimal.Decimal, float)):
+         return formats.number_format(value)
++    elif isinstance(value, dict):
++        try:
++            return json.dumps(value, ensure_ascii=False, indent=2)
++        except (TypeError, ValueError):
++            return str(value)
+     elif isinstance(value, (list, tuple)):
+-        return ', '.join(str(v) for v in value)
++        # Check if it's a JSON-like list (all elements are JSON-serializable)
++        try:
++            json.dumps(value)
++            return json.dumps(value, ensure_ascii=False, indent=2)
++        except (TypeError, ValueError):
++            return ', '.join(str(v) for v in value)
+     else:
+         return str(value)
+ 

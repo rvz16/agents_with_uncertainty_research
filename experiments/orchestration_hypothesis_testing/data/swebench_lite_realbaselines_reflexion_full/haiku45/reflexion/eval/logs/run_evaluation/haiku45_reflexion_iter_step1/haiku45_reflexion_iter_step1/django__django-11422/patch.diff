@@ -1,0 +1,20 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -114,7 +114,16 @@
+         # During debugging (with PyDev) the 'typing.io' and 'typing.re' objects
+         # are added to sys.modules, however they are types not modules and so
+         # cause issues here.
+-        if not isinstance(module, ModuleType) or getattr(module, '__spec__', None) is None:
++        if not isinstance(module, ModuleType):
++            continue
++        
++        # Handle __main__ module specially since it may not have __spec__
++        if module.__name__ == '__main__':
++            if hasattr(module, '__file__') and module.__file__:
++                sys_file_paths.append(module.__file__)
++            continue
++        
++        if getattr(module, '__spec__', None) is None:
+             continue
+         spec = module.__spec__
+         # Modules could be loaded from places without a concrete location. If

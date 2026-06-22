@@ -1,0 +1,77 @@
+2026-06-22 05:03:28,335 - INFO - Creating container for django__django-15202...
+2026-06-22 05:03:28,977 - INFO - Container for django__django-15202 created: 33fcb860948de7c18b8e4a979c04415b23ef117a13ab743ea163f9e2c748906f
+2026-06-22 05:03:29,167 - INFO - Container for django__django-15202 started: 33fcb860948de7c18b8e4a979c04415b23ef117a13ab743ea163f9e2c748906f
+2026-06-22 05:03:29,167 - INFO - Intermediate patch for django__django-15202 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-15202/patch.diff, now applying to container...
+2026-06-22 05:03:29,241 - INFO - >>>>> Applied Patch:
+Checking patch django/core/validators.py...
+Applied patch django/core/validators.py cleanly.
+
+2026-06-22 05:03:29,602 - INFO - Git diff before:
+diff --git a/django/core/validators.py b/django/core/validators.py
+index 72fbe15551..f30a3c36ab 100644
+--- a/django/core/validators.py
++++ b/django/core/validators.py
+@@ -127,7 +127,11 @@ class URLValidator(RegexValidator):
+                 raise
+         else:
+             # Now verify IPv6 in the netloc part
+-            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', urlsplit(value).netloc)
++            try:
++                netloc = urlsplit(value).netloc
++            except ValueError:
++                raise ValidationError(self.message, code=self.code, params={'value': value})
++            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', netloc)
+             if host_match:
+                 potential_ip = host_match[1]
+                 try:
+@@ -139,7 +143,11 @@ class URLValidator(RegexValidator):
+         # section 3.1. It's defined to be 255 bytes or less, but this includes
+         # one byte for the length of the name and one byte for the trailing dot
+         # that's used to indicate absolute names in DNS.
+-        if len(urlsplit(value).hostname) > 253:
++        try:
++            hostname = urlsplit(value).hostname
++        except ValueError:
++            raise ValidationError(self.message, code=self.code, params={'value': value})
++        if hostname and len(hostname) > 253:
+             raise ValidationError(self.message, code=self.code, params={'value': value})
+2026-06-22 05:03:29,602 - INFO - Eval script for django__django-15202 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-15202/eval.sh; copying to container...
+2026-06-22 05:03:33,956 - INFO - Test runtime: 4.31 seconds
+2026-06-22 05:03:33,956 - INFO - Test output for django__django-15202 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-15202/test_output.txt
+2026-06-22 05:03:34,000 - INFO - Git diff after:
+diff --git a/django/core/validators.py b/django/core/validators.py
+index 72fbe15551..f30a3c36ab 100644
+--- a/django/core/validators.py
++++ b/django/core/validators.py
+@@ -127,7 +127,11 @@ class URLValidator(RegexValidator):
+                 raise
+         else:
+             # Now verify IPv6 in the netloc part
+-            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', urlsplit(value).netloc)
++            try:
++                netloc = urlsplit(value).netloc
++            except ValueError:
++                raise ValidationError(self.message, code=self.code, params={'value': value})
++            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', netloc)
+             if host_match:
+                 potential_ip = host_match[1]
+                 try:
+@@ -139,7 +143,11 @@ class URLValidator(RegexValidator):
+         # section 3.1. It's defined to be 255 bytes or less, but this includes
+         # one byte for the length of the name and one byte for the trailing dot
+         # that's used to indicate absolute names in DNS.
+-        if len(urlsplit(value).hostname) > 253:
++        try:
++            hostname = urlsplit(value).hostname
++        except ValueError:
++            raise ValidationError(self.message, code=self.code, params={'value': value})
++        if hostname and len(hostname) > 253:
+             raise ValidationError(self.message, code=self.code, params={'value': value})
+2026-06-22 05:03:34,001 - INFO - Grading answer for django__django-15202...
+2026-06-22 05:03:34,001 - INFO - report: {'django__django-15202': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_urlfield_clean_invalid (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_clean_not_required (forms_tests.field_tests.test_urlfield.URLFieldTest)']}, 'PASS_TO_PASS': {'success': ['test_urlfield_clean (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_clean_required (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_strip_on_none_value (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_unable_to_set_strip_kwarg (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_widget (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_widget_max_min_length (forms_tests.field_tests.test_urlfield.URLFieldTest)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15202: resolved: False
+2026-06-22 05:03:34,001 - INFO - Attempting to stop container sweb.eval.django__django-15202.haiku45_selfrefine_iter_step2...
+2026-06-22 05:03:49,229 - INFO - Attempting to remove container sweb.eval.django__django-15202.haiku45_selfrefine_iter_step2...
+2026-06-22 05:03:49,247 - INFO - Container sweb.eval.django__django-15202.haiku45_selfrefine_iter_step2 removed.
+2026-06-22 05:03:49,247 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15202:latest...
+2026-06-22 05:03:49,361 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15202:latest removed.

@@ -1,0 +1,48 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -516,16 +516,43 @@
+     def __eq__(self, other):
+         # Needed for @total_ordering
+         if isinstance(other, Field):
+-            return self.creation_counter == other.creation_counter
++            # Fields are equal only if they have the same creation_counter
++            # and are attached to the same model. Fields not attached to a
++            # model are only equal if they're the same creation_counter.
++            if self.creation_counter != other.creation_counter:
++                return False
++            # If both fields have models, they must be the same model
++            if hasattr(self, 'model') and hasattr(other, 'model'):
++                return self.model is other.model
++            # If only one has a model, they're not equal
++            if hasattr(self, 'model') != hasattr(other, 'model'):
++                return False
++            # Neither has a model, and creation_counter is equal
++            return True
+         return NotImplemented
+ 
+     def __lt__(self, other):
+         # This is needed because bisect does not take a comparison function.
+         if isinstance(other, Field):
+-            return self.creation_counter < other.creation_counter
++            # Order by creation_counter first
++            if self.creation_counter != other.creation_counter:
++                return self.creation_counter < other.creation_counter
++            # If creation_counter is equal, order by model
++            # Fields without models come before fields with models
++            if hasattr(self, 'model') != hasattr(other, 'model'):
++                return not hasattr(self, 'model')
++            # Both have models or both don't, order by model id if both have models
++            if hasattr(self, 'model') and hasattr(other, 'model'):
++                return id(self.model) < id(other.model)
++            # Neither has a model and creation_counter is equal
++            return False
+         return NotImplemented
+ 
+     def __hash__(self):
++        # Hash must be consistent with __eq__
++        # Include model identity in hash if the field is attached to a model
++        if hasattr(self, 'model'):
++            return hash((self.creation_counter, id(self.model)))
+         return hash(self.creation_counter)
+ 
+     def __deepcopy__(self, memodict):

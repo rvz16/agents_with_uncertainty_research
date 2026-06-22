@@ -1,0 +1,120 @@
+2026-06-22 04:59:49,572 - INFO - Creating container for django__django-14016...
+2026-06-22 04:59:49,759 - INFO - Container for django__django-14016 created: 6134f808e4d93181617d3d62b5c34b517173c6e7d163bdfd4f7ce02188a7ac50
+2026-06-22 04:59:49,890 - INFO - Container for django__django-14016 started: 6134f808e4d93181617d3d62b5c34b517173c6e7d163bdfd4f7ce02188a7ac50
+2026-06-22 04:59:49,890 - INFO - Intermediate patch for django__django-14016 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-14016/patch.diff, now applying to container...
+2026-06-22 04:59:50,021 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:20: trailing whitespace.
+        
+/tmp/patch.diff:22: trailing whitespace.
+            self._normalize_value(arg) if isinstance(arg, tuple) and len(arg) == 2 
+/tmp/patch.diff:23: trailing whitespace.
+            else arg 
+/tmp/patch.diff:26: trailing whitespace.
+        
+Checking patch django/db/models/query_utils.py...
+Applied patch django/db/models/query_utils.py cleanly.
+warning: 4 lines add whitespace errors.
+
+2026-06-22 04:59:50,400 - INFO - Git diff before:
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index c2623f099f..edc8cf680a 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -9,6 +9,7 @@ import copy
+ import functools
+ import inspect
+ from collections import namedtuple
++from collections.abc import KeysView, ValuesView
+ 
+ from django.core.exceptions import FieldError
+ from django.db.models.constants import LOOKUP_SEP
+@@ -38,7 +39,31 @@ class Q(tree.Node):
+     conditional = True
+ 
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+-        super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
++        # Normalize non-pickleable types to pickleable equivalents
++        normalized_kwargs = {}
++        for key, value in kwargs.items():
++            normalized_kwargs[key] = self._normalize_value(value)
++        
++        normalized_args = [
++            self._normalize_value(arg) if isinstance(arg, tuple) and len(arg) == 2 
++            else arg 
++            for arg in args
++        ]
++        
++        super().__init__(children=[*normalized_args, *sorted(normalized_kwargs.items())], connector=_connector, negated=_negated)
++
++    @staticmethod
++    def _normalize_value(value):
++        """
++        Normalize non-pickleable types to pickleable equivalents.
++        """
++        if isinstance(value, KeysView):
++            return tuple(value)
++        elif isinstance(value, ValuesView):
++            return tuple(value)
++        elif isinstance(value, set):
++            return tuple(value)
++        return value
+ 
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
+2026-06-22 04:59:50,400 - INFO - Eval script for django__django-14016 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-14016/eval.sh; copying to container...
+2026-06-22 04:59:53,994 - INFO - Test runtime: 3.55 seconds
+2026-06-22 04:59:53,994 - INFO - Test output for django__django-14016 written to logs/run_evaluation/haiku45_selfrefine_iter_step2/haiku45_selfrefine_iter_step2/django__django-14016/test_output.txt
+2026-06-22 04:59:54,047 - INFO - Git diff after:
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index c2623f099f..edc8cf680a 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -9,6 +9,7 @@ import copy
+ import functools
+ import inspect
+ from collections import namedtuple
++from collections.abc import KeysView, ValuesView
+ 
+ from django.core.exceptions import FieldError
+ from django.db.models.constants import LOOKUP_SEP
+@@ -38,7 +39,31 @@ class Q(tree.Node):
+     conditional = True
+ 
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+-        super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
++        # Normalize non-pickleable types to pickleable equivalents
++        normalized_kwargs = {}
++        for key, value in kwargs.items():
++            normalized_kwargs[key] = self._normalize_value(value)
++        
++        normalized_args = [
++            self._normalize_value(arg) if isinstance(arg, tuple) and len(arg) == 2 
++            else arg 
++            for arg in args
++        ]
++        
++        super().__init__(children=[*normalized_args, *sorted(normalized_kwargs.items())], connector=_connector, negated=_negated)
++
++    @staticmethod
++    def _normalize_value(value):
++        """
++        Normalize non-pickleable types to pickleable equivalents.
++        """
++        if isinstance(value, KeysView):
++            return tuple(value)
++        elif isinstance(value, ValuesView):
++            return tuple(value)
++        elif isinstance(value, set):
++            return tuple(value)
++        return value
+ 
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
+2026-06-22 04:59:54,047 - INFO - Grading answer for django__django-14016...
+2026-06-22 04:59:54,047 - INFO - report: {'django__django-14016': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_combine_and_empty (queries.test_q.QTests)', 'test_combine_or_empty (queries.test_q.QTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_combine_and_both_empty (queries.test_q.QTests)', 'test_combine_not_q_object (queries.test_q.QTests)', 'test_combine_or_both_empty (queries.test_q.QTests)', 'test_deconstruct (queries.test_q.QTests)', 'test_deconstruct_and (queries.test_q.QTests)', 'test_deconstruct_multiple_kwargs (queries.test_q.QTests)', 'test_deconstruct_negated (queries.test_q.QTests)', 'test_deconstruct_nested (queries.test_q.QTests)', 'test_deconstruct_or (queries.test_q.QTests)', 'test_reconstruct (queries.test_q.QTests)', 'test_reconstruct_and (queries.test_q.QTests)', 'test_reconstruct_negated (queries.test_q.QTests)', 'test_reconstruct_or (queries.test_q.QTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14016: resolved: True
+2026-06-22 04:59:54,047 - INFO - Attempting to stop container sweb.eval.django__django-14016.haiku45_selfrefine_iter_step2...
+2026-06-22 05:00:09,309 - INFO - Attempting to remove container sweb.eval.django__django-14016.haiku45_selfrefine_iter_step2...
+2026-06-22 05:00:09,326 - INFO - Container sweb.eval.django__django-14016.haiku45_selfrefine_iter_step2 removed.
+2026-06-22 05:00:09,326 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14016:latest...
+2026-06-22 05:00:09,449 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14016:latest removed.

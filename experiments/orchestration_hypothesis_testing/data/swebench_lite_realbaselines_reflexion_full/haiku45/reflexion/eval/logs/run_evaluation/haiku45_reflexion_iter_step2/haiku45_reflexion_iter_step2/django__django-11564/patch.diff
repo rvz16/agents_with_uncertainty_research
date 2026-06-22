@@ -1,0 +1,81 @@
+--- a/django/conf/__init__.py
++++ b/django/conf/__init__.py
+@@ -8,6 +8,7 @@
+ 
+ import importlib
+ import os
++import threading
+ import time
+ import traceback
+ import warnings
+@@ -25,6 +26,9 @@
+     'The PASSWORD_RESET_TIMEOUT_DAYS setting is deprecated. Use '
+     'PASSWORD_RESET_TIMEOUT instead.'
+ )
++
++# Thread-local storage for SCRIPT_NAME from the current request
++_script_name_storage = threading.local()
+ 
+ 
+ class SettingsReference(str):
+@@ -241,3 +245,60 @@
+ 
+ 
+ settings = LazySettings()
++
++
++def get_script_prefix():
++    """
++    Return the currently active SCRIPT_NAME prefix for static/media URLs.
++    This respects the SCRIPT_NAME WSGI variable when available.
++    """
++    script_name = getattr(_script_name_storage, 'script_name', None)
++    if script_name is not None:
++        return script_name
++    return '/'
++
++
++def set_script_prefix(script_name):
++    """
++    Set the SCRIPT_NAME prefix for the current thread.
++    Called by middleware to capture the SCRIPT_NAME from the request.
++    """
++    _script_name_storage.script_name = script_name
++
++
++def clear_script_prefix():
++    """Clear the SCRIPT_NAME prefix for the current thread."""
++    if hasattr(_script_name_storage, 'script_name'):
++        delattr(_script_name_storage, 'script_name')
++
++
++def get_prefixed_url(url):
++    """
++    Prepend SCRIPT_NAME to a relative URL if appropriate.
++    
++    This function ensures that relative static/media URLs include the
++    SCRIPT_NAME prefix when running on a subpath.
++    
++    Args:
++        url: The URL to potentially prefix
++        
++    Returns:
++        The URL with SCRIPT_NAME prepended if it's a relative URL
++    """
++    if not url:
++        return url
++    
++    # Don't modify absolute URLs (with protocol) or protocol-relative URLs
++    if '://' in url or url.startswith('//'):
++        return url
++    
++    # Only prepend SCRIPT_NAME to relative URLs starting with /
++    if url.startswith('/'):
++        script_prefix = get_script_prefix()
++        if script_prefix and script_prefix != '/':
++            # Avoid double slashes
++            if url.startswith('/') and script_prefix.endswith('/'):
++                return script_prefix + url[1:]
++            return script_prefix + url
++    
++    return url

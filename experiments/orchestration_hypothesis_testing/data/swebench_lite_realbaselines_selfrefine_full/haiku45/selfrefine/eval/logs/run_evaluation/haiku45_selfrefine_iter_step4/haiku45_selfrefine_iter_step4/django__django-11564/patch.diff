@@ -1,0 +1,31 @@
+--- a/django/conf/__init__.py
++++ b/django/conf/__init__.py
+@@ -128,6 +128,28 @@
+             )
+         return self.__getattr__('PASSWORD_RESET_TIMEOUT_DAYS')
+ 
++    def get_static_url(self, script_name=''):
++        """
++        Return STATIC_URL, optionally prepending script_name if STATIC_URL is relative.
++        """
++        static_url = self.STATIC_URL
++        if script_name and static_url and not static_url.startswith(('http://', 'https://', '//')):
++            return script_name.rstrip('/') + '/' + static_url.lstrip('/')
++        elif script_name and static_url and static_url.startswith('/') and not static_url.startswith('//'):
++            return script_name.rstrip('/') + static_url
++        return static_url
++
++    def get_media_url(self, script_name=''):
++        """
++        Return MEDIA_URL, optionally prepending script_name if MEDIA_URL is relative.
++        """
++        media_url = self.MEDIA_URL
++        if script_name and media_url and not media_url.startswith(('http://', 'https://', '//')):
++            return script_name.rstrip('/') + '/' + media_url.lstrip('/')
++        elif script_name and media_url and media_url.startswith('/') and not media_url.startswith('//'):
++            return script_name.rstrip('/') + media_url
++        return media_url
++
+ 
+ class Settings:
+     def __init__(self, settings_module):

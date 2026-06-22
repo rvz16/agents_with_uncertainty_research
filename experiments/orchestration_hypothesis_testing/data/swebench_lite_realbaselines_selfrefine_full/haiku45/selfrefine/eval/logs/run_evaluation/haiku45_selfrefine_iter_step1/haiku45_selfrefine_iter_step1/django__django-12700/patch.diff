@@ -1,0 +1,13 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -90,6 +90,10 @@
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple)):
++                cleansed = [self.cleanse_setting('', v) for v in value]
++                if isinstance(value, tuple):
++                    cleansed = tuple(cleansed)
+             else:
+                 cleansed = value
+         except TypeError:

@@ -1,0 +1,49 @@
+2026-06-22 03:27:28,399 - INFO - Creating container for django__django-12983...
+2026-06-22 03:27:29,963 - INFO - Container for django__django-12983 created: 240637d38d7517183b21724c3674982ae62fd9f806eb5c9e1354613e0dd520d9
+2026-06-22 03:27:30,171 - INFO - Container for django__django-12983 started: 240637d38d7517183b21724c3674982ae62fd9f806eb5c9e1354613e0dd520d9
+2026-06-22 03:27:30,172 - INFO - Intermediate patch for django__django-12983 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-12983/patch.diff, now applying to container...
+2026-06-22 03:27:30,284 - INFO - >>>>> Applied Patch:
+Checking patch django/utils/text.py...
+Applied patch django/utils/text.py cleanly.
+
+2026-06-22 03:27:30,731 - INFO - Git diff before:
+diff --git a/django/utils/text.py b/django/utils/text.py
+index fb5f6298c4..5aefb80f9d 100644
+--- a/django/utils/text.py
++++ b/django/utils/text.py
+@@ -403,7 +403,8 @@ def slugify(value, allow_unicode=False):
+     else:
+         value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+     value = re.sub(r'[^\w\s-]', '', value.lower()).strip()
+-    return re.sub(r'[-\s]+', '-', value)
++    value = re.sub(r'[-\s]+', '-', value)
++    return value.strip('-_')
+ 
+ 
+ def camel_case_to_spaces(value):
+2026-06-22 03:27:30,731 - INFO - Eval script for django__django-12983 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-12983/eval.sh; copying to container...
+2026-06-22 03:27:47,846 - INFO - Test runtime: 17.06 seconds
+2026-06-22 03:27:47,846 - INFO - Test output for django__django-12983 written to logs/run_evaluation/haiku45_selfrefine_iter_step1/haiku45_selfrefine_iter_step1/django__django-12983/test_output.txt
+2026-06-22 03:27:47,899 - INFO - Git diff after:
+diff --git a/django/utils/text.py b/django/utils/text.py
+index fb5f6298c4..5aefb80f9d 100644
+--- a/django/utils/text.py
++++ b/django/utils/text.py
+@@ -403,7 +403,8 @@ def slugify(value, allow_unicode=False):
+     else:
+         value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+     value = re.sub(r'[^\w\s-]', '', value.lower()).strip()
+-    return re.sub(r'[-\s]+', '-', value)
++    value = re.sub(r'[-\s]+', '-', value)
++    return value.strip('-_')
+ 
+ 
+ def camel_case_to_spaces(value):
+2026-06-22 03:27:47,900 - INFO - Grading answer for django__django-12983...
+2026-06-22 03:27:47,900 - INFO - report: {'django__django-12983': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_slugify (utils_tests.test_text.TestUtilsText)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_compress_sequence (utils_tests.test_text.TestUtilsText)', 'test_format_lazy (utils_tests.test_text.TestUtilsText)', 'test_get_text_list (utils_tests.test_text.TestUtilsText)', 'test_get_valid_filename (utils_tests.test_text.TestUtilsText)', 'test_normalize_newlines (utils_tests.test_text.TestUtilsText)', 'test_phone2numeric (utils_tests.test_text.TestUtilsText)', 'test_smart_split (utils_tests.test_text.TestUtilsText)', 'test_truncate_chars (utils_tests.test_text.TestUtilsText)', 'test_truncate_chars_html (utils_tests.test_text.TestUtilsText)', 'test_truncate_html_words (utils_tests.test_text.TestUtilsText)', 'test_truncate_words (utils_tests.test_text.TestUtilsText)', 'test_unescape_entities (utils_tests.test_text.TestUtilsText)', 'test_unescape_entities_deprecated (utils_tests.test_text.TestUtilsText)', 'test_unescape_string_literal (utils_tests.test_text.TestUtilsText)', 'test_wrap (utils_tests.test_text.TestUtilsText)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12983: resolved: True
+2026-06-22 03:27:47,900 - INFO - Attempting to stop container sweb.eval.django__django-12983.haiku45_selfrefine_iter_step1...
+2026-06-22 03:28:03,190 - INFO - Attempting to remove container sweb.eval.django__django-12983.haiku45_selfrefine_iter_step1...
+2026-06-22 03:28:03,212 - INFO - Container sweb.eval.django__django-12983.haiku45_selfrefine_iter_step1 removed.
+2026-06-22 03:28:03,212 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12983:latest...
+2026-06-22 03:28:03,972 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12983:latest removed.

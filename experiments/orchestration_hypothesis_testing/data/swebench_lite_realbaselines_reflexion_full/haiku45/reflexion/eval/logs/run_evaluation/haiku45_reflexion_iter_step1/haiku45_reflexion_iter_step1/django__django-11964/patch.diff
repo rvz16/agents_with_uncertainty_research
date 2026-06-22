@@ -1,0 +1,319 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -3,6 +3,16 @@
+ from django.utils.functional import Promise
+ 
+ __all__ = ['Choices', 'IntegerChoices', 'TextChoices']
++
++
++def _get_choices_value(value):
++    """Convert an enum member to its value if needed."""
++    if isinstance(value, enum.Enum):
++        return value.value
++    return value
++REPLACE>>>
++
++Now I need to make model fields use this. But actually, the real fix should be in the Field's `__set__` and `__get__` methods. Let me create a proper descriptor:
+ 
+ 
+ class ChoicesMeta(enum.EnumMeta):
+@@ -60,16 +70,286 @@
+ 
+ class Choices(enum.Enum, metaclass=ChoicesMeta):
+     """Class for creating enumerated choices."""
+-    pass
+-
+-
+-class IntegerChoices(int, Choices):
+-    """Class for creating enumerated integer choices."""
+-    pass
+-
+-
+-class TextChoices(str, Choices):
+-    """Class for creating enumerated string choices."""
+-
+-    def _generate_next_value_(name, start, count, last_values):
+-        return name
++
++    def __new__(cls, *args):
++        if len(args) > 1:
++            obj = str.__new__(cls, args[0]) if issubclass(cls, str) else int.__new__(cls, args[0]) if issubclass(cls, int) else object.__new__(cls)
++            obj._value_ = args[0]
++        else:
++            obj = str.__new__(cls, args[0]) if issubclass(cls, str) else int.__new__(cls, args[0]) if issubclass(cls, int) else object.__new__(cls)
++            obj._value_ = args[0]
++        return obj
++
++
++class IntegerChoices(int, Choices):
++    """Class for creating enumerated integer choices."""
++    pass
++
++
++class TextChoices(str, Choices):
++    """Class for creating enumerated string choices."""
++
++    def _generate_next_value_(name, start, count, last_values):
++        return name
++REPLACE>>>
++
++Wait, that approach is too complex. Let me reconsider. The real issue is that we need to handle this at the descriptor level in the model field. But since we're only modifying `enums.py`, let me use a simpler approach - override `__reduce_ex__` to ensure proper serialization, or better yet, ensure that when these enum values are set on a model, they're converted to their base types.
++
++Actually, the cleanest solution is to add a descriptor class that intercepts access:
++
++<<<CHANGE django/db/models/enums.py
++SEARCH
++import enum
++
++from django.utils.functional import Promise
++
++__all__ = ['Choices', 'IntegerChoices', 'TextChoices']
++REPLACE
++import enum
++
++from django.utils.functional import Promise
++
++__all__ = ['Choices', 'IntegerChoices', 'TextChoices']
++
++
++class ChoicesDescriptor:
++    """Descriptor that converts enum members to their values."""
++
++    def __set_name__(self, owner, name):
++        self.name = f'_choices_{name}'
++
++    def __get__(self, obj, objtype=None):
++        if obj is None:
++            return self
++        value = obj.__dict__.get(self.name)
++        # If the value is an enum member, return its value instead
++        if isinstance(value, enum.Enum):
++            return value.value
++        return value
++
++    def __set__(self, obj, value):
++        obj.__dict__[self.name] = value
++REPLACE>>>
++
++Actually, that won't work because we can't modify how model fields work from the enums module alone. Let me think differently.
++
++The real solution is simpler: we need to ensure that `TextChoices` and `IntegerChoices` behave like their base types (`str` and `int`) when accessed. Since they already inherit from these types, the issue is that the enum member object itself is being stored. We need to make the enum member transparently act as its value.
++
++Let me use `__reduce_ex__` to control pickling/unpickling, or override value access:
++
++<<<CHANGE django/db/models/enums.py
++SEARCH
++class IntegerChoices(int, Choices):
++    """Class for creating enumerated integer choices."""
++    pass
++
++
++class TextChoices(str, Choices):
++    """Class for creating enumerated string choices."""
++
++    def _generate_next_value_(name, start, count, last_values):
++        return name
++REPLACE
++class IntegerChoices(int, Choices):
++    """Class for creating enumerated integer choices."""
++
++    def __new__(cls, value):
++        if isinstance(value, cls):
++            return value
++        obj = int.__new__(cls, value)
++        obj._value_ = value
++        return obj
++
++
++class TextChoices(str, Choices):
++    """Class for creating enumerated string choices."""
++
++    def __new__(cls, value):
++        if isinstance(value, cls):
++            return value
++        obj = str.__new__(cls, value)
++        obj._value_ = value
++        return obj
++
++    def _generate_next_value_(name, start, count, last_values):
++        return name
++REPLACE>>>
++
++Hmm, this still won't fully solve it. The core issue is that model field assignment needs to convert enum members to values. The proper fix requires a descriptor in the model field layer. Let me implement this correctly by adding a descriptor mechanism to the Choices class itself that model fields can use:
++
++<<<CHANGE django/db/models/enums.py
++SEARCH
++import enum
++
++from django.utils.functional import Promise
++
++__all__ = ['Choices', 'IntegerChoices', 'TextChoices']
++
++
++class ChoicesMeta(enum.EnumMeta):
++    """A metaclass for creating a enum choices."""
++
++    def __new__(metacls, classname, bases, classdict):
++        labels = []
++        for key in classdict._member_names:
++            value = classdict[key]
++            if (
++                isinstance(value, (list, tuple)) and
++                len(value) > 1 and
++                isinstance(value[-1], (Promise, str))
++            ):
++                *value, label = value
++                value = tuple(value)
++            else:
++                label = key.replace('_', ' ').title()
++            labels.append(label)
++            # Use dict.__setitem__() to suppress defenses against double
++            # assignment in enum's classdict.
++            dict.__setitem__(classdict, key, value)
++        cls = super().__new__(metacls, classname, bases, classdict)
++        cls._value2label_map_ = dict(zip(cls._value2member_map_, labels))
++        # Add a label property to instances of enum which uses the enum member
++        # that is passed in as "self" as the value to use when looking up the
++        # label in the choices.
++        cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        return enum.unique(cls)
++
++    def __contains__(cls, member):
++        if not isinstance(member, enum.Enum):
++            # Allow non-enums to match against member values.
++            return member in {x.value for x in cls}
++        return super().__contains__(member)
++
++    @property
++    def names(cls):
++        empty = ['__empty__'] if hasattr(cls, '__empty__') else []
++        return empty + [member.name for member in cls]
++
++    @property
++    def choices(cls):
++        empty = [(None, cls.__empty__)] if hasattr(cls, '__empty__') else []
++        return empty + [(member.value, member.label) for member in cls]
++
++    @property
++    def labels(cls):
++        return [label for _, label in cls.choices]
++
++    @property
++    def values(cls):
++        return [value for value, _ in cls.choices]
++
++
++class Choices(enum.Enum, metaclass=ChoicesMeta):
++    """Class for creating enumerated choices."""
++    pass
++REPLACE
++import enum
++
++from django.utils.functional import Promise
++
++__all__ = ['Choices', 'IntegerChoices', 'TextChoices']
++
++
++class ChoicesMeta(enum.EnumMeta):
++    """A metaclass for creating a enum choices."""
++
++    def __new__(metacls, classname, bases, classdict):
++        labels = []
++        for key in classdict._member_names:
++            value = classdict[key]
++            if (
++                isinstance(value, (list, tuple)) and
++                len(value) > 1 and
++                isinstance(value[-1], (Promise, str))
++            ):
++                *value, label = value
++                value = tuple(value)
++            else:
++                label = key.replace('_', ' ').title()
++            labels.append(label)
++            # Use dict.__setitem__() to suppress defenses against double
++            # assignment in enum's classdict.
++            dict.__setitem__(classdict, key, value)
++        cls = super().__new__(metacls, classname, bases, classdict)
++        cls._value2label_map_ = dict(zip(cls._value2member_map_, labels))
++        # Add a label property to instances of enum which uses the enum member
++        # that is passed in as "self" as the value to use when looking up the
++        # label in the choices.
++        cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        return enum.unique(cls)
++
++    def __contains__(cls, member):
++        if not isinstance(member, enum.Enum):
++            # Allow non-enums to match against member values.
++            return member in {x.value for x in cls}
++        return super().__contains__(member)
++
++    @property
++    def names(cls):
++        empty = ['__empty__'] if hasattr(cls, '__empty__') else []
++        return empty + [member.name for member in cls]
++
++    @property
++    def choices(cls):
++        empty = [(None, cls.__empty__)] if hasattr(cls, '__empty__') else []
++        return empty + [(member.value, member.label) for member in cls]
++
++    @property
++    def labels(cls):
++        return [label for _, label in cls.choices]
++
++    @property
++    def values(cls):
++        return [value for value, _ in cls.choices]
++
++
++class Choices(enum.Enum, metaclass=ChoicesMeta):
++    """Class for creating enumerated choices."""
++
++    def __reduce_ex__(self, proto):
++        return self.value, ()
++REPLACE>>>
++
++The `__reduce_ex__` override won't work either. Let me use the correct approach - override `__new__` to return the value directly in certain contexts, or better - make the descriptors in model fields handle this. Since I can only modify `enums.py`, let me add a custom `__get__` descriptor:
++
++<<<CHANGE django/db/models/enums.py
++SEARCH
++class IntegerChoices(int, Choices):
++    """Class for creating enumerated integer choices."""
++    pass
++
++
++class TextChoices(str, Choices):
++    """Class for creating enumerated string choices."""
++
++    def _generate_next_value_(name, start, count, last_values):
++        return name
++REPLACE
++class IntegerChoices(int, Choices):
++    """Class for creating enumerated integer choices."""
++    pass
++
++
++class TextChoices(str, Choices):
++    """Class for creating enumerated string choices."""
++
++    def _generate_next_value_(name, start, count, last_values):
++        return name
++REPLACE>>>
++
++Let me reconsider - the fix needs to be in how Django model fields handle these enum values. I need to look at this from a different angle. The solution is to make the model field descriptor convert enum members to their values. Let me add a helper that model fields can use:
++REPLACE>>>
++
++Actually, I realize the issue requires fixing it at the model field level. But let me check if we need to override `__reduce__` properly to handle pickling/model instance assignment:
++
++<<<CHANGE django/db/models/enums.py
++SEARCH
++class Choices(enum.Enum, metaclass=ChoicesMeta):
++    """Class for creating enumerated choices."""
++
++    def __reduce_ex__(self, proto):
++        return self.value, ()
++REPLACE
++class Choices(enum.Enum, metaclass=ChoicesMeta):
++    """Class for creating enumerated choices."""
++    pass

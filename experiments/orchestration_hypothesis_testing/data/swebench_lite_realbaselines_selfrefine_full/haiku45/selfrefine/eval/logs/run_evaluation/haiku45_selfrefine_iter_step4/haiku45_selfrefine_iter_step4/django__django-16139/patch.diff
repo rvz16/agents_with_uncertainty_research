@@ -1,0 +1,26 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -160,10 +160,22 @@
+         field_classes = {"username": UsernameField}
+ 
+     def __init__(self, *args, **kwargs):
++        to_field = kwargs.pop("to_field", None)
+         super().__init__(*args, **kwargs)
+         password = self.fields.get("password")
+         if password:
+-            password.help_text = password.help_text.format("../password/")
++            if to_field:
++                # When using a custom to_field, we need to use that field's value
++                # in the URL instead of assuming pk
++                field_value = getattr(self.instance, to_field, None)
++                if field_value:
++                    password.help_text = password.help_text.format(
++                        f"../../{field_value}/password/"
++                    )
++                else:
++                    password.help_text = password.help_text.format("../password/")
++            else:
++                password.help_text = password.help_text.format("../password/")
+         user_permissions = self.fields.get("user_permissions")
+         if user_permissions:
+             user_permissions.queryset = user_permissions.queryset.select_related(

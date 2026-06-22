@@ -1,0 +1,64 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -182,6 +182,61 @@
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+ 
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++        
++        # Both have error_dict
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for field in self.error_dict:
++                if not self._compare_error_lists(
++                    self.error_dict[field], other.error_dict[field]
++                ):
++                    return False
++            return True
++        
++        # Both have error_list (but not error_dict)
++        if hasattr(self, 'error_list') and hasattr(other, 'error_list'):
++            if not hasattr(self, 'error_dict') and not hasattr(other, 'error_dict'):
++                return self._compare_error_lists(self.error_list, other.error_list)
++        
++        # One has error_dict and the other doesn't
++        if hasattr(self, 'error_dict') != hasattr(other, 'error_dict'):
++            return False
++        
++        # Neither has error_dict, compare message/code/params
++        return (
++            self.message == other.message
++            and self.code == other.code
++            and self.params == other.params
++        )
++
++    def _compare_error_lists(self, list1, list2):
++        """
++        Compare two lists of ValidationError objects.
++        Order-independent comparison.
++        """
++        if len(list1) != len(list2):
++            return False
++        
++        # Create a list of tuples (message, code, params) for comparison
++        def error_to_tuple(error):
++            if isinstance(error, ValidationError):
++                return (error.message, error.code, error.params)
++            return (error, None, None)
++        
++        tuples1 = sorted([error_to_tuple(e) for e in list1], key=str)
++        tuples2 = sorted([error_to_tuple(e) for e in list2], key=str)
++        
++        return tuples1 == tuples2
++
++    def __hash__(self):
++        # ValidationError instances are mutable (error_list/error_dict can change)
++        # so we should not be hashable. Return None to make them unhashable.
++        raise TypeError('unhashable type: \'ValidationError\'')
++
+ 
+ class EmptyResultSet(Exception):
+     """A database query predicate is impossible."""

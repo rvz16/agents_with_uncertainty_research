@@ -1,0 +1,18 @@
+--- a/django/utils/decorators.py
++++ b/django/utils/decorators.py
+@@ -42,11 +42,13 @@
+             bound_method = dec(bound_method)
+         return bound_method(*args, **kwargs)
+ 
++    # Preserve any existing attributes of 'method', including the name.
++    # This must be done before applying decorator wrappers so that decorators
++    # can access function attributes like __name__, __module__, etc.
++    update_wrapper(_wrapper, method)
+     # Copy any attributes that a decorator adds to the function it decorates.
+     for dec in decorators:
+         _update_method_wrapper(_wrapper, dec)
+-    # Preserve any existing attributes of 'method', including the name.
+-    update_wrapper(_wrapper, method)
+     return _wrapper
+ 
+ 

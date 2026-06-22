@@ -1,0 +1,76 @@
+2026-06-22 07:03:12,959 - INFO - Creating container for django__django-12286...
+2026-06-22 07:03:13,465 - INFO - Container for django__django-12286 created: 63cc07ccb8dfb64e2b6aae2a3db60896c4aad236d8c8d426277a8e4adcb0c2f8
+2026-06-22 07:03:13,646 - INFO - Container for django__django-12286 started: 63cc07ccb8dfb64e2b6aae2a3db60896c4aad236d8c8d426277a8e4adcb0c2f8
+2026-06-22 07:03:13,646 - INFO - Intermediate patch for django__django-12286 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-12286/patch.diff, now applying to container...
+2026-06-22 07:03:13,765 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:11: trailing whitespace.
+    
+/tmp/patch.diff:15: trailing whitespace.
+    
+/tmp/patch.diff:21: trailing whitespace.
+    
+Checking patch django/core/checks/translation.py...
+Applied patch django/core/checks/translation.py cleanly.
+warning: 3 lines add whitespace errors.
+
+2026-06-22 07:03:14,130 - INFO - Git diff before:
+diff --git a/django/core/checks/translation.py b/django/core/checks/translation.py
+index 138ed07ff8..f3a2669dfe 100644
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -56,6 +56,16 @@ def check_setting_languages_bidi(app_configs, **kwargs):
+ def check_language_settings_consistent(app_configs, **kwargs):
+     """Error if language settings are not consistent with each other."""
+     available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+-    if settings.LANGUAGE_CODE not in available_tags:
+-        return [E004]
+-    return []
++    language_code = settings.LANGUAGE_CODE
++    
++    # Check if the exact language code is available
++    if language_code in available_tags:
++        return []
++    
++    # Check if a base language is available (e.g., 'de' for 'de-at')
++    # This implements Django's language fallback behavior
++    base_language_code = language_code.split('-')[0]
++    if base_language_code in available_tags:
++        return []
++    
++    return [E004]
+2026-06-22 07:03:14,131 - INFO - Eval script for django__django-12286 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-12286/eval.sh; copying to container...
+2026-06-22 07:03:35,763 - INFO - Test runtime: 21.59 seconds
+2026-06-22 07:03:35,763 - INFO - Test output for django__django-12286 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-12286/test_output.txt
+2026-06-22 07:03:35,809 - INFO - Git diff after:
+diff --git a/django/core/checks/translation.py b/django/core/checks/translation.py
+index 138ed07ff8..f3a2669dfe 100644
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -56,6 +56,16 @@ def check_setting_languages_bidi(app_configs, **kwargs):
+ def check_language_settings_consistent(app_configs, **kwargs):
+     """Error if language settings are not consistent with each other."""
+     available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+-    if settings.LANGUAGE_CODE not in available_tags:
+-        return [E004]
+-    return []
++    language_code = settings.LANGUAGE_CODE
++    
++    # Check if the exact language code is available
++    if language_code in available_tags:
++        return []
++    
++    # Check if a base language is available (e.g., 'de' for 'de-at')
++    # This implements Django's language fallback behavior
++    base_language_code = language_code.split('-')[0]
++    if base_language_code in available_tags:
++        return []
++    
++    return [E004]
+2026-06-22 07:03:35,809 - INFO - Grading answer for django__django-12286...
+2026-06-22 07:03:35,809 - INFO - report: {'django__django-12286': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_valid_variant_consistent_language_settings (check_framework.test_translation.TranslationCheckTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_inconsistent_language_settings (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_language_code (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_languages (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_languages_bidi (check_framework.test_translation.TranslationCheckTests)', 'test_valid_language_code (check_framework.test_translation.TranslationCheckTests)', 'test_valid_languages (check_framework.test_translation.TranslationCheckTests)', 'test_valid_languages_bidi (check_framework.test_translation.TranslationCheckTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12286: resolved: True
+2026-06-22 07:03:35,810 - INFO - Attempting to stop container sweb.eval.django__django-12286.haiku45_selfrefine_iter_step4...
+2026-06-22 07:03:51,061 - INFO - Attempting to remove container sweb.eval.django__django-12286.haiku45_selfrefine_iter_step4...
+2026-06-22 07:03:51,080 - INFO - Container sweb.eval.django__django-12286.haiku45_selfrefine_iter_step4 removed.
+2026-06-22 07:03:51,080 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12286:latest...
+2026-06-22 07:03:51,214 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12286:latest removed.

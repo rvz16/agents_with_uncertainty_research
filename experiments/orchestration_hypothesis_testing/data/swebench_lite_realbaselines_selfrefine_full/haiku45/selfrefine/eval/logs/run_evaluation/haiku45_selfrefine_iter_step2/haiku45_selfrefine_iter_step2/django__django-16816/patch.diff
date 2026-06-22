@@ -1,0 +1,48 @@
+--- a/django/contrib/admin/checks.py
++++ b/django/contrib/admin/checks.py
+@@ -898,6 +898,7 @@
+         try:
+             field = obj.model._meta.get_field(item)
+         except FieldDoesNotExist:
++            # Check if item is a valid attribute on the model class
+             try:
+                 field = getattr(obj.model, item)
+             except AttributeError:
+@@ -916,6 +917,37 @@
+                         id="admin.E108",
+                     )
+                 ]
++            # If we got here, item exists as a model attribute but is not a field.
++            # This includes reverse relations (RelatedManager), which are not allowed.
++            from django.db.models.fields.reverse_related import (
++                ForeignObjectRel,
++            )
++            if isinstance(field, ForeignObjectRel):
++                return [
++                    checks.Error(
++                        f"The value of '{label}' must not be a many-to-many field or a "
++                        f"reverse foreign key.",
++                        obj=obj.__class__,
++                        id="admin.E109",
++                    )
++                ]
++            # For other non-field attributes (like RelatedManager), also raise an error
++            # since they're not valid in list_display
++            return [
++                checks.Error(
++                    "The value of '%s' refers to '%s', which is not a "
++                    "callable, an attribute of '%s', or an attribute or "
++                    "method on '%s'."
++                    % (
++                        label,
++                        item,
++                        obj.__class__.__name__,
++                        obj.model._meta.label,
++                    ),
++                    obj=obj.__class__,
++                    id="admin.E108",
++                )
++            ]
+         if isinstance(field, models.ManyToManyField) or (
+             getattr(field, "rel", None) and field.rel.field.many_to_one
+         ):

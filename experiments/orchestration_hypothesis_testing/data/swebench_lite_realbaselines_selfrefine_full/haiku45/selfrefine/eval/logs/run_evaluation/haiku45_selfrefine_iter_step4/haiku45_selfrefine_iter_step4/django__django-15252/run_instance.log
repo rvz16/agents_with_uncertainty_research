@@ -1,0 +1,119 @@
+2026-06-22 07:13:22,983 - INFO - Creating container for django__django-15252...
+2026-06-22 07:13:23,099 - INFO - Container for django__django-15252 created: a497f7d118e2c240bfa4dfe823d26fb985d37a6e8eb0796665a1d506301bc1ff
+2026-06-22 07:13:23,232 - INFO - Container for django__django-15252 started: a497f7d118e2c240bfa4dfe823d26fb985d37a6e8eb0796665a1d506301bc1ff
+2026-06-22 07:13:23,232 - INFO - Intermediate patch for django__django-15252 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-15252/patch.diff, now applying to container...
+2026-06-22 07:13:23,330 - INFO - >>>>> Applied Patch:
+Checking patch django/db/migrations/executor.py...
+Applied patch django/db/migrations/executor.py cleanly.
+
+2026-06-22 07:13:23,714 - INFO - Git diff before:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..2b52ebb418 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,11 +96,12 @@ class MigrationExecutor:
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations, but only if migrations are allowed on this database.
++        if router.allow_migrate(self.connection.alias):
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+-            plan = self.migration_plan(targets)
++            plan = self.migration_plan(targets)</parameter>
+         # Create the forwards plan Django would follow on an empty database
+         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
+ 
+@@ -245,6 +246,9 @@ class MigrationExecutor:
+         return state
+ 
+     def record_migration(self, migration):
++        # Only record migrations if they're allowed on this database
++        if not router.allow_migrate(self.connection.alias, app_label=migration.app_label):
++            return
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -259,11 +263,13 @@ class MigrationExecutor:
+         if not fake:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+-        # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only record unapplied migrations if they're allowed on this database
++        if router.allow_migrate(self.connection.alias, app_label=migration.app_label):
++            # For replacement migrations, also record individual statuses.
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+2026-06-22 07:13:23,714 - INFO - Eval script for django__django-15252 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-15252/eval.sh; copying to container...
+2026-06-22 07:13:27,307 - INFO - Test runtime: 3.56 seconds
+2026-06-22 07:13:27,307 - INFO - Test output for django__django-15252 written to logs/run_evaluation/haiku45_selfrefine_iter_step4/haiku45_selfrefine_iter_step4/django__django-15252/test_output.txt
+2026-06-22 07:13:27,356 - INFO - Git diff after:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..2b52ebb418 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,11 +96,12 @@ class MigrationExecutor:
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations, but only if migrations are allowed on this database.
++        if router.allow_migrate(self.connection.alias):
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+-            plan = self.migration_plan(targets)
++            plan = self.migration_plan(targets)</parameter>
+         # Create the forwards plan Django would follow on an empty database
+         full_plan = self.migration_plan(self.loader.graph.leaf_nodes(), clean_start=True)
+ 
+@@ -245,6 +246,9 @@ class MigrationExecutor:
+         return state
+ 
+     def record_migration(self, migration):
++        # Only record migrations if they're allowed on this database
++        if not router.allow_migrate(self.connection.alias, app_label=migration.app_label):
++            return
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -259,11 +263,13 @@ class MigrationExecutor:
+         if not fake:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+-        # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only record unapplied migrations if they're allowed on this database
++        if router.allow_migrate(self.connection.alias, app_label=migration.app_label):
++            # For replacement migrations, also record individual statuses.
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+2026-06-22 07:13:27,356 - INFO - Grading answer for django__django-15252...
+2026-06-22 07:13:27,358 - INFO - report: {'django__django-15252': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_migrate_test_setting_false_ensure_schema (backends.base.test_creation.TestDbCreationTests)', 'The django_migrations table is not created if there are no migrations']}, 'PASS_TO_PASS': {'success': [], 'failure': ['test_mark_expected_failures_and_skips (backends.base.test_creation.TestMarkTests)', 'test_custom_test_name (backends.base.test_creation.TestDbSignatureTests)', 'test_custom_test_name_with_test_prefix (backends.base.test_creation.TestDbSignatureTests)', 'test_default_name (backends.base.test_creation.TestDbSignatureTests)', 'If the current state satisfies the given target, do nothing.', 'Minimize unnecessary rollbacks in connected apps.', 'Minimize rollbacks when target has multiple in-app children.', "mark_expected_failures_and_skips() isn't called unless", 'test_migrate_test_setting_false (backends.base.test_creation.TestDbCreationTests)', 'test_migrate_test_setting_true (backends.base.test_creation.TestDbCreationTests)', 'test_circular_reference (backends.base.test_creation.TestDeserializeDbFromString)', 'test_circular_reference_with_natural_key (backends.base.test_creation.TestDeserializeDbFromString)', 'test_self_reference (backends.base.test_creation.TestDeserializeDbFromString)', 'test_serialize_db_to_string_base_manager (backends.base.test_creation.TestDeserializeDbFromString)', 'test_alter_id_type_with_fk (migrations.test_executor.ExecutorTests)', 'Applying all replaced migrations marks replacement as applied (#24628).', 'An atomic operation is properly rolled back inside a non-atomic', 'Regression test for #22325 - references to a custom user model defined in the', 'executor.detect_soft_applied() detects ManyToManyField tables from an', "Re-planning a full migration of a fully-migrated set doesn't", 'test_migrate_backward_to_squashed_migration (migrations.test_executor.ExecutorTests)', 'A new squash migration will be marked as applied even if all its', 'test_migrate_marks_replacement_unapplied (migrations.test_executor.ExecutorTests)', 'Migrations are applied and recorded atomically.', 'Migrations are not recorded if deferred SQL application fails.', 'Although the MigrationExecutor interfaces allows for mixed migration', 'Applying a non-atomic migration works as expected.', '#24129 - Tests callback process', 'Tests running a simple set of migrations.', 'Tests running a squashed migration from zero (should ignore what it replaces)', 'Tests detection of initial migrations already having been applied.', '#26647 - Unrelated applied migrations should be part of the final', '#24123 - All models of apps being unapplied which are', '#24123 - All models of apps already applied which are']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15252: resolved: False
+2026-06-22 07:13:27,358 - INFO - Attempting to stop container sweb.eval.django__django-15252.haiku45_selfrefine_iter_step4...
+2026-06-22 07:13:42,543 - INFO - Attempting to remove container sweb.eval.django__django-15252.haiku45_selfrefine_iter_step4...
+2026-06-22 07:13:42,559 - INFO - Container sweb.eval.django__django-15252.haiku45_selfrefine_iter_step4 removed.
+2026-06-22 07:13:42,559 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15252:latest...
+2026-06-22 07:13:42,914 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15252:latest removed.

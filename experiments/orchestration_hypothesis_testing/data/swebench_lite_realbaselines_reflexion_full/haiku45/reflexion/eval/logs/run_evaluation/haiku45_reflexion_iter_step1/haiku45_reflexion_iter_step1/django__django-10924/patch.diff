@@ -1,0 +1,35 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -1668,6 +1668,15 @@
+         kwargs.setdefault('max_length', 100)
+         super().__init__(verbose_name, name, **kwargs)
+ 
++    def _get_path(self):
++        """
++        Return the path, evaluating it as a callable if necessary.
++        This is used at runtime to get the actual path value.
++        """
++        if callable(self.path):
++            return self.path()
++        return self.path
++
+     def check(self, **kwargs):
+         return [
+             *super().check(**kwargs),
+@@ -1688,6 +1697,7 @@
+     def deconstruct(self):
+         name, path, args, kwargs = super().deconstruct()
+         if self.path != '':
++            # Preserve callable paths in migrations for portability
+             kwargs['path'] = self.path
+         if self.match is not None:
+             kwargs['match'] = self.match
+@@ -1709,7 +1719,7 @@
+ 
+     def formfield(self, **kwargs):
+         return super().formfield(**{
+-            'path': self.path,
++            'path': self._get_path(),
+             'match': self.match,
+             'recursive': self.recursive,
+             'form_class': forms.FilePathField,

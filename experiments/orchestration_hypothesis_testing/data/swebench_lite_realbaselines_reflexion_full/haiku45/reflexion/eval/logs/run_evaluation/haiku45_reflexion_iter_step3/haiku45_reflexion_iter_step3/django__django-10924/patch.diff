@@ -1,0 +1,29 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -1685,6 +1685,17 @@
+             ]
+         return []
+ 
++    def _resolve_path(self):
++        """
++        Resolve the path, calling it if it's a callable.
++        This allows the path to be determined at runtime rather than at
++        field definition time, similar to FileField's upload_to parameter.
++        """
++        path = self.path
++        if callable(path):
++            path = path()
++        return path
++
+     def deconstruct(self):
+         name, path, args, kwargs = super().deconstruct()
+         if self.path != '':
+@@ -1709,7 +1720,7 @@
+ 
+     def formfield(self, **kwargs):
+         return super().formfield(**{
+-            'path': self.path,
++            'path': self._resolve_path(),
+             'match': self.match,
+             'recursive': self.recursive,
+             'form_class': forms.FilePathField,

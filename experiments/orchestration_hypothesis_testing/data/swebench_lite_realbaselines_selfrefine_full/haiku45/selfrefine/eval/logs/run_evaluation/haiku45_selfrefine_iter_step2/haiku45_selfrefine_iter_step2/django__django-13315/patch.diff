@@ -1,0 +1,18 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1158,8 +1158,14 @@
+         # Can't use iterator() when queryset uses prefetch_related()
+         if not queryset._prefetch_related_lookups:
+             queryset = queryset.iterator()
++        # Track seen primary keys to avoid duplicates when limit_choices_to
++        # involves joins that can produce duplicate rows (see #11707)
++        seen_pks = set()
+         for obj in queryset:
+-            yield self.choice(obj)
++            obj_pk = obj.pk
++            if obj_pk not in seen_pks:
++                seen_pks.add(obj_pk)
++                yield self.choice(obj)
+ 
+     def __len__(self):
+         # count() adds a query but uses less memory since the QuerySet results
