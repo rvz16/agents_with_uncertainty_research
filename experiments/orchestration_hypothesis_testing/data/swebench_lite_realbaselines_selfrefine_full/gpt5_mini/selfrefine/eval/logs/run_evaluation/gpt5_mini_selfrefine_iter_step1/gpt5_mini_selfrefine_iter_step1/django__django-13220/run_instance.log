@@ -1,0 +1,165 @@
+2026-06-22 14:34:00,565 - INFO - Creating container for django__django-13220...
+2026-06-22 14:34:01,160 - INFO - Container for django__django-13220 created: 65d5f33d794c5eae4593496adf89e76f4ae40080fb3c01e000d10e175157f948
+2026-06-22 14:34:01,331 - INFO - Container for django__django-13220 started: 65d5f33d794c5eae4593496adf89e76f4ae40080fb3c01e000d10e175157f948
+2026-06-22 14:34:01,331 - INFO - Intermediate patch for django__django-13220 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13220/patch.diff, now applying to container...
+2026-06-22 14:34:01,461 - INFO - >>>>> Applied Patch:
+Checking patch django/core/exceptions.py...
+Applied patch django/core/exceptions.py cleanly.
+
+2026-06-22 14:34:01,953 - INFO - Git diff before:
+diff --git a/django/core/exceptions.py b/django/core/exceptions.py
+index dc084b8692..fa5667f7ef 100644
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -179,6 +179,68 @@ class ValidationError(Exception):
+             return repr(dict(self))
+         return repr(list(self))
+ 
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++
++        def is_leaf(e):
++            # A "leaf" ValidationError has a message and its error_list contains itself.
++            return hasattr(e, 'message') and getattr(e, 'error_list', None) == [e]
++
++        def leaf_eq(a, b):
++            return (
++                getattr(a, 'message', None) == getattr(b, 'message', None) and
++                getattr(a, 'code', None) == getattr(b, 'code', None) and
++                getattr(a, 'params', None) == getattr(b, 'params', None)
++            )
++
++        def list_eq(list1, list2):
++            # Order-independent comparison of two lists of ValidationError instances.
++            if len(list1) != len(list2):
++                return False
++            used = [False] * len(list2)
++            for item1 in list1:
++                found = False
++                for i, item2 in enumerate(list2):
++                    if used[i]:
++                        continue
++                    if is_leaf(item1) and is_leaf(item2):
++                        if leaf_eq(item1, item2):
++                            used[i] = True
++                            found = True
++                            break
++                    else:
++                        # For nested/non-leaf items, rely on their equality.
++                        if item1 == item2:
++                            used[i] = True
++                            found = True
++                            break
++                if not found:
++                    return False
++            return True
++
++        # Both are dict-style ValidationErrors.
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for key in self.error_dict:
++                if not list_eq(list(self.error_dict[key]), list(other.error_dict[key])):
++                    return False
++            return True
++
++        # If only one has an error_dict, not equal.
++        if hasattr(self, 'error_dict') != hasattr(other, 'error_dict'):
++            return False
++
++        # Compare non-field errors (error_list) order-independently.
++        return list_eq(list(self.error_list), list(other.error_list))
++
++    def __ne__(self, other):
++        eq = self.__eq__(other)
++        if eq is NotImplemented:
++            return NotImplemented
++        return not eq
++
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+2026-06-22 14:34:01,953 - INFO - Eval script for django__django-13220 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13220/eval.sh; copying to container...
+2026-06-22 14:34:16,580 - INFO - Test runtime: 14.59 seconds
+2026-06-22 14:34:16,580 - INFO - Test output for django__django-13220 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-13220/test_output.txt
+2026-06-22 14:34:16,624 - INFO - Git diff after:
+diff --git a/django/core/exceptions.py b/django/core/exceptions.py
+index dc084b8692..fa5667f7ef 100644
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -179,6 +179,68 @@ class ValidationError(Exception):
+             return repr(dict(self))
+         return repr(list(self))
+ 
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++
++        def is_leaf(e):
++            # A "leaf" ValidationError has a message and its error_list contains itself.
++            return hasattr(e, 'message') and getattr(e, 'error_list', None) == [e]
++
++        def leaf_eq(a, b):
++            return (
++                getattr(a, 'message', None) == getattr(b, 'message', None) and
++                getattr(a, 'code', None) == getattr(b, 'code', None) and
++                getattr(a, 'params', None) == getattr(b, 'params', None)
++            )
++
++        def list_eq(list1, list2):
++            # Order-independent comparison of two lists of ValidationError instances.
++            if len(list1) != len(list2):
++                return False
++            used = [False] * len(list2)
++            for item1 in list1:
++                found = False
++                for i, item2 in enumerate(list2):
++                    if used[i]:
++                        continue
++                    if is_leaf(item1) and is_leaf(item2):
++                        if leaf_eq(item1, item2):
++                            used[i] = True
++                            found = True
++                            break
++                    else:
++                        # For nested/non-leaf items, rely on their equality.
++                        if item1 == item2:
++                            used[i] = True
++                            found = True
++                            break
++                if not found:
++                    return False
++            return True
++
++        # Both are dict-style ValidationErrors.
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for key in self.error_dict:
++                if not list_eq(list(self.error_dict[key]), list(other.error_dict[key])):
++                    return False
++            return True
++
++        # If only one has an error_dict, not equal.
++        if hasattr(self, 'error_dict') != hasattr(other, 'error_dict'):
++            return False
++
++        # Compare non-field errors (error_list) order-independently.
++        return list_eq(list(self.error_list), list(other.error_list))
++
++    def __ne__(self, other):
++        eq = self.__eq__(other)
++        if eq is NotImplemented:
++            return NotImplemented
++        return not eq
++
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+2026-06-22 14:34:16,624 - INFO - Grading answer for django__django-13220...
+2026-06-22 14:34:16,625 - INFO - report: {'django__django-13220': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_eq_nested (test_exceptions.test_validation_error.TestValidationError)'], 'failure': ['test_eq (test_exceptions.test_validation_error.TestValidationError)', 'test_hash (test_exceptions.test_validation_error.TestValidationError)', 'test_hash_nested (test_exceptions.test_validation_error.TestValidationError)']}, 'PASS_TO_PASS': {'success': ['test_messages_concatenates_error_dict_values (test_exceptions.test_validation_error.TestValidationError)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-13220: resolved: False
+2026-06-22 14:34:16,625 - INFO - Attempting to stop container sweb.eval.django__django-13220.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:34:31,805 - INFO - Attempting to remove container sweb.eval.django__django-13220.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:34:31,823 - INFO - Container sweb.eval.django__django-13220.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 14:34:31,823 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-13220:latest...
+2026-06-22 14:34:31,929 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-13220:latest removed.

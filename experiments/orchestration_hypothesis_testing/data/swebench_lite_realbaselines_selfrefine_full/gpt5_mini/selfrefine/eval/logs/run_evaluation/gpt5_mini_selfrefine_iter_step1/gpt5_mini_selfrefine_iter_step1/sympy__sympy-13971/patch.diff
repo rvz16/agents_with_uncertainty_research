@@ -1,0 +1,17 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1655,9 +1655,12 @@
+         else:
+             printset = tuple(s)
+ 
+-        return (r"\left\["
++        # Use a space between the '\left'/'\right' and the bracket characters
++        # to avoid producing '\[' or '\]' sequences which can be interpreted
++        # as LaTeX display-math delimiters when rendered/copied in Jupyter.
++        return (r"\left [ "
+               + r", ".join(self._print(el) for el in printset)
+-              + r"\right\]")
++              + r"\right ]")
+ 
+     _print_SeqPer = _print_SeqFormula
+     _print_SeqAdd = _print_SeqFormula

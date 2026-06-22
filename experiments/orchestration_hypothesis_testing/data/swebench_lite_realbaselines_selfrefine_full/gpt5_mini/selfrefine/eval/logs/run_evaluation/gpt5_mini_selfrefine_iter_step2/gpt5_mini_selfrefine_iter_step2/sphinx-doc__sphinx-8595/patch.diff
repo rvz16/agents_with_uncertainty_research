@@ -1,0 +1,16 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1074,7 +1074,12 @@
+     def get_object_members(self, want_all: bool) -> Tuple[bool, ObjectMembers]:
+         members = self.get_module_members()
+         if want_all:
+-            if not self.__all__:
++            # Distinguish between "no __all__ defined" (None) and an empty
++            # __all__ (explicitly defined as []).  An explicit empty __all__
++            # means "export nothing", so mark all members as skipped.  The
++            # previous check used a truthiness test which treated [] the same
++            # as None and thus ignored an explicit empty __all__.
++            if self.__all__ is None:
+                 # for implicit module members, check __module__ to avoid
+                 # documenting imported objects
+                 return True, list(members.values())

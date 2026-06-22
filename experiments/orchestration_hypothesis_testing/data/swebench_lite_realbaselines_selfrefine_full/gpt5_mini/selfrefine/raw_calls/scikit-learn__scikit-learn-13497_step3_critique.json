@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:53:38.170903+00:00",
+  "instance_id": "scikit-learn__scikit-learn-13497",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nComparing string to array in _estimate_mi\nIn ``_estimate_mi`` there is ``discrete_features == 'auto'`` but discrete features can be an array of indices or a boolean mask.\r\nThis will error in future versions of numpy.\r\nAlso this means we never test this function with discrete features != 'auto', it seems?\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no changes were applied to the codebase.\n\nThe original problematic comparison (discrete_features == 'auto') remains and will still perform elementwise comparison for array-like inputs, producing ambiguous truth-value behavior or future NumPy errors.\n\nThe patch does not add a safe check for the 'auto' sentinel (e.g., isinstance(discrete_features, str) or explicit scalar/string comparison), so array/boolean-mask inputs are still unhandled.\n\nNo handling was added for boolean masks vs. index arrays (different expected shapes/types), so different array-like discrete_features will still produce incorrect behavior.\n\nNo unit tests were added to exercise _estimate_mi with discrete_features being a boolean mask or integer index array (so this regresssion would not be caught).\n\nNo documentation or docstring updates were made to clarify the accepted types for discrete_features or the semantics of 'auto'.\n\nNo changes were made to ensure backward compatibility or to update callers that might rely on the previous (buggy) behavior.",
+  "prompt_tokens": 202,
+  "completion_tokens": 691,
+  "cost_usd": 0.0014325
+}

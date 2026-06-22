@@ -1,0 +1,21 @@
+--- a/src/_pytest/_code/code.py
++++ b/src/_pytest/_code/code.py
+@@ -538,8 +538,16 @@
+         if self._excinfo is None:
+             return repr(self)
+         entry = self.traceback[-1]
+-        loc = ReprFileLocation(entry.path, entry.lineno + 1, self.exconly())
+-        return str(loc)
++        # Preserve the file:lineno prefix like before, but include the full
++        # exception text (which may be multi-line). Previously the formatting
++        # went through ReprFileLocation which truncated the message at the
++        # first newline; that surprised users who expected to see the full
++        # exception message (e.g. when printing an ExceptionInfo from
++        # pytest.raises). Use exconly() directly to include the complete text.
++        path = str(entry.path)
++        lineno = entry.lineno + 1
++        msg = self.exconly()
++        return "{}:{}: {}".format(path, lineno, msg)
+ 
+     def match(self, regexp):
+         """

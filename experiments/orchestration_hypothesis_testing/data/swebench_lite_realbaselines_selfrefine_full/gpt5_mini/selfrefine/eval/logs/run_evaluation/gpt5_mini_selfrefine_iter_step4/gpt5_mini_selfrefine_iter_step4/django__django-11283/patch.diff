@@ -1,0 +1,46 @@
+--- a/django/contrib/auth/migrations/0011_update_proxy_permissions.py
++++ b/django/contrib/auth/migrations/0011_update_proxy_permissions.py
+@@ -6,6 +6,11 @@
+     """
+     Update the content_type of proxy model permissions to use the ContentType
+     of the proxy model.
++
++    Avoid bulk update which can raise an IntegrityError when a Permission with
++    the target (content_type, codename) already exists. In that case, move any
++    many-to-many relations (users/groups) from the old permission to the
++    existing permission and delete the old permission.
+     """
+     Permission = apps.get_model('auth', 'Permission')
+     ContentType = apps.get_model('contenttypes', 'ContentType')
+@@ -24,10 +29,29 @@
+         proxy_content_type = ContentType.objects.get_for_model(Model, for_concrete_model=False)
+         old_content_type = proxy_content_type if reverse else concrete_content_type
+         new_content_type = concrete_content_type if reverse else proxy_content_type
+-        Permission.objects.filter(
++
++        # Iterate over matching permissions and handle each one individually to
++        # avoid unique constraint violations. If a permission with the target
++        # content_type and codename already exists, transfer m2m relations and
++        # delete the old permission.
++        perms_to_update = list(Permission.objects.filter(
+             permissions_query,
+             content_type=old_content_type,
+-        ).update(content_type=new_content_type)
++        ))
++        for perm in perms_to_update:
++            try:
++                existing = Permission.objects.get(codename=perm.codename, content_type=new_content_type)
++            except Permission.DoesNotExist:
++                perm.content_type = new_content_type
++                perm.save()
++            else:
++                # Transfer group and user relations to the existing permission.
++                for group in perm.group_set.all():
++                    existing.group_set.add(group)
++                for user in perm.user_set.all():
++                    existing.user_set.add(user)
++                # Remove the old permission now that relations have been migrated.
++                perm.delete()
+ 
+ 
+ def revert_proxy_model_permissions(apps, schema_editor):

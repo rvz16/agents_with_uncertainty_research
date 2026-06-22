@@ -1,0 +1,29 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -155,11 +155,21 @@
+     def match(self, path):
+         match = self.regex.search(path)
+         if match:
+-            # If there are any named groups, use those as kwargs, ignoring
+-            # non-named groups. Otherwise, pass all non-named arguments as
+-            # positional arguments.
+-            kwargs = {k: v for k, v in match.groupdict().items() if v is not None}
+-            args = () if kwargs else match.groups()
++            # If there are any named groups in the pattern, use those as kwargs,
++            # ignoring non-named groups. Note: the presence of named groups in
++            # the compiled regex (even if their value for this particular
++            # match is None) should cause us to ignore any non-named capturing
++            # groups. Otherwise, pass all non-named arguments as positional
++            # arguments.
++            groupdict = match.groupdict()
++            kwargs = {k: v for k, v in groupdict.items() if v is not None}
++            # match.re.groupindex is a dict mapping named group names to group
++            # indices. If it's non-empty, the pattern contains named groups,
++            # so ignore positional (non-named) groups.
++            if match.re.groupindex:
++                args = ()
++            else:
++                args = match.groups()
+             return path[match.end():], args, kwargs
+         return None
+ 

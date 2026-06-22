@@ -1,0 +1,35 @@
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,8 +57,30 @@
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, *args, header_rows=None, **kwargs):
++        # Accept arbitrary kwargs to stay compatible with the writer factory,
++        # but only forward those that the superclass __init__ accepts so we
++        # don't raise a TypeError if unexpected keywords are provided.
++        import inspect
++
++        pass_kwargs = dict(kwargs)
++        if header_rows is not None:
++            pass_kwargs["header_rows"] = header_rows
++
++        # Inspect the superclass __init__ signature to determine whether it
++        # accepts **kwargs (VAR_KEYWORD). If it does, forward everything.
++        # Otherwise, filter to only parameters that are accepted.
++        sig = inspect.signature(super().__init__)
++        params = sig.parameters.values()
++        accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
++
++        if accepts_var_kw:
++            forward_kwargs = pass_kwargs
++        else:
++            allowed = {p.name for p in params if p.name != "self"}
++            forward_kwargs = {k: v for k, v in pass_kwargs.items() if k in allowed}
++
++        super().__init__(delimiter_pad=None, bookend=False, *args, **forward_kwargs)
+ 
+     def write(self, lines):
+         lines = super().write(lines)

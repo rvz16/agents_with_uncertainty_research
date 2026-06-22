@@ -1,0 +1,49 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -59,22 +59,33 @@
+ 
+     @property
+     def _css(self):
+-        css = self._css_lists[0]
+-        # filter(None, ...) avoids calling merge with empty dicts.
+-        for obj in filter(None, self._css_lists[1:]):
+-            css = {
+-                medium: self.merge(css.get(medium, []), obj.get(medium, []))
+-                for medium in css.keys() | obj.keys()
+-            }
+-        return css
++        """
++        Merge all stored CSS dicts per media type using the general merge
++        algorithm so that ordering constraints are derived only from the
++        original lists and not from intermediate, sequential merges.
++        """
++        # Collect all media keys from non-empty css dicts.
++        media_keys = set()
++        for css in filter(None, self._css_lists):
++            media_keys |= set(css.keys())
++        result = {}
++        for medium in media_keys:
++            # For each medium, gather the lists from each css dict in order.
++            lists = [css.get(medium, []) for css in self._css_lists if css]
++            result[medium] = self.merge(*lists)
++        return result
+ 
+     @property
+     def _js(self):
+-        js = self._js_lists[0]
+-        # filter(None, ...) avoids calling merge() with empty lists.
+-        for obj in filter(None, self._js_lists[1:]):
+-            js = self.merge(js, obj)
+-        return js
++        """
++        Merge all stored JS lists at once so that ordering constraints are
++        derived from the original lists rather than from intermediate
++        sequential merges (which can introduce spurious constraints).
++        """
++        lists = [lst for lst in self._js_lists if lst]
++        if not lists:
++            return []
++        return self.merge(*lists)
+ 
+     def render(self):
+         return mark_safe('\n'.join(chain.from_iterable(getattr(self, 'render_' + name)() for name in MEDIA_TYPES)))

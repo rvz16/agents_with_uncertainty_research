@@ -1,0 +1,14 @@
+--- a/sympy/functions/elementary/trigonometric.py
++++ b/sympy/functions/elementary/trigonometric.py
+@@ -392,6 +392,11 @@
+     def _eval_rewrite_as_sincos(self, arg):
+         return sin(arg)*cos(arg)/cos(arg)
+ 
++    def _eval_rewrite_as_sinc(self, arg):
++        # sin(x) = x * sinc(x), so rewriting sin in terms of sinc makes it
++        # possible for expressions like sin(x)/x to be rewritten to sinc(x)
++        return arg * sinc(arg)
++
+     def _eval_rewrite_as_cot(self, arg):
+         cot_half = cot(S.Half*arg)
+         return 2*cot_half/(1 + cot_half**2)

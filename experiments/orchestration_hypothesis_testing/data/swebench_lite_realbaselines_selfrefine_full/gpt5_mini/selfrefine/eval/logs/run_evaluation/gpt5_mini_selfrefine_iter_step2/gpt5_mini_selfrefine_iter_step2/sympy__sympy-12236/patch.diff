@@ -1,0 +1,25 @@
+--- a/sympy/polys/domains/polynomialring.py
++++ b/sympy/polys/domains/polynomialring.py
+@@ -113,7 +113,21 @@
+ 
+     def get_field(self):
+         """Returns a field associated with `self`. """
+-        return self.ring.to_field().to_domain()
++        # Convert the coefficient domain to its associated field first so that
++        # polynomial coefficients are promoted when forming the rational
++        # function field. For example, for a polynomial ring over ZZ[y] we want
++        # to work over QQ(y) (or QQ[y] promoted appropriately) rather than
++        # leaving ZZ[y] as an integral domain which would prevent correct
++        # division behavior (seen in apart() and Poly.div()).
++        if hasattr(self.domain, 'get_field'):
++            try:
++                base_field = self.domain.get_field()
++            except Exception:
++                # If conversion fails for some reason fall back to the old behavior.
++                return self.ring.to_field().to_domain()
++            return self.ring.to_field(base_field).to_domain()
++        else:
++            return self.ring.to_field().to_domain()
+ 
+     def is_positive(self, a):
+         """Returns True if `LC(a)` is positive. """

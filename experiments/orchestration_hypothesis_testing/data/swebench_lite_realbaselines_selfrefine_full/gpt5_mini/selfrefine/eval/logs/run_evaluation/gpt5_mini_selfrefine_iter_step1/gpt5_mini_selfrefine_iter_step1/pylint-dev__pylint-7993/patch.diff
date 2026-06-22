@@ -1,0 +1,54 @@
+--- a/pylint/reporters/text.py
++++ b/pylint/reporters/text.py
+@@ -16,6 +16,7 @@
+ import warnings
+ from dataclasses import asdict, fields
+ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, TextIO, cast, overload
++from string import Formatter
+ 
+ from pylint.message import Message
+ from pylint.reporters import BaseReporter
+@@ -174,15 +175,37 @@
+         # Set template to the currently selected template
+         self._template = template
+ 
+-        # Check to see if all parameters in the template are attributes of the Message
+-        arguments = re.findall(r"\{(.+?)(:.*)?\}", template)
+-        for argument in arguments:
+-            if argument[0] not in MESSAGE_FIELDS:
++        # Check to see if all parameters in the template are attributes of the Message.
++        # Use string.Formatter.parse() so that escaped braces ({{ and }}) are handled
++        # correctly (they will be returned as literal text and not as fields).
++        formatter = Formatter()
++        for parsed in formatter.parse(template):
++            # parsed can be (literal_text, field_name, format_spec, conversion)
++            # or (literal_text, field_name, format_spec) depending on Python version.
++            if len(parsed) == 4:
++                _, field_name, format_spec, conversion = parsed
++            else:
++                _, field_name, format_spec = parsed  # type: ignore[assignment]
++                conversion = None
++            # field_name is None or empty for literal text (including escaped braces)
++            if not field_name:
++                continue
++            # Consider only the base field name (before attribute or indexing),
++            # e.g. "msg.attr" or "msg[0]" -> "msg"
++            base_field = re.split(r"[.\[]", field_name)[0]
++            if base_field not in MESSAGE_FIELDS:
+                 warnings.warn(
+-                    f"Don't recognize the argument '{argument[0]}' in the --msg-template. "
++                    f"Don't recognize the argument '{base_field}' in the --msg-template. "
+                     "Are you sure it is supported on the current version of pylint?"
+                 )
+-                template = re.sub(r"\{" + argument[0] + r"(:.*?)?\}", "", template)
++                # Reconstruct the exact field pattern and remove it from the template.
++                field_pattern = "{" + field_name
++                if conversion:
++                    field_pattern += "!" + conversion
++                if format_spec:
++                    field_pattern += ":" + format_spec
++                field_pattern += "}"
++                template = template.replace(field_pattern, "")
+         self._fixed_template = template
+ 
+     def write_message(self, msg: Message) -> None:

@@ -1,0 +1,30 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1220,15 +1220,23 @@
+ 
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
++            # Short-circuit when no input coordinates to avoid calling
++            # into wcslib with zero-length arrays which can raise errors.
++            if xy.shape[0] == 0:
++                # For RA/DEC output ordering, return a tuple of two empty arrays
++                # shaped like the broadcasted input axes.
++                if ra_dec_order and sky == 'output':
++                    empty = np.empty(axes[0].shape, dtype=float)
++                    return (empty.copy(), empty.copy())
++                # Otherwise return a list of empty arrays, one per output axis.
++                return [np.empty(axes[0].shape, dtype=float)
++                        for _ in range(self.naxis)]
++
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+             output = func(xy, origin)
+             if ra_dec_order and sky == 'output':
+                 output = self._normalize_sky(output)
+-                return (output[:, 0].reshape(axes[0].shape),
+-                        output[:, 1].reshape(axes[0].shape))
+-            return [output[:, i].reshape(axes[0].shape)
+-                    for i in range(output.shape[1])]
+ 
+         def _return_single_array(xy, origin):
+             if xy.shape[-1] != self.naxis:

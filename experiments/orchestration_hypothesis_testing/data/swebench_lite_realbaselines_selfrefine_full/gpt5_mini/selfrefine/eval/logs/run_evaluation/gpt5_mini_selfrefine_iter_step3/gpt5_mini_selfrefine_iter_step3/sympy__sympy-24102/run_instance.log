@@ -1,0 +1,73 @@
+2026-06-22 19:11:33,443 - INFO - Creating container for sympy__sympy-24102...
+2026-06-22 19:11:33,556 - INFO - Container for sympy__sympy-24102 created: b6b663a439fa157ee2abaa7331860236f2a778938a7bed27787461aca13c53f7
+2026-06-22 19:11:33,865 - INFO - Container for sympy__sympy-24102 started: b6b663a439fa157ee2abaa7331860236f2a778938a7bed27787461aca13c53f7
+2026-06-22 19:11:33,865 - INFO - Intermediate patch for sympy__sympy-24102 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-24102/patch.diff, now applying to container...
+2026-06-22 19:11:33,993 - INFO - >>>>> Applied Patch:
+Checking patch sympy/parsing/mathematica.py...
+Applied patch sympy/parsing/mathematica.py cleanly.
+
+2026-06-22 19:11:34,297 - INFO - Git diff before:
+diff --git a/sympy/parsing/mathematica.py b/sympy/parsing/mathematica.py
+index 7ea14ce33a..4309904213 100644
+--- a/sympy/parsing/mathematica.py
++++ b/sympy/parsing/mathematica.py
+@@ -586,7 +586,10 @@ def parse(self, s):
+         "##": lambda: ["SlotSequence", "1"],
+     }
+ 
+-    _literal = r"[A-Za-z][A-Za-z0-9]*"
++    # Allow Unicode letters (e.g. Greek characters like λ) as the initial
++    # character of Mathematica identifiers. The range \u0080-\uffff covers
++    # non-ASCII letters used commonly in identifiers.
++    _literal = r"[A-Za-z\u0080-\uffff][A-Za-z0-9\u0080-\uffff]*"
+     _number = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+ 
+     _enclosure_open = ["(", "[", "[[", "{"]
+@@ -615,7 +618,9 @@ def _get_tokenizer(self):
+         tokens.extend(map(re.escape, tokens_escape))
+         tokens.append(",")
+         tokens.append("\n")
+-        tokenizer = re.compile("(" + "|".join(tokens) + ")")
++        # Compile the tokenizer with the UNICODE flag to ensure proper handling
++        # of Unicode characters in patterns (identifiers, etc.).
++        tokenizer = re.compile("(" + "|".join(tokens) + ")", re.UNICODE)
+         self._regex_tokenizer = tokenizer
+         return self._regex_tokenizer
+2026-06-22 19:11:34,297 - INFO - Eval script for sympy__sympy-24102 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-24102/eval.sh; copying to container...
+2026-06-22 19:11:37,206 - INFO - Test runtime: 2.86 seconds
+2026-06-22 19:11:37,207 - INFO - Test output for sympy__sympy-24102 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-24102/test_output.txt
+2026-06-22 19:11:37,272 - INFO - Git diff after:
+diff --git a/sympy/parsing/mathematica.py b/sympy/parsing/mathematica.py
+index 7ea14ce33a..4309904213 100644
+--- a/sympy/parsing/mathematica.py
++++ b/sympy/parsing/mathematica.py
+@@ -586,7 +586,10 @@ def parse(self, s):
+         "##": lambda: ["SlotSequence", "1"],
+     }
+ 
+-    _literal = r"[A-Za-z][A-Za-z0-9]*"
++    # Allow Unicode letters (e.g. Greek characters like λ) as the initial
++    # character of Mathematica identifiers. The range \u0080-\uffff covers
++    # non-ASCII letters used commonly in identifiers.
++    _literal = r"[A-Za-z\u0080-\uffff][A-Za-z0-9\u0080-\uffff]*"
+     _number = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+ 
+     _enclosure_open = ["(", "[", "[[", "{"]
+@@ -615,7 +618,9 @@ def _get_tokenizer(self):
+         tokens.extend(map(re.escape, tokens_escape))
+         tokens.append(",")
+         tokens.append("\n")
+-        tokenizer = re.compile("(" + "|".join(tokens) + ")")
++        # Compile the tokenizer with the UNICODE flag to ensure proper handling
++        # of Unicode characters in patterns (identifiers, etc.).
++        tokenizer = re.compile("(" + "|".join(tokens) + ")", re.UNICODE)
+         self._regex_tokenizer = tokenizer
+         return self._regex_tokenizer
+2026-06-22 19:11:37,272 - INFO - Grading answer for sympy__sympy-24102...
+2026-06-22 19:11:37,273 - INFO - report: {'sympy__sympy-24102': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_parser_mathematica_tokenizer'], 'failure': ['test_mathematica']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-24102: resolved: False
+2026-06-22 19:11:37,273 - INFO - Attempting to stop container sweb.eval.sympy__sympy-24102.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:11:52,521 - INFO - Attempting to remove container sweb.eval.sympy__sympy-24102.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:11:52,546 - INFO - Container sweb.eval.sympy__sympy-24102.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 19:11:52,546 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-24102:latest...
+2026-06-22 19:11:53,409 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-24102:latest removed.

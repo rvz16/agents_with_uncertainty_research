@@ -1,0 +1,20 @@
+--- a/sympy/simplify/cse_main.py
++++ b/sympy/simplify/cse_main.py
+@@ -586,6 +586,17 @@
+         if isinstance(expr, RootOf):
+             return
+ 
++        # Treat MatrixSymbol instances as atomic for the purposes of repeated
++        # subexpression detection. MatrixSymbol represents a matrix variable;
++        # replacing a matrix variable with a scalar symbol (or creating a new
++        # MatrixSymbol that is then elementwise-copied) leads to undesirable
++        # codegen where the whole matrix is copied element-by-element.
++        # We therefore consider MatrixSymbol as an excluded "symbol-like"
++        # object so that CSE will not create a top-level replacement for it.
++        if isinstance(expr, MatrixSymbol):
++            excluded_symbols.add(expr)
++            return
++
+         if isinstance(expr, Basic) and (expr.is_Atom or expr.is_Order):
+             if expr.is_Symbol:
+                 excluded_symbols.add(expr)

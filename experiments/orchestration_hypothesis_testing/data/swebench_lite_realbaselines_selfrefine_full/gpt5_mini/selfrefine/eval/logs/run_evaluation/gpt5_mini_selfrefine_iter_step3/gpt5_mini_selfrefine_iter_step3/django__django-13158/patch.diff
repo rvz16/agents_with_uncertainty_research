@@ -1,0 +1,45 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1776,9 +1776,42 @@
+         return condition, needed_inner
+ 
+     def set_empty(self):
++        """
++        Mark this Query as empty.
++
++        We add a NothingNode to the where-clause so that existing checks
++        against the where tree (is_empty()) continue to work. For queries
++        that participate in set operations (combined queries), compilers may
++        otherwise still include the other combined subqueries when producing
++        SQL. To avoid irreversibly discarding the original set-operation
++        metadata (which could be surprising if the same Query instance is
++        shared), preserve the combinator/combinator_all/combined_queries tuple
++        on _preserved_combination and clear the active combination so the
++        compiler treats this Query as empty.
++        """
++        # Add explicit NothingNode to where-clause.
+         self.where.add(NothingNode(), AND)
++        # Mark explicitly as empty so callers can check this quickly.
++        self._is_empty = True
++
++        # If this query is a combined query, preserve the combination metadata
++        # and clear it so that compilers won't include the other sides of the
++        # set-operation when this query has been made empty.
++        if getattr(self, 'combinator', None) is not None or getattr(self, 'combined_queries', ()):
++            if not hasattr(self, '_preserved_combination'):
++                self._preserved_combination = (
++                    getattr(self, 'combinator', None),
++                    getattr(self, 'combinator_all', False),
++                    getattr(self, 'combined_queries', ())
++                )
++            self.combinator = None
++            self.combinator_all = False
++            self.combined_queries = ()
+ 
+     def is_empty(self):
++        # Respect the explicit empty marker if set.
++        if getattr(self, '_is_empty', False):
++            return True
+         return any(isinstance(c, NothingNode) for c in self.where.children)
+ 
+     def set_limits(self, low=None, high=None):

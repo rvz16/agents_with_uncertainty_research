@@ -1,0 +1,51 @@
+--- a/lib/matplotlib/legend.py
++++ b/lib/matplotlib/legend.py
+@@ -341,6 +341,10 @@
+         handler_map=None,
+         title_fontproperties=None,  # properties for the legend title
+         alignment="center",       # control the alignment within the legend box
++        # Draggability options: allow enabling draggable legend at creation time.
++        draggable=False,
++        draggable_use_blit=False,
++        draggable_update="loc",
+         *,
+         ncol=1  # synonym for ncols (backward compatibility)
+     ):
+@@ -361,6 +365,17 @@
+         Other Parameters
+         ----------------
+         %(_legend_kw_doc)s
++
++        draggable : bool, default: False
++            If *True*, enable interactive dragging of the legend upon
++            creation. This is equivalent to calling
++            ``Legend.set_draggable(True)`` after creating the legend.
++
++        draggable_use_blit : bool, default: False
++            Passed to ``Legend.set_draggable`` as *use_blit*.
++
++        draggable_update : {'loc', 'bbox'}, default: 'loc'
++            Passed to ``Legend.set_draggable`` as *update*.
+ 
+         Notes
+         -----
+@@ -538,6 +553,19 @@
+ 
+         self.set_title(title, prop=title_prop_fp)
+         self._draggable = None
++
++        # If requested, initialize draggable support at creation time.
++        # Use the public set_draggable API to manage the DraggableLegend helper.
++        try:
++            # The parameters draggable, draggable_use_blit and
++            # draggable_update are added to the signature above and will be
++            # present in the function locals.
++            self.set_draggable(draggable, use_blit=draggable_use_blit,
++                               update=draggable_update)
++        except NameError:
++            # If for some reason the parameters are not present (e.g., older
++            # call sites), ignore and leave the initial state as non-draggable.
++            pass
+ 
+         # set the text color
+ 

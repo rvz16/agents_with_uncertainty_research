@@ -1,0 +1,81 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,58 @@
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+-        from sympy.core.numbers import Float
+-
+-        is_rational = self._eval_is_rational()
+-        if is_rational is False:
+-            return False
+-
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        """
++        Conservative integer check for Mul.
++
++        Only return True when it can be determined from the factor structure
++        of the product that the product is an integer without performing
++        further evaluation. If there are any factors that introduce a
++        nontrivial denominator (e.g. negative integer powers or rational
++        factors with denominator != 1) or factors that cannot be decided to
++        be integer/rational without evaluation then return None so that
++        assumptions machinery does not make an unsound True decision.
++
++        This avoids incorrect True results for unevaluated Muls such as
++        Mul(-1, Mul(1, Pow(2, -1, evaluate=False), evaluate=False),
++        evaluate=False) which should not be treated as an integer without
++        evaluation.
++        """
++        numerators = []
++        denominators = []
++
++        for a in self.args:
++            # integer factors are safe
++            if a.is_integer:
++                numerators.append(a)
++            # explicit Rational factors: extract numerator/denominator
++            elif a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++            # explicit powers: only handle when base and exponent are integer
++            elif a.is_Pow:
++                b, e = a.as_base_exp()
++                if b.is_integer and e.is_integer:
++                    # negative integer exponent contributes to denominator
++                    if e.is_negative:
++                        # store the corresponding positive-power denominator
++                        denominators.append(Pow(b, -e))
++                    else:
++                        numerators.append(Pow(b, e))
++                else:
++                    # cannot decide conservatively
++                    return
++            else:
++                # for any other kind of factor, be conservative
++                return
++
++        # if no denominator factors were found, product is integer
++        if not denominators:
++            return True
++
++        # otherwise we cannot determine integrality here without further
++        # (potentially unsafe) evaluation; be conservative
++        return
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

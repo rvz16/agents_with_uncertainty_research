@@ -1,0 +1,35 @@
+--- a/sympy/polys/domains/polynomialring.py
++++ b/sympy/polys/domains/polynomialring.py
+@@ -112,8 +112,30 @@
+             return None
+ 
+     def get_field(self):
+-        """Returns a field associated with `self`. """
+-        return self.ring.to_field().to_domain()
++        """Returns a field associated with `self`.
++
++        Ensure that if the coefficient domain of this polynomial ring itself
++        has an associated field (for example a polynomial ring over ZZ where
++        the coefficients should be considered over QQ), that field is used
++        as the base for the returned rational function field. This avoids
++        creating a fraction field over a ring (e.g. ZZ[y]) when the proper
++        coefficient field (e.g. QQ[y]) is required for polynomial division.
++        """
++        # If the coefficient domain has its own field, use that as the base.
++        base = self.domain
++        if hasattr(base, "get_field"):
++            try:
++                base = base.get_field()
++            except Exception:
++                # If for some reason conversion to a field fails, fall back
++                # to the original domain.
++                base = self.domain
++
++        # Build a PolyRing with the (possibly converted) base and then
++        # return its fraction field as a domain.
++        from sympy.polys.rings import PolyRing
++        ring = PolyRing(self.symbols, base, self.order)
++        return ring.to_field().to_domain()
+ 
+     def is_positive(self, a):
+         """Returns True if `LC(a)` is positive. """

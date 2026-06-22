@@ -1,0 +1,13 @@
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -68,6 +68,10 @@
+             str_number = "{:f}".format(number)
+     else:
+         str_number = str(number)
++    # If the string is empty (for example when an empty value is passed),
++    # avoid indexing into it which would raise IndexError.
++    if not str_number:
++        return mark_safe("")
+     if str_number[0] == "-":
+         sign = "-"
+         str_number = str_number[1:]

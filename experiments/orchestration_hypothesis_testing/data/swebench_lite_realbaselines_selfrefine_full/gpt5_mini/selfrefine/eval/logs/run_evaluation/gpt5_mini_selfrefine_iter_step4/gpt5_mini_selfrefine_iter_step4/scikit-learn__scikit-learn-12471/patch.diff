@@ -1,0 +1,50 @@
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -111,7 +111,46 @@
+                     # removed later.
+                     X_mask[:, i] = valid_mask
+                     Xi = Xi.copy()
+-                    Xi[~valid_mask] = self.categories_[i][0]
++                    # Avoid assigning a potentially longer category string into
++                    # a fixed-size numpy string array which would cause
++                    # truncation / memory issues. If the categories contain
++                    # string-like entries that are longer than the number of
++                    # characters the current Xi dtype can hold, upcast to
++                    # object dtype before assignment.
++                    cats = self.categories_[i]
++                    need_object = False
++                    # Only consider string-like numpy dtypes for Xi here.
++                    if (np.issubdtype(Xi.dtype, np.str_) or
++                            np.issubdtype(Xi.dtype, np.bytes_)):
++                        # If categories ndarray has a string/bytes dtype we can
++                        # inspect its itemsize/kind directly.
++                        if (np.issubdtype(getattr(cats, "dtype", np.dtype("O")),
++                                          np.str_) or
++                                np.issubdtype(getattr(cats, "dtype", np.dtype("O")),
++                                              np.bytes_)):
++                            # Determine how many characters Xi can hold.
++                            if Xi.dtype.kind == 'U':
++                                xi_maxchars = Xi.dtype.itemsize // 4
++                            else:
++                                xi_maxchars = Xi.dtype.itemsize
++                            # Compute the maximum length (in characters) of the
++                            # categories. Use text conversion for unicode safety.
++                            cats_maxchars = max(len(six.text_type(cat)) for cat in cats)
++                            if cats_maxchars > xi_maxchars:
++                                need_object = True
++                        else:
++                            # cats may be of object dtype: check elements.
++                            if any(isinstance(cat, six.string_types) for cat in cats):
++                                if Xi.dtype.kind == 'U':
++                                    xi_maxchars = Xi.dtype.itemsize // 4
++                                else:
++                                    xi_maxchars = Xi.dtype.itemsize
++                                cats_maxchars = max(len(six.text_type(cat)) for cat in cats)
++                                if cats_maxchars > xi_maxchars:
++                                    need_object = True
++                    if need_object:
++                        Xi = Xi.astype(object)
++                    Xi[~valid_mask] = cats[0]
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded
+ 

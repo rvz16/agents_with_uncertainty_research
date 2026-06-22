@@ -1,0 +1,36 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -1915,13 +1915,26 @@
+         # Construct root sign, start with the \/ shape
+         _zZ = xobj('/', 1)
+         rootsign = xobj('\\', 1) + _zZ
+-        # Make exponent number to put above it
+-        if isinstance(expt, Rational):
+-            exp = str(expt.q)
+-            if exp == '2':
+-                exp = ''
+-        else:
+-            exp = str(expt.args[0])
++        # Make exponent number to put above it.
++        # expt may be a Rational like 1/3 or a symbolic 1/d (e.g. 1/E).
++        # Use fraction() to obtain the denominator and render it sensibly.
++        from sympy.simplify.simplify import fraction
++        n, d = fraction(expt)
++        # If denominator is 2 (square root) omit the index
++        if d == 2:
++            exp = ''
++        else:
++            # Prefer a pretty short representation for common atoms like Exp1.
++            if d is S.Exp1:
++                # Use pretty_atom so unicode setting is respected (prints 'e' or appropriate)
++                exp = pretty_atom('Exp1', 'e')
++            else:
++                # Fallback to sstr for a concise string form of the denominator
++                try:
++                    exp = sstr(d)
++                except Exception:
++                    exp = str(d)
++        # Ensure at least 2 characters width for alignment
+         exp = exp.ljust(2)
+         if len(exp) > 2:
+             rootsign = ' '*(len(exp) - 2) + rootsign

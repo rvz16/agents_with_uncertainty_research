@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:15:29.999043+00:00",
+  "instance_id": "django__django-15790",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\ncheck_for_template_tags_with_the_same_name with libraries in TEMPLATES\nDescription\n\t\nI didn't explore this thoroughly, but I think there might be an issue with the check_for_template_tags_with_the_same_name when you add a template tag library into TEMPLATES['OPTIONS']['librairies'].\nI'm getting an error like: \n(templates.E003) 'my_tags' is used for multiple template tag modules: 'someapp.templatetags.my_tags', 'someapp.templatetags.my_tags'\n\n\n## Your previous patch (diff format)\n```\n--- a/django/core/checks/templates.py\n+++ b/django/core/checks/templates.py\n@@ -55,10 +55,12 @@\n     for conf in settings.TEMPLATES:\n         custom_libraries = conf.get(\"OPTIONS\", {}).get(\"libraries\", {})\n         for module_name, module_path in custom_libraries.items():\n-            libraries[module_name].append(module_path)\n+            if module_path not in libraries[module_name]:\n+                libraries[module_name].append(module_path)\n \n     for module_name, module_path in get_template_tag_modules():\n-        libraries[module_name].append(module_path)\n+        if module_path not in libraries[module_name]:\n+            libraries[module_name].append(module_path)\n \n     for library_name, items in libraries.items():\n         if len(items) > 1:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 402,
+  "completion_tokens": 1335,
+  "cost_usd": 0.0027705
+}

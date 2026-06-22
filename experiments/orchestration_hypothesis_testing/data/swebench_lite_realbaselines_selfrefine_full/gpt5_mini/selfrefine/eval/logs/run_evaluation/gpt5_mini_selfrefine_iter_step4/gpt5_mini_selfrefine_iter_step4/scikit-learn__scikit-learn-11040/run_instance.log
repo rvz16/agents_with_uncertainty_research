@@ -1,0 +1,167 @@
+2026-06-22 21:12:55,338 - INFO - Creating container for scikit-learn__scikit-learn-11040...
+2026-06-22 21:12:55,604 - INFO - Container for scikit-learn__scikit-learn-11040 created: 4b66d690acf8b0fb3bea3f6bc1b37fbb7f976d83b9586706cdf07a819d3c15d7
+2026-06-22 21:12:55,894 - INFO - Container for scikit-learn__scikit-learn-11040 started: 4b66d690acf8b0fb3bea3f6bc1b37fbb7f976d83b9586706cdf07a819d3c15d7
+2026-06-22 21:12:55,894 - INFO - Intermediate patch for scikit-learn__scikit-learn-11040 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/scikit-learn__scikit-learn-11040/patch.diff, now applying to container...
+2026-06-22 21:12:55,985 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/neighbors/base.py...
+Applied patch sklearn/neighbors/base.py cleanly.
+
+2026-06-22 21:12:56,150 - INFO - Git diff before:
+diff --git a/sklearn/neighbors/base.py b/sklearn/neighbors/base.py
+index 3e5e729c2..e69c92372 100644
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@ import warnings
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -55,6 +56,35 @@ def _check_weights(weights):
+                          "'distance', or a callable function")
+ 
+ 
++def _check_n_neighbors(n_neighbors, name='n_neighbors'):
++    """Validate and normalize n_neighbors-like parameters.
++
++    Accept integer types, numpy integer scalars and float values that are
++    integer-valued (e.g., 3.0). Return an int or None. Raise ValueError for
++    invalid values.
++    """
++    if n_neighbors is None:
++        return None
++
++    # Accept integer types (including numpy integer scalars)
++    if isinstance(n_neighbors, (numbers.Integral, np.integer)):
++        n_neighbors_int = int(n_neighbors)
++        if n_neighbors_int <= 0:
++            raise ValueError("Expected %s > 0. Got %d" % (name, n_neighbors_int))
++        return n_neighbors_int
++
++    # Accept float values that are integer-valued (e.g., 3.0)
++    if isinstance(n_neighbors, float):
++        if not n_neighbors.is_integer():
++            raise ValueError("%s must be an integer, got %r" % (name, n_neighbors))
++        n_neighbors_int = int(n_neighbors)
++        if n_neighbors_int <= 0:
++            raise ValueError("Expected %s > 0. Got %d" % (name, n_neighbors_int))
++        return n_neighbors_int
++
++    raise ValueError("%s must be an integer, got %r" % (name, n_neighbors))
++
++
+ def _get_weights(dist, weights):
+     """Get the weights from an array of distances and a parameter ``weights``
+ 
+@@ -107,7 +137,9 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
+                  algorithm='auto', leaf_size=30, metric='minkowski',
+                  p=2, metric_params=None, n_jobs=1):
+ 
+-        self.n_neighbors = n_neighbors
++        # Validate n_neighbors early so that downstream code that expects an
++        # integer does not fail with a less informative TypeError.
++        self.n_neighbors = _check_n_neighbors(n_neighbors)
+         self.radius = radius
+         self.algorithm = algorithm
+         self.leaf_size = leaf_size
+@@ -325,8 +357,11 @@ class KNeighborsMixin(object):
+         """
+         check_is_fitted(self, "_fit_method")
+ 
+-        if n_neighbors is None:
+-            n_neighbors = self.n_neighbors
++        if n
++
++        # Validate user-specified n_neighbors (allow None to be handled below).
++        if n_neighbors is not None:
++            n_neighbors = _check_n_neighbors(n_neighbors)
+ 
+         if X is not None:
+             query_is_train = False
+2026-06-22 21:12:56,150 - INFO - Eval script for scikit-learn__scikit-learn-11040 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/scikit-learn__scikit-learn-11040/eval.sh; copying to container...
+2026-06-22 21:12:58,926 - INFO - Test runtime: 2.74 seconds
+2026-06-22 21:12:58,926 - INFO - Test output for scikit-learn__scikit-learn-11040 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/scikit-learn__scikit-learn-11040/test_output.txt
+2026-06-22 21:12:58,987 - INFO - Git diff after:
+diff --git a/sklearn/neighbors/base.py b/sklearn/neighbors/base.py
+index 3e5e729c2..e69c92372 100644
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@ import warnings
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -55,6 +56,35 @@ def _check_weights(weights):
+                          "'distance', or a callable function")
+ 
+ 
++def _check_n_neighbors(n_neighbors, name='n_neighbors'):
++    """Validate and normalize n_neighbors-like parameters.
++
++    Accept integer types, numpy integer scalars and float values that are
++    integer-valued (e.g., 3.0). Return an int or None. Raise ValueError for
++    invalid values.
++    """
++    if n_neighbors is None:
++        return None
++
++    # Accept integer types (including numpy integer scalars)
++    if isinstance(n_neighbors, (numbers.Integral, np.integer)):
++        n_neighbors_int = int(n_neighbors)
++        if n_neighbors_int <= 0:
++            raise ValueError("Expected %s > 0. Got %d" % (name, n_neighbors_int))
++        return n_neighbors_int
++
++    # Accept float values that are integer-valued (e.g., 3.0)
++    if isinstance(n_neighbors, float):
++        if not n_neighbors.is_integer():
++            raise ValueError("%s must be an integer, got %r" % (name, n_neighbors))
++        n_neighbors_int = int(n_neighbors)
++        if n_neighbors_int <= 0:
++            raise ValueError("Expected %s > 0. Got %d" % (name, n_neighbors_int))
++        return n_neighbors_int
++
++    raise ValueError("%s must be an integer, got %r" % (name, n_neighbors))
++
++
+ def _get_weights(dist, weights):
+     """Get the weights from an array of distances and a parameter ``weights``
+ 
+@@ -107,7 +137,9 @@ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
+                  algorithm='auto', leaf_size=30, metric='minkowski',
+                  p=2, metric_params=None, n_jobs=1):
+ 
+-        self.n_neighbors = n_neighbors
++        # Validate n_neighbors early so that downstream code that expects an
++        # integer does not fail with a less informative TypeError.
++        self.n_neighbors = _check_n_neighbors(n_neighbors)
+         self.radius = radius
+         self.algorithm = algorithm
+         self.leaf_size = leaf_size
+@@ -325,8 +357,11 @@ class KNeighborsMixin(object):
+         """
+         check_is_fitted(self, "_fit_method")
+ 
+-        if n_neighbors is None:
+-            n_neighbors = self.n_neighbors
++        if n
++
++        # Validate user-specified n_neighbors (allow None to be handled below).
++        if n_neighbors is not None:
++            n_neighbors = _check_n_neighbors(n_neighbors)
+ 
+         if X is not None:
+             query_is_train = False
+2026-06-22 21:12:58,987 - INFO - Grading answer for scikit-learn__scikit-learn-11040...
+2026-06-22 21:12:58,988 - INFO - report: {'scikit-learn__scikit-learn-11040': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['sklearn/neighbors/tests/test_neighbors.py::test_n_neighbors_datatype']}, 'PASS_TO_PASS': {'success': [], 'failure': ['sklearn/neighbors/tests/test_neighbors.py::test_unsupervised_kneighbors', 'sklearn/neighbors/tests/test_neighbors.py::test_unsupervised_inputs', 'sklearn/neighbors/tests/test_neighbors.py::test_precomputed', 'sklearn/neighbors/tests/test_neighbors.py::test_precomputed_cross_validation', 'sklearn/neighbors/tests/test_neighbors.py::test_unsupervised_radius_neighbors', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_classifier', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_classifier_float_labels', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_classifier_predict_proba', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_classifier', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_classifier_when_no_neighbors', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_classifier_outlier_labeling', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_classifier_zero_distance', 'sklearn/neighbors/tests/test_neighbors.py::test_neighbors_regressors_zero_distance', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_boundary_handling', 'sklearn/neighbors/tests/test_neighbors.py::test_RadiusNeighborsClassifier_multioutput', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_classifier_sparse', 'sklearn/neighbors/tests/test_neighbors.py::test_KNeighborsClassifier_multioutput', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_regressor', 'sklearn/neighbors/tests/test_neighbors.py::test_KNeighborsRegressor_multioutput_uniform_weight', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_regressor_multioutput', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_regressor', 'sklearn/neighbors/tests/test_neighbors.py::test_RadiusNeighborsRegressor_multioutput_with_uniform_weight', 'sklearn/neighbors/tests/test_neighbors.py::test_RadiusNeighborsRegressor_multioutput', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_regressor_sparse', 'sklearn/neighbors/tests/test_neighbors.py::test_neighbors_iris', 'sklearn/neighbors/tests/test_neighbors.py::test_neighbors_digits', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_graph', 'sklearn/neighbors/tests/test_neighbors.py::test_kneighbors_graph_sparse', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_graph', 'sklearn/neighbors/tests/test_neighbors.py::test_radius_neighbors_graph_sparse', 'sklearn/neighbors/tests/test_neighbors.py::test_neighbors_badargs', 'sklearn/neighbors/tests/test_neighbors.py::test_neighbors_metrics', 'sklearn/neighbors/tests/test_neighbors.py::test_callable_metric', 'sklearn/neighbors/tests/test_neighbors.py::test_valid_brute_metric_for_auto_algorithm', 'sklearn/neighbors/tests/test_neighbors.py::test_metric_params_interface', 'sklearn/neighbors/tests/test_neighbors.py::test_predict_sparse_ball_kd_tree', 'sklearn/neighbors/tests/test_neighbors.py::test_non_euclidean_kneighbors', 'sklearn/neighbors/tests/test_neighbors.py::test_k_and_radius_neighbors_train_is_not_query', 'sklearn/neighbors/tests/test_neighbors.py::test_k_and_radius_neighbors_X_None', 'sklearn/neighbors/tests/test_neighbors.py::test_k_and_radius_neighbors_duplicates', 'sklearn/neighbors/tests/test_neighbors.py::test_include_self_neighbors_graph', 'sklearn/neighbors/tests/test_neighbors.py::test_dtype_convert', 'sklearn/neighbors/tests/test_neighbors.py::test_sparse_metric_callable', 'sklearn/neighbors/tests/test_neighbors.py::test_pairwise_boolean_distance']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-11040: resolved: False
+2026-06-22 21:12:58,989 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-11040.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:13:14,256 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-11040.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:13:14,274 - INFO - Container sweb.eval.scikit-learn__scikit-learn-11040.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:13:14,275 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-11040:latest...
+2026-06-22 21:13:14,353 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-11040:latest removed.

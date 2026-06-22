@@ -1,0 +1,83 @@
+2026-06-22 17:10:20,521 - INFO - Creating container for sympy__sympy-23117...
+2026-06-22 17:10:20,621 - INFO - Container for sympy__sympy-23117 created: fcf1a578777b8de2d992f5f570faa3308dc5df7f1907e7e69beb7d092d16abd5
+2026-06-22 17:10:20,762 - INFO - Container for sympy__sympy-23117 started: fcf1a578777b8de2d992f5f570faa3308dc5df7f1907e7e69beb7d092d16abd5
+2026-06-22 17:10:20,762 - INFO - Intermediate patch for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-23117/patch.diff, now applying to container...
+2026-06-22 17:10:20,912 - INFO - >>>>> Applied Patch:
+Checking patch sympy/tensor/array/ndim_array.py...
+Applied patch sympy/tensor/array/ndim_array.py cleanly.
+
+2026-06-22 17:10:21,164 - INFO - Git diff before:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..88f449bf35 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -191,16 +191,25 @@ def _setter_iterable_check(self, value):
+     @classmethod
+     def _scan_iterable_shape(cls, iterable):
+         def f(pointer):
++            # Non-iterable objects are scalars.
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Ensure we can iterate multiple times by converting to list.
++            # This also allows us to detect empty iterables.
++            pointer_list = list(pointer)
++
++            # Special-case empty iterable: treat as a 1-D array with zero length.
++            if len(pointer_list) == 0:
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+                 result.extend(i)
+-            return result, (len(shapes),)+shapes[0]
++            return result, (len(shapes),) + shapes[0]
+ 
+         return f(iterable)
+2026-06-22 17:10:21,165 - INFO - Eval script for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-23117/eval.sh; copying to container...
+2026-06-22 17:10:24,856 - INFO - Test runtime: 3.65 seconds
+2026-06-22 17:10:24,856 - INFO - Test output for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-23117/test_output.txt
+2026-06-22 17:10:24,907 - INFO - Git diff after:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..88f449bf35 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -191,16 +191,25 @@ def _setter_iterable_check(self, value):
+     @classmethod
+     def _scan_iterable_shape(cls, iterable):
+         def f(pointer):
++            # Non-iterable objects are scalars.
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Ensure we can iterate multiple times by converting to list.
++            # This also allows us to detect empty iterables.
++            pointer_list = list(pointer)
++
++            # Special-case empty iterable: treat as a 1-D array with zero length.
++            if len(pointer_list) == 0:
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+                 result.extend(i)
+-            return result, (len(shapes),)+shapes[0]
++            return result, (len(shapes),) + shapes[0]
+ 
+         return f(iterable)
+2026-06-22 17:10:24,907 - INFO - Grading answer for sympy__sympy-23117...
+2026-06-22 17:10:24,907 - INFO - report: {'sympy__sympy-23117': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_17851'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_array_negative_indices', 'test_issue_18361', 'test_issue_20222'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-23117: resolved: True
+2026-06-22 17:10:24,907 - INFO - Attempting to stop container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:10:40,085 - INFO - Attempting to remove container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:10:40,105 - INFO - Container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 17:10:40,105 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest...
+2026-06-22 17:10:40,157 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest removed.

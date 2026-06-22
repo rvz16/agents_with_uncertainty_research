@@ -1,0 +1,32 @@
+--- a/sphinx/domains/std.py
++++ b/sphinx/domains/std.py
+@@ -1070,13 +1070,24 @@
+                 else:
+                     return env.toc_secnumbers[docname].get(anchorname)
+         else:
++            # The fignumbers are stored keyed by the node id that was used when
++            # numbering the figure/table/code-block. That id is not always the
++            # first id in target_node['ids'] (for example, an explicit label
++            # supplied by the user may appear later in the ids list). Try to
++            # find any id from target_node['ids'] that has an assigned number.
+             try:
+-                figure_id = target_node['ids'][0]
+-                return env.toc_fignumbers[docname][figtype][figure_id]
+-            except (KeyError, IndexError) as exc:
+-                # target_node is found, but fignumber is not assigned.
+-                # Maybe it is defined in orphaned document.
++                fdict = env.toc_fignumbers[docname][figtype]
++            except KeyError as exc:
++                # No fignumbers for this doc/figtype -> no number assigned.
+                 raise ValueError from exc
++
++            for node_id in getattr(target_node, 'ids', []):
++                if node_id in fdict:
++                    return fdict[node_id]
++
++            # target_node is found, but fignumber is not assigned.
++            # Maybe it is defined in orphaned document.
++            raise ValueError
+ 
+     def get_full_qualified_name(self, node: Element) -> str:
+         if node.get('reftype') == 'option':

@@ -1,0 +1,119 @@
+2026-06-22 18:20:45,732 - INFO - Creating container for django__django-16408...
+2026-06-22 18:20:45,880 - INFO - Container for django__django-16408 created: b09efd7188700a090d1f8636d662b2cffbee0b0604dba89b324c4e4ba840a138
+2026-06-22 18:20:46,010 - INFO - Container for django__django-16408 started: b09efd7188700a090d1f8636d662b2cffbee0b0604dba89b324c4e4ba840a138
+2026-06-22 18:20:46,010 - INFO - Intermediate patch for django__django-16408 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-16408/patch.diff, now applying to container...
+2026-06-22 18:20:46,130 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/sql/compiler.py...
+Applied patch django/db/models/sql/compiler.py cleanly.
+
+2026-06-22 18:20:46,581 - INFO - Git diff before:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 7c433b3f06..c4cb946906 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1277,6 +1277,35 @@ class SQLCompiler:
+             def remote_setter(name, obj, from_obj):
+                 setattr(from_obj, name, obj)
+ 
++            def make_filtered_local_setter(joins, select):
++                """
++                Return a local_setter which will only set the cached reverse
++                relation on the parent object if that parent was actually
++                selected in the query. This avoids attempting to cache
++                intermediate objects that were not fetched (e.g. for
++                multi-level FilteredRelation paths where only the terminal
++                model was selected).
++                """
++                parent_alias = joins[-2] if len(joins) > 1 else None
++
++                def filtered_local_setter(final_field, obj, from_obj):
++                    if not from_obj:
++                        return
++                    # If there is no intermediate parent alias, behave as before.
++                    if parent_alias is None:
++                        final_field.remote_field.set_cached_value(from_obj, obj)
++                        return
++                    # Check if any already-selected column references the parent alias.
++                    # Only if such a column exists do we set the cached value on the parent.
++                    for sel_col, *_ in select:
++                        if getattr(sel_col, "alias", None) == parent_alias:
++                            final_field.remote_field.set_cached_value(from_obj, obj)
++                            return
++                    # Parent wasn't selected; do not set cache.
++                    return
++
++                return filtered_local_setter
++
+             for name in list(requested):
+                 # Filtered relations work only on the topmost level.
+                 if cur_depth > 1:
+@@ -1295,7 +1324,7 @@ class SQLCompiler:
+                         "model": model,
+                         "field": final_field,
+                         "reverse": True,
+-                        "local_setter": partial(local_setter, final_field),
++                        "local_setter": partial(make_filtered_local_setter(joins, select), final_field),
+                         "remote_setter": partial(remote_setter, name),
+                         "from_parent": from_parent,
+                     }
+2026-06-22 18:20:46,581 - INFO - Eval script for django__django-16408 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-16408/eval.sh; copying to container...
+2026-06-22 18:20:50,421 - INFO - Test runtime: 3.78 seconds
+2026-06-22 18:20:50,421 - INFO - Test output for django__django-16408 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-16408/test_output.txt
+2026-06-22 18:20:50,471 - INFO - Git diff after:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 7c433b3f06..c4cb946906 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1277,6 +1277,35 @@ class SQLCompiler:
+             def remote_setter(name, obj, from_obj):
+                 setattr(from_obj, name, obj)
+ 
++            def make_filtered_local_setter(joins, select):
++                """
++                Return a local_setter which will only set the cached reverse
++                relation on the parent object if that parent was actually
++                selected in the query. This avoids attempting to cache
++                intermediate objects that were not fetched (e.g. for
++                multi-level FilteredRelation paths where only the terminal
++                model was selected).
++                """
++                parent_alias = joins[-2] if len(joins) > 1 else None
++
++                def filtered_local_setter(final_field, obj, from_obj):
++                    if not from_obj:
++                        return
++                    # If there is no intermediate parent alias, behave as before.
++                    if parent_alias is None:
++                        final_field.remote_field.set_cached_value(from_obj, obj)
++                        return
++                    # Check if any already-selected column references the parent alias.
++                    # Only if such a column exists do we set the cached value on the parent.
++                    for sel_col, *_ in select:
++                        if getattr(sel_col, "alias", None) == parent_alias:
++                            final_field.remote_field.set_cached_value(from_obj, obj)
++                            return
++                    # Parent wasn't selected; do not set cache.
++                    return
++
++                return filtered_local_setter
++
+             for name in list(requested):
+                 # Filtered relations work only on the topmost level.
+                 if cur_depth > 1:
+@@ -1295,7 +1324,7 @@ class SQLCompiler:
+                         "model": model,
+                         "field": final_field,
+                         "reverse": True,
+-                        "local_setter": partial(local_setter, final_field),
++                        "local_setter": partial(make_filtered_local_setter(joins, select), final_field),
+                         "remote_setter": partial(remote_setter, name),
+                         "from_parent": from_parent,
+                     }
+2026-06-22 18:20:50,471 - INFO - Grading answer for django__django-16408...
+2026-06-22 18:20:50,472 - INFO - report: {'django__django-16408': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_multilevel_reverse_fk_cyclic_select_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_multilevel_reverse_fk_cyclic_select_related)', 'test_multilevel_reverse_fk_select_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_multilevel_reverse_fk_select_related)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_foreign_key (known_related_objects.tests.ExistingRelatedInstancesTests.test_foreign_key)', 'test_foreign_key_multiple_prefetch (known_related_objects.tests.ExistingRelatedInstancesTests.test_foreign_key_multiple_prefetch)', 'test_foreign_key_prefetch_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_foreign_key_prefetch_related)', 'test_one_to_one (known_related_objects.tests.ExistingRelatedInstancesTests.test_one_to_one)', 'test_one_to_one_multi_prefetch_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_one_to_one_multi_prefetch_related)', 'test_one_to_one_multi_select_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_one_to_one_multi_select_related)', 'test_one_to_one_prefetch_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_one_to_one_prefetch_related)', 'test_one_to_one_select_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_one_to_one_select_related)', 'test_queryset_and (known_related_objects.tests.ExistingRelatedInstancesTests.test_queryset_and)', 'test_queryset_or (known_related_objects.tests.ExistingRelatedInstancesTests.test_queryset_or)', 'test_queryset_or_different_cached_items (known_related_objects.tests.ExistingRelatedInstancesTests.test_queryset_or_different_cached_items)', 'test_queryset_or_only_one_with_precache (known_related_objects.tests.ExistingRelatedInstancesTests.test_queryset_or_only_one_with_precache)', 'test_reverse_fk_select_related_multiple (known_related_objects.tests.ExistingRelatedInstancesTests.test_reverse_fk_select_related_multiple)', 'test_reverse_one_to_one (known_related_objects.tests.ExistingRelatedInstancesTests.test_reverse_one_to_one)', 'test_reverse_one_to_one_multi_prefetch_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_reverse_one_to_one_multi_prefetch_related)', 'test_reverse_one_to_one_multi_select_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_reverse_one_to_one_multi_select_related)', 'test_reverse_one_to_one_prefetch_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_reverse_one_to_one_prefetch_related)', 'test_reverse_one_to_one_select_related (known_related_objects.tests.ExistingRelatedInstancesTests.test_reverse_one_to_one_select_related)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16408: resolved: True
+2026-06-22 18:20:50,472 - INFO - Attempting to stop container sweb.eval.django__django-16408.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:21:05,713 - INFO - Attempting to remove container sweb.eval.django__django-16408.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:21:05,734 - INFO - Container sweb.eval.django__django-16408.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 18:21:05,734 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-16408:latest...
+2026-06-22 18:21:05,887 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-16408:latest removed.

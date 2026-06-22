@@ -1,0 +1,17 @@
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -933,7 +933,13 @@
+                         "%s() prohibited to prevent data loss due to unsaved "
+                         "related object '%s'." % (operation_name, field.name)
+                     )
+-                elif getattr(self, field.attname) is None:
++                # Consider any "empty" value (e.g. None or empty string for
++                # CharField primary keys) as a candidate for being updated from
++                # the related object's pk. This ensures that when a related
++                # instance was initially assigned without a primary key and
++                # later saved (populating its pk), the parent's attname will
++                # be updated accordingly.
++                elif getattr(self, field.attname) in field.empty_values:
+                     # Use pk from related object if it has been saved after
+                     # an assignment.
+                     setattr(self, field.attname, obj.pk)

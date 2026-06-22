@@ -1,0 +1,32 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -1239,13 +1239,24 @@
+ 
+         if emit:
+             self.axes.callbacks.process(f"{name}lim_changed", self.axes)
+-            # Call all of the other axes that are shared with this one
++            # Call all of the other axes that are shared with this one.
++            # Only update siblings whose view interval actually differs to avoid
++            # infinite recursion while still ensuring their "x/y lim changed"
++            # callbacks are fired.
+             for other in self._get_shared_axes():
+                 if other is not self.axes:
+-                    other._axis_map[name]._set_lim(
+-                        v0, v1, emit=False, auto=auto)
+-                    if other.figure != self.figure:
+-                        other.figure.canvas.draw_idle()
++                    other_axis = other._axis_map[name]
++                    # Skip updating if already equal (avoids unnecessary recursion).
++                    try:
++                        other_interval = other_axis.get_view_interval()
++                    except Exception:
++                        # Fallback: if we can't get the interval, attempt to set.
++                        other_interval = None
++                    if other_interval is None or not np.allclose(
++                            other_interval, (v0, v1)):
++                        other_axis._set_lim(v0, v1, emit=True, auto=auto)
++                        if other.figure != self.figure:
++                            other.figure.canvas.draw_idle()
+ 
+         self.stale = True
+         return v0, v1

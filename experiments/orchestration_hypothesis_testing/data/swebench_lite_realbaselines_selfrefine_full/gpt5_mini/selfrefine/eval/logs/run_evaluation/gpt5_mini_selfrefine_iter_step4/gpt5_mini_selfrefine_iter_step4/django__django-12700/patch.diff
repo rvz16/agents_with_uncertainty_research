@@ -1,0 +1,34 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -83,13 +83,30 @@
+     def cleanse_setting(self, key, value):
+         """
+         Cleanse an individual setting key/value of sensitive content. If the
+-        value is a dictionary, recursively cleanse the keys in that dictionary.
++        value is a dictionary or an iterable, recursively cleanse the keys in
++        that dictionary or the items in the iterable.
+         """
+         try:
+             if self.hidden_settings.search(key):
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple, set, frozenset)):
++                # Recursively cleanse iterable elements. For dict elements,
++                # recurse will handle inner keys; for scalar elements, pass the
++                # parent key so items can be hidden based on it.
++                if isinstance(value, list):
++                    cleansed = [self.cleanse_setting(key, v) for v in value]
++                elif isinstance(value, tuple):
++                    cleansed = tuple(self.cleanse_setting(key, v) for v in value)
++                elif isinstance(value, set):
++                    # Sets require hashed items. If elements are unhashable
++                    # (e.g. dicts), a TypeError will propagate; that's an
++                    # unlikely settings shape, but convert to a set where
++                    # possible.
++                    cleansed = {self.cleanse_setting(key, v) for v in value}
++                else:  # frozenset
++                    cleansed = frozenset(self.cleanse_setting(key, v) for v in value)
+             else:
+                 cleansed = value
+         except TypeError:

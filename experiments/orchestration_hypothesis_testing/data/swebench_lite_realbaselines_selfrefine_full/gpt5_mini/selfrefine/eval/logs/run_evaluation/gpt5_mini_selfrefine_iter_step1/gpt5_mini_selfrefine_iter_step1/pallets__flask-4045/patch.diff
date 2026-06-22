@@ -1,0 +1,16 @@
+--- a/src/flask/blueprints.py
++++ b/src/flask/blueprints.py
+@@ -188,6 +188,13 @@
+             template_folder=template_folder,
+             root_path=root_path,
+         )
++        # Validate blueprint name: it must be a string and must not contain
++        # dots. Dots are significant because blueprints can be nested and
++        # are used as separators when registering nested blueprints.
++        if not isinstance(name, str):
++            raise TypeError("Blueprint name must be a string.")
++        if "." in name:
++            raise ValueError("Blueprint name must not contain a dot ('.').")
+         self.name = name
+         self.url_prefix = url_prefix
+         self.subdomain = subdomain

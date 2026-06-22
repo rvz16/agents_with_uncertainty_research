@@ -1,0 +1,29 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -1921,7 +1921,25 @@
+             if exp == '2':
+                 exp = ''
+         else:
+-            exp = str(expt.args[0])
++            # For non-Rational exponents (e.g. 1/E) try to extract the
++            # denominator so that we print the correct root index (e.g. "E")
++            # instead of accidentally using a numeric piece of the internal
++            # representation.
++            from sympy.simplify.simplify import fraction as _fraction
++            try:
++                n, d = _fraction(expt)
++            except Exception:
++                # Fallback: use a short string representation of the exponent
++                exp = sstr(expt)
++            else:
++                if isinstance(d, Rational):
++                    exp = str(d.q)
++                    if exp == '2':
++                        exp = ''
++                else:
++                    # Use sstr to get a concise one-line representation of the
++                    # denominator (e.g. 'E' for Euler's number).
++                    exp = sstr(d)
+         exp = exp.ljust(2)
+         if len(exp) > 2:
+             rootsign = ' '*(len(exp) - 2) + rootsign

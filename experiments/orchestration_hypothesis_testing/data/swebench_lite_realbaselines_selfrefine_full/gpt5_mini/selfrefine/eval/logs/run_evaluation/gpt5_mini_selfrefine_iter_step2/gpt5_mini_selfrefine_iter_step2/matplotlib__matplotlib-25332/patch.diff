@@ -1,0 +1,48 @@
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -181,16 +181,36 @@
+         self._pickled_cids = set()
+ 
+     def __getstate__(self):
+-        return {
+-            **vars(self),
+-            # In general, callbacks may not be pickled, so we just drop them,
+-            # unless directed otherwise by self._pickled_cids.
+-            "callbacks": {s: {cid: proxy() for cid, proxy in d.items()
+-                              if cid in self._pickled_cids}
+-                          for s, d in self.callbacks.items()},
+-            # It is simpler to reconstruct this from callbacks in __setstate__.
+-            "_func_cid_map": None,
++        """
++        Return an object state for pickling.
++
++        We avoid inserting the raw ``vars(self)`` directly into the returned
++        state because some internal mappings (notably ``_func_cid_map``) may
++        contain weakref objects that are not picklable.  Instead, we build a
++        new state dict copying only the top-level attributes, and explicitly
++        replace ``callbacks`` with a picklable representation and
++        ``_func_cid_map`` with ``None`` so it can be reconstructed in
++        ``__setstate__``.
++        """
++        state = {}
++        for key, val in vars(self).items():
++            if key in ("callbacks", "_func_cid_map"):
++                # These are handled explicitly below to avoid leaking
++                # unpicklable weakref objects into the state.
++                continue
++            state[key] = val
++
++        # In general, callbacks may not be pickled, so we just drop them,
++        # unless directed otherwise by self._pickled_cids.
++        state["callbacks"] = {
++            s: {cid: proxy() for cid, proxy in d.items()
++                if cid in self._pickled_cids}
++            for s, d in self.callbacks.items()
+         }
++
++        # It is simpler to reconstruct this from callbacks in __setstate__.
++        state["_func_cid_map"] = None
++        return state
+ 
+     def __setstate__(self, state):
+         vars(self).update(state)

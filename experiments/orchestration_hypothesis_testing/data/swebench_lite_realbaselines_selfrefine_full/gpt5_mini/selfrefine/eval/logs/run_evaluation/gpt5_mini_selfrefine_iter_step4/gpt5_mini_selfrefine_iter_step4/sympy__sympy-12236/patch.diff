@@ -1,0 +1,24 @@
+--- a/sympy/polys/domains/polynomialring.py
++++ b/sympy/polys/domains/polynomialring.py
+@@ -113,7 +113,20 @@
+ 
+     def get_field(self):
+         """Returns a field associated with `self`. """
+-        return self.ring.to_field().to_domain()
++        # Ensure that the base domain is promoted to its field before creating
++        # the field of fractions for the polynomial ring. This avoids having
++        # polynomial rings like ZZ[y] turn into a rational function field over
++        # ZZ (ZZ(y)) where divisions produce integer domains; instead we get
++        # QQ(y) when appropriate.
++        base = self.domain
++        if hasattr(base, 'get_field'):
++            base = base.get_field()
++
++        # Construct a PolyRing over the (possibly promoted) base field using
++        # the same symbols and order and return its fraction field domain.
++        from sympy.polys.rings import PolyRing
++        ring = PolyRing(self.symbols, base, self.order)
++        return ring.to_field().to_domain()
+ 
+     def is_positive(self, a):
+         """Returns True if `LC(a)` is positive. """

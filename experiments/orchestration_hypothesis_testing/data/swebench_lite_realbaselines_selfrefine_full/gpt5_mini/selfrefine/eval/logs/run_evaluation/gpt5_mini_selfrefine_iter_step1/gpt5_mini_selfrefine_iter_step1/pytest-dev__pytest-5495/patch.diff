@@ -1,0 +1,37 @@
+--- a/src/_pytest/assertion/util.py
++++ b/src/_pytest/assertion/util.py
+@@ -89,6 +89,10 @@
+     return isinstance(x, str)
+ 
+ 
++def isbytes(x):
++    return isinstance(x, (bytes, bytearray, memoryview))
++
++
+ def isdict(x):
+     return isinstance(x, dict)
+ 
+@@ -126,6 +130,11 @@
+     try:
+         if op == "==":
+             if istext(left) and istext(right):
++                explanation = _diff_text(left, right, verbose)
++            elif isbytes(left) and isbytes(right):
++                # Special-case bytes-like objects: present a textual diff rather than
++                # treating them as generic sequences of integers which leads to
++                # confusing "contains more items" messages showing integer ordinals.
+                 explanation = _diff_text(left, right, verbose)
+             else:
+                 if issequence(left) and issequence(right):
+@@ -186,6 +195,11 @@
+         r = r.replace(r"\r", "\r")
+         return r
+ 
++    # Normalize bytearray and memoryview to bytes for consistent handling.
++    if isinstance(left, (bytearray, memoryview)):
++        left = bytes(left)
++    if isinstance(right, (bytearray, memoryview)):
++        right = bytes(right)
+     if isinstance(left, bytes):
+         left = escape_for_readable_diff(left)
+     if isinstance(right, bytes):

@@ -1,0 +1,32 @@
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -226,13 +226,12 @@
+         # an instance of a subclass, this function returns `bytes(value)`.
+         # This doesn't make a copy when `value` already contains bytes.
+ 
+-        # Handle string types -- we can't rely on force_bytes here because:
+-        # - Python attempts str conversion first
+-        # - when self._charset != 'utf-8' it re-encodes the content
+-        if isinstance(value, bytes):
++        # Handle bytes-like and string types. Explicitly treat bytearray and
++        # memoryview as bytes-like to avoid iterating over them below.
++        if isinstance(value, (bytes, bytearray, memoryview)):
+             return bytes(value)
+         if isinstance(value, str):
+-            return bytes(value.encode(self.charset))
++            return value.encode(self.charset)
+         # Handle non-string types.
+         return str(value).encode(self.charset)
+ 
+@@ -309,7 +308,10 @@
+     @content.setter
+     def content(self, value):
+         # Consume iterators upon assignment to allow repeated iteration.
+-        if hasattr(value, '__iter__') and not isinstance(value, (bytes, str)):
++        # Treat bytes-like objects (bytes, bytearray, memoryview) and str as
++        # atomic values rather than iterables to avoid iterating over their
++        # contents (which would yield integers for bytearray/memoryview).
++        if hasattr(value, '__iter__') and not isinstance(value, (bytes, str, bytearray, memoryview)):
+             content = b''.join(self.make_bytes(chunk) for chunk in value)
+             if hasattr(value, 'close'):
+                 try:

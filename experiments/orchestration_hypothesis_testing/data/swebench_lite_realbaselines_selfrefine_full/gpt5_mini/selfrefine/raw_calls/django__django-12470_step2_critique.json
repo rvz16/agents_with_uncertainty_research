@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:52:36.575609+00:00",
+  "instance_id": "django__django-12470",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nInherited model doesn't correctly order by \"-pk\" when specified on Parent.Meta.ordering\nDescription\n\t\nGiven the following model definition:\nfrom django.db import models\nclass Parent(models.Model):\n\tclass Meta:\n\t\tordering = [\"-pk\"]\nclass Child(Parent):\n\tpass\nQuerying the Child class results in the following:\n>>> print(Child.objects.all().query)\nSELECT \"myapp_parent\".\"id\", \"myapp_child\".\"parent_ptr_id\" FROM \"myapp_child\" INNER JOIN \"myapp_parent\" ON (\"myapp_child\".\"parent_ptr_id\" = \"myapp_parent\".\"id\") ORDER BY \"myapp_parent\".\"id\" ASC\nThe query is ordered ASC but I expect the order to be DESC.\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no files changed, so it does not address the bug at all.\nNo unit tests added or modified to reproduce/fix the \"-pk\" ordering bug on inherited models.\nDoes not update the ordering resolution logic for multi-table inheritance (no change to code that builds ORDER BY when child joins parent table).\nNo handling of sign-preservation for descending ordering (the '-' prefix is not preserved for parent PK in query generation).\nNo changes to code paths that qualify column names with the correct table alias for parent model PK, so ASC/DESC inversion remains possible.\nNo documentation or comments explaining the intended fix or rationale.",
+  "prompt_tokens": 278,
+  "completion_tokens": 595,
+  "cost_usd": 0.0012595
+}

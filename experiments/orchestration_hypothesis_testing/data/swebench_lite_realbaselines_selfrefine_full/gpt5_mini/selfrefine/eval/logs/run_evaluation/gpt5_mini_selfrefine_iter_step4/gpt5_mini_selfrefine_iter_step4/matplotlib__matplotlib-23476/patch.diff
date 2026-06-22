@@ -1,0 +1,57 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -18,6 +18,7 @@
+ import inspect
+ import itertools
+ import logging
++import platform
+ from numbers import Integral
+ 
+ import numpy as np
+@@ -3050,11 +3051,41 @@
+             # lazy import to avoid circularity
+             import matplotlib.pyplot as plt
+             import matplotlib._pylab_helpers as pylab_helpers
+-            allnums = plt.get_fignums()
+-            num = max(allnums) + 1 if allnums else 1
+-            mgr = plt._backend_mod.new_figure_manager_given_figure(num, self)
+-            pylab_helpers.Gcf._set_new_active_manager(mgr)
+-            plt.draw_if_interactive()
++
++            # Determine whether the current pyplot backend is the macOS native
++            # backend.  Restoring the figure to pylab by re-creating a
++            # FigureManager with the macOS backend can cause the backend to
++            # apply its HiDPI scaling (e.g., doubling the figure dpi) again,
++            # resulting in the dpi being doubled on each unpickle.  In that
++            # case, skip the automatic restore to avoid repeated dpi doubling.
++            backend_mod = getattr(plt, '_backend_mod', None)
++            is_macosx_backend = False
++            if backend_mod is not None:
++                modname = getattr(backend_mod, '__name__', '')
++                if 'macosx' in modname.lower():
++                    is_macosx_backend = True
++            else:
++                # Fall back to the backend string; this can be something like
++                # 'MacOSX' or 'module://...'.
++                try:
++                    b = plt.get_backend()
++                except Exception:
++                    b = None
++                if b and 'macosx' in b.lower():
++                    is_macosx_backend = True
++
++            if is_macosx_backend and platform.system() == 'Darwin':
++                _log.warning(
++                    "Skipping automatic restoration of figure to pyplot for "
++                    "macOS native backend to avoid dpi scaling issues on "
++                    "unpickle. You can manually reattach the figure to a "
++                    "FigureManager if desired.")
++            else:
++                allnums = plt.get_fignums()
++                num = max(allnums) + 1 if allnums else 1
++                mgr = plt._backend_mod.new_figure_manager_given_figure(num, self)
++                pylab_helpers.Gcf._set_new_active_manager(mgr)
++                plt.draw_if_interactive()
+ 
+         self.stale = True
+ 

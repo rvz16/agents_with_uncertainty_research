@@ -1,0 +1,27 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -45,11 +45,22 @@
+             raise TypeError(other)
+ 
+         # If the other Q() is empty, ignore it and just use `self`.
++        # Avoid copy.deepcopy here because some Q children may include
++        # non-pickleable objects (e.g. dict_keys). Use a shallow copy of the
++        # Q instance instead.
+         if not other:
+-            return copy.deepcopy(self)
++            obj = type(self)()
++            obj.connector = self.connector
++            obj.negated = self.negated
++            obj.children = list(self.children)
++            return obj
+         # Or if this Q is empty, ignore it and just use `other`.
+         elif not self:
+-            return copy.deepcopy(other)
++            obj = type(other)()
++            obj.connector = other.connector
++            obj.negated = other.negated
++            obj.children = list(other.children)
++            return obj
+ 
+         obj = type(self)()
+         obj.connector = conn

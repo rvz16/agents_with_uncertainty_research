@@ -1,0 +1,27 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1776,6 +1776,24 @@
+         return condition, needed_inner
+ 
+     def set_empty(self):
++        """
++        Mark this Query as empty.
++
++        When a query is marked empty, we must also clear any state related to
++        query combination (UNION/INTERSECT/EXCEPT) so that execution/compilation
++        does not treat the query as a combined-query producing results from
++        other component queries. Resetting select/annotation state avoids cases
++        where residual SELECT clause data from a combined query would cause
++        rows to be returned despite the empty WHERE marker.
++        """
++        # Clear any combination state so combined queries don't leak results.
++        self.combinator = None
++        self.combinator_all = False
++        self.combined_queries = ()
++        # Clear any select/annotation/extra state that could interfere.
++        self.clear_select_clause()
++        # Replace the where node with a fresh one and add a NothingNode to it.
++        self.where = self.where_class()
+         self.where.add(NothingNode(), AND)
+ 
+     def is_empty(self):

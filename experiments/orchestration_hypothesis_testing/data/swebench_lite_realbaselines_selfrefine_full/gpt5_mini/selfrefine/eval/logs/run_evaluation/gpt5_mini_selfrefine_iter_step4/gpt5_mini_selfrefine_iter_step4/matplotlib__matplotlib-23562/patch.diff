@@ -1,0 +1,58 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -867,9 +867,55 @@
+         self.stale = True
+ 
+     def get_facecolor(self):
++        """
++        Return the 2D facecolors used for drawing.  In some usage paths the
++        2D color arrays are only created during the draw/projection step and
++        may not exist yet. In that case, try to force evaluation of any
++        ScalarMappable state and fall back to the 2D PolyCollection getters.
++        """
++        if not hasattr(self, "_facecolors2d"):
++            # Ensure any scalar mappable state (norm + cmap) is evaluated.
++            try:
++                self.update_scalarmappable()
++            except Exception:
++                # Be conservative: if update fails for some reason, fall back.
++                pass
++
++            # If the face colors were mapped to 3D storage, prefer that.
++            if hasattr(self, "_facecolor3d"):
++                try:
++                    self._facecolors2d = self._facecolor3d
++                except Exception:
++                    self._facecolors2d = PolyCollection.get_facecolor(self)
++            else:
++                # Fall back to the base 2D collection behavior.
++                self._facecolors2d = PolyCollection.get_facecolor(self)
++
+         return self._facecolors2d
+ 
+     def get_edgecolor(self):
++        """
++        Return the 2D edgecolors used for drawing. Similar to get_facecolor,
++        ensure scalar mappable state is evaluated and fall back to the base
++        PolyCollection behavior when necessary.
++        """
++        if not hasattr(self, "_edgecolors2d"):
++            try:
++                self.update_scalarmappable()
++            except Exception:
++                pass
++
++            # If edge colors are specified as 'face', return the facecolors.
++            if cbook._str_equal(getattr(self, "_edgecolors", None), "face"):
++                self._edgecolors2d = self.get_facecolor()
++            elif hasattr(self, "_edgecolor3d"):
++                try:
++                    self._edgecolors2d = self._edgecolor3d
++                except Exception:
++                    self._edgecolors2d = PolyCollection.get_edgecolor(self)
++            else:
++                self._edgecolors2d = PolyCollection.get_edgecolor(self)
++
+         return self._edgecolors2d
+ 
+ 

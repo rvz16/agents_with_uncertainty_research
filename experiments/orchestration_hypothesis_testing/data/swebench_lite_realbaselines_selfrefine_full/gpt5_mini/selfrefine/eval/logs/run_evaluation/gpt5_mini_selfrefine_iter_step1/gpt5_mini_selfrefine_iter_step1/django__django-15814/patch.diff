@@ -1,0 +1,16 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -314,7 +314,12 @@
+         by subclasses.
+         """
+         if self.model:
+-            return self.model._meta
++            opts = self.model._meta
++            # For proxy models, use the concrete model's Options so that field
++            # resolution (for example primary key attname) works correctly when
++            # combining select_related() and only(). Subclasses can still
++            # override get_meta() if different behavior is required.
++            return opts.concrete_model._meta
+ 
+     def clone(self):
+         """

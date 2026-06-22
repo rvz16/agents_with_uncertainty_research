@@ -1,0 +1,27 @@
+--- a/lib/matplotlib/__init__.py
++++ b/lib/matplotlib/__init__.py
+@@ -148,6 +148,24 @@
+         else:  # Get the version from the _version.py setuptools_scm file.
+             __version__ = _version.version
+         return __version__
++    if name == "__version_info__":
++        # Compute a comparable version tuple from __version__ and cache it.
++        # Use packaging to robustly parse versions, falling back to a simple
++        # regex-based numeric extraction if needed.
++        ver = getattr(sys.modules[__name__], "__version__")
++        v = parse_version(ver)
++        try:
++            rel = tuple(v.release)
++        except Exception:
++            m = re.match(r'^(?P<maj>\d+)(?:\.(?P<min>\d+))?(?:\.(?P<mic>\d+))?', ver)
++            if m:
++                rel = tuple(int(x) if x is not None else 0
++                            for x in (m.group('maj'), m.group('min'), m.group('mic')))
++            else:
++                rel = tuple()
++        global __version_info__
++        __version_info__ = rel
++        return __version_info__
+     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+ 
+ 

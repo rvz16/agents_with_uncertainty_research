@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:11:11.861679+00:00",
+  "instance_id": "django__django-14787",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nmethod_decorator() should preserve wrapper assignments\nDescription\n\t\nthe function that is passed to the decorator is a partial object and does not have any of the attributes expected from a function i.e. __name__, __module__ etc...\nconsider the following case\ndef logger(func):\n\t@wraps(func)\n\tdef inner(*args, **kwargs):\n\t\ttry:\n\t\t\tresult = func(*args, **kwargs)\n\t\texcept Exception as e:\n\t\t\tresult = str(e)\n\t\tfinally:\n\t\t\tlogger.debug(f\"{func.__name__} called with args: {args} and kwargs: {kwargs} resulting: {result}\")\n\treturn inner\nclass Test:\n\t@method_decorator(logger)\n\tdef hello_world(self):\n\t\treturn \"hello\"\nTest().test_method()\nThis results in the following exception\nAttributeError: 'functools.partial' object has no attribute '__name__'\n\n\n## Your previous patch (diff format)\n```\n--- a/django/utils/decorators.py\n+++ b/django/utils/decorators.py\n@@ -37,7 +37,13 @@\n         # 'self' argument, but it's a closure over self so it can call\n         # 'func'. Also, wrap method.__get__() in a function because new\n         # attributes can't be set on bound method objects, only on functions.\n-        bound_method = partial(method.__get__(self, type(self)))\n+        bound = method.__get__(self, type(self))\n+        def bound_method(*a, **kw):\n+            return bound(*a, **kw)\n+        # Preserve attributes of the original method on the wrapper function\n+        # so that decorators which expect function attributes (like __name__)\n+        # don't fail when passed the bound callable.\n+        update_wrapper(bound_method, method)\n         for dec in decorators:\n             bound_method = dec(bound_method)\n         return bound_method(*args, **kwargs)\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 514,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030725
+}

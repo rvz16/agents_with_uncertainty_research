@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:22:06.423616+00:00",
+  "instance_id": "sympy__sympy-15345",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nmathematica_code gives wrong output with Max\nIf I run the code\r\n\r\n```\r\nx = symbols('x')\r\nmathematica_code(Max(x,2))\r\n```\r\n\r\nthen I would expect the output `'Max[x,2]'` which is valid Mathematica code but instead I get `'Max(2, x)'` which is not valid Mathematica code.\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/printing/mathematica.py\n+++ b/sympy/printing/mathematica.py\n@@ -101,6 +101,17 @@\n                     return \"%s[%s]\" % (mfunc, self.stringify(expr.args, \", \"))\n         return expr.func.__name__ + \"[%s]\" % self.stringify(expr.args, \", \")\n \n+    def _print_Max(self, expr):\n+        # Mathematica expects Max[...] with square brackets and the original\n+        # argument order. Use doprint on each argument to ensure proper\n+        # nested printing rather than using stringify which may change\n+        # formatting/order.\n+        return \"Max[\" + \", \".join(self.doprint(a) for a in expr.args) + \"]\"\n+\n+    def _print_Min(self, expr):\n+        # Same treatment for Min.\n+        return \"Min[\" + \", \".join(self.doprint(a) for a in expr.args) + \"]\"\n+\n     def _print_Integral(self, expr):\n         if len(expr.variables) == 1 and not expr.limits[0][1:]:\n             args = [expr.args[0], expr.variables[0]]\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 457,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00305825
+}

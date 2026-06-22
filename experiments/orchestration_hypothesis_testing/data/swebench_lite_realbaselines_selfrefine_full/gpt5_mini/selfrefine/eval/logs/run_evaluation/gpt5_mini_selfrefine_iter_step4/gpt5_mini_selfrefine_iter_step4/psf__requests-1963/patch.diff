@@ -1,0 +1,17 @@
+--- a/requests/sessions.py
++++ b/requests/sessions.py
+@@ -179,6 +179,14 @@
+             )
+ 
+             extract_cookies_to_jar(self.cookies, prepared_request, resp.raw)
++
++            # Ensure subsequent redirects are based on the most recent
++            # request (and its possibly modified method) rather than the
++            # original request passed into resolve_redirects. This prevents
++            # cases where an intermediate redirect (e.g. 303) changes the
++            # method to GET but the next redirect is incorrectly performed
++            # using the original method (e.g. POST).
++            req = resp.request
+ 
+             i += 1
+             yield resp

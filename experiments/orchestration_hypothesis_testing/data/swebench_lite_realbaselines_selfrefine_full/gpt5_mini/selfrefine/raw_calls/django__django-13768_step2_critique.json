@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:02:26.969362+00:00",
+  "instance_id": "django__django-13768",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nLog exceptions handled in Signal.send_robust()\nDescription\n\t\nAs pointed out by \u200bHaki Benita on Twitter, by default Signal.send_robust() doesn't have any log messages for exceptions raised in receivers. Since Django logs exceptions in other similar situations, such as missing template variables, I think it would be worth adding a logger.exception() call in the except clause of send_robust() . Users would then see such exceptions in their error handling tools, e.g. Sentry, and be able to figure out what action to take from there. Ultimately any *expected* exception should be caught with a try in the receiver function.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/dispatch/dispatcher.py\n+++ b/django/dispatch/dispatcher.py\n@@ -1,9 +1,12 @@\n+import logging\n import threading\n import warnings\n import weakref\n \n from django.utils.deprecation import RemovedInDjango40Warning\n from django.utils.inspect import func_accepts_kwargs\n+\n+logger = logging.getLogger(__name__)\n \n \n def _make_id(target):\n@@ -208,6 +211,7 @@\n             try:\n                 response = receiver(signal=self, sender=sender, **named)\n             except Exception as err:\n+                logger.exception('Error calling receiver %r for signal %r', receiver, self)\n                 responses.append((receiver, err))\n             else:\n                 responses.append((receiver, response))\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 418,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030485
+}

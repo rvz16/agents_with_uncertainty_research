@@ -1,0 +1,34 @@
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,13 +23,24 @@
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
+-            # TODO warn?
+-            xx = yy = []
+-        else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++
++        # Drop missing data before fitting so numpy.polyfit does not receive NaNs
++        df = data[["x", "y"]].dropna()
++        if df.empty or df["x"].nunique() <= self.order:
++            # Not enough data to fit the requested polynomial order
++            return pd.DataFrame(dict(x=[], y=[]))
++
++        x_clean = df["x"].to_numpy()
++        y_clean = df["y"].to_numpy()
++
++        try:
++            p = np.polyfit(x_clean, y_clean, self.order)
++        except np.linalg.LinAlgError:
++            # If the fit fails for numerical reasons, return an empty frame
++            return pd.DataFrame(dict(x=[], y=[]))
++
++        xx = np.linspace(x_clean.min(), x_clean.max(), self.gridsize)
++        yy = np.polyval(p, xx)
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+ 

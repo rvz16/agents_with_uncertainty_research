@@ -1,0 +1,19 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -725,6 +725,16 @@
+                 # Avoid converting large positive values to negative integers.
+                 np.clip(xa, -1, self.N, out=xa)
+                 xa = xa.astype(int)
++        # Ensure integer dtypes can hold sentinel values (N, N+1, N+2).
++        # Older NumPy allowed out-of-range Python ints to be converted into
++        # smaller integer dtypes (with wrap/overflow), but NumPy 1.24 emits a
++        # DeprecationWarning for this.  Promote small integer dtypes to a
++        # sufficiently large signed integer dtype to avoid the warnings and
++        # preserve current behaviour.
++        if xa.dtype.kind in ("u", "i"):
++            # Only promote small integer dtypes to avoid unnecessary copies.
++            if xa.dtype.itemsize < np.dtype(np.int64).itemsize:
++                xa = xa.astype(np.int64)
+         # Set the over-range indices before the under-range;
+         # otherwise the under-range values get converted to over-range.
+         xa[xa > self.N - 1] = self._i_over

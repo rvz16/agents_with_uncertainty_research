@@ -1,0 +1,25 @@
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -651,6 +651,10 @@
+                     module_name,
+                     doc="Empty module created by pytest's importmode=importlib.",
+                 )
++                # Ensure the dummy module is registered in the provided modules
++                # mapping (typically sys.modules) so subsequent imports and
++                # attribute wiring refer to the same module object.
++                modules[module_name] = module
+         else:
+             module = modules[module_name]
+         if child_module:
+@@ -658,7 +662,10 @@
+             # modules.
+             if not hasattr(module, child_name):
+                 setattr(module, child_name, child_module)
+-                modules[module_name] = module
++            # Ensure the parent entry in modules mapping references the module
++            # object we've been working with. This avoids having different
++            # module objects for the same package name.
++            modules[module_name] = module
+         # Keep track of the child module while moving up the tree.
+         child_module, child_name = module, module_name.rpartition(".")[-1]
+         module_parts.pop(-1)

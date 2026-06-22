@@ -1,0 +1,95 @@
+2026-06-22 15:25:18,553 - INFO - Creating container for scikit-learn__scikit-learn-25500...
+2026-06-22 15:25:18,829 - INFO - Container for scikit-learn__scikit-learn-25500 created: 982cea0286ff6719a9ecac0b1d877dde5daf9619fcc5a6192f6b6334aaf32957
+2026-06-22 15:25:19,073 - INFO - Container for scikit-learn__scikit-learn-25500 started: 982cea0286ff6719a9ecac0b1d877dde5daf9619fcc5a6192f6b6334aaf32957
+2026-06-22 15:25:19,073 - INFO - Intermediate patch for scikit-learn__scikit-learn-25500 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-25500/patch.diff, now applying to container...
+2026-06-22 15:25:19,148 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/isotonic.py...
+Applied patch sklearn/isotonic.py cleanly.
+
+2026-06-22 15:25:19,369 - INFO - Git diff before:
+diff --git a/sklearn/isotonic.py b/sklearn/isotonic.py
+index b05e59536..728ab0b48 100644
+--- a/sklearn/isotonic.py
++++ b/sklearn/isotonic.py
+@@ -410,7 +410,31 @@ class IsotonicRegression(RegressorMixin, TransformerMixin, BaseEstimator):
+         y_pred : ndarray of shape (n_samples,)
+             Transformed data.
+         """
+-        return self.transform(T)
++        # Call transform but ensure that we always return a 1d numpy array.
++        # This protects against global config wrappers such as
++        # set_config(transform_output="pandas") that may cause ``transform``
++        # to return pandas objects (e.g. DataFrame with shape (n_samples, 1))
++        # which would break callers expecting a 1d ndarray.
++        res = self.transform(T)
++
++        arr = np.asarray(res)
++
++        # If transform returned a 2D array with a single column (e.g.
++        # a pandas.DataFrame with one column), squeeze to 1D.
++        if arr.ndim == 2 and arr.shape[1] == 1:
++            arr = arr.ravel()
++        # If transform returned a scalar (0-d), make it a 1d array.
++        elif arr.ndim == 0:
++            arr = arr.reshape(1)
++        # If transform returned something with more than one column, this is
++        # unexpected for IsotonicRegression which must output a 1d array.
++        elif arr.ndim > 1:
++            raise ValueError(
++                "IsotonicRegression.predict expected a 1-dimensional output "
++                "from transform, got array with shape {}".format(arr.shape)
++            )
++
++        return arr
+ 
+     # We implement get_feature_names_out here instead of using
+     # `ClassNamePrefixFeaturesOutMixin`` because `input_features` are ignored.
+2026-06-22 15:25:19,369 - INFO - Eval script for scikit-learn__scikit-learn-25500 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-25500/eval.sh; copying to container...
+2026-06-22 15:25:22,909 - INFO - Test runtime: 3.48 seconds
+2026-06-22 15:25:22,909 - INFO - Test output for scikit-learn__scikit-learn-25500 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-25500/test_output.txt
+2026-06-22 15:25:22,960 - INFO - Git diff after:
+diff --git a/sklearn/isotonic.py b/sklearn/isotonic.py
+index b05e59536..728ab0b48 100644
+--- a/sklearn/isotonic.py
++++ b/sklearn/isotonic.py
+@@ -410,7 +410,31 @@ class IsotonicRegression(RegressorMixin, TransformerMixin, BaseEstimator):
+         y_pred : ndarray of shape (n_samples,)
+             Transformed data.
+         """
+-        return self.transform(T)
++        # Call transform but ensure that we always return a 1d numpy array.
++        # This protects against global config wrappers such as
++        # set_config(transform_output="pandas") that may cause ``transform``
++        # to return pandas objects (e.g. DataFrame with shape (n_samples, 1))
++        # which would break callers expecting a 1d ndarray.
++        res = self.transform(T)
++
++        arr = np.asarray(res)
++
++        # If transform returned a 2D array with a single column (e.g.
++        # a pandas.DataFrame with one column), squeeze to 1D.
++        if arr.ndim == 2 and arr.shape[1] == 1:
++            arr = arr.ravel()
++        # If transform returned a scalar (0-d), make it a 1d array.
++        elif arr.ndim == 0:
++            arr = arr.reshape(1)
++        # If transform returned something with more than one column, this is
++        # unexpected for IsotonicRegression which must output a 1d array.
++        elif arr.ndim > 1:
++            raise ValueError(
++                "IsotonicRegression.predict expected a 1-dimensional output "
++                "from transform, got array with shape {}".format(arr.shape)
++            )
++
++        return arr
+ 
+     # We implement get_feature_names_out here instead of using
+     # `ClassNamePrefixFeaturesOutMixin`` because `input_features` are ignored.
+2026-06-22 15:25:22,960 - INFO - Grading answer for scikit-learn__scikit-learn-25500...
+2026-06-22 15:25:22,961 - INFO - report: {'scikit-learn__scikit-learn-25500': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/tests/test_isotonic.py::test_isotonic_regression_output_predict'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/tests/test_isotonic.py::test_permutation_invariance', 'sklearn/tests/test_isotonic.py::test_check_increasing_small_number_of_samples', 'sklearn/tests/test_isotonic.py::test_check_increasing_up', 'sklearn/tests/test_isotonic.py::test_check_increasing_up_extreme', 'sklearn/tests/test_isotonic.py::test_check_increasing_down', 'sklearn/tests/test_isotonic.py::test_check_increasing_down_extreme', 'sklearn/tests/test_isotonic.py::test_check_ci_warn', 'sklearn/tests/test_isotonic.py::test_isotonic_regression', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_ties_min', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_ties_max', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_ties_secondary_', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_with_ties_in_differently_sized_groups', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_reversed', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_auto_decreasing', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_auto_increasing', 'sklearn/tests/test_isotonic.py::test_assert_raises_exceptions', 'sklearn/tests/test_isotonic.py::test_isotonic_sample_weight_parameter_default_value', 'sklearn/tests/test_isotonic.py::test_isotonic_min_max_boundaries', 'sklearn/tests/test_isotonic.py::test_isotonic_sample_weight', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_oob_raise', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_oob_clip', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_oob_nan', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_pickle', 'sklearn/tests/test_isotonic.py::test_isotonic_duplicate_min_entry', 'sklearn/tests/test_isotonic.py::test_isotonic_ymin_ymax', 'sklearn/tests/test_isotonic.py::test_isotonic_zero_weight_loop', 'sklearn/tests/test_isotonic.py::test_fast_predict', 'sklearn/tests/test_isotonic.py::test_isotonic_copy_before_fit', 'sklearn/tests/test_isotonic.py::test_isotonic_dtype', 'sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[int32]', 'sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[int64]', 'sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[float32]', 'sklearn/tests/test_isotonic.py::test_isotonic_mismatched_dtype[float64]', 'sklearn/tests/test_isotonic.py::test_make_unique_dtype', 'sklearn/tests/test_isotonic.py::test_make_unique_tolerance[float64]', 'sklearn/tests/test_isotonic.py::test_make_unique_tolerance[float32]', 'sklearn/tests/test_isotonic.py::test_isotonic_make_unique_tolerance', 'sklearn/tests/test_isotonic.py::test_isotonic_non_regression_inf_slope', 'sklearn/tests/test_isotonic.py::test_isotonic_thresholds[True]', 'sklearn/tests/test_isotonic.py::test_isotonic_thresholds[False]', 'sklearn/tests/test_isotonic.py::test_input_shape_validation', 'sklearn/tests/test_isotonic.py::test_isotonic_2darray_more_than_1_feature', 'sklearn/tests/test_isotonic.py::test_isotonic_regression_sample_weight_not_overwritten', 'sklearn/tests/test_isotonic.py::test_get_feature_names_out[1d]', 'sklearn/tests/test_isotonic.py::test_get_feature_names_out[2d]'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-25500: resolved: True
+2026-06-22 15:25:22,961 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-25500.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:25:38,211 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-25500.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:25:38,227 - INFO - Container sweb.eval.scikit-learn__scikit-learn-25500.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:25:38,227 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25500:latest...
+2026-06-22 15:25:38,310 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25500:latest removed.

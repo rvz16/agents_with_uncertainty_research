@@ -1,0 +1,35 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1239,6 +1239,10 @@
+             self.add_line('   :async:', sourcename)
+ 
+     def format_signature(self, **kwargs: Any) -> str:
++        # Respect autodoc_typehints for overloaded signatures as well.
++        if self.env.config.autodoc_typehints in ('none', 'description'):
++            kwargs.setdefault('show_annotation', False)
++
+         sigs = []
+         if self.analyzer and '.'.join(self.objpath) in self.analyzer.overloads:
+             # Use signatures for overloaded functions instead of the implementation function.
+@@ -1469,6 +1473,10 @@
+     def format_signature(self, **kwargs: Any) -> str:
+         if self.doc_as_attr:
+             return ''
++
++        # Respect autodoc_typehints for overloaded signatures as well.
++        if self.env.config.autodoc_typehints in ('none', 'description'):
++            kwargs.setdefault('show_annotation', False)
+ 
+         sig = super().format_signature()
+         sigs = []
+@@ -1881,6 +1889,10 @@
+         pass
+ 
+     def format_signature(self, **kwargs: Any) -> str:
++        # Respect autodoc_typehints for overloaded signatures as well.
++        if self.env.config.autodoc_typehints in ('none', 'description'):
++            kwargs.setdefault('show_annotation', False)
++
+         sigs = []
+         if self.analyzer and '.'.join(self.objpath) in self.analyzer.overloads:
+             # Use signatures for overloaded methods instead of the implementation method.

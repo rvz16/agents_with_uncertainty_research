@@ -1,0 +1,109 @@
+2026-06-22 16:45:22,212 - INFO - Creating container for scikit-learn__scikit-learn-10949...
+2026-06-22 16:45:22,341 - INFO - Container for scikit-learn__scikit-learn-10949 created: 798957e3e29a3e289d0db5b1ae8b889d63ca4a5a2890b68210bd30bfaae474a9
+2026-06-22 16:45:22,489 - INFO - Container for scikit-learn__scikit-learn-10949 started: 798957e3e29a3e289d0db5b1ae8b889d63ca4a5a2890b68210bd30bfaae474a9
+2026-06-22 16:45:22,489 - INFO - Intermediate patch for scikit-learn__scikit-learn-10949 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/scikit-learn__scikit-learn-10949/patch.diff, now applying to container...
+2026-06-22 16:45:22,603 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/utils/validation.py...
+Applied patch sklearn/utils/validation.py cleanly.
+
+2026-06-22 16:45:22,821 - INFO - Git diff before:
+diff --git a/sklearn/utils/validation.py b/sklearn/utils/validation.py
+index fe1f7236e..f9651dad3 100644
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -462,9 +462,36 @@ def check_array(array, accept_sparse=False, accept_large_sparse=True,
+     dtype_numeric = isinstance(dtype, six.string_types) and dtype == "numeric"
+ 
+     dtype_orig = getattr(array, "dtype", None)
+-    if not hasattr(dtype_orig, 'kind'):
+-        # not a data type (e.g. a column named dtype in a pandas DataFrame)
+-        dtype_orig = None
++    # Special-case pandas DataFrame: inspect dtypes of columns so that
++    # warn_on_dtype can detect conversions when a DataFrame is passed.
++    try:
++        import pandas as pd
++    except Exception:
++        pd = None
++    if pd is not None and isinstance(array, pd.DataFrame):
++        # If all columns have the same dtype, use that dtype; otherwise,
++        # if any column is object-dtype, treat overall dtype as object so
++        # conversion to float will trigger a warning when requested.
++        dtypes = array.dtypes
++        try:
++            nunique = dtypes.nunique()
++        except Exception:
++            nunique = None
++        if nunique == 1:
++            # all columns share the same dtype
++            dtype_orig = np.dtype(dtypes.iloc[0])
++        else:
++            # mixed dtypes: if any is object, mark as object to catch
++            # conversions; otherwise leave dtype_orig as None (no generic
++            # single dtype to compare against)
++            if any(getattr(dt, 'kind', None) == 'O' for dt in dtypes):
++                dtype_orig = np.dtype('O')
++            else:
++                dtype_orig = None
++    else:
++        if not hasattr(dtype_orig, 'kind'):
++            # not a data type (e.g. a column named dtype in a pandas DataFrame)
++            dtype_orig = None
+ 
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":
+2026-06-22 16:45:22,821 - INFO - Eval script for scikit-learn__scikit-learn-10949 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/scikit-learn__scikit-learn-10949/eval.sh; copying to container...
+2026-06-22 16:45:25,801 - INFO - Test runtime: 2.90 seconds
+2026-06-22 16:45:25,801 - INFO - Test output for scikit-learn__scikit-learn-10949 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/scikit-learn__scikit-learn-10949/test_output.txt
+2026-06-22 16:45:25,841 - INFO - Git diff after:
+diff --git a/sklearn/utils/validation.py b/sklearn/utils/validation.py
+index fe1f7236e..f9651dad3 100644
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -462,9 +462,36 @@ def check_array(array, accept_sparse=False, accept_large_sparse=True,
+     dtype_numeric = isinstance(dtype, six.string_types) and dtype == "numeric"
+ 
+     dtype_orig = getattr(array, "dtype", None)
+-    if not hasattr(dtype_orig, 'kind'):
+-        # not a data type (e.g. a column named dtype in a pandas DataFrame)
+-        dtype_orig = None
++    # Special-case pandas DataFrame: inspect dtypes of columns so that
++    # warn_on_dtype can detect conversions when a DataFrame is passed.
++    try:
++        import pandas as pd
++    except Exception:
++        pd = None
++    if pd is not None and isinstance(array, pd.DataFrame):
++        # If all columns have the same dtype, use that dtype; otherwise,
++        # if any column is object-dtype, treat overall dtype as object so
++        # conversion to float will trigger a warning when requested.
++        dtypes = array.dtypes
++        try:
++            nunique = dtypes.nunique()
++        except Exception:
++            nunique = None
++        if nunique == 1:
++            # all columns share the same dtype
++            dtype_orig = np.dtype(dtypes.iloc[0])
++        else:
++            # mixed dtypes: if any is object, mark as object to catch
++            # conversions; otherwise leave dtype_orig as None (no generic
++            # single dtype to compare against)
++            if any(getattr(dt, 'kind', None) == 'O' for dt in dtypes):
++                dtype_orig = np.dtype('O')
++            else:
++                dtype_orig = None
++    else:
++        if not hasattr(dtype_orig, 'kind'):
++            # not a data type (e.g. a column named dtype in a pandas DataFrame)
++            dtype_orig = None
+ 
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":
+2026-06-22 16:45:25,841 - INFO - Grading answer for scikit-learn__scikit-learn-10949...
+2026-06-22 16:45:25,843 - INFO - report: {'scikit-learn__scikit-learn-10949': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['sklearn/utils/tests/test_validation.py::test_check_dataframe_warns_on_dtype']}, 'PASS_TO_PASS': {'success': ['sklearn/utils/tests/test_validation.py::test_as_float_array', 'sklearn/utils/tests/test_validation.py::test_as_float_array_nan[X0]', 'sklearn/utils/tests/test_validation.py::test_as_float_array_nan[X1]', 'sklearn/utils/tests/test_validation.py::test_np_matrix', 'sklearn/utils/tests/test_validation.py::test_memmap', 'sklearn/utils/tests/test_validation.py::test_ordering', 'sklearn/utils/tests/test_validation.py::test_check_array_force_all_finite_valid[asarray-inf-False]', 'sklearn/utils/tests/test_validation.py::test_check_array_force_all_finite_valid[asarray-nan-allow-nan]', 'sklearn/utils/tests/test_validation.py::test_check_array_force_all_finite_valid[asarray-nan-False]', 'sklearn/utils/tests/test_validation.py::test_check_array_force_all_finite_valid[csr_matrix-inf-False]', 'sklearn/utils/tests/test_validation.py::test_check_array_force_all_finite_valid[csr_matrix-nan-allow-nan]', 'sklearn/utils/tests/test_validation.py::test_check_array_force_all_finite_valid[csr_matrix-nan-False]', 'sklearn/utils/tests/test_validation.py::test_check_array', 'sklearn/utils/tests/test_validation.py::test_check_array_pandas_dtype_object_conversion', 'sklearn/utils/tests/test_validation.py::test_check_array_on_mock_dataframe', 'sklearn/utils/tests/test_validation.py::test_check_array_dtype_stability', 'sklearn/utils/tests/test_validation.py::test_check_array_dtype_warning', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_sparse_type_exception', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_sparse_no_exception', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_no_exception[csr]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_no_exception[csc]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_no_exception[coo]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_no_exception[bsr]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_raise_exception[csr]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_raise_exception[csc]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_raise_exception[coo]', 'sklearn/utils/tests/test_validation.py::test_check_array_accept_large_sparse_raise_exception[bsr]', 'sklearn/utils/tests/test_validation.py::test_check_array_large_indices_non_supported_scipy_version[csr]', 'sklearn/utils/tests/test_validation.py::test_check_array_large_indices_non_supported_scipy_version[csc]', 'sklearn/utils/tests/test_validation.py::test_check_array_large_indices_non_supported_scipy_version[coo]', 'sklearn/utils/tests/test_validation.py::test_check_array_large_indices_non_supported_scipy_version[bsr]', 'sklearn/utils/tests/test_validation.py::test_check_array_min_samples_and_features_messages', 'sklearn/utils/tests/test_validation.py::test_check_array_complex_data_error', 'sklearn/utils/tests/test_validation.py::test_has_fit_parameter', 'sklearn/utils/tests/test_validation.py::test_check_symmetric', 'sklearn/utils/tests/test_validation.py::test_check_is_fitted', 'sklearn/utils/tests/test_validation.py::test_check_consistent_length', 'sklearn/utils/tests/test_validation.py::test_check_dataframe_fit_attribute', 'sklearn/utils/tests/test_validation.py::test_suppress_validation', 'sklearn/utils/tests/test_validation.py::test_check_memory', 'sklearn/utils/tests/test_validation.py::test_check_array_memmap[True]', 'sklearn/utils/tests/test_validation.py::test_check_array_memmap[False]'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-10949: resolved: False
+2026-06-22 16:45:25,843 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-10949.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:45:41,043 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-10949.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:45:41,058 - INFO - Container sweb.eval.scikit-learn__scikit-learn-10949.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:45:41,058 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-10949:latest...
+2026-06-22 16:45:41,114 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-10949:latest removed.

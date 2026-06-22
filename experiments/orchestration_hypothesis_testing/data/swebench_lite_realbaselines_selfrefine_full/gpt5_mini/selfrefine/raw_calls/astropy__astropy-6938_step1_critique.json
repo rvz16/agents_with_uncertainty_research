@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:37:44.460538+00:00",
+  "instance_id": "astropy__astropy-6938",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nPossible bug in io.fits related to D exponents\nI came across the following code in ``fitsrec.py``:\r\n\r\n```python\r\n        # Replace exponent separator in floating point numbers\r\n        if 'D' in format:\r\n            output_field.replace(encode_ascii('E'), encode_ascii('D'))\r\n```\r\n\r\nI think this may be incorrect because as far as I can tell ``replace`` is not an in-place operation for ``chararray`` (it returns a copy). Commenting out this code doesn't cause any tests to fail so I think this code isn't being tested anyway.\n\n\n## Your previous patch (diff format)\n```\n--- a/astropy/io/fits/fitsrec.py\n+++ b/astropy/io/fits/fitsrec.py\n@@ -1260,8 +1260,15 @@\n             output_field[jdx] = value\n \n         # Replace exponent separator in floating point numbers\n+        # Ensure we get the correct column format object for the column\n+        # index so that the 'in' test works as expected.\n+        format = self._coldefs[col_idx].format\n         if 'D' in format:\n-            output_field.replace(encode_ascii('E'), encode_ascii('D'))\n+            # np.char.replace (and chararray.replace) return a new array rather\n+            # than modifying in-place.  Make the replacement and write it back\n+            # into the output_field to modify the underlying buffer.\n+            output_field[...] = np.char.replace(output_field, encode_ascii('E'),\n+                                                encode_ascii('D'))\n \n \n def _get_recarray_field(array, key):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 457,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00305825
+}

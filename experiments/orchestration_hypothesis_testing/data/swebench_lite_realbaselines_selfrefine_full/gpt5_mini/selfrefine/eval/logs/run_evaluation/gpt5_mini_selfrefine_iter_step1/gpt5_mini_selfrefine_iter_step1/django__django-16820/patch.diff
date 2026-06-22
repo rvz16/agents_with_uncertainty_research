@@ -1,0 +1,27 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -187,14 +187,20 @@
+             isinstance(operation, AlterTogetherOptionOperation)
+             and self.name_lower == operation.name_lower
+         ):
++            # Merge the together option into the CreateModel options. If the
++            # operation clears the option (option_value is falsy), remove the
++            # key instead of setting it to None so that squashed migrations
++            # don't leave deprecated keys like index_together behind.
++            options = dict(self.options)
++            if operation.option_value:
++                options[operation.option_name] = operation.option_value
++            else:
++                options.pop(operation.option_name, None)
+             return [
+                 CreateModel(
+                     self.name,
+                     fields=self.fields,
+-                    options={
+-                        **self.options,
+-                        **{operation.option_name: operation.option_value},
+-                    },
++                    options=options,
+                     bases=self.bases,
+                     managers=self.managers,
+                 ),

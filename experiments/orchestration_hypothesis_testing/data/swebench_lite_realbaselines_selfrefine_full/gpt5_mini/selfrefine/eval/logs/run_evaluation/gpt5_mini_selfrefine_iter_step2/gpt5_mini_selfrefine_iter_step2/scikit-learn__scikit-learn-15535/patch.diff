@@ -1,0 +1,20 @@
+--- a/sklearn/metrics/cluster/_supervised.py
++++ b/sklearn/metrics/cluster/_supervised.py
+@@ -42,11 +42,15 @@
+     labels_pred : array-like of shape (n_samples,)
+         The predicted labels.
+     """
++    # Do not force conversion to a numeric dtype here: cluster labels can be
++    # strings or arbitrary objects. Passing dtype=None preserves the original
++    # dtype (including object / string dtypes) and avoids attempting to cast
++    # labels to float which would raise on non-numeric labels.
+     labels_true = check_array(
+-        labels_true, ensure_2d=False, ensure_min_samples=0
++        labels_true, ensure_2d=False, ensure_min_samples=0, dtype=None
+     )
+     labels_pred = check_array(
+-        labels_pred, ensure_2d=False, ensure_min_samples=0
++        labels_pred, ensure_2d=False, ensure_min_samples=0, dtype=None
+     )
+ 
+     # input checks

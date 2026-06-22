@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:52:55.976761+00:00",
+  "instance_id": "scikit-learn__scikit-learn-13497",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nComparing string to array in _estimate_mi\nIn ``_estimate_mi`` there is ``discrete_features == 'auto'`` but discrete features can be an array of indices or a boolean mask.\r\nThis will error in future versions of numpy.\r\nAlso this means we never test this function with discrete features != 'auto', it seems?\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no changes were made, so the original issue is not addressed.\nThe problematic comparison discrete_features == 'auto' likely remains; comparing a numpy array or boolean mask to a string will raise an error/DeprecationWarning in newer numpy versions (ambiguous truth value).\nThe code should detect the scalar string case with isinstance(discrete_features, str) or np.isscalar before comparing, but the patch does not implement that.\nThere is no conversion/validation for array-like discrete_features (integer indices or boolean mask) \u2014 the function must accept and normalize both forms to a boolean mask or index array.\nNo tests were added to exercise discrete_features != 'auto' (e.g., boolean mask and index-list cases), so regressions would not be caught.\nNo handling shown for other plausible inputs (None, pandas Series/Index) or shape/mismatch checks for boolean masks, so edge cases remain unaddressed.",
+  "prompt_tokens": 202,
+  "completion_tokens": 727,
+  "cost_usd": 0.0015045
+}

@@ -1,0 +1,27 @@
+--- a/src/_pytest/_code/code.py
++++ b/src/_pytest/_code/code.py
+@@ -535,11 +535,21 @@
+         return fmt.repr_excinfo(self)
+ 
+     def __str__(self):
++        # Prefer to surface the underlying exception's string representation
++        # so that str(excinfo) behaves the same as str(excinfo.value).
++        # Fall back to a safe representation when there is no exception info
++        # or when calling str(value) itself fails.
+         if self._excinfo is None:
+             return repr(self)
+-        entry = self.traceback[-1]
+-        loc = ReprFileLocation(entry.path, entry.lineno + 1, self.exconly())
+-        return str(loc)
++        try:
++            return str(self.value)
++        except Exception:
++            # If converting the underlying exception to string raises for some
++            # reason, fall back to the previous concise file:lineno: message
++            # representation to avoid masking the error.
++            entry = self.traceback[-1]
++            loc = ReprFileLocation(entry.path, entry.lineno + 1, self.exconly())
++            return str(loc)
+ 
+     def match(self, regexp):
+         """

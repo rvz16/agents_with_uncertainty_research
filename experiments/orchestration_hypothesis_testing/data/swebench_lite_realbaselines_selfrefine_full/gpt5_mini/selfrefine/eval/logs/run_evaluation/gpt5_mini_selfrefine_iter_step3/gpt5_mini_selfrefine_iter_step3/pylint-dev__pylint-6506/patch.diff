@@ -1,0 +1,15 @@
+--- a/pylint/config/config_initialization.py
++++ b/pylint/config/config_initialization.py
+@@ -82,7 +82,11 @@
+     if unrecognized_options:
+         msg = ", ".join(unrecognized_options)
+         linter.add_message("unrecognized-option", line=0, args=msg)
+-        raise _UnrecognizedOptionError(options=unrecognized_options)
++        # When unrecognized command-line options are encountered, exit instead of
++        # raising an internal exception. Raising bubbles up and prints a traceback
++        # which is not user-friendly for simple CLI mistakes. Exiting with a
++        # non-zero status provides a clean failure mode.
++        sys.exit(32)
+ 
+     # Set the current module to configuration as we don't know where
+     # the --load-plugins key is coming from

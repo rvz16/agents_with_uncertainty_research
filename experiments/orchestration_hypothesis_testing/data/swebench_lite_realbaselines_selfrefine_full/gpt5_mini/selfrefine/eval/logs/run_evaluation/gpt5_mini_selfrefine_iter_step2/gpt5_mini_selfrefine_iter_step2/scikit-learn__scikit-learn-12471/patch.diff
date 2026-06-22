@@ -1,0 +1,28 @@
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -107,11 +107,23 @@
+                     raise ValueError(msg)
+                 else:
+                     # Set the problematic rows to an acceptable value and
+-                    # continue `The rows are marked `X_mask` and will be
++                    # continue. The rows are marked in `X_mask` and will be
+                     # removed later.
+                     X_mask[:, i] = valid_mask
+                     Xi = Xi.copy()
+-                    Xi[~valid_mask] = self.categories_[i][0]
++                    # When the stored categories are strings and the input
++                    # array has a fixed-size string dtype (e.g. 'S' or 'U'),
++                    # assigning a longer string will lead to truncation or
++                    # unexpected behavior. To avoid this, upcast to object
++                    # dtype before assignment when the replacement value is
++                    # a Python string/bytes but the current dtype is not
++                    # object. This ensures safe memory handling.
++                    cat0 = self.categories_[i][0]
++                    if (isinstance(cat0, six.string_types) or
++                            isinstance(cat0, six.binary_type)):
++                        if Xi.dtype != object:
++                            Xi = Xi.astype(object)
++                    Xi[~valid_mask] = cat0
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded
+ 

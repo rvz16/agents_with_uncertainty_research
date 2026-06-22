@@ -1,0 +1,14 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -32,7 +32,10 @@
+         self.select = None
+         self.annotation_col_map = None
+         self.klass_info = None
+-        self.ordering_parts = re.compile(r'(.*)\s(ASC|DESC)(.*)')
++        # Make '.' match newlines so ORDER BY detection works for multiline SQL
++        # snippets (e.g. RawSQL). Otherwise the regex may only see the last
++        # line and treat different multiline expressions as duplicates.
++        self.ordering_parts = re.compile(r'(.*)\s(ASC|DESC)(.*)', re.S)
+         self._meta_ordering = None
+ 
+     def setup_query(self):

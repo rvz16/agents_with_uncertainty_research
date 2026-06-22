@@ -1,0 +1,19 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -1708,8 +1708,15 @@
+         return str(value)
+ 
+     def formfield(self, **kwargs):
++        # Allow the 'path' argument to be a callable so FilePathField can be
++        # configured with an environment-dependent path (e.g. using settings
++        # values). Evaluate the callable here so the forms.FilePathField always
++        # receives a concrete path string (or os.PathLike), while keeping the
++        # original callable on the model field so migrations can serialize it
++        # by import path.
++        path = self.path() if callable(self.path) else self.path
+         return super().formfield(**{
+-            'path': self.path,
++            'path': path,
+             'match': self.match,
+             'recursive': self.recursive,
+             'form_class': forms.FilePathField,

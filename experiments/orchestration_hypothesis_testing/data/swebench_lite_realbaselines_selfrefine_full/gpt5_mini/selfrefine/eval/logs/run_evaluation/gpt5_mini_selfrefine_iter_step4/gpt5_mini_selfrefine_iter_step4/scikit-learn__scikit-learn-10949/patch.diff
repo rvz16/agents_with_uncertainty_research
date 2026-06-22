@@ -1,0 +1,34 @@
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -464,7 +464,30 @@
+     dtype_orig = getattr(array, "dtype", None)
+     if not hasattr(dtype_orig, 'kind'):
+         # not a data type (e.g. a column named dtype in a pandas DataFrame)
+-        dtype_orig = None
++        # Try to infer a meaningful dtype for pandas DataFrame inputs that have
++        # a homogeneous dtype across all columns. For a DataFrame `dtypes`
++        # returns a Series of dtypes; if all columns share the same dtype,
++        # use that as dtype_orig so that warn_on_dtype can detect conversions.
++        try:
++            dtypes = getattr(array, "dtypes", None)
++        except Exception:
++            dtypes = None
++        if dtypes is not None:
++            try:
++                # np.unique works on pandas Series of dtypes
++                unique = np.unique(dtypes)
++            except Exception:
++                unique = None
++            if unique is not None and len(unique) == 1:
++                # Normalize to a numpy dtype
++                try:
++                    dtype_orig = np.dtype(unique[0])
++                except Exception:
++                    dtype_orig = None
++            else:
++                dtype_orig = None
++        else:
++            dtype_orig = None
+ 
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":

@@ -1,0 +1,33 @@
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -21,15 +21,26 @@
+ 
+     def _fit_predict(self, data):
+ 
++        # Drop rows with missing x or y so fitting is robust to NaNs / Nones
++        data = data.dropna(subset=["x", "y"])
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++
++        # Need at least order + 1 unique x values to fit a polynomial of given order
++        if x.nunique() <= self.order or x.size == 0:
+             # TODO warn?
+             xx = yy = []
+         else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++            # Ensure numeric numpy arrays for np.polyfit
++            x_vals = np.asarray(x, dtype=float)
++            y_vals = np.asarray(y, dtype=float)
++            try:
++                p = np.polyfit(x_vals, y_vals, self.order)
++                xx = np.linspace(x_vals.min(), x_vals.max(), self.gridsize)
++                yy = np.polyval(p, xx)
++            except Exception:
++                # If the fit fails (e.g. SVD not converging), return empty result
++                xx = yy = []
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+ 

@@ -1,0 +1,18 @@
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -111,6 +111,15 @@
+                     # removed later.
+                     X_mask[:, i] = valid_mask
+                     Xi = Xi.copy()
++                    # If the input is a fixed-width string dtype (e.g. 'U' or 'S'),
++                    # assigning a longer string (the first category) may lead to
++                    # truncation or memory issues. To avoid this, upcast to
++                    # object dtype before assignment when either the input or
++                    # the categories are string dtypes.
++                    if (hasattr(Xi, 'dtype') and Xi.dtype.kind in ('U', 'S')) or \
++                       (hasattr(self.categories_[i], 'dtype') and
++                        self.categories_[i].dtype.kind in ('U', 'S')):
++                        Xi = Xi.astype(object, copy=False)
+                     Xi[~valid_mask] = self.categories_[i][0]
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded

@@ -1,0 +1,30 @@
+--- a/sympy/core/function.py
++++ b/sympy/core/function.py
+@@ -1706,6 +1706,27 @@
+         for var, count in self.variable_count:
+             ret.update(count.free_symbols)
+         return ret
++
++    @property
++    def kind(self):
++        """
++        Propagate the kind from the underlying expression when possible.
++
++        For example, the derivative of a MatrixSymbol should retain a
++        matrix kind (e.g. MatrixKind(NumberKind)). If the underlying
++        expression does not provide a kind, return UndefinedKind.
++        """
++        # Import lazily to avoid import cycles during module import.
++        try:
++            from sympy.core.kind import UndefinedKind
++        except Exception:
++            # In case of any unexpected import issue, fall back to a safe name.
++            class _Fallback:
++                pass
++            UndefinedKind = _Fallback
++
++        # If the inner expression defines kind, use it; otherwise return UndefinedKind
++        return getattr(self.expr, 'kind', UndefinedKind)
+ 
+     def _eval_subs(self, old, new):
+         # The substitution (old, new) cannot be done inside

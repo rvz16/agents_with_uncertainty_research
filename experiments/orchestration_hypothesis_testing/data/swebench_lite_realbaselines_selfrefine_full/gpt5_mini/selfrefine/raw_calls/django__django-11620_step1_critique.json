@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:43:41.204526+00:00",
+  "instance_id": "django__django-11620",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nWhen DEBUG is True, raising Http404 in a path converter's to_python method does not result in a technical response\nDescription\n\t\nThis is the response I get (plain text): \nA server error occurred. Please contact the administrator.\nI understand a ValueError should be raised which tells the URL resolver \"this path does not match, try next one\" but Http404 is what came to my mind intuitively and the error message was not very helpful.\nOne could also make a point that raising a Http404 should be valid way to tell the resolver \"this is indeed the right path but the current parameter value does not match anything so stop what you are doing and let the handler return the 404 page (including a helpful error message when DEBUG is True instead of the default 'Django tried these URL patterns')\".\nThis would prove useful for example to implement a path converter that uses get_object_or_404.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/views/debug.py\n+++ b/django/views/debug.py\n@@ -5,7 +5,7 @@\n from pathlib import Path\n \n from django.conf import settings\n-from django.http import HttpResponse, HttpResponseNotFound\n+from django.http import HttpResponse, HttpResponseNotFound, Http404\n from django.template import Context, Engine, TemplateDoesNotExist\n from django.template.defaultfilters import pprint\n from django.urls import Resolver404, resolve\n@@ -483,7 +483,7 @@\n     caller = ''\n     try:\n         resolver_match = resolve(request.path)\n-    except Resolver404:\n+    except (Resolver404, Http404):\n         pass\n     else:\n         obj = resolver_match.func\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 466,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030605
+}

@@ -1,0 +1,16 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1074,7 +1074,12 @@
+     def get_object_members(self, want_all: bool) -> Tuple[bool, ObjectMembers]:
+         members = self.get_module_members()
+         if want_all:
+-            if not self.__all__:
++            # Distinguish between "no __all__ set" (None) and "empty __all__"
++            # (an explicitly empty sequence). An explicitly empty __all__
++            # should prevent documenting any module members, whereas having
++            # no __all__ means autodoc should fall back to checking __module__
++            # to avoid documenting imported objects.
++            if self.__all__ is None:
+                 # for implicit module members, check __module__ to avoid
+                 # documenting imported objects
+                 return True, list(members.values())

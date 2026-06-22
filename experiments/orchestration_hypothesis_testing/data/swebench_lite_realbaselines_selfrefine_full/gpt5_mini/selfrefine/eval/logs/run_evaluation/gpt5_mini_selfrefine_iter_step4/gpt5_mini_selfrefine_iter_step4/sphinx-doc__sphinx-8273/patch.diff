@@ -1,0 +1,30 @@
+--- a/sphinx/builders/manpage.py
++++ b/sphinx/builders/manpage.py
+@@ -8,7 +8,7 @@
+     :license: BSD, see LICENSE for details.
+ """
+ 
+-from os import path
++from os import path, makedirs
+ from typing import Any, Dict, List, Set, Tuple, Union
+ 
+ from docutils.frontend import OptionParser
+@@ -82,8 +82,17 @@
+ 
+             targetname = '%s.%s' % (name, section)
+             logger.info(darkgreen(targetname) + ' { ', nonl=True)
++            # place man page in a section directory so MANPATH/`man` can find it,
++            # e.g. <outdir>/man1/ or <outdir>/man3/
++            section_dir = path.join(self.outdir, 'man%s' % section)
++            try:
++                makedirs(section_dir, exist_ok=True)
++            except TypeError:
++                # fallback for environments where makedirs doesn't accept exist_ok
++                if not path.isdir(section_dir):
++                    makedirs(section_dir)
+             destination = FileOutput(
+-                destination_path=path.join(self.outdir, targetname),
++                destination_path=path.join(section_dir, targetname),
+                 encoding='utf-8')
+ 
+             tree = self.env.get_doctree(docname)

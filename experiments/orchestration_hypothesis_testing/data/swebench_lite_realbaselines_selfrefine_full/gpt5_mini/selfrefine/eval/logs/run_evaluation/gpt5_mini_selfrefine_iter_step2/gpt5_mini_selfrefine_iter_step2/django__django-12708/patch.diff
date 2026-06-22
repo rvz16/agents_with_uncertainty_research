@@ -1,0 +1,96 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -403,17 +403,85 @@
+         meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
+-        constraint_names = self._constraint_names(
+-            model, columns, exclude=meta_constraint_names | meta_index_names,
+-            **constraint_kwargs
+-        )
+-        if len(constraint_names) != 1:
+-            raise ValueError("Found wrong number (%s) of constraints for %s(%s)" % (
+-                len(constraint_names),
++        exclude = meta_constraint_names | meta_index_names
++
++        # Try a best-effort lookup for the constraint to remove. The
++        # introspection may report both a unique constraint and an index for the
++        # same columns (unique constraints are often implemented via an index).
++        # Prefer the constraint type requested by constraint_kwargs (unique vs
++        # index), and fall back to a single remaining candidate if unambiguous.
++        with self.connection.cursor() as cursor:
++            constraints = self.connection.introspection.get_constraints(cursor, model._meta.db_table)
++
++        # Normalize column names the same way _constraint_names does.
++        column_names = [
++            self.connection.introspection.identifier_converter(name)
++            for name in columns
++        ]
++
++        # Collect candidate constraints for these columns, excluding meta-declared ones.
++        candidates = {
++            name: info for name, info in constraints.items()
++            if column_names == info['columns'] and (not exclude or name not in exclude)
++        }
++
++        if not candidates:
++            raise ValueError("Found wrong number (0) of constraints for %s(%s)" % (
+                 model._meta.db_table,
+                 ", ".join(columns),
+             ))
+-        self.execute(self._delete_constraint_sql(sql, model, constraint_names[0]))
++
++        if len(candidates) == 1:
++            chosen = next(iter(candidates))
++            self.execute(self._delete_constraint_sql(sql, model, chosen))
++            return
++
++        # Try to disambiguate based on the requested constraint type.
++        chosen = None
++        if constraint_kwargs.get('unique'):
++            # Prefer a true unique constraint (not a primary key).
++            unique_candidates = [
++                name for name, info in candidates.items()
++                if info.get('unique') and not info.get('primary_key')
++            ]
++            if len(unique_candidates) == 1:
++                chosen = unique_candidates[0]
++        if chosen is None and constraint_kwargs.get('index'):
++            # Prefer a non-unique index. If type information is available,
++            # prefer the backend index type used for normal indexes.
++            index_candidates = [
++                name for name, info in candidates.items()
++                if info.get('index') and not info.get('unique')
++            ]
++            if len(index_candidates) == 1:
++                chosen = index_candidates[0]
++            else:
++                # Try to match by index type (e.g. btree) used by db_index-created indexes.
++                type_candidates = [
++                    name for name, info in candidates.items()
++                    if info.get('index') and info.get('type') == Index.suffix
++                ]
++                if len(type_candidates) == 1:
++                    chosen = type_candidates[0]
++
++        # As a fallback, if there's exactly one unique candidate and unique was
++        # not explicitly requested, prefer non-primary unique constraints.
++        if chosen is None:
++            non_pk_unique = [
++                name for name, info in candidates.items()
++                if info.get('unique') and not info.get('primary_key')
++            ]
++            if len(non_pk_unique) == 1:
++                chosen = non_pk_unique[0]
++
++        if chosen is None:
++            # Still ambiguous.
++            raise ValueError("Found wrong number (%s) of constraints for %s(%s)" % (
++                len(candidates),
++                model._meta.db_table,
++                ", ".join(columns),
++            ))
++        self.execute(self._delete_constraint_sql(sql, model, chosen))
+ 
+     def alter_db_table(self, model, old_db_table, new_db_table):
+         """Rename the table a model points to."""

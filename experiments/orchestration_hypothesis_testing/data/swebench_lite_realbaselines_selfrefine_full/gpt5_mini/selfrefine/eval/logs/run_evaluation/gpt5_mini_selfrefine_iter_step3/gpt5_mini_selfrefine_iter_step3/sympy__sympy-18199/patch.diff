@@ -1,0 +1,19 @@
+--- a/sympy/ntheory/residue_ntheory.py
++++ b/sympy/ntheory/residue_ntheory.py
+@@ -773,6 +773,16 @@
+     # see Hackman "Elementary Number Theory" (2009), page 76
+     if not is_nthpow_residue(a, n, p):
+         return None
++
++    # If a == 0 (mod p) and n > 0 then x = 0 (mod p) is always a root.
++    # Do not treat the n == 0 case (x**0) as having 0 as a solution.
++    if p != 0 and a % p == 0:
++        if n == 0:
++            return None
++        if all_roots:
++            return [0]
++        return 0
++
+     if not isprime(p):
+         raise NotImplementedError("Not implemented for composite p")
+ 

@@ -1,0 +1,135 @@
+2026-06-22 15:24:52,445 - INFO - Creating container for scikit-learn__scikit-learn-25747...
+2026-06-22 15:24:52,572 - INFO - Container for scikit-learn__scikit-learn-25747 created: 9fb3cc9046d5dcb43747dc0a1e022dc690279149b3cdb793330230cc944b4759
+2026-06-22 15:24:52,733 - INFO - Container for scikit-learn__scikit-learn-25747 started: 9fb3cc9046d5dcb43747dc0a1e022dc690279149b3cdb793330230cc944b4759
+2026-06-22 15:24:52,733 - INFO - Intermediate patch for scikit-learn__scikit-learn-25747 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-25747/patch.diff, now applying to container...
+2026-06-22 15:24:52,821 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/utils/_set_output.py...
+Applied patch sklearn/utils/_set_output.py cleanly.
+
+2026-06-22 15:24:53,002 - INFO - Git diff before:
+diff --git a/sklearn/utils/_set_output.py b/sklearn/utils/_set_output.py
+index 335773c6a..f0e9f6557 100644
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -52,14 +52,50 @@ def _wrap_in_pandas_container(
+ 
+     pd = check_pandas_support("Setting output container to 'pandas'")
+ 
++    # If the transformer already returned a DataFrame, only override the columns
++    # and index when it is safe to do so. In particular, we should not force a
++    # new index when the returned DataFrame has a different number of rows than
++    # the original input (this happens for aggregating transformers).
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+             data_to_wrap.columns = columns
+         if index is not None:
+-            data_to_wrap.index = index
++            try:
++                if len(data_to_wrap) == len(index):
++                    data_to_wrap.index = index
++                # If lengths differ, preserve the transformer's own index.
++            except Exception:
++                # If for any reason length-checking fails, do not overwrite the index.
++                pass
+         return data_to_wrap
+ 
+-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    # If a Series was returned, preserve its own index unless it explicitly matches
++    # the original input index. This avoids attempting to broadcast a shorter
++    # aggregated Series to the original longer index.
++    if isinstance(data_to_wrap, getattr(pd, "Series")):
++        try:
++            if index is not None and len(data_to_wrap) == len(index):
++                return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++        except Exception:
++            # Fall through to preserve the series' own index.
++            pass
++        result = pd.DataFrame(data_to_wrap)
++        if columns is not None:
++            # If columns provided, apply them to the created DataFrame.
++            result.columns = columns
++        return result
++
++    # For ndarray or other array-like values, only set the provided index when
++    # the lengths match. Otherwise, let pandas infer the index.
++    try:
++        n_rows = len(data_to_wrap)
++    except Exception:
++        n_rows = None
++
++    if index is not None and n_rows is not None and n_rows == len(index):
++        return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++
++    return pd.DataFrame(data_to_wrap, columns=columns)
+ 
+ 
+ def _get_output_config(method, estimator=None):
+2026-06-22 15:24:53,002 - INFO - Eval script for scikit-learn__scikit-learn-25747 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-25747/eval.sh; copying to container...
+2026-06-22 15:24:56,146 - INFO - Test runtime: 3.11 seconds
+2026-06-22 15:24:56,146 - INFO - Test output for scikit-learn__scikit-learn-25747 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/scikit-learn__scikit-learn-25747/test_output.txt
+2026-06-22 15:24:56,200 - INFO - Git diff after:
+diff --git a/sklearn/utils/_set_output.py b/sklearn/utils/_set_output.py
+index 335773c6a..f0e9f6557 100644
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -52,14 +52,50 @@ def _wrap_in_pandas_container(
+ 
+     pd = check_pandas_support("Setting output container to 'pandas'")
+ 
++    # If the transformer already returned a DataFrame, only override the columns
++    # and index when it is safe to do so. In particular, we should not force a
++    # new index when the returned DataFrame has a different number of rows than
++    # the original input (this happens for aggregating transformers).
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+             data_to_wrap.columns = columns
+         if index is not None:
+-            data_to_wrap.index = index
++            try:
++                if len(data_to_wrap) == len(index):
++                    data_to_wrap.index = index
++                # If lengths differ, preserve the transformer's own index.
++            except Exception:
++                # If for any reason length-checking fails, do not overwrite the index.
++                pass
+         return data_to_wrap
+ 
+-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    # If a Series was returned, preserve its own index unless it explicitly matches
++    # the original input index. This avoids attempting to broadcast a shorter
++    # aggregated Series to the original longer index.
++    if isinstance(data_to_wrap, getattr(pd, "Series")):
++        try:
++            if index is not None and len(data_to_wrap) == len(index):
++                return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++        except Exception:
++            # Fall through to preserve the series' own index.
++            pass
++        result = pd.DataFrame(data_to_wrap)
++        if columns is not None:
++            # If columns provided, apply them to the created DataFrame.
++            result.columns = columns
++        return result
++
++    # For ndarray or other array-like values, only set the provided index when
++    # the lengths match. Otherwise, let pandas infer the index.
++    try:
++        n_rows = len(data_to_wrap)
++    except Exception:
++        n_rows = None
++
++    if index is not None and n_rows is not None and n_rows == len(index):
++        return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++
++    return pd.DataFrame(data_to_wrap, columns=columns)
+ 
+ 
+ def _get_output_config(method, estimator=None):
+2026-06-22 15:24:56,201 - INFO - Grading answer for scikit-learn__scikit-learn-25747...
+2026-06-22 15:24:56,201 - INFO - report: {'scikit-learn__scikit-learn-25747': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['sklearn/utils/tests/test_set_output.py::test_set_output_pandas_keep_index']}, 'PASS_TO_PASS': {'success': ['sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_dense', 'sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_dense_update_columns_and_index', 'sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_error_validation', 'sklearn/utils/tests/test_set_output.py::test__safe_set_output', 'sklearn/utils/tests/test_set_output.py::test_set_output_mixin', 'sklearn/utils/tests/test_set_output.py::test__safe_set_output_error', 'sklearn/utils/tests/test_set_output.py::test_set_output_method', 'sklearn/utils/tests/test_set_output.py::test_set_output_method_error', 'sklearn/utils/tests/test_set_output.py::test__get_output_config', 'sklearn/utils/tests/test_set_output.py::test_get_output_auto_wrap_false', 'sklearn/utils/tests/test_set_output.py::test_auto_wrap_output_keys_errors_with_incorrect_input', 'sklearn/utils/tests/test_set_output.py::test_set_output_mixin_custom_mixin', 'sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_column_errors', 'sklearn/utils/tests/test_set_output.py::test_set_output_mro'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-25747: resolved: False
+2026-06-22 15:24:56,201 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-25747.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:25:11,890 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-25747.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:25:11,906 - INFO - Container sweb.eval.scikit-learn__scikit-learn-25747.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:25:11,907 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25747:latest...
+2026-06-22 15:25:13,120 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25747:latest removed.

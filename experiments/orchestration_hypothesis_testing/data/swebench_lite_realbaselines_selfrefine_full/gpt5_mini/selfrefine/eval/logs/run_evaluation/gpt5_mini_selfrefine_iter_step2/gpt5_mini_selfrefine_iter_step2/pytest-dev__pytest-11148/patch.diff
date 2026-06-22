@@ -1,0 +1,43 @@
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -638,19 +638,19 @@
+     child_name: str = ""
+     while module_name:
+         if module_name not in modules:
+-            try:
+-                # If sys.meta_path is empty, calling import_module will issue
+-                # a warning and raise ModuleNotFoundError. To avoid the
+-                # warning, we check sys.meta_path explicitly and raise the error
+-                # ourselves to fall back to creating a dummy module.
+-                if not sys.meta_path:
+-                    raise ModuleNotFoundError
+-                module = importlib.import_module(module_name)
+-            except ModuleNotFoundError:
+-                module = ModuleType(
+-                    module_name,
+-                    doc="Empty module created by pytest's importmode=importlib.",
+-                )
++            # Don't attempt to import real modules here: importing may create
++            # another module object for the same name (depending on import
++            # machinery and sys.path), which leads to duplicate module
++            # instances and surprising behavior. Instead create a lightweight
++            # placeholder module that will act as the package for the
++            # submodule imported via importlib.
++            module = ModuleType(
++                module_name,
++                doc="Empty module created by pytest's importmode=importlib.",
++            )
++            # Register the placeholder in the provided modules mapping so
++            # subsequent iterations and attribute wiring see the same object.
++            modules[module_name] = module
+         else:
+             module = modules[module_name]
+         if child_module:
+@@ -658,7 +658,6 @@
+             # modules.
+             if not hasattr(module, child_name):
+                 setattr(module, child_name, child_module)
+-                modules[module_name] = module
+         # Keep track of the child module while moving up the tree.
+         child_module, child_name = module, module_name.rpartition(".")[-1]
+         module_parts.pop(-1)

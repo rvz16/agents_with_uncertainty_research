@@ -1,0 +1,39 @@
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -828,6 +828,36 @@
+         set_a = self._mapping.pop(weakref.ref(a), None)
+         if set_a:
+             set_a.remove(weakref.ref(a))
++
++    def __getstate__(self):
++        """
++        Serialize the grouper by storing groups as lists of strong references.
++
++        Weakref.ref objects are not picklable, so we convert to lists of live
++        objects here.  Dead references are dropped.
++        """
++        self.clean()
++        unique_groups = {id(group): group for group in self._mapping.values()}
++        groups = []
++        for group in unique_groups.values():
++            grp = [r() for r in group if r() is not None]
++            if grp:
++                groups.append(grp)
++        return {"_groups": groups}
++
++    def __setstate__(self, state):
++        """
++        Restore the grouper from the serialized list-of-groups form.
++        """
++        groups = state.get("_groups", [])
++        self._mapping = {}
++        for group in groups:
++            # Recreate weakrefs for each object and point them to the same list.
++            refs = [weakref.ref(x) for x in group]
++            for r in refs:
++                # store a shallow copy so each key maps to the same list object
++                # but we do not share the list object across different groups.
++                self._mapping[r] = refs.copy()
+ 
+     def __iter__(self):
+         """

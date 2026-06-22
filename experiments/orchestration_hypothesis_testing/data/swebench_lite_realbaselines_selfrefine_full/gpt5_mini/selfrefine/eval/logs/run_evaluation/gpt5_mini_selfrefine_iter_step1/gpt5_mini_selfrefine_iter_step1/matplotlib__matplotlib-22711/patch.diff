@@ -1,0 +1,66 @@
+--- a/lib/matplotlib/widgets.py
++++ b/lib/matplotlib/widgets.py
+@@ -893,24 +893,50 @@
+         ----------
+         val : tuple or array-like of float
+         """
+-        val = np.sort(val)
++        val = np.sort(np.asanyarray(val))
+         _api.check_shape((2,), val=val)
+         val[0] = self._min_in_bounds(val[0])
+         val[1] = self._max_in_bounds(val[1])
++
++        # Get current polygon vertices; make a copy to avoid mutating inplace
+         xy = self.poly.xy
++        # Build the new polygon coordinates. Different backends/matplotlib
++        # versions may return a polygon with 4 vertices (auto-closed) or 5
++        # vertices (explicitly closed by repeating the first vertex). Respect
++        # the current size to avoid IndexError.
+         if self.orientation == "vertical":
+-            xy[0] = .25, val[0]
+-            xy[1] = .25, val[1]
+-            xy[2] = .75, val[1]
+-            xy[3] = .75, val[0]
+-            xy[4] = .25, val[0]
+-        else:
+-            xy[0] = val[0], .25
+-            xy[1] = val[0], .75
+-            xy[2] = val[1], .75
+-            xy[3] = val[1], .25
+-            xy[4] = val[0], .25
+-        self.poly.xy = xy
++            new_coords = [
++                (.25, val[0]),
++                (.25, val[1]),
++                (.75, val[1]),
++                (.75, val[0]),
++            ]
++            if xy.shape[0] > 4:
++                # preserve explicit closing point if present
++                new_coords.append((.25, val[0]))
++        else:
++            new_coords = [
++                (val[0], .25),
++                (val[0], .75),
++                (val[1], .75),
++                (val[1], .25),
++            ]
++            if xy.shape[0] > 4:
++                # preserve explicit closing point if present
++                new_coords.append((val[0], .25))
++
++        # Assign the new coordinates to the polygon.
++        self.poly.xy = np.array(new_coords)
++
++        # Update the handle positions so programmatic calls to set_val update
++        # both the filled region and the handle markers.
++        if self.orientation == "vertical":
++            for handle, v in zip(self._handles, [val[0], val[1]]):
++                handle.set_ydata([v])
++        else:
++            for handle, v in zip(self._handles, [val[0], val[1]]):
++                handle.set_xdata([v])
++
+         self.valtext.set_text(self._format(val))
+         if self.drawon:
+             self.ax.figure.canvas.draw_idle()

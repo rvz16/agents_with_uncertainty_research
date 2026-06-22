@@ -1,0 +1,23 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -957,6 +957,20 @@
+     }
+     description = _("Boolean (Either True or False)")
+ 
++    def select_format(self, compiler, sql, params):
++        """
++        Ensure boolean annotations that compile to an empty SQL fragment
++        (which can happen for certain reduced Q expressions, e.g. a negated
++        empty IN) still produce a valid SQL literal. Default to SQL '1' for
++        True-like expressions to avoid producing invalid SELECT clauses like
++        'SELECT AS "foo"'.
++        """
++        if not sql:
++            # Use SQL literal '1' as a safe True value in select lists. Most
++            # backends accept 1/0 for boolean literals in select lists.
++            return '1', params
++        return super().select_format(compiler, sql, params)
++
+     def get_internal_type(self):
+         return "BooleanField"
+ 

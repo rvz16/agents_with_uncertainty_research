@@ -1,0 +1,49 @@
+--- a/sympy/physics/units/util.py
++++ b/sympy/physics/units/util.py
+@@ -30,8 +30,44 @@
+     camat = Matrix([[dimension_system.get_dimensional_dependencies(i, mark_dimensionless=True).get(j, 0) for i in target_dims] for j in canon_dim_units])
+     exprmat = Matrix([dim_dependencies.get(k, 0) for k in canon_dim_units])
+ 
+-    res_exponents = camat.solve_least_squares(exprmat, method=None)
+-    return res_exponents
++    # Solve camat * x = exprmat for an exact solution. If there is no exact
++    # solution (i.e. the units are incompatible), return None so that the
++    # caller can decide (typically to leave the expression unchanged).
++    #
++    # We use linsolve to obtain an exact symbolic solution when it exists.
++    # If the solution involves free parameters (infinitely many solutions),
++    # pick a particular one by setting parameters to zero and verify it is
++    # exact. If no solution exists, return None.
++    from sympy import symbols, linsolve
++
++    n = camat.cols
++    xs = symbols('x0:%d' % n)
++    eqs = [sum(camat[i, j] * xs[j] for j in range(n)) - exprmat[i, 0] for i in range(camat.rows)]
++    solset = linsolve(eqs, xs)
++    if not solset:
++        return None
++
++    sol_tuple = next(iter(solset))
++
++    # Collect any parameters appearing in the solution (exclude the unknowns).
++    param_syms = set()
++    for entry in sol_tuple:
++        param_syms.update(entry.free_symbols)
++    param_syms.difference_update(xs)
++
++    if param_syms:
++        # Choose a particular solution by setting all free parameters to zero.
++        subs_map = {p: 0 for p in param_syms}
++        sol_tuple = tuple(entry.subs(subs_map) for entry in sol_tuple)
++
++    # Verify the solution is exact
++    res = Matrix(sol_tuple)
++    diff = camat * res - exprmat
++    for i in range(diff.rows):
++        if diff[i, 0] != 0:
++            return None
++
++    return res
+ 
+ 
+ def convert_to(expr, target_units, unit_system="SI"):

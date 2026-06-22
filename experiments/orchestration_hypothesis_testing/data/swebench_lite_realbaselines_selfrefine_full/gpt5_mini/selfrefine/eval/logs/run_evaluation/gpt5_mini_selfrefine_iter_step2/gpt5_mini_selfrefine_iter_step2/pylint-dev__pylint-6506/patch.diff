@@ -1,0 +1,20 @@
+--- a/pylint/config/config_initialization.py
++++ b/pylint/config/config_initialization.py
+@@ -82,6 +82,17 @@
+     if unrecognized_options:
+         msg = ", ".join(unrecognized_options)
+         linter.add_message("unrecognized-option", line=0, args=msg)
++        # If this function was called as part of the top-level CLI invocation
++        # (args_list is the same as sys.argv[1:]), prefer a clean exit instead of
++        # raising the internal _UnrecognizedOptionError to avoid printing a
++        # traceback for the end-user. If called programmatically with a custom
++        # args_list, keep raising the exception so callers can handle it.
++        try:
++            cli_invocation = args_list == sys.argv[1:]
++        except Exception:
++            cli_invocation = False
++        if cli_invocation:
++            raise SystemExit(32)
+         raise _UnrecognizedOptionError(options=unrecognized_options)
+ 
+     # Set the current module to configuration as we don't know where

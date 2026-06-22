@@ -1,0 +1,31 @@
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -362,10 +362,26 @@
+             truncate_locals = True
+ 
+         try:
+-            os.getcwd()
+-            abspath = False
++            cwd = os.getcwd()
+         except OSError:
+             abspath = True
++        else:
++            # If the current working directory has changed from the invocation dir
++            # where pytest was started, prefer showing absolute paths so editors
++            # that don't know about the changed directory can still locate files.
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                try:
++                    inv = str(invocation_dir)
++                except Exception:
++                    inv = None
++                # Compare realpaths to handle symlinks etc.
++                if inv is not None and os.path.realpath(cwd) != os.path.realpath(inv):
++                    abspath = True
++                else:
++                    abspath = False
++            else:
++                abspath = False
+ 
+         return excinfo.getrepr(
+             funcargs=True,

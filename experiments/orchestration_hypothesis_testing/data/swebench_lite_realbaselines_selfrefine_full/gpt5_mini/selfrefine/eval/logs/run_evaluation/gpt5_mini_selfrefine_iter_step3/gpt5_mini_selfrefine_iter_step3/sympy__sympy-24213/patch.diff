@@ -1,0 +1,30 @@
+--- a/sympy/physics/units/unitsystem.py
++++ b/sympy/physics/units/unitsystem.py
+@@ -172,10 +172,26 @@
+             return factor ** exp_factor, dim ** (exp_factor * exp_dim)
+         elif isinstance(expr, Add):
+             factor, dim = self._collect_factor_and_dimension(expr.args[0])
++            # Use the dimension system to detect equivalent dimensions that may
++            # be represented differently (e.g. acceleration*time vs velocity).
++            dsys = self.get_dimension_system()
++            # Try to obtain a canonical dependency representation for the
++            # dimension (if the dimension system exposes it). Fall back to the
++            # raw Dimension object if not available.
++            try:
++                dim_deps = dsys.get_dimensional_dependencies(dim)
++            except Exception:
++                dim_deps = dim
+             for addend in expr.args[1:]:
+                 addend_factor, addend_dim = \
+                     self._collect_factor_and_dimension(addend)
+-                if dim != addend_dim:
++                try:
++                    addend_deps = dsys.get_dimensional_dependencies(addend_dim)
++                except Exception:
++                    addend_deps = addend_dim
++                # If the raw Dimension objects are not identical, compare their
++                # dependency representations to detect equivalence.
++                if dim != addend_dim and dim_deps != addend_deps:
+                     raise ValueError(
+                         'Dimension of "{}" is {}, '
+                         'but it should be {}'.format(

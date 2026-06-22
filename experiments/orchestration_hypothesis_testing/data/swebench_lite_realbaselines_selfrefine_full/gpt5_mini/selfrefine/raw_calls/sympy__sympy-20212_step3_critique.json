@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:32:06.446082+00:00",
+  "instance_id": "sympy__sympy-20212",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\n0**-oo produces 0, the documentation says it should produce zoo\nUsing SymPy 1.5.1, evaluate `0**-oo` produces `0`.\r\n\r\nThe documentation for the Pow class states that it should return `ComplexInfinity`, aka `zoo`\r\n\r\n| expr | value | reason |\r\n| :-- | :-- | :--|\r\n| `0**-oo` | `zoo` | This is not strictly true, as 0**oo may be oscillating between positive and negative values or rotating in the complex plane. It is convenient, however, when the base is positive.|\r\n\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/core/power.py\n+++ b/sympy/core/power.py\n@@ -312,6 +312,17 @@\n                 if abs(e).is_infinite:\n                     return S.NaN\n                 return S.One\n+            elif b is S.Zero:\n+                # Handle infinite exponents with zero base:\n+                # 0**oo  -> 0\n+                # 0**-oo -> zoo (ComplexInfinity)\n+                # If the sign of the infinite exponent is unknown, return NaN.\n+                if e.is_infinite:\n+                    if e.is_extended_positive:\n+                        return S.Zero\n+                    if e.is_extended_negative:\n+                        return S.ComplexInfinity\n+                    return S.NaN\n             else:\n                 # recognize base as E\n                 if not e.is_Atom and b is not S.Exp1 and not isinstance(b, exp_polar):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 454,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030575
+}

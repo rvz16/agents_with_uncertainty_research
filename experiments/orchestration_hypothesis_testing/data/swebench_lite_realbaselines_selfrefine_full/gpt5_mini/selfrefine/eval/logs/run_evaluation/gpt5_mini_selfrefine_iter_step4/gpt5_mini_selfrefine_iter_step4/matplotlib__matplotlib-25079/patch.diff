@@ -1,0 +1,24 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1692,9 +1692,19 @@
+             if clip:
+                 value = np.clip(value, self.vmin, self.vmax)
+             t_value = self._trf.transform(value).reshape(np.shape(value))
+-            t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
+-            if not np.isfinite([t_vmin, t_vmax]).all():
++            # Transform vmin and vmax and ensure the transformed values are
++            # finite and not masked.  Different transform implementations may
++            # return masked arrays or arrays with extra dimensions, so coerce
++            # to a 1-D masked array and check both the mask and finiteness of
++            # the data.
++            t_v = self._trf.transform([self.vmin, self.vmax])
++            t_v = np.ma.array(t_v).ravel()
++            if t_v.size < 2:
++                # Unexpected result from transform; be defensive.
+                 raise ValueError("Invalid vmin or vmax")
++            if np.any(t_v.mask) or not np.isfinite(t_v.data).all():
++                raise ValueError("Invalid vmin or vmax")
++            t_vmin, t_vmax = t_v[0], t_v[1]
+             t_value -= t_vmin
+             t_value /= (t_vmax - t_vmin)
+             t_value = np.ma.masked_invalid(t_value, copy=False)

@@ -1,0 +1,42 @@
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -462,9 +462,36 @@
+     dtype_numeric = isinstance(dtype, six.string_types) and dtype == "numeric"
+ 
+     dtype_orig = getattr(array, "dtype", None)
+-    if not hasattr(dtype_orig, 'kind'):
+-        # not a data type (e.g. a column named dtype in a pandas DataFrame)
+-        dtype_orig = None
++    # Special-case pandas DataFrame: inspect dtypes of columns so that
++    # warn_on_dtype can detect conversions when a DataFrame is passed.
++    try:
++        import pandas as pd
++    except Exception:
++        pd = None
++    if pd is not None and isinstance(array, pd.DataFrame):
++        # If all columns have the same dtype, use that dtype; otherwise,
++        # if any column is object-dtype, treat overall dtype as object so
++        # conversion to float will trigger a warning when requested.
++        dtypes = array.dtypes
++        try:
++            nunique = dtypes.nunique()
++        except Exception:
++            nunique = None
++        if nunique == 1:
++            # all columns share the same dtype
++            dtype_orig = np.dtype(dtypes.iloc[0])
++        else:
++            # mixed dtypes: if any is object, mark as object to catch
++            # conversions; otherwise leave dtype_orig as None (no generic
++            # single dtype to compare against)
++            if any(getattr(dt, 'kind', None) == 'O' for dt in dtypes):
++                dtype_orig = np.dtype('O')
++            else:
++                dtype_orig = None
++    else:
++        if not hasattr(dtype_orig, 'kind'):
++            # not a data type (e.g. a column named dtype in a pandas DataFrame)
++            dtype_orig = None
+ 
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":

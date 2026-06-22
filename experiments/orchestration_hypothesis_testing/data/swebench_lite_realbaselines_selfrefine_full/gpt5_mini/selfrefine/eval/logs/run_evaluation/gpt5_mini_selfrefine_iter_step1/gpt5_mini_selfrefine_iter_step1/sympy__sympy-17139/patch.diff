@@ -1,0 +1,31 @@
+--- a/sympy/simplify/fu.py
++++ b/sympy/simplify/fu.py
+@@ -501,9 +501,16 @@
+         if not (rv.is_Pow and rv.base.func == f):
+             return rv
+ 
+-        if (rv.exp < 0) == True:
+-            return rv
+-        if (rv.exp > max) == True:
++        # Avoid direct numeric comparisons that can raise for complex or
++        # non-numeric exponents (e.g. I). Only proceed when the exponent
++        # is known to be an integer number that we can safely manipulate.
++        if rv.exp.is_integer is not True:
++            return rv
++        if rv.exp.is_negative is True:
++            return rv
++        # Only perform an upper bound check when the exponent is a concrete
++        # numeric value to avoid creating unevaluated relational objects.
++        if rv.exp.is_Number and rv.exp > max:
+             return rv
+         if rv.exp == 2:
+             return h(g(rv.base.args[0])**2)
+@@ -511,6 +518,8 @@
+             if rv.exp == 4:
+                 e = 2
+             elif not pow:
++                # At this point rv.exp is known to be an integer Number so
++                # modulo/division operations are safe.
+                 if rv.exp % 2:
+                     return rv
+                 e = rv.exp//2

@@ -1,0 +1,58 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1926,8 +1926,36 @@
+         return data. If the database backend supports grouping by the
+         primary key, and the query would be equivalent, the optimization
+         will be made automatically.
++
++        NOTE: When an annotation alias collides with an actual column name
++        from any table involved in the query, disable using the alias in
++        GROUP BY. This avoids ambiguous column references (e.g. when a
++        joined table has a column with the same name as an annotation).
+         """
+         group_by = list(self.select)
++        # Build a set of column names for tables that are part of this query.
++        # We try to map table names in self.table_map to model _meta to obtain
++        # their field names. This is done defensively and we fall back to an
++        # empty set on any error to avoid failing query construction.
++        table_columns = set()
++        try:
++            from django.apps import apps
++            # For each registered model, map its db_table to its field names.
++            # This is O(#models) but avoids touching the database and is
++            # acceptable since this only runs during query construction.
++            table_to_fields = {}
++            for model in apps.get_models():
++                table_to_fields.setdefault(model._meta.db_table, set()).update(
++                    get_field_names_from_opts(model._meta)
++                )
++            for table_name in self.table_map:
++                cols = table_to_fields.get(table_name)
++                if cols:
++                    table_columns.update(cols)
++        except Exception:
++            # If anything goes wrong (e.g. apps not ready), don't fail here.
++            table_columns = set()
++
+         if self.annotation_select:
+             for alias, annotation in self.annotation_select.items():
+                 signature = inspect.signature(annotation.get_group_by_cols)
+@@ -1940,9 +1968,16 @@
+                     warnings.warn(msg, category=RemovedInDjango40Warning)
+                     group_by_cols = annotation.get_group_by_cols()
+                 else:
++                    # Decide whether to pass an alias to get_group_by_cols.
++                    group_alias = alias
+                     if not allow_aliases:
+-                        alias = None
+-                    group_by_cols = annotation.get_group_by_cols(alias=alias)
++                        group_alias = None
++                    # If the alias would collide with any real column name from
++                    # the involved tables, don't use it as a GROUP BY alias,
++                    # to avoid ambiguous column references.
++                    if group_alias is not None and group_alias in table_columns:
++                        group_alias = None
++                    group_by_cols = annotation.get_group_by_cols(alias=group_alias)
+                 group_by.extend(group_by_cols)
+         self.group_by = tuple(group_by)
+ 

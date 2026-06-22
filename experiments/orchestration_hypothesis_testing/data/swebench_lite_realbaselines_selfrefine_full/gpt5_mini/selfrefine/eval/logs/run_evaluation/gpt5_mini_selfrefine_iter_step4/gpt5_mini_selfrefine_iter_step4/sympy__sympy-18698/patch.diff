@@ -1,0 +1,29 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5998,6 +5998,26 @@
+         fp = _sorted_factors(fp, method)
+         fq = _sorted_factors(fq, method)
+ 
++        # Combine factors that have the same multiplicity by multiplying
++        # their polynomial factors together.  This makes the behavior of the
++        # symbolic sqf_list/factor_list consistent with Poly.sqf_list,
++        # which returns a single polynomial for each exponent.
++        def _combine_same_multiplicity(factors):
++            if not factors:
++                return factors
++            from collections import OrderedDict
++            agg = OrderedDict()
++            for f, k in factors:
++                if k in agg:
++                    # multiply the polys to combine factors with same exponent
++                    agg[k] = agg[k].mul(f)
++                else:
++                    agg[k] = f
++            return [(agg_k, k) for k, agg_k in agg.items()]
++
++        fp = _combine_same_multiplicity(fp)
++        fq = _combine_same_multiplicity(fq)
++
+         if not opt.polys:
+             fp = [(f.as_expr(), k) for f, k in fp]
+             fq = [(f.as_expr(), k) for f, k in fq]

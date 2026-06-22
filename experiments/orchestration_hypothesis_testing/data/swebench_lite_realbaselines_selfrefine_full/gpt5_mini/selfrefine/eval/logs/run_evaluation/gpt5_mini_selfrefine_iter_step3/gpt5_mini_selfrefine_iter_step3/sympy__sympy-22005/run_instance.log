@@ -1,0 +1,61 @@
+2026-06-22 19:10:39,400 - INFO - Creating container for sympy__sympy-22005...
+2026-06-22 19:10:39,576 - INFO - Container for sympy__sympy-22005 created: 5fb58b0761ba6e9132e5e11713cb2f40800d8ef9fc7b424b70a6f9d017326bd5
+2026-06-22 19:10:39,747 - INFO - Container for sympy__sympy-22005 started: 5fb58b0761ba6e9132e5e11713cb2f40800d8ef9fc7b424b70a6f9d017326bd5
+2026-06-22 19:10:39,748 - INFO - Intermediate patch for sympy__sympy-22005 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-22005/patch.diff, now applying to container...
+2026-06-22 19:10:39,881 - INFO - >>>>> Applied Patch:
+Checking patch sympy/solvers/polysys.py...
+Applied patch sympy/solvers/polysys.py cleanly.
+
+2026-06-22 19:10:40,217 - INFO - Git diff before:
+diff --git a/sympy/solvers/polysys.py b/sympy/solvers/polysys.py
+index b9809fd4e9..2a663b55db 100644
+--- a/sympy/solvers/polysys.py
++++ b/sympy/solvers/polysys.py
+@@ -257,6 +257,15 @@ def _solve_reduced_system(system, gens, entry=False):
+             return []
+ 
+         if len(basis) == 1:
++            # A single polynomial in the Groebner basis but more than one
++            # generator means the system is not zero-dimensional (it has
++            # infinitely many solutions). This implementation only
++            # supports zero-dimensional systems.
++            if len(gens) != 1:
++                raise NotImplementedError(filldedent('''
++                    only zero-dimensional systems supported
++                    (finite number of solutions)
++                    '''))
+             return [(zero,) for zero in zeros]
+ 
+         solutions = []
+2026-06-22 19:10:40,217 - INFO - Eval script for sympy__sympy-22005 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-22005/eval.sh; copying to container...
+2026-06-22 19:10:46,087 - INFO - Test runtime: 5.82 seconds
+2026-06-22 19:10:46,087 - INFO - Test output for sympy__sympy-22005 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-22005/test_output.txt
+2026-06-22 19:10:46,141 - INFO - Git diff after:
+diff --git a/sympy/solvers/polysys.py b/sympy/solvers/polysys.py
+index b9809fd4e9..2a663b55db 100644
+--- a/sympy/solvers/polysys.py
++++ b/sympy/solvers/polysys.py
+@@ -257,6 +257,15 @@ def _solve_reduced_system(system, gens, entry=False):
+             return []
+ 
+         if len(basis) == 1:
++            # A single polynomial in the Groebner basis but more than one
++            # generator means the system is not zero-dimensional (it has
++            # infinitely many solutions). This implementation only
++            # supports zero-dimensional systems.
++            if len(gens) != 1:
++                raise NotImplementedError(filldedent('''
++                    only zero-dimensional systems supported
++                    (finite number of solutions)
++                    '''))
+             return [(zero,) for zero in zeros]
+ 
+         solutions = []
+2026-06-22 19:10:46,141 - INFO - Grading answer for sympy__sympy-22005...
+2026-06-22 19:10:46,141 - INFO - report: {'sympy__sympy-22005': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_solve_poly_system'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_solve_biquadratic', 'test_solve_triangulated'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-22005: resolved: True
+2026-06-22 19:10:46,142 - INFO - Attempting to stop container sweb.eval.sympy__sympy-22005.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:11:01,383 - INFO - Attempting to remove container sweb.eval.sympy__sympy-22005.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:11:01,405 - INFO - Container sweb.eval.sympy__sympy-22005.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 19:11:01,405 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-22005:latest...
+2026-06-22 19:11:01,471 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-22005:latest removed.

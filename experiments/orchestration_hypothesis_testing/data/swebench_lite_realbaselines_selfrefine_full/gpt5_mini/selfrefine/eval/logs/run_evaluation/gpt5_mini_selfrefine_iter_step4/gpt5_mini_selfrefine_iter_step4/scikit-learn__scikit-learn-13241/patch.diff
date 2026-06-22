@@ -1,0 +1,20 @@
+--- a/sklearn/decomposition/kernel_pca.py
++++ b/sklearn/decomposition/kernel_pca.py
+@@ -220,6 +220,17 @@
+             self.alphas_ = self.alphas_[:, self.lambdas_ > 0]
+             self.lambdas_ = self.lambdas_[self.lambdas_ > 0]
+ 
++        # Make eigenvectors deterministic by fixing their sign so that the
++        # element with the largest absolute value in each eigenvector is positive.
++        # This mirrors the behavior of sklearn.utils.extmath.svd_flip used in PCA
++        # and avoids arbitrary sign flips across different runs.
++        if self.alphas_.size:
++            # for each component, find index of the max abs value
++            max_abs_idx = np.argmax(np.abs(self.alphas_), axis=0)
++            signs = np.sign(self.alphas_[max_abs_idx, np.arange(self.alphas_.shape[1])])
++            signs[signs == 0] = 1.0
++            self.alphas_ = self.alphas_ * signs[np.newaxis, :]
++
+         return K
+ 
+     def _fit_inverse_transform(self, X_transformed, X):

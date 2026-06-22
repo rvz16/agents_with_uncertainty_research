@@ -1,0 +1,53 @@
+2026-06-22 16:42:33,570 - INFO - Creating container for pytest-dev__pytest-7168...
+2026-06-22 16:42:33,822 - INFO - Container for pytest-dev__pytest-7168 created: c75e651fb409c9b6851b49772e8ae9d84a8e616870263221939fbab49e0b2222
+2026-06-22 16:42:33,971 - INFO - Container for pytest-dev__pytest-7168 started: c75e651fb409c9b6851b49772e8ae9d84a8e616870263221939fbab49e0b2222
+2026-06-22 16:42:33,971 - INFO - Intermediate patch for pytest-dev__pytest-7168 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-7168/patch.diff, now applying to container...
+2026-06-22 16:42:34,089 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/_io/saferepr.py...
+Applied patch src/_pytest/_io/saferepr.py cleanly.
+
+2026-06-22 16:42:34,167 - INFO - Git diff before:
+diff --git a/src/_pytest/_io/saferepr.py b/src/_pytest/_io/saferepr.py
+index 23af4d0bb..31b2536b2 100644
+--- a/src/_pytest/_io/saferepr.py
++++ b/src/_pytest/_io/saferepr.py
+@@ -19,8 +19,12 @@ def _format_repr_exception(exc: BaseException, obj: Any) -> str:
+         raise
+     except BaseException as exc:
+         exc_info = "unpresentable exception ({})".format(_try_repr_or_str(exc))
++    # Use type(obj).__name__ instead of obj.__class__.__name__ because attribute
++    # access on obj (including __class__) may itself raise, e.g. if the object's
++    # __getattribute__ or __repr__ are broken. Using type() avoids triggering
++    # user-defined attribute access.
+     return "<[{} raised in repr()] {} object at 0x{:x}>".format(
+-        exc_info, obj.__class__.__name__, id(obj)
++        exc_info, type(obj).__name__, id(obj)
+     )
+2026-06-22 16:42:34,167 - INFO - Eval script for pytest-dev__pytest-7168 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-7168/eval.sh; copying to container...
+2026-06-22 16:42:37,719 - INFO - Test runtime: 3.51 seconds
+2026-06-22 16:42:37,719 - INFO - Test output for pytest-dev__pytest-7168 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-7168/test_output.txt
+2026-06-22 16:42:37,771 - INFO - Git diff after:
+diff --git a/src/_pytest/_io/saferepr.py b/src/_pytest/_io/saferepr.py
+index 23af4d0bb..31b2536b2 100644
+--- a/src/_pytest/_io/saferepr.py
++++ b/src/_pytest/_io/saferepr.py
+@@ -19,8 +19,12 @@ def _format_repr_exception(exc: BaseException, obj: Any) -> str:
+         raise
+     except BaseException as exc:
+         exc_info = "unpresentable exception ({})".format(_try_repr_or_str(exc))
++    # Use type(obj).__name__ instead of obj.__class__.__name__ because attribute
++    # access on obj (including __class__) may itself raise, e.g. if the object's
++    # __getattribute__ or __repr__ are broken. Using type() avoids triggering
++    # user-defined attribute access.
+     return "<[{} raised in repr()] {} object at 0x{:x}>".format(
+-        exc_info, obj.__class__.__name__, id(obj)
++        exc_info, type(obj).__name__, id(obj)
+     )
+2026-06-22 16:42:37,771 - INFO - Grading answer for pytest-dev__pytest-7168...
+2026-06-22 16:42:37,771 - INFO - report: {'pytest-dev__pytest-7168': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['testing/io/test_saferepr.py::test_simple_repr', 'testing/io/test_saferepr.py::test_maxsize', 'testing/io/test_saferepr.py::test_maxsize_error_on_instance', 'testing/io/test_saferepr.py::test_exceptions', 'testing/io/test_saferepr.py::test_baseexception', 'testing/io/test_saferepr.py::test_buggy_builtin_repr', 'testing/io/test_saferepr.py::test_big_repr', 'testing/io/test_saferepr.py::test_repr_on_newstyle', 'testing/io/test_saferepr.py::test_unicode', 'testing/io/test_saferepr.py::test_pformat_dispatch', 'testing/io/test_saferepr.py::test_broken_getattribute'], 'failure': []}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-7168: resolved: True
+2026-06-22 16:42:37,771 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-7168.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:42:52,996 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-7168.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:42:53,016 - INFO - Container sweb.eval.pytest-dev__pytest-7168.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:42:53,016 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7168:latest...
+2026-06-22 16:42:53,051 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7168:latest removed.

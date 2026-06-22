@@ -1,0 +1,20 @@
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -110,7 +110,17 @@
+                     # continue `The rows are marked `X_mask` and will be
+                     # removed later.
+                     X_mask[:, i] = valid_mask
++                    # Work on a copy so we don't modify the original input.
+                     Xi = Xi.copy()
++                    # If Xi has a fixed-width string dtype (e.g. 'S' or 'U'),
++                    # assigning a longer string (the first category) can lead to
++                    # silent truncation and subsequent errors. Ensure object
++                    # dtype if either the input or the categories contain strings.
++                    if Xi.dtype != np.dtype('object'):
++                        if (np.issubdtype(Xi.dtype, np.str_) or
++                                np.issubdtype(self.categories_[i].dtype,
++                                              np.str_)):
++                            Xi = Xi.astype(object)
+                     Xi[~valid_mask] = self.categories_[i][0]
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded

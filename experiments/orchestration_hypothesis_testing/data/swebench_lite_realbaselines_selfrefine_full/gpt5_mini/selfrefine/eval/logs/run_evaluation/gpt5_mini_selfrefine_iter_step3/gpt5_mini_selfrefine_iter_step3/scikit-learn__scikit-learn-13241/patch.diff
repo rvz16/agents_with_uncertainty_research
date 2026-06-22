@@ -1,0 +1,23 @@
+--- a/sklearn/decomposition/kernel_pca.py
++++ b/sklearn/decomposition/kernel_pca.py
+@@ -220,6 +220,20 @@
+             self.alphas_ = self.alphas_[:, self.lambdas_ > 0]
+             self.lambdas_ = self.lambdas_[self.lambdas_ > 0]
+ 
++        # Make the sign of the components deterministic.
++        # The sign of eigenvectors is arbitrary; to avoid flipping signs
++        # across multiple calls (e.g. when using ARPACK without a fixed
++        # random_state), ensure a deterministic sign convention by flipping
++        # each component so that the entry with largest absolute value is
++        # positive.
++        if self.alphas_.size > 0:
++            # For each component (column), find the row with largest absolute
++            # value and use its sign to fix the sign of the whole component.
++            max_abs_rows = np.argmax(np.abs(self.alphas_), axis=0)
++            signs = np.sign(self.alphas_[max_abs_rows, range(self.alphas_.shape[1])])
++            signs[signs == 0] = 1
++            self.alphas_ = self.alphas_ * signs
++
+         return K
+ 
+     def _fit_inverse_transform(self, X_transformed, X):

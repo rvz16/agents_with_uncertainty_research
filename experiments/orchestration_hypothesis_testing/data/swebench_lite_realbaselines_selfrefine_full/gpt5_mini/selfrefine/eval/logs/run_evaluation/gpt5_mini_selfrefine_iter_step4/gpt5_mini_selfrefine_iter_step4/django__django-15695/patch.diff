@@ -1,0 +1,14 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -953,6 +953,11 @@
+                         ", ".join(columns),
+                     )
+                 )
++            # If the index already has the desired name (for example because a
++            # backward operation was a no-op for unnamed indexes), don't try to
++            # rename it again — that would raise "relation ... already exists".
++            if matching_index_name[0] == self.new_name:
++                return
+             old_index = models.Index(
+                 fields=self.old_fields,
+                 name=matching_index_name[0],

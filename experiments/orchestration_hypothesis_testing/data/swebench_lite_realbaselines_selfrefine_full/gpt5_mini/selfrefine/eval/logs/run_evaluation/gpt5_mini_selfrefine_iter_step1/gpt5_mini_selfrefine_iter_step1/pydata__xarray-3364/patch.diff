@@ -1,0 +1,46 @@
+--- a/xarray/core/concat.py
++++ b/xarray/core/concat.py
+@@ -1,4 +1,5 @@
+ import pandas as pd
++import numpy as np
+ 
+ from . import dtypes, utils
+ from .alignment import align
+@@ -311,16 +312,29 @@
+     if variables_to_merge:
+         to_merge = {var: [] for var in variables_to_merge}
+ 
++        # For variables that are missing in some datasets, create placeholder
++        # variables filled with `fill_value` so that merge can proceed.
+         for ds in datasets:
+-            absent_merge_vars = variables_to_merge - set(ds.variables)
+-            if absent_merge_vars:
+-                raise ValueError(
+-                    "variables %r are present in some datasets but not others. "
+-                    % absent_merge_vars
+-                )
+-
+             for var in variables_to_merge:
+-                to_merge[var].append(ds.variables[var])
++                if var in ds.variables:
++                    to_merge[var].append(ds.variables[var])
++                else:
++                    # find a reference variable to infer dims
++                    ref_var = None
++                    for other in datasets:
++                        if var in other.variables:
++                            ref_var = other.variables[var]
++                            break
++                    if ref_var is None:
++                        # fallback: create a scalar placeholder
++                        data = np.array(fill_value)
++                        placeholder = Variable((), data)
++                    else:
++                        # infer shape from known dimension sizes (use 1 as default)
++                        shape = tuple(dims_sizes.get(d, 1) for d in ref_var.dims)
++                        data = np.full(shape, fill_value)
++                        placeholder = Variable(ref_var.dims, data)
++                    to_merge[var].append(placeholder)
+ 
+         for var in variables_to_merge:
+             result_vars[var] = unique_variable(

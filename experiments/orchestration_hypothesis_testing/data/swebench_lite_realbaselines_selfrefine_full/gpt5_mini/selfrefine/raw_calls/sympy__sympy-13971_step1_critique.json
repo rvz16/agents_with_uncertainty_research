@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:14:49.124765+00:00",
+  "instance_id": "sympy__sympy-13971",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nDisplay of SeqFormula()\n```\r\nimport sympy as sp\r\nk, m, n = sp.symbols('k m n', integer=True)\r\nsp.init_printing()\r\n\r\nsp.SeqFormula(n**2, (n,0,sp.oo))\r\n```\r\n\r\nThe Jupyter rendering of this command backslash-escapes the brackets producing:\r\n\r\n`\\left\\[0, 1, 4, 9, \\ldots\\right\\]`\r\n\r\nCopying this output to a markdown cell this does not render properly.  Whereas:\r\n\r\n`[0, 1, 4, 9, \\ldots ]`\r\n\r\ndoes render just fine.  \r\n\r\nSo - sequence output should not backslash-escape square brackets, or, `\\]` should instead render?\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no code changes were made, so the bug is not fixed.\n\nNo modifications to the LaTeX/printing code (e.g. sympy/printing/latex.py or the SeqFormula _repr_latex_ implementation) that actually control how brackets are escaped.\n\nNo tests added or updated to cover SeqFormula LaTeX/Jupyter rendering; regression/unit tests are required to prevent reintroduction.\n\nNo handling of different sequence forms (finite vs. infinite, different start indices) \u2014 edge cases where brackets should/shouldn't be escaped are unaddressed.\n\nNo consideration of interaction with Jupyter/MathJax: the patch does not ensure output avoids producing '\\[' or '\\]' which MathJax treats as display-math delimiters.\n\nNo consistency checks with list/Matrix printers \u2014 other printers already output unescaped square brackets; the patch does not align SeqFormula printing with the rest of the codebase.\n\nNo docs/changelog update explaining the change or its rationale.\n\nNo safety checks for strings that legitimately include backslashes elsewhere (i.e., over-aggressive unescaping could break other LaTeX output).",
+  "prompt_tokens": 290,
+  "completion_tokens": 711,
+  "cost_usd": 0.0014945000000000002
+}

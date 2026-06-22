@@ -1,0 +1,16 @@
+--- a/sympy/utilities/iterables.py
++++ b/sympy/utilities/iterables.py
+@@ -2109,7 +2109,13 @@
+     try:
+         seen = set()
+         result = result or []
++        # Record the initial size for plain lists so that if the caller
++        # mutates the list (changes its size) during iteration we raise
++        # an error similar to Python's RuntimeError for dict/set mutation.
++        initial_len = len(seq) if isinstance(seq, list) else None
+         for i, s in enumerate(seq):
++            if initial_len is not None and len(seq) != initial_len:
++                raise RuntimeError("list changed size during iteration")
+             if not (s in seen or seen.add(s)):
+                 yield s
+     except TypeError:

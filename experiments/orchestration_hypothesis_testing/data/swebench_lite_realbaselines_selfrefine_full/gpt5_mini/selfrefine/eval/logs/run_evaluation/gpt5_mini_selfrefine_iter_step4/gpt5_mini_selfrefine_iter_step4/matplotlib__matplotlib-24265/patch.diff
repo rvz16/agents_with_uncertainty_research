@@ -1,0 +1,24 @@
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,21 @@
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++
++    # For backward compatibility with older Matplotlib versions, provide
++    # legacy "seaborn-<style>" aliases for the shipped
++    # "seaborn-v0_8-<style>" names so that code accessing
++    # `style.library["seaborn-..."]` continues to work.
++    for name in list(library.keys()):
++        # alias "seaborn-v0_8-<style>" -> "seaborn-<style>"
++        if name.startswith("seaborn-v0_8-"):
++            alias = name.replace("seaborn-v0_8-", "seaborn-")
++            if alias not in library:
++                library[alias] = library[name]
++    # also alias top-level "seaborn" -> "seaborn-v0_8" if present
++    if "seaborn-v0_8" in library and "seaborn" not in library:
++        library["seaborn"] = library["seaborn-v0_8"]
++
+     available[:] = sorted(library.keys())
+ 
+ 

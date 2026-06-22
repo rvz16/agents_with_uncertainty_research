@@ -1,0 +1,65 @@
+2026-06-22 19:03:51,860 - INFO - Creating container for sympy__sympy-15345...
+2026-06-22 19:03:51,960 - INFO - Container for sympy__sympy-15345 created: a4c6e42b32b11e4987be8bf54498a5cf8ff64108b3f9d63c9f48aaf2c1f5e1ae
+2026-06-22 19:03:52,095 - INFO - Container for sympy__sympy-15345 started: a4c6e42b32b11e4987be8bf54498a5cf8ff64108b3f9d63c9f48aaf2c1f5e1ae
+2026-06-22 19:03:52,095 - INFO - Intermediate patch for sympy__sympy-15345 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-15345/patch.diff, now applying to container...
+2026-06-22 19:03:52,217 - INFO - >>>>> Applied Patch:
+Checking patch sympy/printing/mathematica.py...
+Applied patch sympy/printing/mathematica.py cleanly.
+
+2026-06-22 19:03:52,465 - INFO - Git diff before:
+diff --git a/sympy/printing/mathematica.py b/sympy/printing/mathematica.py
+index ea7e3a2d9..720923262 100644
+--- a/sympy/printing/mathematica.py
++++ b/sympy/printing/mathematica.py
+@@ -101,6 +101,17 @@ def _print_Function(self, expr):
+                     return "%s[%s]" % (mfunc, self.stringify(expr.args, ", "))
+         return expr.func.__name__ + "[%s]" % self.stringify(expr.args, ", ")
+ 
++    def _print_Max(self, expr):
++        # Mathematica expects Max[...] with square brackets and the original
++        # argument order. Use doprint on each argument to ensure proper
++        # nested printing rather than using stringify which may change
++        # formatting/order.
++        return "Max[" + ", ".join(self.doprint(a) for a in expr.args) + "]"
++
++    def _print_Min(self, expr):
++        # Same treatment for Min.
++        return "Min[" + ", ".join(self.doprint(a) for a in expr.args) + "]"
++
+     def _print_Integral(self, expr):
+         if len(expr.variables) == 1 and not expr.limits[0][1:]:
+             args = [expr.args[0], expr.variables[0]]
+2026-06-22 19:03:52,465 - INFO - Eval script for sympy__sympy-15345 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-15345/eval.sh; copying to container...
+2026-06-22 19:03:55,364 - INFO - Test runtime: 2.86 seconds
+2026-06-22 19:03:55,364 - INFO - Test output for sympy__sympy-15345 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-15345/test_output.txt
+2026-06-22 19:03:55,421 - INFO - Git diff after:
+diff --git a/sympy/printing/mathematica.py b/sympy/printing/mathematica.py
+index ea7e3a2d9..720923262 100644
+--- a/sympy/printing/mathematica.py
++++ b/sympy/printing/mathematica.py
+@@ -101,6 +101,17 @@ def _print_Function(self, expr):
+                     return "%s[%s]" % (mfunc, self.stringify(expr.args, ", "))
+         return expr.func.__name__ + "[%s]" % self.stringify(expr.args, ", ")
+ 
++    def _print_Max(self, expr):
++        # Mathematica expects Max[...] with square brackets and the original
++        # argument order. Use doprint on each argument to ensure proper
++        # nested printing rather than using stringify which may change
++        # formatting/order.
++        return "Max[" + ", ".join(self.doprint(a) for a in expr.args) + "]"
++
++    def _print_Min(self, expr):
++        # Same treatment for Min.
++        return "Min[" + ", ".join(self.doprint(a) for a in expr.args) + "]"
++
+     def _print_Integral(self, expr):
+         if len(expr.variables) == 1 and not expr.limits[0][1:]:
+             args = [expr.args[0], expr.variables[0]]
+2026-06-22 19:03:55,421 - INFO - Grading answer for sympy__sympy-15345...
+2026-06-22 19:03:55,421 - INFO - report: {'sympy__sympy-15345': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_Function'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_Integer', 'test_Rational', 'test_Pow', 'test_Mul', 'test_constants', 'test_containers', 'test_Integral', 'test_Derivative'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-15345: resolved: True
+2026-06-22 19:03:55,422 - INFO - Attempting to stop container sweb.eval.sympy__sympy-15345.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:04:10,644 - INFO - Attempting to remove container sweb.eval.sympy__sympy-15345.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:04:10,668 - INFO - Container sweb.eval.sympy__sympy-15345.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 19:04:10,668 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-15345:latest...
+2026-06-22 19:04:10,722 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-15345:latest removed.

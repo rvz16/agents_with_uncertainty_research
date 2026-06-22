@@ -1,0 +1,101 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,80 @@
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+-        from sympy.core.numbers import Float
+-
+-        is_rational = self._eval_is_rational()
+-        if is_rational is False:
++        """
++        Determine whether the product is an integer in a conservative way
++        without performing potentially-evaluating operations (such as
++        fraction()) that can give incorrect results for unevaluated Muls.
++
++        Returns True, False, or None.
++        """
++        numerators = []
++        denominators = []
++
++        for a in self.args:
++            # an integer factor contributes to the numerator
++            if a.is_integer:
++                numerators.append(a)
++
++            # a rational contributes its numerator and denominator
++            elif a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++
++            # a power may contribute to numerator or denominator depending on exponent
++            elif a.is_Pow:
++                b, e = a.as_base_exp()
++                # handle explicit reciprocal 1/b where base is integer
++                if e is S.NegativeOne and b.is_integer:
++                    denominators.append(b)
++                # handle integer exponents when they are known integers
++                elif b.is_integer and e.is_integer:
++                    # if exponent is negative, it contributes to denominators
++                    if e.is_negative:
++                        # if exponent is not a concrete integer we give up
++                        if e.is_integer is None:
++                            return
++                        try:
++                            ex = int(e)
++                        except Exception:
++                            return
++                        if ex < 0:
++                            denominators.extend([b] * (-ex))
++                        elif ex > 0:
++                            numerators.extend([b] * ex)
++                    else:
++                        # positive integer exponent -> base**exp is integer (base treated above)
++                        numerators.append(b**e)
++                else:
++                    # cannot determine conservatively
++                    return
++
++            else:
++                # unknown factor: cannot decide without evaluation
++                return
++
++        # if there are no denominators then it's an integer
++        if not denominators:
++            return True
++
++        # simple parity-based deductions:
++        # if all numerators are odd and any denominator is even => not integer
++        if numerators:
++            all_numer_odd = all(getattr(n, 'is_odd', False) for n in numerators)
++        else:
++            all_numer_odd = False
++        any_denom_even = any(getattr(d, 'is_even', False) for d in denominators)
++
++        if all_numer_odd and any_denom_even:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        # common simple case: all numerators even and single denominator 2 -> integer
++        if all(getattr(n, 'is_even', False) for n in numerators) and len(denominators) == 1 and denominators[0] == S(2):
++            return True
++
++        # otherwise be conservative and give up
++        return
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

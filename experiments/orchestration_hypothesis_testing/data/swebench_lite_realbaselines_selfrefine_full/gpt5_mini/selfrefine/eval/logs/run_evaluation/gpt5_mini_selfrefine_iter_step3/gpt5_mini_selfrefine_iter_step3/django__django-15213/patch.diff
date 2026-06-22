@@ -1,0 +1,22 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -411,7 +411,18 @@
+         Custom format for select clauses. For example, GIS columns need to be
+         selected as AsText(table.col) on MySQL as the table.col data can't be
+         used by Django.
+-        """
++
++        Some expressions (notably certain reduced Q objects) may compile to an
++        empty SQL fragment, which leads to invalid SQL like "SELECT AS ...".
++        To avoid producing invalid SQL, fall back to a boolean literal when
++        the compiled SQL is empty. Returning '0' (False) is a safe fallback
++        that prevents syntax errors; this keeps behaviour compatible with the
++        non-negated empty-IN reduction, which produces 0.
++        """
++        # Protect against empty SQL fragments that would lead to invalid
++        # statements (e.g. "SELECT AS ...").
++        if not sql:
++            return "0", params
+         return sql, params
+ 
+     def deconstruct(self):

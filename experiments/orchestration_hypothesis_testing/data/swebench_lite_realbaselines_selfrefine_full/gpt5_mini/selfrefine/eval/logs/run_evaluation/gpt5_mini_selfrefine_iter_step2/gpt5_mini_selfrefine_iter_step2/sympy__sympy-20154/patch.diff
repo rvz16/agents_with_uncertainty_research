@@ -1,0 +1,33 @@
+--- a/sympy/utilities/iterables.py
++++ b/sympy/utilities/iterables.py
+@@ -1801,10 +1801,13 @@
+         ms[r] = 1
+         keys.append(r)
+     room = m - q - bool(r)
++    # Return copies so that callers that collect yielded partitions
++    # do not end up with multiple references to the same dict that is
++    # mutated by this generator.
+     if size:
+-        yield sum(ms.values()), ms
++        yield sum(ms.values()), ms.copy()
+     else:
+-        yield ms
++        yield ms.copy()
+ 
+     while keys != [1]:
+         # Reuse any 1's.
+@@ -1841,10 +1844,12 @@
+                 keys.append(r)
+             break
+         room -= need
++        # As above, yield copies of the partition dict to avoid surprising
++        # reuse of the same dict object across iterations.
+         if size:
+-            yield sum(ms.values()), ms
++            yield sum(ms.values()), ms.copy()
+         else:
+-            yield ms
++            yield ms.copy()
+ 
+ 
+ def ordered_partitions(n, m=None, sort=True):

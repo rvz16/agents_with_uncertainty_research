@@ -1,0 +1,62 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -18,6 +18,32 @@
+ from matplotlib.colors import Normalize
+ from matplotlib.patches import Patch
+ from . import proj3d
++
++def _broadcast_to_1d(zs, n):
++    """
++    Robustly broadcast or convert *zs* to a 1-D array of length *n*.
++
++    This helper is more forgiving than np.broadcast_to for inputs such as
++    column vectors (shape (n,1)) or other array-like shapes that should be
++    interpreted as 1-D.  It will attempt to ravel multi-dimensional inputs,
++    repeat scalar inputs, and fall back to np.resize if necessary.
++    """
++    zs_arr = np.asarray(zs)
++    # Flatten higher-dimensional arrays to 1-D
++    if zs_arr.ndim > 1:
++        zs_arr = zs_arr.ravel()
++    # Scalar -> repeat to length n
++    if zs_arr.size == 1:
++        return np.full(n, zs_arr.item())
++    # Already correct length -> return as-is
++    if zs_arr.size == n:
++        return zs_arr
++    # Try safe broadcasting to shape (n,)
++    try:
++        return np.broadcast_to(zs_arr, (n,))
++    except Exception:
++        # As a last resort, resize (repeats/truncates as needed)
++        return np.resize(zs_arr, n)
+ 
+ 
+ def _norm_angle(a):
+@@ -171,7 +197,9 @@
+     def set_3d_properties(self, zs=0, zdir='z'):
+         xs = self.get_xdata()
+         ys = self.get_ydata()
+-        zs = np.broadcast_to(zs, len(xs))
++        # Use a robust broadcasting helper to avoid errors for column-vectors
++        # and other array-like shapes that should be treated as 1-D.
++        zs = _broadcast_to_1d(zs, len(xs))
+         self._verts3d = juggle_axes(xs, ys, zs, zdir)
+         self.stale = True
+ 
+@@ -211,7 +239,14 @@
+ 
+     @artist.allow_rasterization
+     def draw(self, renderer):
+-        xs3d, ys3d, zs3d = self._verts3d
++        # _verts3d may not be present or properly set if an earlier attempt to
++        # set 3d properties failed. Guard against that to avoid AttributeError
++        # during drawing (which would leave the figure in a broken state).
++        try:
++            xs3d, ys3d, zs3d = self._verts3d
++        except Exception:
++            # Nothing sensible to draw.
++            return
+         xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, self.axes.M)
+         self.set_data(xs, ys)
+         super().draw(renderer)

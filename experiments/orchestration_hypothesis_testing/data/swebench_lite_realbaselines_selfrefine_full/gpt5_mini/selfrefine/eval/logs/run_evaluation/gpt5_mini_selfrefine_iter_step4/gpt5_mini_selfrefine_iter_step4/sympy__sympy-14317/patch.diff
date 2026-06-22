@@ -1,0 +1,22 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,7 +1854,18 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++        # Ensure the polynomial expression is printed using the logical
++        # monomial ordering (the same ordering used by pretty and str).
++        # poly.as_expr() returns an Add; call the Add printer with the
++        # polynomial's own order so that terms appear from highest to lowest
++        # degrees.
++        expr_ast = poly.as_expr()
++        if isinstance(expr_ast, Add):
++            order = getattr(poly, 'order', None)
++            expr = self._print_Add(expr_ast, order=order)
++        else:
++            expr = self._print(expr_ast)
++
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 

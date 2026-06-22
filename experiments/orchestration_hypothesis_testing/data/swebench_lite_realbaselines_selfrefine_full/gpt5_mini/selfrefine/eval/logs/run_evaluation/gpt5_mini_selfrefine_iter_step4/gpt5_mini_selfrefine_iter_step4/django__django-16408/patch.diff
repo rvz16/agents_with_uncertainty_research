@@ -1,0 +1,27 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1274,6 +1274,13 @@
+                 if from_obj:
+                     final_field.remote_field.set_cached_value(from_obj, obj)
+ 
++            def no_local_setter(obj, from_obj):
++                # When the JOIN path for a filtered relation is longer than two
++                # aliases, the intermediate object referenced by the local_setter
++                # is not selected in the query. In that case avoid setting the
++                # cached value locally to prevent assigning the wrong instance.
++                pass
++
+             def remote_setter(name, obj, from_obj):
+                 setattr(from_obj, name, obj)
+ 
+@@ -1295,7 +1302,9 @@
+                         "model": model,
+                         "field": final_field,
+                         "reverse": True,
+-                        "local_setter": partial(local_setter, final_field),
++                        "local_setter": partial(local_setter, final_field)
++                        if len(joins) <= 2
++                        else no_local_setter,
+                         "remote_setter": partial(remote_setter, name),
+                         "from_parent": from_parent,
+                     }

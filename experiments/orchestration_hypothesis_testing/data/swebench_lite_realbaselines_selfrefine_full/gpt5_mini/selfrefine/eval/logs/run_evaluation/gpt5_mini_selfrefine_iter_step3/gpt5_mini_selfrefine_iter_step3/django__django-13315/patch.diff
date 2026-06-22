@@ -1,0 +1,21 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1158,7 +1158,18 @@
+         # Can't use iterator() when queryset uses prefetch_related()
+         if not queryset._prefetch_related_lookups:
+             queryset = queryset.iterator()
++        # Avoid yielding duplicate choices that can occur when the queryset
++        # involves JOINs which produce duplicate rows for the same object.
++        # Use the prepared value (typically the PK or to_field value) to
++        # detect duplicates. We stringify the key to handle unhashable or
++        # complex primary key types consistently.
++        seen = set()
+         for obj in queryset:
++            key = self.field.prepare_value(obj)
++            key = "" if key is None else str(key)
++            if key in seen:
++                continue
++            seen.add(key)
+             yield self.choice(obj)
+ 
+     def __len__(self):

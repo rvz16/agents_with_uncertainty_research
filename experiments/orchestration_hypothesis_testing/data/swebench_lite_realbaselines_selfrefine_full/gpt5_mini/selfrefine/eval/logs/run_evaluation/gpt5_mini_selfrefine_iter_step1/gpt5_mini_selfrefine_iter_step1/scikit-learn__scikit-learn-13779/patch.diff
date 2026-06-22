@@ -1,0 +1,37 @@
+--- a/sklearn/ensemble/voting.py
++++ b/sklearn/ensemble/voting.py
+@@ -78,6 +78,11 @@
+ 
+         if sample_weight is not None:
+             for name, step in self.estimators:
++                # Skip estimators set to None (they can be removed via
++                # set_params). Only check sample_weight support for actual
++                # estimator objects.
++                if step is None:
++                    continue
+                 if not has_fit_parameter(step, 'sample_weight'):
+                     raise ValueError('Underlying estimator \'%s\' does not'
+                                      ' support sample weights.' % name)
+@@ -90,14 +95,20 @@
+             raise ValueError('All estimators are None. At least one is '
+                              'required!')
+ 
++        # Fit only the non-None estimators in parallel.
+         self.estimators_ = Parallel(n_jobs=self.n_jobs)(
+                 delayed(_parallel_fit_estimator)(clone(clf), X, y,
+                                                  sample_weight=sample_weight)
+                 for clf in clfs if clf is not None)
+ 
++        # Create named_estimators_ mapping names to fitted estimators while
++        # preserving original names and skipping any estimators set to None.
+         self.named_estimators_ = Bunch()
+-        for k, e in zip(self.estimators, self.estimators_):
+-            self.named_estimators_[k[0]] = e
++        fitted_iter = iter(self.estimators_)
++        for name, est in self.estimators:
++            if est is None:
++                continue
++            self.named_estimators_[name] = next(fitted_iter)
+         return self
+ 
+     def set_params(self, **params):

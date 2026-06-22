@@ -1,0 +1,57 @@
+2026-06-22 16:42:45,307 - INFO - Creating container for pytest-dev__pytest-7220...
+2026-06-22 16:42:45,432 - INFO - Container for pytest-dev__pytest-7220 created: a41a2ed4ecfc88d10bbf5415c98d6de53a4fd4d077aecbb9db6417a6d342b375
+2026-06-22 16:42:45,603 - INFO - Container for pytest-dev__pytest-7220 started: a41a2ed4ecfc88d10bbf5415c98d6de53a4fd4d077aecbb9db6417a6d342b375
+2026-06-22 16:42:45,606 - INFO - Intermediate patch for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-7220/patch.diff, now applying to container...
+2026-06-22 16:42:45,726 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/nodes.py...
+Applied patch src/_pytest/nodes.py cleanly.
+
+2026-06-22 16:42:45,819 - INFO - Git diff before:
+diff --git a/src/_pytest/nodes.py b/src/_pytest/nodes.py
+index 4a79bc861..b0ecf8c67 100644
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -602,6 +602,12 @@ class Item(Node):
+             fspath = location[0]
+         else:
+             fspath = py.path.local(location[0])
+-        relfspath = self.session._node_location_to_relpath(fspath)
++        # Prefer to show the path relative to the original pytest root/initial
++        # paths instead of the possibly changed current working directory.
++        relfspath = fspath.relto(self.session.config.rootdir)
++        if not relfspath:
++            relfspath = _check_initialpaths_for_relpath(self.session, fspath)
++        if not relfspath:
++            relfspath = str(fspath)
+         assert type(location[2]) is str
+         return (relfspath, location[1], location[2])
+2026-06-22 16:42:45,819 - INFO - Eval script for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-7220/eval.sh; copying to container...
+2026-06-22 16:42:49,685 - INFO - Test runtime: 3.82 seconds
+2026-06-22 16:42:49,686 - INFO - Test output for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-7220/test_output.txt
+2026-06-22 16:42:49,742 - INFO - Git diff after:
+diff --git a/src/_pytest/nodes.py b/src/_pytest/nodes.py
+index 4a79bc861..b0ecf8c67 100644
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -602,6 +602,12 @@ class Item(Node):
+             fspath = location[0]
+         else:
+             fspath = py.path.local(location[0])
+-        relfspath = self.session._node_location_to_relpath(fspath)
++        # Prefer to show the path relative to the original pytest root/initial
++        # paths instead of the possibly changed current working directory.
++        relfspath = fspath.relto(self.session.config.rootdir)
++        if not relfspath:
++            relfspath = _check_initialpaths_for_relpath(self.session, fspath)
++        if not relfspath:
++            relfspath = str(fspath)
+         assert type(location[2]) is str
+         return (relfspath, location[1], location[2])
+2026-06-22 16:42:49,742 - INFO - Grading answer for pytest-dev__pytest-7220...
+2026-06-22 16:42:49,742 - INFO - report: {'pytest-dev__pytest-7220': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_nodes.py::test_failure_with_changed_cwd']}, 'PASS_TO_PASS': {'success': ['testing/test_nodes.py::test_ischildnode[--True]', 'testing/test_nodes.py::test_ischildnode[-foo-True]', 'testing/test_nodes.py::test_ischildnode[-foo/bar-True]', 'testing/test_nodes.py::test_ischildnode[-foo/bar::TestBaz-True]', 'testing/test_nodes.py::test_ischildnode[foo-food-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar::TestBaz-foo/bar-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar::TestBaz-foo/bar::TestBop-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar-foo/bar::TestBop-True]', 'testing/test_nodes.py::test_node_from_parent_disallowed_arguments', 'testing/test_nodes.py::test__check_initialpaths_for_relpath', 'testing/test_nodes.py::test_std_warn_not_pytestwarning'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-7220: resolved: False
+2026-06-22 16:42:49,743 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:43:04,974 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:43:04,992 - INFO - Container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:43:04,993 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7220:latest...
+2026-06-22 16:43:05,791 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7220:latest removed.

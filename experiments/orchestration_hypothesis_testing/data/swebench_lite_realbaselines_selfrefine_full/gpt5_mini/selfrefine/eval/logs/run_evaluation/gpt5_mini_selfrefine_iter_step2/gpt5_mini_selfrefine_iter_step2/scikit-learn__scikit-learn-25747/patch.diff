@@ -1,0 +1,32 @@
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -52,12 +52,27 @@
+ 
+     pd = check_pandas_support("Setting output container to 'pandas'")
+ 
++    # If transformer already returned a pandas object, prefer to preserve its own
++    # index. Overwriting the index with the original input index can be
++    # incorrect when the transformer legitimately changes the row count
++    # (e.g. aggregation) or the index (e.g. resampling).
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+             data_to_wrap.columns = columns
+-        if index is not None:
+-            data_to_wrap.index = index
++        # Preserve DataFrame's index; do not overwrite with original input index.
+         return data_to_wrap
++
++    if isinstance(data_to_wrap, pd.Series):
++        # Convert Series to DataFrame, preserving its index.
++        df = data_to_wrap.to_frame()
++        if columns is not None:
++            try:
++                df.columns = columns
++            except Exception:
++                # If provided columns cannot be applied (e.g., length mismatch),
++                # leave the transform output's column(s) as-is.
++                pass
++        return df
+ 
+     return pd.DataFrame(data_to_wrap, index=index, columns=columns)
+ 

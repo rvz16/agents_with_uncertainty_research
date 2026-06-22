@@ -1,0 +1,19 @@
+--- a/pylint/checkers/misc.py
++++ b/pylint/checkers/misc.py
+@@ -120,10 +120,14 @@
+         super().open()
+ 
+         notes = "|".join(re.escape(note) for note in self.config.notes)
++        # Use a lookahead to ensure the note is followed by the end of the string
++        # or by a non-word character. Using a word boundary (\b) here fails for
++        # note tags that consist entirely of punctuation because \b asserts a
++        # transition between word and non-word characters.
+         if self.config.notes_rgx:
+-            regex_string = rf"#\s*({notes}|{self.config.notes_rgx})\b"
++            regex_string = rf"#\s*({notes}|{self.config.notes_rgx})(?=$|\W)"
+         else:
+-            regex_string = rf"#\s*({notes})\b"
++            regex_string = rf"#\s*({notes})(?=$|\W)"
+ 
+         self._fixme_pattern = re.compile(regex_string, re.I)
+ 

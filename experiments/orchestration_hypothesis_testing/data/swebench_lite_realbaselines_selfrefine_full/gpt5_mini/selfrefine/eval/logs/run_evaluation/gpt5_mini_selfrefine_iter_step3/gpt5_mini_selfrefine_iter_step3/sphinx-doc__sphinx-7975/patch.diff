@@ -1,0 +1,24 @@
+--- a/sphinx/environment/adapters/indexentries.py
++++ b/sphinx/environment/adapters/indexentries.py
+@@ -161,12 +161,15 @@
+             v[1] = sorted(((si, se) for (si, (se, void, void)) in v[1].items()),
+                           key=keyfunc2)
+             if v[2] is None:
+-                # now calculate the key
+-                if k.startswith('\N{RIGHT-TO-LEFT MARK}'):
+-                    k = k[1:]
+-                letter = unicodedata.normalize('NFD', k[0])[0].upper()
+-                if letter.isalpha() or letter == '_':
+-                    return letter
++                # now calculate the key. Use the same normalization and logic as
++                # used for sorting (keyfunc) to ensure that symbols and letters
++                # are classified consistently and thus grouped together.
++                k2 = unicodedata.normalize('NFD', k.lower())
++                if k2.startswith('\N{RIGHT-TO-LEFT MARK}'):
++                    k2 = k2[1:]
++                first = k2[0:1]
++                if first.isalpha() or first == '_':
++                    return first.upper()
+                 else:
+                     # get all other symbols under one heading
+                     return _('Symbols')

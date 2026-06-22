@@ -1,0 +1,16 @@
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -262,6 +262,13 @@
+     outcome = yield
+     rep = outcome.get_result()
+     xfailed = item._store.get(xfailed_key, None)
++    # If xfailed is None, it may not have been evaluated at setup or before the
++    # call (for example, a test might add an xfail marker dynamically during
++    # its execution). Re-evaluate here so that markers added during the call
++    # are respected when creating the report.
++    if xfailed is None:
++        item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
++
+     # unittest special case, see setting of unexpectedsuccess_key
+     if unexpectedsuccess_key in item._store and rep.when == "call":
+         reason = item._store[unexpectedsuccess_key]

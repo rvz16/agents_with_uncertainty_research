@@ -1,0 +1,47 @@
+--- a/sphinx/builders/manpage.py
++++ b/sphinx/builders/manpage.py
+@@ -8,7 +8,7 @@
+     :license: BSD, see LICENSE for details.
+ """
+ 
+-from os import path
++from os import path, makedirs
+ from typing import Any, Dict, List, Set, Tuple, Union
+ 
+ from docutils.frontend import OptionParser
+@@ -82,8 +82,22 @@
+ 
+             targetname = '%s.%s' % (name, section)
+             logger.info(darkgreen(targetname) + ' { ', nonl=True)
++            # Optionally place man pages into section directories (e.g. man1, man3).
++            if getattr(self.config, 'man_make_section_directory', False):
++                section_str = str(section)
++                sect_dir = path.join(self.outdir, 'man' + section_str)
++                # Create the section directory if it does not exist.
++                try:
++                    makedirs(sect_dir, exist_ok=True)
++                except OSError:
++                    # If directory creation fails for any reason, fall back to outdir.
++                    sect_dir = self.outdir
++                destination_path = path.join(sect_dir, targetname)
++            else:
++                destination_path = path.join(self.outdir, targetname)
++
+             destination = FileOutput(
+-                destination_path=path.join(self.outdir, targetname),
++                destination_path=destination_path,
+                 encoding='utf-8')
+ 
+             tree = self.env.get_doctree(docname)
+@@ -115,6 +129,11 @@
+ 
+     app.add_config_value('man_pages', default_man_pages, None)
+     app.add_config_value('man_show_urls', False, None)
++    # When True, generate per-section directories under the builder output
++    # directory (e.g. <outdir>/man1/, <outdir>/man3/) so the build tree can be
++    # used with MANPATH by pointing it to the parent <outdir> directory.
++    # Default is False to preserve backward compatibility.
++    app.add_config_value('man_make_section_directory', False, None)
+ 
+     return {
+         'version': 'builtin',

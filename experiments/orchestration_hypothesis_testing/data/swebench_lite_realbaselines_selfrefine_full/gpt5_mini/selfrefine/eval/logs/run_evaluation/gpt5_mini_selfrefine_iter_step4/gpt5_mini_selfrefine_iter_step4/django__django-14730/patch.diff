@@ -1,0 +1,29 @@
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1212,6 +1212,7 @@
+             *super().check(**kwargs),
+             *self._check_unique(**kwargs),
+             *self._check_relationship_model(**kwargs),
++            *self._check_related_name_on_symmetrical(**kwargs),
+             *self._check_ignored_options(**kwargs),
+             *self._check_table_uniqueness(**kwargs),
+         ]
+@@ -1495,6 +1496,18 @@
+                 )
+             ]
+         return []
++
++    def _check_related_name_on_symmetrical(self, from_model=None, **kwargs):
++        """
++        Warn when a related_name is provided on a symmetrical, self-referential
++        ManyToManyField, because the reverse relation is not created.
++        """
++        # If the user didn't explicitly set a related_name, nothing to warn about.
++        if self._related_name is None:
++            return []
++
++        # Only relevant for symmetrical relations.
++        if not self.remote_field.sym
+ 
+     def deconstruct(self):
+         name, path, args, kwargs = super().deconstruct()

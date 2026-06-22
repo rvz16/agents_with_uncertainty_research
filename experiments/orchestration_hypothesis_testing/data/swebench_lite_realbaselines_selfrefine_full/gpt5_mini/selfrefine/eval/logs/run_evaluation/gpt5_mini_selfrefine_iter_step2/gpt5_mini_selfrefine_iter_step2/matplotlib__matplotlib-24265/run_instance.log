@@ -1,0 +1,67 @@
+2026-06-22 16:25:41,917 - INFO - Creating container for matplotlib__matplotlib-24265...
+2026-06-22 16:25:43,555 - INFO - Container for matplotlib__matplotlib-24265 created: 7c934e2c26692e6c976181e52768b2861ac20d40aa96a4d12c5518c60787f664
+2026-06-22 16:25:43,841 - INFO - Container for matplotlib__matplotlib-24265 started: 7c934e2c26692e6c976181e52768b2861ac20d40aa96a4d12c5518c60787f664
+2026-06-22 16:25:43,841 - INFO - Intermediate patch for matplotlib__matplotlib-24265 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-24265/patch.diff, now applying to container...
+2026-06-22 16:25:44,004 - INFO - >>>>> Applied Patch:
+Checking patch lib/matplotlib/style/core.py...
+Applied patch lib/matplotlib/style/core.py cleanly.
+
+2026-06-22 16:25:44,915 - INFO - Git diff before:
+diff --git a/lib/matplotlib/style/core.py b/lib/matplotlib/style/core.py
+index fb0a5426e6..2ad65a97a4 100644
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,20 @@ def reload_library():
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++
++    # Backwards compatibility for pre-3.6 seaborn style names.
++    # In 3.6 the bundled seaborn styles were renamed from
++    # "seaborn-<style>" to "seaborn-v0_8-<style>". Some user code (and third
++    # party code) may still access the old names via `style.library[...]`.
++    # Recreate the legacy keys when the corresponding "seaborn-v0_8-..." key
++    # exists so that `plt.style.library["seaborn-colorblind"]` (for example)
++    # keeps working.
++    for name in list(library.keys()):
++        if name.startswith("seaborn-v0_8-"):
++            legacy = name.replace("seaborn-v0_8-", "seaborn-")
++            # Do not override user-provided styles with the legacy name.
++            library.setdefault(legacy, library[name].copy())
++
+     available[:] = sorted(library.keys())
+2026-06-22 16:25:44,916 - INFO - Eval script for matplotlib__matplotlib-24265 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-24265/eval.sh; copying to container...
+2026-06-22 16:26:29,081 - INFO - Test runtime: 44.11 seconds
+2026-06-22 16:26:29,081 - INFO - Test output for matplotlib__matplotlib-24265 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-24265/test_output.txt
+2026-06-22 16:26:29,141 - INFO - Git diff after:
+diff --git a/lib/matplotlib/style/core.py b/lib/matplotlib/style/core.py
+index fb0a5426e6..2ad65a97a4 100644
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,20 @@ def reload_library():
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++
++    # Backwards compatibility for pre-3.6 seaborn style names.
++    # In 3.6 the bundled seaborn styles were renamed from
++    # "seaborn-<style>" to "seaborn-v0_8-<style>". Some user code (and third
++    # party code) may still access the old names via `style.library[...]`.
++    # Recreate the legacy keys when the corresponding "seaborn-v0_8-..." key
++    # exists so that `plt.style.library["seaborn-colorblind"]` (for example)
++    # keeps working.
++    for name in list(library.keys()):
++        if name.startswith("seaborn-v0_8-"):
++            legacy = name.replace("seaborn-v0_8-", "seaborn-")
++            # Do not override user-provided styles with the legacy name.
++            library.setdefault(legacy, library[name].copy())
++
+     available[:] = sorted(library.keys())
+2026-06-22 16:26:29,141 - INFO - Grading answer for matplotlib__matplotlib-24265...
+2026-06-22 16:26:29,141 - INFO - report: {'matplotlib__matplotlib-24265': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['lib/matplotlib/tests/test_style.py::test_deprecated_seaborn_styles']}, 'PASS_TO_PASS': {'success': ['lib/matplotlib/tests/test_style.py::test_invalid_rc_warning_includes_filename', 'lib/matplotlib/tests/test_style.py::test_available', 'lib/matplotlib/tests/test_style.py::test_use', 'lib/matplotlib/tests/test_style.py::test_use_url', 'lib/matplotlib/tests/test_style.py::test_single_path', 'lib/matplotlib/tests/test_style.py::test_context', 'lib/matplotlib/tests/test_style.py::test_context_with_dict', 'lib/matplotlib/tests/test_style.py::test_context_with_dict_after_namedstyle', 'lib/matplotlib/tests/test_style.py::test_context_with_dict_before_namedstyle', 'lib/matplotlib/tests/test_style.py::test_context_with_union_of_dict_and_namedstyle', 'lib/matplotlib/tests/test_style.py::test_context_with_badparam', 'lib/matplotlib/tests/test_style.py::test_alias[mpl20]', 'lib/matplotlib/tests/test_style.py::test_alias[mpl15]', 'lib/matplotlib/tests/test_style.py::test_xkcd_no_cm', 'lib/matplotlib/tests/test_style.py::test_xkcd_cm', 'lib/matplotlib/tests/test_style.py::test_up_to_date_blacklist'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for matplotlib__matplotlib-24265: resolved: False
+2026-06-22 16:26:29,141 - INFO - Attempting to stop container sweb.eval.matplotlib__matplotlib-24265.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:26:45,259 - INFO - Attempting to remove container sweb.eval.matplotlib__matplotlib-24265.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:26:45,286 - INFO - Container sweb.eval.matplotlib__matplotlib-24265.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:26:45,286 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-24265:latest...
+2026-06-22 16:26:46,233 - INFO - Image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-24265:latest removed.

@@ -1,0 +1,45 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1077,10 +1077,40 @@
+         elif isinstance(value, (list, tuple)):
+             # The items of the iterable may be expressions and therefore need
+             # to be resolved independently.
+-            return type(value)(
++            resolved = [
+                 self.resolve_lookup_value(sub_value, can_reuse, allow_joins)
+                 for sub_value in value
+-            )
++            ]
++            value_type = type(value)
++            if isinstance(value, tuple):
++                # Tuple subclasses (including namedtuple) often expect
++                # positional args for construction. Namedtuples created by
++                # collections.namedtuple also provide a _make classmethod which
++                # accepts an iterable. Try that first to preserve the exact
++                # subclass type. Fall back to positional construction, and
++                # finally to a plain tuple if needed.
++                make = getattr(value_type, '_make', None)
++                if make is not None:
++                    try:
++                        return make(resolved)
++                    except TypeError:
++                        try:
++                            return value_type(*resolved)
++                        except TypeError:
++                            return tuple(resolved)
++                else:
++                    try:
++                        return value_type(*resolved)
++                    except TypeError:
++                        return tuple(resolved)
++            else:
++                # For lists and list-like subclasses, construct using the
++                # iterable form. Fall back to a plain list if the subclass
++                # constructor doesn't accept a single iterable argument.
++                try:
++                    return value_type(resolved)
++                except TypeError:
++                    return list(resolved)
+         return value
+ 
+     def solve_lookup_type(self, lookup):

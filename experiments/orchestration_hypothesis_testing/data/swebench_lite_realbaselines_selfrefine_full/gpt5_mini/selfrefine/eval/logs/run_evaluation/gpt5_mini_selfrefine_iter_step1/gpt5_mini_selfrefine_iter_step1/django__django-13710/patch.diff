@@ -1,0 +1,22 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2040,7 +2040,18 @@
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # If the Inline class explicitly defines a verbose_name (i.e.
++            # the subclass sets the attribute on the class), base the plural
++            # on that verbose_name. Otherwise fall back to the model's
++            # verbose_name_plural. Checking the class __dict__ lets us detect
++            # whether the attribute was provided on the Inline subclass.
++            cls_dict = getattr(self.__class__, '__dict__', {})
++            if 'verbose_name' in cls_dict and cls_dict['verbose_name'] is not None:
++                # Use ngettext to derive the plural form from the provided
++                # verbose_name (consistent with how model Meta derives plurals).
++                self.verbose_name_plural = ngettext(self.verbose_name, self.verbose_name, 2)
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

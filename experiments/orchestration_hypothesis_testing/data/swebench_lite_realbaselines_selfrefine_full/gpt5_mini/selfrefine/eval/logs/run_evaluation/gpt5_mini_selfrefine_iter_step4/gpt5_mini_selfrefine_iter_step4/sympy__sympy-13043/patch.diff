@@ -1,0 +1,25 @@
+--- a/sympy/integrals/intpoly.py
++++ b/sympy/integrals/intpoly.py
+@@ -569,7 +569,10 @@
+             degrees = [(sum(degree_list(monom, *symbols)), monom)
+                        for monom in expr.args]
+             if separate:
+-                return [monom[1] for monom in degrees]
++                # Return a deterministically sorted list of monomials.
++                # Sort by total degree then by string representation for tie-break.
++                sorted_degrees = sorted(degrees, key=lambda d: (d[0], str(d[1])))
++                return [monom for (_deg, monom) in sorted_degrees]
+             else:
+                 for monom in degrees:
+                     degree, term = monom
+@@ -593,7 +596,9 @@
+         poly_dict[0] = expr
+ 
+     if separate:
+-        return list(poly_dict.values())
++        # Return values in deterministic order: sort by degree then by string.
++        sorted_items = sorted(poly_dict.items(), key=lambda kv: (kv[0], str(kv[1])))
++        return [v for (_k, v) in sorted_items]
+     return poly_dict
+ 
+ 

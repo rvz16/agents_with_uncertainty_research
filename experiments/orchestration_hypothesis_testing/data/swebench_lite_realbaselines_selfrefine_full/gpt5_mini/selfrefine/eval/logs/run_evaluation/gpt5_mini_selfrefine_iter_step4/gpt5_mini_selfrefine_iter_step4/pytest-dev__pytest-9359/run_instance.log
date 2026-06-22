@@ -1,0 +1,87 @@
+2026-06-22 21:10:59,602 - INFO - Creating container for pytest-dev__pytest-9359...
+2026-06-22 21:11:00,060 - INFO - Container for pytest-dev__pytest-9359 created: 1f4d3fe858288f23065cae9571f5b8558557dd744c7755226b4f6d803aa35c48
+2026-06-22 21:11:00,224 - INFO - Container for pytest-dev__pytest-9359 started: 1f4d3fe858288f23065cae9571f5b8558557dd744c7755226b4f6d803aa35c48
+2026-06-22 21:11:00,224 - INFO - Intermediate patch for pytest-dev__pytest-9359 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/pytest-dev__pytest-9359/patch.diff, now applying to container...
+2026-06-22 21:11:00,335 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/_code/source.py...
+Applied patch src/_pytest/_code/source.py cleanly.
+
+2026-06-22 21:11:00,437 - INFO - Git diff before:
+diff --git a/src/_pytest/_code/source.py b/src/_pytest/_code/source.py
+index 6f54057c0..e443018e0 100644
+--- a/src/_pytest/_code/source.py
++++ b/src/_pytest/_code/source.py
+@@ -143,26 +143,8 @@ def deindent(lines: Iterable[str]) -> List[str]:
+     return textwrap.dedent("\n".join(lines)).splitlines()
+ 
+ 
+-def get_statement_startend2(lineno: int, node: ast.AST) -> Tuple[int, Optional[int]]:
+-    # Flatten all statements and except handlers into one lineno-list.
+-    # AST's line numbers start indexing at 1.
+-    values: List[int] = []
+-    for x in ast.walk(node):
+-        if isinstance(x, (ast.stmt, ast.ExceptHandler)):
+-            values.append(x.lineno - 1)
+-            for name in ("finalbody", "orelse"):
+-                val: Optional[List[ast.stmt]] = getattr(x, name, None)
+-                if val:
+-                    # Treat the finally/orelse part as its own statement.
+-                    values.append(val[0].lineno - 1 - 1)
+-    values.sort()
+-    insert_index = bisect_right(values, lineno)
+-    start = values[insert_index - 1]
+-    if insert_index >= len(values):
+-        end = None
+-    else:
+-        end = values[insert_index]
+-    return start, end
++def get_statement_startend2(
++    linen
+ 
+ 
+ def getstatementrange_ast(
+2026-06-22 21:11:00,437 - INFO - Eval script for pytest-dev__pytest-9359 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/pytest-dev__pytest-9359/eval.sh; copying to container...
+2026-06-22 21:11:04,002 - INFO - Test runtime: 3.53 seconds
+2026-06-22 21:11:04,002 - INFO - Test output for pytest-dev__pytest-9359 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/pytest-dev__pytest-9359/test_output.txt
+2026-06-22 21:11:04,040 - INFO - Git diff after:
+diff --git a/src/_pytest/_code/source.py b/src/_pytest/_code/source.py
+index 6f54057c0..e443018e0 100644
+--- a/src/_pytest/_code/source.py
++++ b/src/_pytest/_code/source.py
+@@ -143,26 +143,8 @@ def deindent(lines: Iterable[str]) -> List[str]:
+     return textwrap.dedent("\n".join(lines)).splitlines()
+ 
+ 
+-def get_statement_startend2(lineno: int, node: ast.AST) -> Tuple[int, Optional[int]]:
+-    # Flatten all statements and except handlers into one lineno-list.
+-    # AST's line numbers start indexing at 1.
+-    values: List[int] = []
+-    for x in ast.walk(node):
+-        if isinstance(x, (ast.stmt, ast.ExceptHandler)):
+-            values.append(x.lineno - 1)
+-            for name in ("finalbody", "orelse"):
+-                val: Optional[List[ast.stmt]] = getattr(x, name, None)
+-                if val:
+-                    # Treat the finally/orelse part as its own statement.
+-                    values.append(val[0].lineno - 1 - 1)
+-    values.sort()
+-    insert_index = bisect_right(values, lineno)
+-    start = values[insert_index - 1]
+-    if insert_index >= len(values):
+-        end = None
+-    else:
+-        end = values[insert_index]
+-    return start, end
++def get_statement_startend2(
++    linen
+ 
+ 
+ def getstatementrange_ast(
+2026-06-22 21:11:04,040 - INFO - Grading answer for pytest-dev__pytest-9359...
+2026-06-22 21:11:04,041 - INFO - report: {'pytest-dev__pytest-9359': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/code/test_source.py::test_decorator']}, 'PASS_TO_PASS': {'success': [], 'failure': ['testing/code/test_source.py::test_source_str_function', 'testing/code/test_source.py::test_source_from_function', 'testing/code/test_source.py::test_source_from_method', 'testing/code/test_source.py::test_source_from_lines', 'testing/code/test_source.py::test_source_from_inner_function', 'testing/code/test_source.py::test_source_strips', 'testing/code/test_source.py::test_source_strip_multiline', 'testing/code/test_source.py::TestAccesses::test_getrange', 'testing/code/test_source.py::TestAccesses::test_getrange_step_not_supported', 'testing/code/test_source.py::TestAccesses::test_getline', 'testing/code/test_source.py::TestAccesses::test_len', 'testing/code/test_source.py::TestAccesses::test_iter', 'testing/code/test_source.py::TestSourceParsing::test_getstatement', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_triple_quoted', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_within_constructs', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_bug', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_bug2', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_ast_issue58', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_out_of_bounds_py3', 'testing/code/test_source.py::TestSourceParsing::test_getstatementrange_with_syntaxerror_issue7', 'testing/code/test_source.py::test_getstartingblock_singleline', 'testing/code/test_source.py::test_getline_finally', 'testing/code/test_source.py::test_getfuncsource_dynamic', 'testing/code/test_source.py::test_getfuncsource_with_multine_string', 'testing/code/test_source.py::test_deindent', 'testing/code/test_source.py::test_source_of_class_at_eof_without_newline', 'testing/code/test_source.py::test_source_fallback', 'testing/code/test_source.py::test_findsource_fallback', 'testing/code/test_source.py::test_findsource', 'testing/code/test_source.py::test_getfslineno', 'testing/code/test_source.py::test_code_of_object_instance_with_call', 'testing/code/test_source.py::test_oneline', 'testing/code/test_source.py::test_comment_and_no_newline_at_end', 'testing/code/test_source.py::test_oneline_and_comment', 'testing/code/test_source.py::test_comments', 'testing/code/test_source.py::test_comment_in_statement', 'testing/code/test_source.py::test_source_with_decorator', 'testing/code/test_source.py::test_single_line_else', 'testing/code/test_source.py::test_single_line_finally', 'testing/code/test_source.py::test_issue55', 'testing/code/test_source.py::test_multiline', 'testing/code/test_source.py::TestTry::test_body', 'testing/code/test_source.py::TestTry::test_except_line', 'testing/code/test_source.py::TestTry::test_except_body', 'testing/code/test_source.py::TestTry::test_else', 'testing/code/test_source.py::TestTryFinally::test_body', 'testing/code/test_source.py::TestTryFinally::test_finally', 'testing/code/test_source.py::TestIf::test_body', 'testing/code/test_source.py::TestIf::test_elif_clause', 'testing/code/test_source.py::TestIf::test_elif', 'testing/code/test_source.py::TestIf::test_else', 'testing/code/test_source.py::test_semicolon', 'testing/code/test_source.py::test_def_online', 'testing/code/test_source.py::test_getstartingblock_multiline']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-9359: resolved: False
+2026-06-22 21:11:04,041 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-9359.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:11:19,304 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-9359.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:11:19,321 - INFO - Container sweb.eval.pytest-dev__pytest-9359.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:11:19,321 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-9359:latest...
+2026-06-22 21:11:19,351 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-9359:latest removed.

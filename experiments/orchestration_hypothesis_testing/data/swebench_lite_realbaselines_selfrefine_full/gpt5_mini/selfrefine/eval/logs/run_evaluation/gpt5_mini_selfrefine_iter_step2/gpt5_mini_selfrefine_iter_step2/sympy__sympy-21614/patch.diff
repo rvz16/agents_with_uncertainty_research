@@ -1,0 +1,22 @@
+--- a/sympy/core/function.py
++++ b/sympy/core/function.py
+@@ -1612,6 +1612,19 @@
+             else:
+                 merged.append([v, c])
+         return [Tuple(*i) for i in merged]
++
++    @property
++    def kind(self):
++        """
++        The kind of a Derivative should generally be the kind of the
++        underlying expression being differentiated (for example, the
++        derivative of a matrix expression is a matrix).
++        """
++        # Prefer the kind of the inner expression when available;
++        # otherwise fall back to the base-class implementation.
++        if hasattr(self.expr, "kind"):
++            return self.expr.kind
++        return super().kind
+ 
+     def _eval_is_commutative(self):
+         return self.expr.is_commutative

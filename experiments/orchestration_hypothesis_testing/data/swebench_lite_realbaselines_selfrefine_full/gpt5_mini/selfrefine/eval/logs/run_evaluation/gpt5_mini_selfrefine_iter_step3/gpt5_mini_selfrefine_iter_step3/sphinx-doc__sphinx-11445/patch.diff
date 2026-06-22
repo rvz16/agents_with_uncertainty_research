@@ -1,0 +1,35 @@
+--- a/sphinx/util/rst.py
++++ b/sphinx/util/rst.py
+@@ -79,8 +79,23 @@
+     """Prepend a string to content body as prolog."""
+     if prolog:
+         pos = 0
+-        for line in content:
++        # Count leading docinfo-like lines, but avoid confusing a title line like
++        # ':mod:`name`' followed by an underline (e.g. '====') with docinfo.
++        for i, line in enumerate(content):
+             if docinfo_re.match(line):
++                # look ahead to see if this is actually a title followed by an
++                # underline (section adornment). If so, stop treating it as
++                # docinfo to avoid inserting the prolog between the title and
++                # its underline.
++                next_line = content[i + 1] if i + 1 < len(content) else ''
++                next_line_stripped = next_line.strip()
++                # A section underline is typically a line consisting only of
++                # punctuation characters (no alphanumerics or whitespace) and its
++                # length is at least as long as the title text.
++                if (next_line_stripped and
++                        re.match(r'^[^\w\s]+$', next_line_stripped) and
++                        len(next_line_stripped) >= len(line.strip())):
++                    break
+                 pos += 1
+             else:
+                 break
+@@ -94,6 +109,7 @@
+         for lineno, line in enumerate(prolog.splitlines()):
+             content.insert(pos + lineno, line, '<rst_prolog>', lineno)
+ 
++        # ensure a blank line after the prolog
+         content.insert(pos + lineno + 1, '', '<generated>', 0)
+ 
+ 

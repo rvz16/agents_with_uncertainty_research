@@ -1,0 +1,19 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -1041,8 +1041,15 @@
+             if type(num[1]) is str:
+                 # it's a hexadecimal (coming from a pickled object)
+                 # assume that it is in standard form
++                # Python 2 pickles of long ints may include a trailing 'L'
++                # in their string representation (e.g. '1L'). Strip that
++                # suffix so that int/long conversion with base 16 works on
++                # Python 3.
+                 num = list(num)
+-                num[1] = long(num[1], 16)
++                s = num[1]
++                if isinstance(s, string_types) and s.endswith(('L', 'l')):
++                    s = s[:-1]
++                num[1] = long(s, 16)
+                 _mpf_ = tuple(num)
+             else:
+                 if len(num) == 4:

@@ -1,0 +1,24 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -862,15 +862,12 @@
+                 if not self.verbose_feature_names_out:
+                     return output
+ 
+-                transformer_names = [
+-                    t[0] for t in self._iter(fitted=True, replace_strings=True)
+-                ]
+-                feature_names_outs = [X.columns for X in Xs]
+-                names_out = self._add_prefix_for_feature_names_out(
+-                    list(zip(transformer_names, feature_names_outs))
+-                )
+-                output.columns = names_out
+-                return output
++                # Build lists of transformer names and feature names out in a
++                # way that is robust to potential mismatches when some
++                # transformers had an empty column selection and therefore
++                # were not fitted / do not produce output. We align the two
++                # lists by taking the minimum length to avoid downstream
++                #
+ 
+             return np.hstack(Xs)
+ 

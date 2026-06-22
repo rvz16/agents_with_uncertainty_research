@@ -1,0 +1,68 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -867,10 +867,64 @@
+         self.stale = True
+ 
+     def get_facecolor(self):
++        """
++        Return the 2D facecolors used for drawing the projected polygons.
++
++        In some usage patterns (e.g., before a draw) the 2D color arrays
++        (_facecolors2d/_edgecolors2d) may not yet have been created.  In that
++        case, force evaluation of any ScalarMappable state so that the color
++        arrays exist and return a reasonable fallback.
++        """
++        # If already computed, return it.
++        if getattr(self, "_facecolors2d", None) is not None:
++            return self._facecolors2d
++
++        # Ensure any scalar mappable updates are performed so colors exist.
++        try:
++            self.update_scalarmappable()
++        except Exception:
++            # Be conservative: ignore failures here and try best-effort below.
++            pass
++
++        # Try to populate the 3D color caches from the underlying PolyCollection
++        # state.  Fall back to empty arrays on error.
++        try:
++            self._facecolor3d = PolyCollection.get_facecolor(self)
++        except Exception:
++            self._facecolor3d = np.empty((0, 4))
++        try:
++            self._edgecolor3d = PolyCollection.get_edgecolor(self)
++        except Exception:
++            self._edgecolor3d = np.empty((0, 4))
++
++        # Normalize to RGBA arrays and set the 2D caches so callers get a
++        # consistent return value even before a full draw has occurred.
++        try:
++            fc = mcolors.to_rgba_array(self._facecolor3d)
++        except Exception:
++            fc = np.empty((0, 4))
++        try:
++            ec = mcolors.to_rgba_array(self._edgecolor3d)
++        except Exception:
++            ec = np.empty((0, 4))
++
++        self._facecolors2d = fc
++        self._edgecolors2d = ec
+         return self._facecolors2d
+ 
+     def get_edgecolor(self):
+-        return self._edgecolors2d
++        """
++        Return the 2D edgecolors used for drawing the projected polygons.
++
++        Ensure the 2D caches are initialized (delegates to get_facecolor if
++        necessary) so callers get a useful result even before a draw.
++        """
++        if getattr(self, "_edgecolors2d", None) is not None:
++            return self._edgecolors2d
++
++        # Ensure facecolor initialization which also sets up edgecolors2d.
++        self.get_facecolor()
++        return getattr(self, "_edgecolors2d", np.empty((0, 4)))
+ 
+ 
+ def poly_collection_2d_to_3d(col, zs=0, zdir='z'):

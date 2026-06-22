@@ -1,0 +1,61 @@
+2026-06-22 21:44:01,996 - INFO - Creating container for sympy__sympy-23117...
+2026-06-22 21:44:02,137 - INFO - Container for sympy__sympy-23117 created: 012b6b429c9a8f95150aacbb1dadc043dec54ca59b746d24d3ab415e8c95250c
+2026-06-22 21:44:02,381 - INFO - Container for sympy__sympy-23117 started: 012b6b429c9a8f95150aacbb1dadc043dec54ca59b746d24d3ab415e8c95250c
+2026-06-22 21:44:02,381 - INFO - Intermediate patch for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-23117/patch.diff, now applying to container...
+2026-06-22 21:44:02,497 - INFO - >>>>> Applied Patch:
+Checking patch sympy/tensor/array/ndim_array.py...
+Applied patch sympy/tensor/array/ndim_array.py cleanly.
+
+2026-06-22 21:44:02,811 - INFO - Git diff before:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..f222d1aaeb 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -194,8 +194,14 @@ def f(pointer):
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Convert to a concrete sequence to be able to detect empty iterables.
++            pointer_list = list(pointer)
++            # An empty iterable denotes a 1-D array with length 0.
++            if len(pointer_list) == 0:
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+2026-06-22 21:44:02,811 - INFO - Eval script for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-23117/eval.sh; copying to container...
+2026-06-22 21:44:06,114 - INFO - Test runtime: 3.25 seconds
+2026-06-22 21:44:06,114 - INFO - Test output for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-23117/test_output.txt
+2026-06-22 21:44:06,165 - INFO - Git diff after:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..f222d1aaeb 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -194,8 +194,14 @@ def f(pointer):
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Convert to a concrete sequence to be able to detect empty iterables.
++            pointer_list = list(pointer)
++            # An empty iterable denotes a 1-D array with length 0.
++            if len(pointer_list) == 0:
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+2026-06-22 21:44:06,165 - INFO - Grading answer for sympy__sympy-23117...
+2026-06-22 21:44:06,165 - INFO - report: {'sympy__sympy-23117': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_17851'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_array_negative_indices', 'test_issue_18361', 'test_issue_20222'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-23117: resolved: True
+2026-06-22 21:44:06,165 - INFO - Attempting to stop container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:44:21,456 - INFO - Attempting to remove container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:44:21,485 - INFO - Container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:44:21,485 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest...
+2026-06-22 21:44:21,555 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest removed.

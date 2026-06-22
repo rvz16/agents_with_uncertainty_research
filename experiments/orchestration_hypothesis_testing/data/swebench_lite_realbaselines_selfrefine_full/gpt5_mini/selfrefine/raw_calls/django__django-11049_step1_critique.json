@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:39:48.674213+00:00",
+  "instance_id": "django__django-11049",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nCorrect expected format in invalid DurationField error message\nDescription\n\t\nIf you enter a duration \"14:00\" into a duration field, it translates to \"00:14:00\" which is 14 minutes.\nThe current error message for invalid DurationField says that this should be the format of durations: \"[DD] [HH:[MM:]]ss[.uuuuuu]\". But according to the actual behaviour, it should be: \"[DD] [[HH:]MM:]ss[.uuuuuu]\", because seconds are mandatory, minutes are optional, and hours are optional if minutes are provided.\nThis seems to be a mistake in all Django versions that support the DurationField.\nAlso the duration fields could have a default help_text with the requested format, because the syntax is not self-explanatory.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/fields/__init__.py\n+++ b/django/db/models/fields/__init__.py\n@@ -1587,7 +1587,7 @@\n     empty_strings_allowed = False\n     default_error_messages = {\n         'invalid': _(\"'%(value)s' value has an invalid format. It must be in \"\n-                     \"[DD] [HH:[MM:]]ss[.uuuuuu] format.\")\n+                     \"[DD] [[HH:]MM:]ss[.uuuuuu] format.\")\n     }\n     description = _(\"Duration\")\n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 415,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00304775
+}

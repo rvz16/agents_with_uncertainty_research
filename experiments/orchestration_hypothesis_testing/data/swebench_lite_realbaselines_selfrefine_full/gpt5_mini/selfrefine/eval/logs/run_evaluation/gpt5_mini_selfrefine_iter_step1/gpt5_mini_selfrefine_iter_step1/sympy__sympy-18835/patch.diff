@@ -1,0 +1,46 @@
+--- a/sympy/utilities/iterables.py
++++ b/sympy/utilities/iterables.py
+@@ -2109,10 +2109,43 @@
+     try:
+         seen = set()
+         result = result or []
++        # Record the initial size when possible so that mutations of the
++        # passed sequence can be detected between yields. For sequences
++        # without a length (e.g. generators) this will be None and no
++        # size checks will be performed.
++        try:
++            initial_len = len(seq)
++        except Exception:
++            initial_len = None
++
+         for i, s in enumerate(seq):
++            # Detect size changes (e.g., list.remove) that occur while the
++            # caller is iterating over the generator. This mirrors the
++            # RuntimeError raised by Python when dict/set are modified
++            # during iteration.
++            if initial_len is not None:
++                try:
++                    if len(seq) != initial_len:
++                        raise RuntimeError("sequence changed size during iteration")
++                except TypeError:
++                    # If len(seq) unexpectedly becomes invalid, ignore and
++                    # proceed; this is an unlikely corner case.
++                    pass
++
+             if not (s in seen or seen.add(s)):
+                 yield s
+     except TypeError:
++        # In the unhashable case the TypeError is expected to be raised
++        # by "s in seen". The variable ``s`` will therefore be defined.
++        # Check for mutation before proceeding similarly to the main loop.
++        if 'initial_len' in locals() and initial_len is not None:
++            try:
++                if hasattr(seq, '__len__') and len(seq) != initial_len:
++                    raise RuntimeError("sequence changed size during iteration")
++            except TypeError:
++                # If len(seq) raises, ignore and continue.
++                pass
++
+         if s not in result:
+             yield s
+             result.append(s)

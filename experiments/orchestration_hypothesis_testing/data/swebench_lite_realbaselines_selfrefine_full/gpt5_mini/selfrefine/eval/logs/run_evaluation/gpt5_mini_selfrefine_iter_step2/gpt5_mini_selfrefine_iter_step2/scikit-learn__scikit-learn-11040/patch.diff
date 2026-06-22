@@ -1,0 +1,61 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -181,6 +182,13 @@
+             else:
+                 self.effective_metric_params_['p'] = p
+ 
++        # Validate n_neighbors type early so that incorrect types raise
++        # a helpful error instead of failing deep inside the tree code.
++        if self.n_neighbors is not None and not isinstance(self.n_neighbors,
++                                                           numbers.Integral):
++            raise ValueError("n_neighbors must be an integer, got %r"
++                             % (self.n_neighbors,))
++
+         if isinstance(X, NeighborsBase):
+             self._fit_X = X._fit_X
+             self._tree = X._tree
+@@ -328,9 +336,36 @@
+         if n_neighbors is None:
+             n_neighbors = self.n_neighbors
+ 
++        # Accept integer-like floats for the method call, but reject other types.
++        if n_neighbors is not None and not isinstance(n_neighbors,
++                                                      numbers.Integral):
++            if isinstance(n_neighbors, numbers.Real) and float(n_neighbors).is_integer():
++                n_neighbors = int(n_neighbors)
++            else:
++                raise ValueError("n_neighbors must be an integer, got %r"
++                                 % (n_neighbors,))
++
+         if X is not None:
+             query_is_train = False
+             X = check_array(X, accept_sparse='csr')
++REPLACE>>>
++
++<<<CHANGE sklearn/neighbors/base.py
++SEARCH
++        if n_neighbors is None:
++            n_neighbors = self.n_neighbors
++REPLACE
++        if n_neighbors is None:
++            n_neighbors = self.n_neighbors
++
++        # Accept integer-like floats for the method call, but reject other types.
++        if n_neighbors is not None and not isinstance(n_neighbors,
++                                                      numbers.Integral):
++            if isinstance(n_neighbors, numbers.Real) and float(n_neighbors).is_integer():
++                n_neighbors = int(n_neighbors)
++            else:
++                raise ValueError("n_neighbors must be an integer, got %r"
++                                 % (n_neighbors,))
+         else:
+             query_is_train = True
+             X = self._fit_X

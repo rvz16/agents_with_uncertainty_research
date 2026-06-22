@@ -1,0 +1,72 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -136,13 +136,34 @@
+     for filename in itertools.chain(sys_file_paths, extra_files):
+         if not filename:
+             continue
+-        path = Path(filename)
++        # Normalize the filename to a filesystem path string (handles PathLike
++        # objects). If this isn't possible, skip the entry.
++        try:
++            fn_str = os.fspath(filename)
++        except TypeError:
++            # Not a path-like object; skip it.
++            continue
++        # Guard against embedded null bytes which can surface from broken
++        # mounts or filesystem issues and cause os.readlink (used by
++        # Path.resolve) to raise ValueError: embedded null byte.
++        if '\x00' in fn_str:
++            logger.warning('Skipping filename %r as it contains an embedded null byte.', fn_str)
++            continue
++        path = Path(fn_str)
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+         except FileNotFoundError:
+             # The module could have been removed, don't fail loudly if this
+             # is the case.
+             continue
++        except ValueError as e:
++            # Only swallow ValueError when it's the known embedded null byte
++            # issue; re-raise other ValueErrors to avoid hiding real bugs.
++            msg = str(e).lower()
++            if 'embedded' in msg and 'null' in msg:
++                logger.warning('Skipping filename %r as resolving it raised ValueError: %s', fn_str, e)
++                continue
++            raise
+         results.add(resolved_path)
+     return frozenset(results)
+ 
+@@ -184,11 +205,32 @@
+     exist.
+     """
+     for path in sys.path:
+-        path = Path(path)
++        if not path:
++            continue
++        # Normalize to a filesystem path string first (handles PathLike).
++        try:
++            path_str = os.fspath(path)
++        except TypeError:
++            # Not a path-like object; skip it.
++            continue
++        # Skip entries that contain embedded null bytes to avoid crashing
++        # when resolving.
++        if '\x00' in path_str:
++            logger.warning('Skipping sys.path entry %r as it contains an embedded null byte.', path_str)
++            continue
++        path = Path(path_str)
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+         except FileNotFoundError:
+             continue
++        except ValueError as e:
++            # Only swallow ValueError when it's the known embedded null byte
++            # issue; re-raise other ValueErrors to avoid hiding real bugs.
++            msg = str(e).lower()
++            if 'embedded' in msg and 'null' in msg:
++                logger.warning('Skipping sys.path entry %r as resolving it raised ValueError: %s', path_str, e)
++                continue
++            raise
+         # If the path is a file (like a zip file), watch the parent directory.
+         if resolved_path.is_file():
+             yield resolved_path.parent

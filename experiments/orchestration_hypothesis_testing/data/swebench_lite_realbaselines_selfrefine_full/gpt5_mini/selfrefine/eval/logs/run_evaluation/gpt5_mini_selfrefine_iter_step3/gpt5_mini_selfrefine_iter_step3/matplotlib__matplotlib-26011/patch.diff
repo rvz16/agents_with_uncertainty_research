@@ -1,0 +1,15 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -1244,6 +1244,12 @@
+                 if other is not self.axes:
+                     other._axis_map[name]._set_lim(
+                         v0, v1, emit=False, auto=auto)
++                    # Ensure registered callbacks on sibling axes are called
++                    # when the limits are changed via sharing.  We avoid
++                    # recursion by emitting the callbacks here rather than
++                    # asking the sibling to re-emit while it is applying
++                    # the limits.
++                    other.callbacks.process(f"{name}lim_changed", other)
+                     if other.figure != self.figure:
+                         other.figure.canvas.draw_idle()
+ 

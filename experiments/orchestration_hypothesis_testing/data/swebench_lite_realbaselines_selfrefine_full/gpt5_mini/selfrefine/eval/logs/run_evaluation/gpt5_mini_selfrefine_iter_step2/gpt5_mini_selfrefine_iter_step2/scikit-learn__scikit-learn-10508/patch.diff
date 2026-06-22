@@ -1,0 +1,17 @@
+--- a/sklearn/preprocessing/label.py
++++ b/sklearn/preprocessing/label.py
+@@ -126,6 +126,14 @@
+         """
+         check_is_fitted(self, 'classes_')
+         y = column_or_1d(y, warn=True)
++
++        # If y is empty, return an empty int array. This avoids NumPy trying
++        # to cast the empty input (which may default to float) to the dtype of
++        # self.classes_ (e.g. string), which would raise a TypeError in
++        # np.searchsorted. See issue with transforming empty lists after fitting
++        # on string labels.
++        if y.size == 0:
++            return np.array([], dtype=int)
+ 
+         classes = np.unique(y)
+         if len(np.intersect1d(classes, self.classes_)) < len(classes):

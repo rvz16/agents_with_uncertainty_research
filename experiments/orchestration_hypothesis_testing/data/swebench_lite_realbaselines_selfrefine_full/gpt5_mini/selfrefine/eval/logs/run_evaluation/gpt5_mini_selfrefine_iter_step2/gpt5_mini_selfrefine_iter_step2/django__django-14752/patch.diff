@@ -1,0 +1,27 @@
+--- a/django/contrib/admin/views/autocomplete.py
++++ b/django/contrib/admin/views/autocomplete.py
+@@ -26,11 +26,23 @@
+         context = self.get_context_data()
+         return JsonResponse({
+             'results': [
+-                {'id': str(getattr(obj, to_field_name)), 'text': str(obj)}
++                self.serialize_result(obj, to_field_name)
+                 for obj in context['object_list']
+             ],
+             'pagination': {'more': context['page_obj'].has_next()},
+         })
++
++    def serialize_result(self, obj, to_field_name):
++        """
++        Convert a model instance to the dictionary used in the autocomplete JSON
++        response for a single result. Subclasses may override this to include
++        additional fields.
++
++        The default implementation preserves the original behavior: the
++        'id' is the stringified value of the model field referenced by
++        to_field_name, and 'text' is the string representation of the object.
++        """
++        return {'id': str(getattr(obj, to_field_name)), 'text': str(obj)}
+ 
+     def get_paginator(self, *args, **kwargs):
+         """Use the ModelAdmin's paginator."""

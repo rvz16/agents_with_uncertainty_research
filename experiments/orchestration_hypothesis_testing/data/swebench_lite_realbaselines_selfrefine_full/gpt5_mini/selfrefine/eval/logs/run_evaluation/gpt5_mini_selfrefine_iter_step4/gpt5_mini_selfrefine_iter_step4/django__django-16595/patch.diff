@@ -1,0 +1,16 @@
+--- a/django/db/migrations/operations/fields.py
++++ b/django/db/migrations/operations/fields.py
+@@ -251,6 +251,13 @@
+             operation
+         ):
+             return [operation]
++        # Multiple AlterField operations against the same field can be reduced:
++        # later AlterField supersedes earlier ones, so keep only the later
++        # operation.
++        elif isinstance(operation, AlterField) and self.is_same_field_operation(
++            operation
++        ):
++            return [operation]
+         elif (
+             isinstance(operation, RenameField)
+             and self.is_same_field_operation(operation)

@@ -1,0 +1,27 @@
+--- a/sympy/utilities/codegen.py
++++ b/sympy/utilities/codegen.py
+@@ -737,9 +737,23 @@
+             new_args = []
+             for symbol in argument_sequence:
+                 try:
++                    # existing argument: preserve its metadata
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # argument was requested but not present in arg_list;
++                    # this can happen for "redundant" (user-specified) args.
++                    # If the symbol corresponds to an array (MatrixSymbol/Indexed),
++                    # preserve its dimensions metadata so it will be emitted as
++                    # a pointer/array in the generated signature.
++                    if symbol in array_symbols:
++                        array = array_symbols[symbol]
++                        dims = []
++                        for dim in array.shape:
++                            dims.append((S.Zero, dim - 1))
++                        metadata = {'dimensions': dims}
++                    else:
++                        metadata = {}
++                    new_args.append(InputArgument(symbol, **metadata))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_val, local_vars, global_vars)

@@ -1,0 +1,194 @@
+2026-06-22 20:10:09,281 - INFO - Creating container for django__django-15252...
+2026-06-22 20:10:09,465 - INFO - Container for django__django-15252 created: d41b6aa604fa5cb4e8a97a810576127c0766e10e76482cfcfde7cfffe81da33b
+2026-06-22 20:10:09,620 - INFO - Container for django__django-15252 started: d41b6aa604fa5cb4e8a97a810576127c0766e10e76482cfcfde7cfffe81da33b
+2026-06-22 20:10:09,620 - INFO - Intermediate patch for django__django-15252 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/django__django-15252/patch.diff, now applying to container...
+2026-06-22 20:10:09,794 - INFO - >>>>> Applied Patch:
+/tmp/patch.diff:80: trailing whitespace.
+           
+Checking patch django/db/migrations/executor.py...
+Applied patch django/db/migrations/executor.py cleanly.
+warning: 1 line adds whitespace errors.
+
+2026-06-22 20:10:10,287 - INFO - Git diff before:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..341934352d 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,8 +96,17 @@ class MigrationExecutor:
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations. Only ensure the schema if the router allows the
++        # migration model to be migrated/created on this database. If the
++        # router explicitly disallows it (returns False), skip ensuring the
++        # schema to avoid creating the table or raising permission errors on
++        # read-only / non-migrated databases.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is not False:
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+             plan = self.migration_plan(targets)
+@@ -245,6 +254,16 @@ class MigrationExecutor:
+         return state
+ 
+     def record_migration(self, migration):
++        # Only record migration if the router allows creating/using the
++        # migration model on this database. If the router explicitly disallows
++        # it (returns False), skip recording so we don't attempt writes to a
++        # database that shouldn't hold migration history.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is False:
++            return
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -260,10 +279,17 @@ class MigrationExecutor:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+         # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only record/unrecord if the router allows using the migration model
++        # on this database. If disallowed, skip recording to avoid writes.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is not False:
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+@@ -280,11 +306,19 @@ class MigrationExecutor:
+         be applied, but the applied state of the squashed migration must be
+         maintained.
+         """
++        # If the router explicitly disallows migration-records on this DB,
++        # don't attempt to access or modify the migration table.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is False:
++            return
++
+         applied = self.recorder.applied_migrations()
+         for key, migration in self.loader.replacements.items():
+             all_applied = all(m in applied for m in migration.replaces)
+-            if all_applied and key not in applied:
+-                self.recorder.record_applied(*key)
++           
+ 
+     def detect_soft_applied(self, project_state, migration):
+         """
+2026-06-22 20:10:10,287 - INFO - Eval script for django__django-15252 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/django__django-15252/eval.sh; copying to container...
+2026-06-22 20:10:15,648 - INFO - Test runtime: 5.31 seconds
+2026-06-22 20:10:15,648 - INFO - Test output for django__django-15252 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/django__django-15252/test_output.txt
+2026-06-22 20:10:15,701 - INFO - Git diff after:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..341934352d 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,8 +96,17 @@ class MigrationExecutor:
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations. Only ensure the schema if the router allows the
++        # migration model to be migrated/created on this database. If the
++        # router explicitly disallows it (returns False), skip ensuring the
++        # schema to avoid creating the table or raising permission errors on
++        # read-only / non-migrated databases.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is not False:
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+             plan = self.migration_plan(targets)
+@@ -245,6 +254,16 @@ class MigrationExecutor:
+         return state
+ 
+     def record_migration(self, migration):
++        # Only record migration if the router allows creating/using the
++        # migration model on this database. If the router explicitly disallows
++        # it (returns False), skip recording so we don't attempt writes to a
++        # database that shouldn't hold migration history.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is False:
++            return
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -260,10 +279,17 @@ class MigrationExecutor:
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+         # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        # Only record/unrecord if the router allows using the migration model
++        # on this database. If disallowed, skip recording to avoid writes.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is not False:
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+@@ -280,11 +306,19 @@ class MigrationExecutor:
+         be applied, but the applied state of the squashed migration must be
+         maintained.
+         """
++        # If the router explicitly disallows migration-records on this DB,
++        # don't attempt to access or modify the migration table.
++        if router.allow_migrate(
++            self.connection.alias,
++            self.recorder.Migration._meta.app_label,
++            model_name=self.recorder.Migration._meta.model_name,
++        ) is False:
++            return
++
+         applied = self.recorder.applied_migrations()
+         for key, migration in self.loader.replacements.items():
+             all_applied = all(m in applied for m in migration.replaces)
+-            if all_applied and key not in applied:
+-                self.recorder.record_applied(*key)
++           
+ 
+     def detect_soft_applied(self, project_state, migration):
+         """
+2026-06-22 20:10:15,701 - INFO - Grading answer for django__django-15252...
+2026-06-22 20:10:15,703 - INFO - report: {'django__django-15252': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_migrate_test_setting_false_ensure_schema (backends.base.test_creation.TestDbCreationTests)', 'The django_migrations table is not created if there are no migrations']}, 'PASS_TO_PASS': {'success': ['test_mark_expected_failures_and_skips (backends.base.test_creation.TestMarkTests)', 'test_custom_test_name (backends.base.test_creation.TestDbSignatureTests)', 'test_custom_test_name_with_test_prefix (backends.base.test_creation.TestDbSignatureTests)', 'test_default_name (backends.base.test_creation.TestDbSignatureTests)', 'If the current state satisfies the given target, do nothing.', 'Minimize unnecessary rollbacks in connected apps.', 'Minimize rollbacks when target has multiple in-app children.', "mark_expected_failures_and_skips() isn't called unless", 'test_migrate_test_setting_false (backends.base.test_creation.TestDbCreationTests)', 'test_migrate_test_setting_true (backends.base.test_creation.TestDbCreationTests)', 'test_circular_reference (backends.base.test_creation.TestDeserializeDbFromString)', 'test_circular_reference_with_natural_key (backends.base.test_creation.TestDeserializeDbFromString)', 'test_self_reference (backends.base.test_creation.TestDeserializeDbFromString)', 'test_serialize_db_to_string_base_manager (backends.base.test_creation.TestDeserializeDbFromString)', 'test_alter_id_type_with_fk (migrations.test_executor.ExecutorTests)', 'An atomic operation is properly rolled back inside a non-atomic', 'Regression test for #22325 - references to a custom user model defined in the', 'executor.detect_soft_applied() detects ManyToManyField tables from an', "Re-planning a full migration of a fully-migrated set doesn't", 'test_migrate_backward_to_squashed_migration (migrations.test_executor.ExecutorTests)', 'Migrations are applied and recorded atomically.', 'Migrations are not recorded if deferred SQL application fails.', 'Although the MigrationExecutor interfaces allows for mixed migration', 'Applying a non-atomic migration works as expected.', '#24129 - Tests callback process', 'Tests running a simple set of migrations.', 'Tests running a squashed migration from zero (should ignore what it replaces)', 'Tests detection of initial migrations already having been applied.', '#26647 - Unrelated applied migrations should be part of the final', '#24123 - All models of apps being unapplied which are', '#24123 - All models of apps already applied which are'], 'failure': ['Applying all replaced migrations marks replacement as applied (#24628).', 'A new squash migration will be marked as applied even if all its', 'test_migrate_marks_replacement_unapplied (migrations.test_executor.ExecutorTests)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15252: resolved: False
+2026-06-22 20:10:15,703 - INFO - Attempting to stop container sweb.eval.django__django-15252.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:10:30,931 - INFO - Attempting to remove container sweb.eval.django__django-15252.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:10:30,955 - INFO - Container sweb.eval.django__django-15252.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 20:10:30,955 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15252:latest...
+2026-06-22 20:10:31,052 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15252:latest removed.

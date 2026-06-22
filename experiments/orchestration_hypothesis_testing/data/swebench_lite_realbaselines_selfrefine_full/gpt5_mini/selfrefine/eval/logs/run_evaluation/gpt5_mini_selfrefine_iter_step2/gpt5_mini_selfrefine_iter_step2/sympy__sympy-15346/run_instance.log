@@ -1,0 +1,93 @@
+2026-06-22 17:03:16,983 - INFO - Creating container for sympy__sympy-15346...
+2026-06-22 17:03:17,110 - INFO - Container for sympy__sympy-15346 created: 44ccbd7af5cb9f82d1f2507649161932174b787f44d76091ed805ef79c45b421
+2026-06-22 17:03:17,269 - INFO - Container for sympy__sympy-15346 started: 44ccbd7af5cb9f82d1f2507649161932174b787f44d76091ed805ef79c45b421
+2026-06-22 17:03:17,269 - INFO - Intermediate patch for sympy__sympy-15346 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-15346/patch.diff, now applying to container...
+2026-06-22 17:03:17,403 - INFO - >>>>> Applied Patch:
+Checking patch sympy/simplify/trigsimp.py...
+Applied patch sympy/simplify/trigsimp.py cleanly.
+
+2026-06-22 17:03:17,752 - INFO - Git diff before:
+diff --git a/sympy/simplify/trigsimp.py b/sympy/simplify/trigsimp.py
+index 8ba346adbe..8684100c12 100644
+--- a/sympy/simplify/trigsimp.py
++++ b/sympy/simplify/trigsimp.py
+@@ -1126,6 +1126,21 @@ def _futrig(e, **kwargs):
+     Lops = lambda x: (L(x), x.count_ops(), _nodes(x), len(x.args), x.is_Add)
+     trigs = lambda x: x.has(TrigonometricFunction)
+ 
++    def _TR10i_before_TRmorrie(x):
++        """
++        Prefer applying TR10i before TRmorrie when possible.
++
++        TRmorrie can introduce division-by-sin and other rewrites that may
++        obscure patterns that TR10i is designed to catch (e.g.
++        c*sin(a)*sin(b) + c*cos(a)*cos(b) -> c*cos(a - b)). To avoid
++        losing such opportunities, try TR10i first and, only if it does not
++        change the expression, fall back to TRmorrie.
++        """
++        a = TR10i(x)
++        if a != x:
++            return a
++        return TRmorrie(x)
++
+     tree = [identity,
+         (
+         TR3,  # canonical angles
+@@ -1143,8 +1158,7 @@ def _futrig(e, **kwargs):
+         lambda x: _eapply(factor, x, trigs),
+         TR14,  # factored powers of identities
+         [identity, lambda x: _eapply(_mexpand, x, trigs)],
+-        TRmorrie,
+-        TR10i,  # sin-cos products > sin-cos of sums
++        _TR10i_before_TRmorrie,
+         [identity, TR8],  # sin-cos products -> sin-cos of sums
+         [identity, lambda x: TR2i(TR2(x))],  # tan -> sin-cos -> tan
+         [
+2026-06-22 17:03:17,752 - INFO - Eval script for sympy__sympy-15346 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-15346/eval.sh; copying to container...
+2026-06-22 17:03:45,730 - INFO - Test runtime: 27.93 seconds
+2026-06-22 17:03:45,730 - INFO - Test output for sympy__sympy-15346 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-15346/test_output.txt
+2026-06-22 17:03:45,774 - INFO - Git diff after:
+diff --git a/sympy/simplify/trigsimp.py b/sympy/simplify/trigsimp.py
+index 8ba346adbe..8684100c12 100644
+--- a/sympy/simplify/trigsimp.py
++++ b/sympy/simplify/trigsimp.py
+@@ -1126,6 +1126,21 @@ def _futrig(e, **kwargs):
+     Lops = lambda x: (L(x), x.count_ops(), _nodes(x), len(x.args), x.is_Add)
+     trigs = lambda x: x.has(TrigonometricFunction)
+ 
++    def _TR10i_before_TRmorrie(x):
++        """
++        Prefer applying TR10i before TRmorrie when possible.
++
++        TRmorrie can introduce division-by-sin and other rewrites that may
++        obscure patterns that TR10i is designed to catch (e.g.
++        c*sin(a)*sin(b) + c*cos(a)*cos(b) -> c*cos(a - b)). To avoid
++        losing such opportunities, try TR10i first and, only if it does not
++        change the expression, fall back to TRmorrie.
++        """
++        a = TR10i(x)
++        if a != x:
++            return a
++        return TRmorrie(x)
++
+     tree = [identity,
+         (
+         TR3,  # canonical angles
+@@ -1143,8 +1158,7 @@ def _futrig(e, **kwargs):
+         lambda x: _eapply(factor, x, trigs),
+         TR14,  # factored powers of identities
+         [identity, lambda x: _eapply(_mexpand, x, trigs)],
+-        TRmorrie,
+-        TR10i,  # sin-cos products > sin-cos of sums
++        _TR10i_before_TRmorrie,
+         [identity, TR8],  # sin-cos products -> sin-cos of sums
+         [identity, lambda x: TR2i(TR2(x))],  # tan -> sin-cos -> tan
+         [
+2026-06-22 17:03:45,774 - INFO - Grading answer for sympy__sympy-15346...
+2026-06-22 17:03:45,774 - INFO - report: {'sympy__sympy-15346': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_15129_trigsimp_methods'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_trigsimp1', 'test_trigsimp1a', 'test_trigsimp2', 'test_issue_4373', 'test_trigsimp3', 'test_issue_4661', 'test_issue_4494', 'test_issue_5948', 'test_issue_4775', 'test_issue_4280', 'test_issue_3210', 'test_trigsimp_issues', 'test_trigsimp_issue_2515', 'test_trigsimp_issue_3826', 'test_trigsimp_issue_4032', 'test_trigsimp_issue_7761', 'test_trigsimp_noncommutative', 'test_hyperbolic_simp', 'test_trigsimp_groebner', 'test_issue_2827_trigsimp_methods', 'test_exptrigsimp', 'test_powsimp_on_numbers'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-15346: resolved: True
+2026-06-22 17:03:45,774 - INFO - Attempting to stop container sweb.eval.sympy__sympy-15346.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:04:00,987 - INFO - Attempting to remove container sweb.eval.sympy__sympy-15346.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:04:01,008 - INFO - Container sweb.eval.sympy__sympy-15346.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 17:04:01,008 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-15346:latest...
+2026-06-22 17:04:01,074 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-15346:latest removed.

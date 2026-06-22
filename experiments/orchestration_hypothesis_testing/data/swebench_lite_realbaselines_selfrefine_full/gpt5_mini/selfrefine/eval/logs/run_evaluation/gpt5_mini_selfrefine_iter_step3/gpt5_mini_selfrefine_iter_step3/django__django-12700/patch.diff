@@ -1,0 +1,41 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -83,19 +83,37 @@
+     def cleanse_setting(self, key, value):
+         """
+         Cleanse an individual setting key/value of sensitive content. If the
+-        value is a dictionary, recursively cleanse the keys in that dictionary.
++        value is a dictionary or other iterable, recursively cleanse the contents.
+         """
+         try:
+             if self.hidden_settings.search(key):
++                # The entire setting is considered sensitive.
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
++                # Recursively cleanse dictionaries by their keys.
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple, set, frozenset)):
++                # Recursively cleanse iterable containers while preserving type.
++                cleansed_items = [self.cleanse_setting(key, v) for v in value]
++                # Wrap any callable elements so they won't be invoked by repr().
++                for i, item in enumerate(cleansed_items):
++                    if callable(item):
++                        cleansed_items[i] = CallableSettingWrapper(item)
++                if isinstance(value, list):
++                    cleansed = cleansed_items
++                elif isinstance(value, tuple):
++                    cleansed = tuple(cleansed_items)
++                elif isinstance(value, set):
++                    cleansed = set(cleansed_items)
++                else:  # frozenset
++                    cleansed = frozenset(cleansed_items)
+             else:
+                 cleansed = value
+         except TypeError:
+             # If the key isn't regex-able, just return as-is.
+             cleansed = value
+ 
++        # Wrap top-level callables.
+         if callable(cleansed):
+             cleansed = CallableSettingWrapper(cleansed)
+ 

@@ -1,0 +1,18 @@
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -204,6 +204,15 @@
+     if isinstance(data, Variable):
+         return data.data
+ 
++    # If the object looks like a DataArray (duck-typed: has .data and .dims),
++    # use its underlying data directly. This avoids accessing .values which can
++    # trigger computation for backends like dask. Importing DataArray here would
++    # create a circular import, so prefer a duck-typed check.
++    if not isinstance(data, Variable) and hasattr(data, "data") and hasattr(
++        data, "dims"
++    ):
++        return data.data
++
+     if isinstance(data, NON_NUMPY_SUPPORTED_ARRAY_TYPES):
+         return _maybe_wrap_data(data)
+ 

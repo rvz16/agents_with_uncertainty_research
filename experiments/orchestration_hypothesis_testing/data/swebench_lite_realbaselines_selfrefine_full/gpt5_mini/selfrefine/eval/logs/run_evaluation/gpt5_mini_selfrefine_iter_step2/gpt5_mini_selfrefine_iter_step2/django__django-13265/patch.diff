@@ -1,0 +1,18 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -421,6 +421,15 @@
+                 operation.name_lower == dependency[1].lower() and
+                 (operation.order_with_respect_to or "").lower() != dependency[2].lower()
+             )
++        # Dependency representing that an AlterOrderWithRespectTo operation
++        # sets order_with_respect_to to a particular field name. This is used
++        # so that operations that rely on the implicit "_order" column (such
++        # as AddIndex on ['<fk>', '_order']) can depend on the AlterOrderWithRespectTo
++        # which creates that column.
++        elif dependency[2] is not None and dependency[3] == "order_wrt_set":
++            return (
++                isinstance(operation, operations.AlterOrderWithRespectTo) and
++                operation
+         # Field is removed and part of an index/unique_together
+         elif dependency[2] is not None and dependency[3] == "foo_together_change":
+             return (

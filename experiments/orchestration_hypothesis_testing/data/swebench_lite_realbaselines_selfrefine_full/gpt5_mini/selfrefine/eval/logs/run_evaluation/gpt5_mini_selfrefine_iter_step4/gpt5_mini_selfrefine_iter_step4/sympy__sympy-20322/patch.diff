@@ -1,0 +1,101 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,85 @@
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+         from sympy.core.numbers import Float
+ 
++        # If the product is definitely not rational then it cannot be integer.
+         is_rational = self._eval_is_rational()
+         if is_rational is False:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
++        # Analyze factors conservatively without forcing evaluation. If we
++        # encounter something we cannot make a safe decision about we return
++        # None. We handle nested Muls by recursion so that unevaluated/Mul
++        # arguments don't hide numeric Rational factors.
++        numerators = []
++        denominators = []
++
++        def handle_factor(a):
++            # Return True if the factor could be processed, False if it
++            # definitely indicates non-integer (so caller should return False),
++            # and None/False-like to signal "cannot decide" (caller will return).
++            if a.is_integer:
++                numerators.append(a)
+                 return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++            if a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++                return True
++            if a.is_Pow:
++                b, e = a.as_base_exp()
++                # Only try to reason about integer exponents.
++                if e.is_integer:
++                    # negative integer exponent contributes to denominator
++                    if e.is_negative:
++                        if b.is_integer:
++                            denominators.append(b)
++                            return True
++                        # base not integer -> can't decide
++                        return False
++                    # non-negative integer exponent contributes to numerator
++                    if e.is_nonnegative:
++                        if b.is_integer:
++                            numerators.append(b)
++                            return True
++                        return False
++                    return False
++                return False
++            if a.is_Mul:
++                # Recurse into nested Mul without flattening/evaluating.
++                for t in a.args:
++                    ok = handle_factor(t)
++                    if not ok:
++                        return False
++                return True
++            return False
++
++        for a in self.args:
++            ok = handle_factor(a)
++            if not ok:
++                # If we couldn't process a factor safely, give up.
++                return
++
++        # If there are no denominators then all factors are integer
++        # (conservatively determined).
++        if not denominators:
++            return True
++
++        # If all numerators are odd and some denominator is even then the
++        # result cannot be integer.
++        if numerators and all(getattr(n, 'is_odd', None) for n in numerators) and \
++           any(getattr(d, 'is_even', None) for d in denominators):
++            return False
++
++        # If all denominators are 2 and at least one numerator is even then
++        # the result is integer (e.g. k/2 when k is even).
++        if all(d == 2 for d in denominators):
++            if any(getattr(n, 'is_even', None) for n in numerators):
++                return True
++
++        # Otherwise we cannot determine integrality without evaluation.
++        return
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

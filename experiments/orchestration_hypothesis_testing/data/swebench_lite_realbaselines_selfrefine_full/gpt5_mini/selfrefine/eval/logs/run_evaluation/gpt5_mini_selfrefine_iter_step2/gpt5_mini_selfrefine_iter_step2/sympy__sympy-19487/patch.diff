@@ -1,0 +1,29 @@
+--- a/sympy/functions/elementary/complexes.py
++++ b/sympy/functions/elementary/complexes.py
+@@ -393,6 +393,26 @@
+         from sympy.functions.special.delta_functions import Heaviside
+         if arg.is_extended_real:
+             return Heaviside(arg, H0=S(1)/2) * 2 - 1
++
++    def _eval_rewrite_as_Abs(self, arg, **kwargs):
++        """
++        Rewrite sign(z) in terms of Abs.
++
++        - If z is known to be zero, return 0.
++        - If z is known to be non-zero (fuzzy_not(z.is_zero) is True),
++          return z/Abs(z).
++        - Otherwise return a Piecewise that covers both cases so that the
++          rewrite is valid symbolically.
++        """
++        z = arg
++        # If we know z is zero, return 0
++        if z.is_zero:
++            return S.Zero
++        # If we know z is nonzero, return z/Abs(z)
++        if fuzzy_not(z.is_zero):
++            return z/Abs(z)
++        # Otherwise use a Piecewise that explicitly handles the z = 0 case.
++        return Piecewise((S.Zero, Eq(z, 0)), (z/Abs(z), True))
+ 
+     def _eval_simplify(self, **kwargs):
+         return self.func(self.args[0].factor())  # XXX include doit?

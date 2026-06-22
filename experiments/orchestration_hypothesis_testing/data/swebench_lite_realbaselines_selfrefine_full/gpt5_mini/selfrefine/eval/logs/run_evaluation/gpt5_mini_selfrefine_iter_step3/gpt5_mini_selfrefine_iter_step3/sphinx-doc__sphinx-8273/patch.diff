@@ -1,0 +1,28 @@
+--- a/sphinx/builders/manpage.py
++++ b/sphinx/builders/manpage.py
+@@ -8,6 +8,7 @@
+     :license: BSD, see LICENSE for details.
+ """
+ 
++import os
+ from os import path
+ from typing import Any, Dict, List, Set, Tuple, Union
+ 
+@@ -81,9 +82,15 @@
+             docsettings.section = section
+ 
+             targetname = '%s.%s' % (name, section)
+-            logger.info(darkgreen(targetname) + ' { ', nonl=True)
++            # create a section subdirectory (e.g. man1, man3) inside the builder
++            # output directory so MANPATH can find the pages (e.g. .../man/man1/)
++            section_dir = 'man%s' % section
++            outdir_section = path.join(self.outdir, section_dir)
++            # create the directory if it does not exist
++            os.makedirs(outdir_section, exist_ok=True)
++            logger.info(darkgreen(path.join(section_dir, targetname)) + ' { ', nonl=True)
+             destination = FileOutput(
+-                destination_path=path.join(self.outdir, targetname),
++                destination_path=path.join(outdir_section, targetname),
+                 encoding='utf-8')
+ 
+             tree = self.env.get_doctree(docname)

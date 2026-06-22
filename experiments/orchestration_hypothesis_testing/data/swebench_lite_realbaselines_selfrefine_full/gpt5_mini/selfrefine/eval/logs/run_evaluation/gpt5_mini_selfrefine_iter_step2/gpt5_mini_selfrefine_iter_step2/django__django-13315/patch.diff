@@ -1,0 +1,32 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1158,7 +1158,18 @@
+         # Can't use iterator() when queryset uses prefetch_related()
+         if not queryset._prefetch_related_lookups:
+             queryset = queryset.iterator()
++        # Some querysets that involve joins may return the same model
++        # instance multiple times (one row per join). Filter out duplicates
++        # here by primary key so the form doesn't render duplicate options.
++        seen = set()
+         for obj in queryset:
++            pk = getattr(obj, 'pk', None)
++            # Fallback to prepared value if pk isn't available for some reason.
++            if pk is None:
++                pk = self.field.prepare_value(obj)
++            if pk in seen:
++                continue
++            seen.add(pk)
+             yield self.choice(obj)
+ 
+     def __len__(self):
+@@ -1277,7 +1288,9 @@
+             if isinstance(value, self.queryset.model):
+                 value = getattr(value, key)
+             value = self.queryset.get(**{key: value})
+-        except (ValueError, TypeError, self.queryset.model.DoesNotExist):
++        except (ValueError, TypeError, self.queryset.model.DoesNotExist, self.queryset.model.MultipleObjectsReturned):
++            # Treat multiple objects returned as an invalid choice rather
++            # than allowing MultipleObjectsReturned to bubble up.
+             raise ValidationError(self.error_messages['invalid_choice'], code='invalid_choice')
+         return value
+ 

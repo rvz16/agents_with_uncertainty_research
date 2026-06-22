@@ -1,0 +1,15 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -398,6 +398,12 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
++    # JSONField: use the field's prepare_value to render JSON safely (handles
++    # InvalidJSONInput from contrib.postgres and any DB-specific JSONField
++    # implementations). Use get_internal_type() so this works for both the
++    # built-in and contrib.postgres JSONField variants.
++    elif field is not None and hasattr(field, 'get_internal_type') and field.get_internal_type() == 'JSONField' and hasattr(field, 'prepare_value'):
++        return field.prepare_value(value)
+     else:
+         return display_for_value(value, empty_value_display)
+ 

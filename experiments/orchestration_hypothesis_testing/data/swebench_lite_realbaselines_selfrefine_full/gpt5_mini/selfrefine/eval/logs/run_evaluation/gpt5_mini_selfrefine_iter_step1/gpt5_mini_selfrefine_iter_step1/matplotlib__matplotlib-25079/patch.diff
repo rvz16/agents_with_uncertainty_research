@@ -1,0 +1,31 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1692,7 +1692,13 @@
+             if clip:
+                 value = np.clip(value, self.vmin, self.vmax)
+             t_value = self._trf.transform(value).reshape(np.shape(value))
+-            t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++            # Ensure vmin/vmax are converted to plain numeric scalars using the
++            # same machinery as Normalize.__call__ to avoid passing masked or
++            # exotic types to the scale transform which may produce non-finite
++            # results (see issue with setting LogNorm after colorbar creation).
++            (vmin,), _ = self.process_value(self.vmin)
++            (vmax,), _ = self.process_value(self.vmax)
++            t_vmin, t_vmax = self._trf.transform([vmin, vmax])
+             if not np.isfinite([t_vmin, t_vmax]).all():
+                 raise ValueError("Invalid vmin or vmax")
+             t_value -= t_vmin
+@@ -1705,7 +1711,12 @@
+                 raise ValueError("Not invertible until scaled")
+             if self.vmin > self.vmax:
+                 raise ValueError("vmin must be less or equal to vmax")
+-            t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++            # Convert vmin/vmax to numeric scalars before passing to transform
++            # to avoid non-finite results from transforms when vmin/vmax might
++            # be masked or other non-plain types.
++            (vmin,), _ = self.process_value(self.vmin)
++            (vmax,), _ = self.process_value(self.vmax)
++            t_vmin, t_vmax = self._trf.transform([vmin, vmax])
+             if not np.isfinite([t_vmin, t_vmax]).all():
+                 raise ValueError("Invalid vmin or vmax")
+             value, is_scalar = self.process_value(value)

@@ -1,0 +1,22 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1776,6 +1776,19 @@
+         return condition, needed_inner
+ 
+     def set_empty(self):
++        """
++        Mark this Query as empty (no results). For simple queries this adds a
++        NothingNode to the WHERE clause. For combined/set operation queries,
++        ensure that any combinator and combined subqueries are cleared so the
++        emptiness is respected by the compiler.
++        """
++        # Clear any set operations so that the NothingNode is respected when
++        # the query is compiled. If combinator/combined_queries are left in
++        # place the compiler may ignore the WHERE clause and return results
++        # from the combined queries.
++        self.combinator = None
++        self.combinator_all = False
++        self.combined_queries = ()
+         self.where.add(NothingNode(), AND)
+ 
+     def is_empty(self):

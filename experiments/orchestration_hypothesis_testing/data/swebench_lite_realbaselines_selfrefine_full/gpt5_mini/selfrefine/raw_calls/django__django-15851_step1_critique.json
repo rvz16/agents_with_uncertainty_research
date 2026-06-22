@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:15:42.255852+00:00",
+  "instance_id": "django__django-15851",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\ndbshell additional parameters should be passed before dbname on PostgreSQL.\nDescription\n\t\npsql expects all options to proceed the database name, if provided. So, if doing something like `./manage.py dbshell -- -c \"select * from some_table;\" one will get this:\n$ ./manage.py dbshell -- -c \"select * from some_table;\"\npsql: warning: extra command-line argument \"-c\" ignored\npsql: warning: extra command-line argument \"select * from some_table;\" ignored\npsql (10.21)\nType \"help\" for help.\nsome_database=>\nIt appears the args list just need to be constructed in the proper order, leaving the database name for the end of the args list.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/backends/postgresql/client.py\n+++ b/django/db/backends/postgresql/client.py\n@@ -32,9 +32,11 @@\n             args += [\"-h\", host]\n         if port:\n             args += [\"-p\", str(port)]\n+        # psql expects options before the database name; place any additional\n+        # parameters (e.g. -c) before the dbname.\n+        args.extend(parameters)\n         if dbname:\n             args += [dbname]\n-        args.extend(parameters)\n \n         env = {}\n         if passwd:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 404,
+  "completion_tokens": 1182,
+  "cost_usd": 0.002465
+}

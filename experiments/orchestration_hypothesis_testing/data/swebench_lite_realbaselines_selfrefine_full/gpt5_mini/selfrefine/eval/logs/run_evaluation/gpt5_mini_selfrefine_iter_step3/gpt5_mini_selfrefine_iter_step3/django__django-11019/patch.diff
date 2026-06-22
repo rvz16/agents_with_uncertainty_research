@@ -1,0 +1,112 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -7,6 +7,7 @@
+ import re
+ import warnings
+ from itertools import chain
++from collections import OrderedDict, deque
+ 
+ from django.conf import settings
+ from django.forms.utils import to_current_timezone
+@@ -115,39 +116,68 @@
+         raise KeyError('Unknown media type "%s"' % name)
+ 
+     @staticmethod
+-    def merge(list_1, list_2):
+-        """
+-        Merge two lists while trying to keep the relative order of the elements.
+-        Warn if the lists have the same two elements in a different relative
+-        order.
+-
+-        For static assets it can be important to have them included in the DOM
+-        in a certain order. In JavaScript you may not be able to reference a
+-        global or in CSS you might want to override a style.
+-        """
+-        # Start with a copy of list_1.
+-        combined_list = list(list_1)
+-        last_insert_index = len(list_1)
+-        # Walk list_2 in reverse, inserting each element into combined_list if
+-        # it doesn't already exist.
+-        for path in reversed(list_2):
+-            try:
+-                # Does path already exist in the list?
+-                index = combined_list.index(path)
+-            except ValueError:
+-                # Add path to combined_list since it doesn't exist.
+-                combined_list.insert(last_insert_index, path)
+-            else:
+-                if index > last_insert_index:
+-                    warnings.warn(
+-                        'Detected duplicate Media files in an opposite order:\n'
+-                        '%s\n%s' % (combined_list[last_insert_index], combined_list[index]),
+-                        MediaOrderConflictWarning,
+-                    )
+-                # path already exists in the list. Update last_insert_index so
+-                # that the following elements are inserted in front of this one.
+-                last_insert_index = index
+-        return combined_list
++    def merge(*sublists):
++        """
++        Merge multiple lists while trying to keep the relative order of the
++        elements as declared in the input sublists.
++
++        Build ordering constraints from each sublist (each element must come
++        before the following element in that sublist) and perform a
++        topological sort that prefers elements that are first-seen in the
++        input. If a cycle is detected, issue a MediaOrderConflictWarning and
++        fall back to the first-seen de-duplicated order.
++        """
++        # Filter out empty sublists and preserve the order in which items are
++        # first encountered across all sublists.
++        lists = [list(lst) for lst in sublists if lst]
++        if not lists:
++            return []
++
++        # Record first-seen order for all items.
++        first_seen = OrderedDict()
++        for lst in lists:
++            for item in lst:
++                if item not in first_seen:
++                    first_seen[item] = None
++
++        # Build adjacency and indegree maps based on consecutive constraints
++        # in each sublist: for a, b in zip(list, list[1:]) enforce a -> b.
++        adj = {item: set() for item in first_seen}
++        indegree = {item: 0 for item in first_seen}
++        for lst in lists:
++            for a, b in zip(lst, lst[1:]):
++                if b not in adj[a]:
++                    adj[a].add(b)
++                    indegree[b] += 1
++
++        # Kahn's algorithm: start with nodes with indegree 0, choosing them in
++        # the order they were first seen.
++        q = deque([item for item in first_seen if indegree[item] == 0])
++        result = []
++        while q:
++            node = q.popleft()
++            result.append(node)
++            for succ in list(adj[node]):
++                indegree[succ] -= 1
++                if indegree[succ] == 0:
++                    q.append(succ)
++            # Remove edges (not strictly necessary since we track indegree).
++            adj[node].clear()
++
++        # If we were able to order all items, return the result.
++        if len(result) == len(first_seen):
++            return result
++
++        # Otherwise there is a cycle. Warn and fall back to the first-seen
++        # de-duplicated order (which is deterministic).
++        remaining = [item for item in first_seen if item not in result]
++        warnings.warn(
++            'Detected a conflict in Media ordering involving: %s' % (
++                ', '.join(remaining)
++            ),
++            MediaOrderConflictWarning,
++        )
++        return list(first_seen.keys())
+ 
+     def __add__(self, other):
+         combined = Media()

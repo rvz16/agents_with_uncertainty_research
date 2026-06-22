@@ -1,0 +1,35 @@
+--- a/sklearn/isotonic.py
++++ b/sklearn/isotonic.py
+@@ -410,7 +410,31 @@
+         y_pred : ndarray of shape (n_samples,)
+             Transformed data.
+         """
+-        return self.transform(T)
++        # Call transform but ensure that we always return a 1d numpy array.
++        # This protects against global config wrappers such as
++        # set_config(transform_output="pandas") that may cause ``transform``
++        # to return pandas objects (e.g. DataFrame with shape (n_samples, 1))
++        # which would break callers expecting a 1d ndarray.
++        res = self.transform(T)
++
++        arr = np.asarray(res)
++
++        # If transform returned a 2D array with a single column (e.g.
++        # a pandas.DataFrame with one column), squeeze to 1D.
++        if arr.ndim == 2 and arr.shape[1] == 1:
++            arr = arr.ravel()
++        # If transform returned a scalar (0-d), make it a 1d array.
++        elif arr.ndim == 0:
++            arr = arr.reshape(1)
++        # If transform returned something with more than one column, this is
++        # unexpected for IsotonicRegression which must output a 1d array.
++        elif arr.ndim > 1:
++            raise ValueError(
++                "IsotonicRegression.predict expected a 1-dimensional output "
++                "from transform, got array with shape {}".format(arr.shape)
++            )
++
++        return arr
+ 
+     # We implement get_feature_names_out here instead of using
+     # `ClassNamePrefixFeaturesOutMixin`` because `input_features` are ignored.

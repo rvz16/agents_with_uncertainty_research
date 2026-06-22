@@ -1,0 +1,30 @@
+--- a/lib/mpl_toolkits/axes_grid1/axes_grid.py
++++ b/lib/mpl_toolkits/axes_grid1/axes_grid.py
+@@ -7,14 +7,24 @@
+ from matplotlib.gridspec import SubplotSpec
+ 
+ from .axes_divider import Size, SubplotDivider, Divider
+-from .mpl_axes import Axes
++from .mpl_axes import Axes, SimpleAxisArtist
+ 
+ 
+ def _tick_only(ax, bottom_on, left_on):
+     bottom_off = not bottom_on
+     left_off = not left_on
+-    ax.axis["bottom"].toggle(ticklabels=bottom_off, label=bottom_off)
+-    ax.axis["left"].toggle(ticklabels=left_off, label=left_off)
++    # Some Axes subclasses (e.g., cartopy GeoAxes) expose an axis method
++    # (callable) rather than the axis dict-like attribute expected by the
++    # axes_grid AxisArtist-based code.  In that case, create lightweight
++    # SimpleAxisArtist wrappers on-the-fly that provide the toggle API.
++    if callable(getattr(ax, "axis", None)):
++        bottom = SimpleAxisArtist(ax.xaxis, 1, ax.spines["bottom"])
++        left = SimpleAxisArtist(ax.yaxis, 1, ax.spines["left"])
++    else:
++        bottom = ax.axis["bottom"]
++        left = ax.axis["left"]
++    bottom.toggle(ticklabels=bottom_off, label=bottom_off)
++    left.toggle(ticklabels=left_off, label=left_off)
+ 
+ 
+ class CbarAxesBase:

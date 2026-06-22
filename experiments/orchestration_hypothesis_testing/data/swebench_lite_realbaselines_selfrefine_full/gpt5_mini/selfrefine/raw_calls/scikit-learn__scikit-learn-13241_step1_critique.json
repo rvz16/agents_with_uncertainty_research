@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:51:51.859929+00:00",
+  "instance_id": "scikit-learn__scikit-learn-13241",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nDifferences among the results of KernelPCA with rbf kernel\nHi there,\r\nI met with a problem:\r\n\r\n#### Description\r\nWhen I run KernelPCA for dimension reduction for the same datasets, the results are different in signs.\r\n\r\n#### Steps/Code to Reproduce\r\nJust to reduce the dimension to 7 with rbf kernel:\r\npca = KernelPCA(n_components=7, kernel='rbf', copy_X=False, n_jobs=-1)\r\npca.fit_transform(X)\r\n\r\n#### Expected Results\r\nThe same result.\r\n\r\n#### Actual Results\r\nThe results are the same except for their signs:(\r\n[[-0.44457617 -0.18155886 -0.10873474  0.13548386 -0.1437174  -0.057469\t0.18124364]] \r\n\r\n[[ 0.44457617  0.18155886  0.10873474 -0.13548386 -0.1437174  -0.057469 -0.18124364]] \r\n\r\n[[-0.44457617 -0.18155886  0.10873474  0.13548386  0.1437174   0.057469  0.18124364]] \r\n\r\n#### Versions\r\n0.18.1\r\n\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no changes were made, so the issue is not addressed.\nNo modification to KernelPCA implementation to stabilize eigenvector sign (e.g. by enforcing a consistent sign convention per component).\nNo unit tests added to reproduce the sign-flip issue or to assert consistent output across runs.\nNo documentation or user-facing note explaining sign indeterminacy or how to obtain deterministic signs.\nNo changes to randomness/eigen_solver handling (no random_state handling or deterministic eigenvector selection introduced).\nPatch does not modify any relevant files (e.g., the KernelPCA source), so there is nothing to review for correctness or edge cases.",
+  "prompt_tokens": 406,
+  "completion_tokens": 660,
+  "cost_usd": 0.0014215
+}

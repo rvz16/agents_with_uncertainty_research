@@ -1,0 +1,34 @@
+--- a/sympy/matrices/common.py
++++ b/sympy/matrices/common.py
+@@ -1973,7 +1973,14 @@
+ 
+     @call_highest_priority('__rmatmul__')
+     def __matmul__(self, other):
+-        return self.__mul__(other)
++        other = _matrixify(other)
++        # Only allow matrix-matrix @. Scalars or non-matrix-like operands
++        # should not be allowed for matmul; they should use * instead.
++        if getattr(other, 'is_Matrix', False):
++            return self._eval_matrix_mul(other)
++        if getattr(other, 'is_MatrixLike', False):
++            return MatrixArithmetic._eval_matrix_mul(self, other)
++        raise TypeError("Matrix multiplication is only defined between matrices; use '*' for scalar multiplication")
+ 
+     @call_highest_priority('__rmul__')
+     def __mul__(self, other):
+@@ -2068,7 +2075,14 @@
+ 
+     @call_highest_priority('__matmul__')
+     def __rmatmul__(self, other):
+-        return self.__rmul__(other)
++        other = _matrixify(other)
++        # Only allow matrix-matrix @. Scalars or non-matrix-like operands
++        # should not be allowed for matmul; they should use * instead.
++        if getattr(other, 'is_Matrix', False):
++            return other._eval_matrix_mul(self)
++        if getattr(other, 'is_MatrixLike', False):
++            return MatrixArithmetic._eval_matrix_rmul(self, other)
++        raise TypeError("Matrix multiplication is only defined between matrices; use '*' for scalar multiplication")
+ 
+     @call_highest_priority('__mul__')
+     def __rmul__(self, other):

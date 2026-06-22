@@ -1,0 +1,23 @@
+--- a/sphinx/environment/adapters/indexentries.py
++++ b/sphinx/environment/adapters/indexentries.py
+@@ -172,5 +172,18 @@
+                     return _('Symbols')
+             else:
+                 return v[2]
+-        return [(key_, list(group))
+-                for (key_, group) in groupby(newlist, keyfunc3)]
++        grouped = [(key_, list(group)) for (key_, group) in groupby(newlist, keyfunc3)]
++        # Merge groups that have the same rendered key text (e.g. multiple
++        # "Symbols" groups created by differing internal keys). This avoids
++        # duplicate headings with identical anchors in the generated HTML.
++        merged = []  # type: List[List]
++        key_index = {}  # type: Dict[str, int]
++        for key_, group in grouped:
++            key_text = str(key_)
++            if key_text in key_index:
++                # append items to the existing group with the same display key
++                merged[key_index[key_text]][1].extend(group)
++            else:
++                key_index[key_text] = len(merged)
++                merged.append([key_, group])
++        return [(k, v) for (k, v) in merged]

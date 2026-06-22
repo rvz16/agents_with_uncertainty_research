@@ -1,0 +1,52 @@
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -799,6 +799,34 @@
+             val = mapping.pop(key)
+             val.remove(key)
+ 
++    def __getstate__(self):
++        """
++        Produce a picklable representation of the grouper.
++
++        Weakrefs are not picklable, so we serialize the groups as lists of the
++        referenced objects.  Dead weakrefs are omitted.
++        """
++        self.clean()
++        unique_groups = {id(group): group for group in self._mapping.values()}
++        groups = []
++        for group in unique_groups.values():
++            objs = [r() for r in group if r() is not None]
++            if objs:
++                groups.append(objs)
++        return {"_groups": groups}
++
++    def __setstate__(self, state):
++        """
++        Restore the internal weakref mapping from the pickled group lists.
++        """
++        groups = state.get("_groups", [])
++        self._mapping = {}
++        for group in groups:
++            weakrefs = [weakref.ref(x) for x in group]
++            for r in weakrefs:
++                # all members of the group map to the same list of weakrefs
++                self._mapping[r] = weakrefs
++
+     def join(self, a, *args):
+         """
+         Join given arguments into the same set.  Accepts one or more arguments.
+@@ -838,13 +866,7 @@
+         self.clean()
+         unique_groups = {id(group): group for group in self._mapping.values()}
+         for group in unique_groups.values():
+-            yield [x() for x in group]
+-
+-    def get_siblings(self, a):
+-        """Return all of the items joined with *a*, including itself."""
+-        self.clean()
+-        siblings = self._mapping.get(weakref.ref(a), [weakref.ref(a)])
+-        return [x() for x in siblings]
++           
+ 
+ 
+ class GrouperView:

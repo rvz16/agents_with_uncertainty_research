@@ -1,0 +1,30 @@
+--- a/sklearn/cluster/_affinity_propagation.py
++++ b/sklearn/cluster/_affinity_propagation.py
+@@ -152,6 +152,7 @@
+ 
+     ind = np.arange(n_samples)
+ 
++    converged = False
+     for it in range(max_iter):
+         # tmp = A + S; compute responsibilities
+         np.add(A, S, tmp)
+@@ -193,13 +194,18 @@
+             se = np.sum(e, axis=1)
+             unconverged = (np.sum((se == convergence_iter) + (se == 0))
+                            != n_samples)
+-            if (not unconverged and (K > 0)) or (it == max_iter):
++            if not unconverged and (K > 0):
++                converged = True
+                 if verbose:
+                     print("Converged after %d iterations." % it)
+                 break
+     else:
+         if verbose:
+             print("Did not converge")
++
++    # If the algorithm did not converge, ensure no exemplars are returned
++    if not converged:
++        E = np.zeros(n_samples, dtype=bool)
+ 
+     I = np.flatnonzero(E)
+     K = I.size  # Identify exemplars

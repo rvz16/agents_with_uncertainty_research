@@ -1,0 +1,127 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -187,14 +187,28 @@
+             isinstance(operation, AlterTogetherOptionOperation)
+             and self.name_lower == operation.name_lower
+         ):
++            # If index_together is being altered, convert it to Meta.indexes
++            # to avoid keeping the deprecated index_together option in a
++            # squashed CreateModel.
++            new_options = {**self.options}
++            if operation.option_name == "index_together":
++                # Start from any existing indexes.
++                indexes = new_options.get("indexes", [])
++                indexes = list(indexes)
++                for fields in operation.option_value or ():
++                    # operation.option_value is a set of tuples
++                    indexes.append(models.Index(fields=list(fields)))
++                if indexes:
++                    new_options["indexes"] = indexes
++                else:
++                    new_options.pop("indexes", None)
++            else:
++                new_options[operation.option_name] = operation.option_value
+             return [
+                 CreateModel(
+                     self.name,
+                     fields=self.fields,
+-                    options={
+-                        **self.options,
+-                        **{operation.option_name: operation.option_value},
+-                    },
++                    options=new_options,
+                     bases=self.bases,
+                     managers=self.managers,
+                 ),
+@@ -244,22 +258,36 @@
+                 ]
+             elif isinstance(operation, RemoveField):
+                 options = self.options.copy()
+-                for option_name in ("unique_together", "index_together"):
+-                    option = options.pop(option_name, None)
++                # Handle unique_together normally (keep as option)
++                option = options.pop("unique_together", None)
++                if option:
++                    option = set(
++                        filter(
++                            bool,
++                            (
++                                tuple(f for f in fields if f != operation.name_lower)
++                                for fields in option
++                            ),
++                        )
++                    )
+                     if option:
+-                        option = set(
+-                            filter(
+-                                bool,
+-                                (
+-                                    tuple(
+-                                        f for f in fields if f != operation.name_lower
+-                                    )
+-                                    for fields in option
+-                                ),
+-                            )
+-                        )
+-                        if option:
+-                            options[option_name] = option
++                        options["unique_together"] = option
++                # Convert index_together to Meta.indexes (models.Index instances)
++                index_option = options.pop("index_together", None)
++                if index_option:
++                    indexes = options.get("indexes", [])
++                    indexes = list(indexes)
++                    for fields in filter(
++                        bool,
++                        (
++                            tuple(f for f in fields if f != operation.name_lower)
++                            for fields in index_option
++                        ),
++                    ):
++                        if fields:
++                            indexes.append(models.Index(fields=list(fields)))
++                    if indexes:
++                        options["indexes"] = indexes
+                 order_with_respect_to = options.get("order_with_respect_to")
+                 if order_with_respect_to == operation.name_lower:
+                     del options["order_with_respect_to"]
+@@ -278,16 +306,29 @@
+                 ]
+             elif isinstance(operation, RenameField):
+                 options = self.options.copy()
+-                for option_name in ("unique_together", "index_together"):
+-                    option = options.get(option_name)
+-                    if option:
+-                        options[option_name] = {
+-                            tuple(
+-                                operation.new_name if f == operation.old_name else f
+-                                for f in fields
+-                            )
+-                            for fields in option
+-                        }
++                # unique_together: update tuples with the new field name
++                option = options.get("unique_together")
++                if option:
++                    options["unique_together"] = {
++                        tuple(
++                            operation.new_name if f == operation.old_name else f
++                            for f in fields
++                        )
++                        for fields in option
++                    }
++                # index_together -> convert to Meta.indexes (models.Index instances)
++                index_option = options.pop("index_together", None)
++                if index_option:
++                    indexes = options.get("indexes", [])
++                    indexes = list(indexes)
++                    for fields in index_option:
++                        new_fields = tuple(
++                            operation.new_name if f == operation.old_name else f
++                            for f in fields
++                        )
++                        indexes.append(models.Index(fields=list(new_fields)))
++                    if indexes:
++                        options["indexes"] = indexes
+                 order_with_respect_to = options.get("order_with_respect_to")
+                 if order_with_respect_to == operation.old_name:
+                     options["order_with_respect_to"] = operation.new_name

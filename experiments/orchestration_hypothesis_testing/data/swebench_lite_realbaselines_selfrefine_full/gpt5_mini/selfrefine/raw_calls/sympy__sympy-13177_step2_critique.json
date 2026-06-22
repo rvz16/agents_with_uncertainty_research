@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:11:52.312813+00:00",
+  "instance_id": "sympy__sympy-13177",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nMod(x**2, x) is not (always) 0\nWhen the base is not an integer, `x**2 % x` is not 0. The base is not tested to be an integer in Mod's eval logic:\r\n\r\n```\r\nif (p == q or p == -q or\r\n        p.is_Pow and p.exp.is_Integer and p.base == q or\r\n        p.is_integer and q == 1):\r\n    return S.Zero\r\n```\r\n\r\nso\r\n\r\n```\r\n>>> Mod(x**2, x)\r\n0\r\n```\r\nbut\r\n```\r\n>>> x = S(1.5)\r\n>>> Mod(x**2, x)\r\n0.75\r\n```\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/core/mod.py\n+++ b/sympy/core/mod.py\n@@ -38,9 +38,9 @@\n \n             if p.is_infinite or q.is_infinite or p is nan or q is nan:\n                 return nan\n-            if (p == q or p == -q or\n-                    p.is_Pow and p.exp.is_Integer and p.base == q or\n-                    p.is_integer and q == 1):\n+            if (p == q or p == -q or p.is_integer and q == 1 or\n+                    p.is_Pow and p.exp.is_Integer and p.exp.is_positive\n+                    and p.base == q and q.is_integer):\n                 return S.Zero\n \n             if q.is_Number:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 433,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00305225
+}

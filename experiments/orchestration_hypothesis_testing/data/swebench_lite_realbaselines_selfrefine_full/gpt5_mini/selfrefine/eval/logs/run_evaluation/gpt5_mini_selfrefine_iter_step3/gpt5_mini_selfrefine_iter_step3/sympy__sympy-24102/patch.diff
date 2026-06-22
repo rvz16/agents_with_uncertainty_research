@@ -1,0 +1,25 @@
+--- a/sympy/parsing/mathematica.py
++++ b/sympy/parsing/mathematica.py
+@@ -586,7 +586,10 @@
+         "##": lambda: ["SlotSequence", "1"],
+     }
+ 
+-    _literal = r"[A-Za-z][A-Za-z0-9]*"
++    # Allow Unicode letters (e.g. Greek characters like λ) as the initial
++    # character of Mathematica identifiers. The range \u0080-\uffff covers
++    # non-ASCII letters used commonly in identifiers.
++    _literal = r"[A-Za-z\u0080-\uffff][A-Za-z0-9\u0080-\uffff]*"
+     _number = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+ 
+     _enclosure_open = ["(", "[", "[[", "{"]
+@@ -615,7 +618,9 @@
+         tokens.extend(map(re.escape, tokens_escape))
+         tokens.append(",")
+         tokens.append("\n")
+-        tokenizer = re.compile("(" + "|".join(tokens) + ")")
++        # Compile the tokenizer with the UNICODE flag to ensure proper handling
++        # of Unicode characters in patterns (identifiers, etc.).
++        tokenizer = re.compile("(" + "|".join(tokens) + ")", re.UNICODE)
+         self._regex_tokenizer = tokenizer
+         return self._regex_tokenizer
+ 

@@ -1,0 +1,30 @@
+--- a/sphinx/domains/std.py
++++ b/sphinx/domains/std.py
+@@ -43,7 +43,10 @@
+ 
+ 
+ # RE for option descriptions
+-option_desc_re = re.compile(r'((?:/|--|-|\+)?[^\s=[]+)(=?\s*.*)')
++# Accept general option names including characters like []= etc.
++# Matches an option token (non-whitespace sequence) and optional following
++# whitespace+arguments (keeps leading spaces for display).
++option_desc_re = re.compile(r'([^\s]+)(\s+.*)?')
+ # RE for grammar tokens
+ token_re = re.compile(r'`(\w+)`', re.U)
+ 
+@@ -196,11 +199,13 @@
+                                   '"/opt args" or "+opt args"'), potential_option,
+                                location=signode)
+                 continue
+-            optname, args = m.groups()
++            optname = m.group(1)
++            args = m.group(2) or ''
+             if count:
+                 signode += addnodes.desc_addname(', ', ', ')
+             signode += addnodes.desc_name(optname, optname)
+-            signode += addnodes.desc_addname(args, args)
++            if args:
++                signode += addnodes.desc_addname(args, args)
+             if not count:
+                 firstname = optname
+                 signode['allnames'] = [optname]

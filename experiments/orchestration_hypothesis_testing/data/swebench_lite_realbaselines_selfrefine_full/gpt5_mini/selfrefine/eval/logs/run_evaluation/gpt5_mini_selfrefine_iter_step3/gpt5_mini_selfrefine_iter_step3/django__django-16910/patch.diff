@@ -1,0 +1,34 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -778,10 +778,28 @@
+         select_mask[opts.pk] = {}
+         # Only include fields mentioned in the mask.
+         for field_name, field_mask in mask.items():
+-            field = opts.get_field(field_name)
+-            field_select_mask = select_mask.setdefault(field, {})
++            if filtered_relation := self._filtered_relations.get(field_name):
++                relation = opts.get_field(filtered_relation.relation_name)
++                # Preserve the filtered relation info in the select mask key so
++                # that later processing can identify the specific filtered
++                # relation (mirrors defer handling).
++                field_select_mask = select_mask.setdefault((field_name, relation), {})
++                field = relation.field
++            else:
++                rel = opts.get_field(field_name)
++                # Virtual reverse relations (e.g. reverse FK/OneToOne rels)
++                # expose a `.field` attribute pointing to the underlying
++                # relation on the other model. Handle those specially so the
++                # select mask refers to the actual Field instance.
++                if hasattr(rel, "field"):
++                    field = rel.field
++                    field_select_mask = select_mask.setdefault(field, {})
++                else:
++                    # Regular field or forward relation on this model.
++                    field = rel
++                    field_select_mask = select_mask.setdefault(field, {})
+             if field_mask:
+-                if not field.is_relation:
++                if not getattr(field, "is_relation", False):
+                     raise FieldError(next(iter(field_mask)))
+                 related_model = field.remote_field.model._meta.concrete_model
+                 self._get_only_select_mask(

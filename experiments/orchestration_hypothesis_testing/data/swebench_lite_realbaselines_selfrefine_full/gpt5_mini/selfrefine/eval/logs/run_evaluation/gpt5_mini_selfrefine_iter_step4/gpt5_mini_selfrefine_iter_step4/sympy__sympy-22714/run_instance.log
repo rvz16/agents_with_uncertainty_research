@@ -1,0 +1,55 @@
+2026-06-22 21:43:42,017 - INFO - Creating container for sympy__sympy-22714...
+2026-06-22 21:43:42,125 - INFO - Container for sympy__sympy-22714 created: 794567814e495445021e78458864905b25ae1699040ca98b8d508cf352e66ef5
+2026-06-22 21:43:42,263 - INFO - Container for sympy__sympy-22714 started: 794567814e495445021e78458864905b25ae1699040ca98b8d508cf352e66ef5
+2026-06-22 21:43:42,263 - INFO - Intermediate patch for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-22714/patch.diff, now applying to container...
+2026-06-22 21:43:42,381 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-22 21:43:42,716 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 73c20334d0..c37cf1764c 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,7 +152,11 @@ def __new__(cls, *args, **kwargs):
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
++        # For numeric coordinates, ensure that the imaginary part is zero.
++        # Use an explicit comparison to 0 so that SymPy BooleanTrue/BooleanFalse
++        # objects are handled correctly in Python boolean contexts (this
++        # avoids issues that can arise when global evaluate is False).
++        if any(a.is_number and (im(a) != 0) for a in coords):
+             raise ValueError('Imaginary coordinates are not permitted.')
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+2026-06-22 21:43:42,716 - INFO - Eval script for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-22714/eval.sh; copying to container...
+2026-06-22 21:43:49,685 - INFO - Test runtime: 6.92 seconds
+2026-06-22 21:43:49,685 - INFO - Test output for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-22714/test_output.txt
+2026-06-22 21:43:49,725 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 73c20334d0..c37cf1764c 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,7 +152,11 @@ def __new__(cls, *args, **kwargs):
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
++        # For numeric coordinates, ensure that the imaginary part is zero.
++        # Use an explicit comparison to 0 so that SymPy BooleanTrue/BooleanFalse
++        # objects are handled correctly in Python boolean contexts (this
++        # avoids issues that can arise when global evaluate is False).
++        if any(a.is_number and (im(a) != 0) for a in coords):
+             raise ValueError('Imaginary coordinates are not permitted.')
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+2026-06-22 21:43:49,725 - INFO - Grading answer for sympy__sympy-22714...
+2026-06-22 21:43:49,726 - INFO - report: {'sympy__sympy-22714': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_issue_22684']}, 'PASS_TO_PASS': {'success': ['test_point', 'test_point3D', 'test_Point2D', 'test_issue_9214', 'test_issue_11617', 'test_transform', 'test_concyclic_doctest_bug', 'test_arguments', 'test_unit', 'test_dot', 'test__normalize_dimension'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-22714: resolved: False
+2026-06-22 21:43:49,726 - INFO - Attempting to stop container sweb.eval.sympy__sympy-22714.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:44:04,913 - INFO - Attempting to remove container sweb.eval.sympy__sympy-22714.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:44:04,937 - INFO - Container sweb.eval.sympy__sympy-22714.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:44:04,937 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest...
+2026-06-22 21:44:04,983 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest removed.

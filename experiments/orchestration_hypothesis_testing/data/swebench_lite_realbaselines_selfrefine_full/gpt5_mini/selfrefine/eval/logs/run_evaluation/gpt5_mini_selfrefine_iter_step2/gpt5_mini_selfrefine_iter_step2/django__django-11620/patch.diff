@@ -1,0 +1,26 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -5,7 +5,7 @@
+ from pathlib import Path
+ 
+ from django.conf import settings
+-from django.http import HttpResponse, HttpResponseNotFound
++from django.http import HttpResponse, HttpResponseNotFound, Http404
+ from django.template import Context, Engine, TemplateDoesNotExist
+ from django.template.defaultfilters import pprint
+ from django.urls import Resolver404, resolve
+@@ -483,7 +483,13 @@
+     caller = ''
+     try:
+         resolver_match = resolve(request.path)
+-    except Resolver404:
++    except (Resolver404, Http404):
++        # resolve() may raise Http404 if a path converter's to_python()
++        # raises Http404. We're only attempting to introspect the view
++        # that would have handled this path for the debug page. If resolve()
++        # fails with Resolver404 or Http404, treat it as "no match" and
++        # continue — the original exception (passed into this function)
++        # will be used to render the technical 404 page.
+         pass
+     else:
+         obj = resolver_match.func

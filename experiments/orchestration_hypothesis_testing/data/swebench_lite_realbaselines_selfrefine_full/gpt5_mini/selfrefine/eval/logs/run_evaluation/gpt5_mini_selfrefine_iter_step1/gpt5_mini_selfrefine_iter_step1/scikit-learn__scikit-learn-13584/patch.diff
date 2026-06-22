@@ -1,0 +1,76 @@
+--- a/sklearn/utils/_pprint.py
++++ b/sklearn/utils/_pprint.py
+@@ -65,6 +65,7 @@
+ 
+ from inspect import signature
+ import pprint
++import numpy as np
+ from collections import OrderedDict
+ 
+ from ..base import BaseEstimator
+@@ -84,10 +85,55 @@
+     pass
+ 
+ 
++def _param_equal(a, b):
++    """Return True if parameters a and b are equal in a safe way.
++
++    This handles numpy arrays and numpy scalar types to avoid ambiguous truth
++    value errors (e.g. when comparing ndarray != ndarray produces an array of
++    booleans). Falls back to elementwise/all semantics for array-like results,
++    and finally to repr comparison as a last resort.
++    """
++    # Prefer numpy-aware comparison when numpy types are involved to avoid
++    # ambiguous truth value for array comparisons.
++    try:
++        if isinstance(a, (np.ndarray, np.generic)) or isinstance(b, (np.ndarray, np.generic)):
++            return np.array_equal(a, b)
++    except Exception:
++        # If something goes wrong with numpy checks, continue to generic checks.
++        pass
++
++    try:
++        res = a == b
++    except Exception:
++        # If equality raises, consider them different.
++        return False
++
++    # If result is a plain boolean, return it.
++    if isinstance(res, bool):
++        return res
++
++    # numpy.bool_ is not a plain bool in some versions; handle it.
++    if isinstance(res, getattr(np, "bool_", (bool,))):
++        return bool(res)
++
++    # If result is a numpy array, require all elements to be True.
++    if isinstance(res, getattr(np, "ndarray", (list, tuple))):
++        try:
++            return bool(res.all())
++        except Exception:
++            return False
++
++    # If result is an iterable of booleans (list/tuple), require all True.
++    try:
++        return all(res)
++    except Exception:
++        # Fallback: compare representations.
++        return repr(a) == repr(b)
++
++
+ def _changed_params(estimator):
+     """Return dict (param_name: value) of parameters that were given to
+     estimator with non-default values."""
+-
+     params = estimator.get_params(deep=False)
+     filtered_params = {}
+     init_func = getattr(estimator.__init__, 'deprecated_original',
+@@ -95,7 +141,7 @@
+     init_params = signature(init_func).parameters
+     init_params = {name: param.default for name, param in init_params.items()}
+     for k, v in params.items():
+-        if (v != init_params[k] and
++        if (not _param_equal(v, init_params[k]) and
+                 not (is_scalar_nan(init_params[k]) and is_scalar_nan(v))):
+             filtered_params[k] = v
+     return filtered_params

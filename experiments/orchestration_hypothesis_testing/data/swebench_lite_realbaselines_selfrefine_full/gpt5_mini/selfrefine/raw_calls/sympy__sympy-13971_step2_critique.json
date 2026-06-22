@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:15:44.270220+00:00",
+  "instance_id": "sympy__sympy-13971",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nDisplay of SeqFormula()\n```\r\nimport sympy as sp\r\nk, m, n = sp.symbols('k m n', integer=True)\r\nsp.init_printing()\r\n\r\nsp.SeqFormula(n**2, (n,0,sp.oo))\r\n```\r\n\r\nThe Jupyter rendering of this command backslash-escapes the brackets producing:\r\n\r\n`\\left\\[0, 1, 4, 9, \\ldots\\right\\]`\r\n\r\nCopying this output to a markdown cell this does not render properly.  Whereas:\r\n\r\n`[0, 1, 4, 9, \\ldots ]`\r\n\r\ndoes render just fine.  \r\n\r\nSo - sequence output should not backslash-escape square brackets, or, `\\]` should instead render?\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/printing/latex.py\n+++ b/sympy/printing/latex.py\n@@ -1655,9 +1655,12 @@\n         else:\n             printset = tuple(s)\n \n-        return (r\"\\left\\[\"\n+        # Use a space between the '\\left'/'\\right' and the bracket characters\n+        # to avoid producing '\\[' or '\\]' sequences which can be interpreted\n+        # as LaTeX display-math delimiters when rendered/copied in Jupyter.\n+        return (r\"\\left [ \"\n               + r\", \".join(self._print(el) for el in printset)\n-              + r\"\\right\\]\")\n+              + r\"\\right ]\")\n \n     _print_SeqPer = _print_SeqFormula\n     _print_SeqAdd = _print_SeqFormula\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 471,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00306175
+}

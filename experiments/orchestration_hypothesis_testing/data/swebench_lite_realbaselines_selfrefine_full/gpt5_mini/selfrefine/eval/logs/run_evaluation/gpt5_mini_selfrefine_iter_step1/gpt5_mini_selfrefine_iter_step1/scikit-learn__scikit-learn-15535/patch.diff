@@ -1,0 +1,22 @@
+--- a/sklearn/metrics/cluster/_supervised.py
++++ b/sklearn/metrics/cluster/_supervised.py
+@@ -42,12 +42,13 @@
+     labels_pred : array-like of shape (n_samples,)
+         The predicted labels.
+     """
+-    labels_true = check_array(
+-        labels_true, ensure_2d=False, ensure_min_samples=0
+-    )
+-    labels_pred = check_array(
+-        labels_pred, ensure_2d=False, ensure_min_samples=0
+-    )
++    # Accept arbitrary label dtypes (strings, objects, etc.). We intentionally
++    # avoid sklearn.utils.validation.check_array here because it enforces a
++    # numeric dtype and checks for finiteness which fails for non-numeric
++    # label arrays. Using np.asarray preserves original dtype and supports
++    # object/string labels as valid cluster identifiers.
++    labels_true = np.asarray(labels_true)
++    labels_pred = np.asarray(labels_pred)
+ 
+     # input checks
+     if labels_true.ndim != 1:

@@ -1,0 +1,41 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -778,8 +778,36 @@
+         select_mask[opts.pk] = {}
+         # Only include fields mentioned in the mask.
+         for field_name, field_mask in mask.items():
+-            field = opts.get_field(field_name)
+-            field_select_mask = select_mask.setdefault(field, {})
++            if filtered_relation := self._filtered_relations.get(field_name):
++                # When a FilteredRelation is referenced, resolve the underlying
++                # relation from the relation_name and use a tuple key so that
++                # the masked entry is distinguishable from normal Field keys.
++                relation = opts.get_field(filtered_relation.relation_name)
++                field_select_mask = select_mask.setdefault((field_name, relation), {})
++                field = relation.field
++            else:
++                reverse_rel = opts.get_field(field_name)
++                # Historically we've ignored virtual reverse relations (such as
++                # many-to-many or generic relations) for defer/only masks.
++                # Maintain the same behavior here for 'only()' to avoid raising
++                # for such names.
++                if not hasattr(reverse_rel, "field"):
++                    # It's a normal field (non-reverse) or a virtual that we
++                    # should ignore.
++                    # If it's a normal field, use it directly as the key.
++                    if isinstance(reverse_rel, Field):
++                        field = reverse_rel
++                        field_select_mask = select_mask.setdefault(field, {})
++                    else:
++                        # Ignore virtual reverse relation.
++                        continue
++                else:
++                    # It's a reverse relation object (e.g. OneToOneRel /
++                    # ManyToOneRel). Use the actual field on the related model
++                    # side for recursion.
++                    field = reverse_rel.field
++                    field_select_mask = select_mask.setdefault(field, {})
++
+             if field_mask:
+                 if not field.is_relation:
+                     raise FieldError(next(iter(field_mask)))

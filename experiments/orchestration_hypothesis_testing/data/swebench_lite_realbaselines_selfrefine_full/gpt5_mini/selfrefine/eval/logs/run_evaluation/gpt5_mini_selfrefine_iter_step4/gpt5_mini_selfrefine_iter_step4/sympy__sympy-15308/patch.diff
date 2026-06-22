@@ -1,0 +1,16 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -2188,7 +2188,12 @@
+     def _print_Tr(self, p):
+         #Todo: Handle indices
+         contents = self._print(p.args[0])
+-        return r'\mbox{Tr}\left(%s\right)' % (contents)
++        # Use \operatorname so LaTeX treats Tr as an operator (proper font and spacing)
++        return r'\operatorname{Tr}\left(%s\right)' % (contents)
++
++    def _print_Trace(self, p):
++        # Alias for Trace class (some trace objects use the name Trace)
++        return self._print_Tr(p)
+ 
+     def _print_totient(self, expr, exp=None):
+         if exp is not None:

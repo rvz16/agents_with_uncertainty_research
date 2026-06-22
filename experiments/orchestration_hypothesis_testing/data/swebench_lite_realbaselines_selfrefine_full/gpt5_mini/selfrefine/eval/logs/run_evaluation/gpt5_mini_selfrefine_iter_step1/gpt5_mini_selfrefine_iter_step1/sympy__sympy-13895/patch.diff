@@ -1,0 +1,42 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -2613,10 +2613,21 @@
+         return S.One
+ 
+     def _eval_power(self, expt):
++        """
++        Evaluate powers of -1.
++
++        Delegate handling of Rational exponents to the Integer implementation
++        to ensure consistency with how other integer bases are processed
++        (so that expressions like (-4)**(9/5) and (-1)**(9/5) behave
++        consistently under simplification and factorization).
++        """
++        # Handle integer parity cases first for quick results
+         if expt.is_odd:
+             return S.NegativeOne
+         if expt.is_even:
+             return S.One
++        # For numeric exponents, handle floats and special symbols, and
++        # delegate rationals to Integer._eval_power to get consistent factorization.
+         if isinstance(expt, Number):
+             if isinstance(expt, Float):
+                 return Float(-1.0)**expt
+@@ -2627,11 +2638,12 @@
+             if expt is S.Half:
+                 return S.ImaginaryUnit
+             if isinstance(expt, Rational):
+-                if expt.q == 2:
+-                    return S.ImaginaryUnit**Integer(expt.p)
+-                i, r = divmod(expt.p, expt.q)
+-                if i:
+-                    return self**i*self**Rational(r, expt.q)
++                # Delegate to Integer._eval_power to follow the same factoring
++                # and simplification rules as for other Integer bases.
++                return super(NegativeOne, self)._eval_power(expt)
++        # For symbolic Rational exponents also delegate to Integer._eval_power
++        if isinstance(expt, Rational):
++            return super(NegativeOne, self)._eval_power(expt)
+         return
+ 
+ 

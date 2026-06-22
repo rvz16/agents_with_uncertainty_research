@@ -1,0 +1,27 @@
+--- a/sklearn/isotonic.py
++++ b/sklearn/isotonic.py
+@@ -14,6 +14,7 @@
+ from .utils import check_array, check_consistent_length
+ from .utils.validation import _check_sample_weight, check_is_fitted
+ from .utils._param_validation import Interval, StrOptions
++from .utils._config import config_context
+ from ._isotonic import _inplace_contiguous_isotonic_regression, _make_unique
+ 
+ 
+@@ -410,7 +411,15 @@
+         y_pred : ndarray of shape (n_samples,)
+             Transformed data.
+         """
+-        return self.transform(T)
++        # The public `transform` method can be affected by the global
++        # `transform_output` configuration (e.g. it may return a pandas
++        # Series/DataFrame when set_config(transform_output="pandas") is used).
++        # predict(...) is documented to return a NumPy ndarray. To guarantee
++        # that and to avoid returning pandas objects to callers (which can
++        # break downstream code expecting ndarray), temporarily disable the
++        # pandas wrapping when calling transform.
++        with config_context(transform_output="default"):
++            return self.transform(T)
+ 
+     # We implement get_feature_names_out here instead of using
+     # `ClassNamePrefixFeaturesOutMixin`` because `input_features` are ignored.

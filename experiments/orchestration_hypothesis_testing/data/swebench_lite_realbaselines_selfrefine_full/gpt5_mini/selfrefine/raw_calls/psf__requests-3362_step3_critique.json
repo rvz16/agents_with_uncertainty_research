@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:38:22.164039+00:00",
+  "instance_id": "psf__requests-3362",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nUncertain about content/text vs iter_content(decode_unicode=True/False)\nWhen requesting an application/json document, I'm seeing `next(r.iter_content(16*1024, decode_unicode=True))` returning bytes, whereas `r.text` returns unicode. My understanding was that both should return a unicode object. In essence, I thought \"iter_content\" was equivalent to \"iter_text\" when decode_unicode was True. Have I misunderstood something? I can provide an example if needed.\n\nFor reference, I'm using python 3.5.1 and requests 2.10.0.\n\nThanks!\n\n\n\n## Your previous patch (diff format)\n```\n--- a/requests/utils.py\n+++ b/requests/utils.py\n@@ -357,14 +357,26 @@\n \n \n def stream_decode_response_unicode(iterator, r):\n-    \"\"\"Stream decodes a iterator.\"\"\"\n-\n-    if r.encoding is None:\n+    \"\"\"Stream decodes an iterator.\n+\n+    If the response has no explicit encoding, fall back to apparent_encoding\n+    (if available) to match the behaviour of ``Response.text``. If no encoding\n+    can be determined, yield the raw bytes.\n+    \"\"\"\n+\n+    # Prefer explicit encoding, but fall back to apparent_encoding to mirror\n+    # Response.text behaviour when possible.\n+    encoding = r.encoding\n+    if encoding is None:\n+        encoding = getattr(r, 'apparent_encoding', None)\n+\n+    if encoding is None:\n+        # No encoding available: yield raw bytes.\n         for item in iterator:\n             yield item\n         return\n \n-    decoder = codecs.getincrementaldecoder(r.encoding)(errors='replace')\n+    decoder = codecs.getincrementaldecoder(encoding)(errors='replace')\n     for chunk in iterator:\n         rv = decoder.decode(chunk)\n         if rv:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 500,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003069
+}

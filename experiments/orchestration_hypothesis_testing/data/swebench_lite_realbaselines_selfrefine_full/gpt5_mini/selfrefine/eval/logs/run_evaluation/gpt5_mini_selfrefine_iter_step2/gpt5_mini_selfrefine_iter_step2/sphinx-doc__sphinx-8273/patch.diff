@@ -1,0 +1,23 @@
+--- a/sphinx/builders/manpage.py
++++ b/sphinx/builders/manpage.py
+@@ -9,6 +9,7 @@
+ """
+ 
+ from os import path
++import os
+ from typing import Any, Dict, List, Set, Tuple, Union
+ 
+ from docutils.frontend import OptionParser
+@@ -82,8 +83,11 @@
+ 
+             targetname = '%s.%s' % (name, section)
+             logger.info(darkgreen(targetname) + ' { ', nonl=True)
++            section_str = str(section)
++            section_dir = path.join(self.outdir, 'man', 'man' + section_str)
++            os.makedirs(section_dir, exist_ok=True)
+             destination = FileOutput(
+-                destination_path=path.join(self.outdir, targetname),
++                destination_path=path.join(section_dir, targetname),
+                 encoding='utf-8')
+ 
+             tree = self.env.get_doctree(docname)

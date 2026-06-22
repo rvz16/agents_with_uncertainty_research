@@ -1,0 +1,41 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -1038,11 +1038,34 @@
+             else:
+                 raise ValueError("unexpected decimal value %s" % str(num))
+         elif isinstance(num, tuple) and len(num) in (3, 4):
+-            if type(num[1]) is str:
+-                # it's a hexadecimal (coming from a pickled object)
+-                # assume that it is in standard form
++            # This branch handles mpf tuples that may have come from
++            # pickled objects. In cross-version pickles (py2 -> py3)
++            # the mantissa element (num[1]) can be a str, bytes, or
++            # may contain a trailing 'L' from Python 2 long literals.
++            # Normalize these cases to an integer here.
++            mant = num[1]
++            s = None
++            if isinstance(mant, bytes):
++                try:
++                    s = mant.decode('ascii')
++                except Exception:
++                    # if it can't be decoded as ascii, fall back to using
++                    # the bytes representation for int conversion below
++                    s = None
++            elif isinstance(mant, string_types):
++                s = mant
++
++            if s is not None:
++                # strip a possible Python 2 long literal marker 'L'
++                s = s.rstrip('L')
++                # assume hexadecimal representation (standard form)
++                try:
++                    mant_val = long(s, 16)
++                except Exception:
++                    # fall back to plain integer conversion
++                    mant_val = long(s)
+                 num = list(num)
+-                num[1] = long(num[1], 16)
++                num[1] = mant_val
+                 _mpf_ = tuple(num)
+             else:
+                 if len(num) == 4:

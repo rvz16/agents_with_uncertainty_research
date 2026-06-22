@@ -1,0 +1,15 @@
+--- a/astropy/io/fits/fitsrec.py
++++ b/astropy/io/fits/fitsrec.py
+@@ -1261,7 +1261,11 @@
+ 
+         # Replace exponent separator in floating point numbers
+         if 'D' in format:
+-            output_field.replace(encode_ascii('E'), encode_ascii('D'))
++            # chararray.replace returns a new array rather than modifying in
++            # place, so assign the result back into output_field to perform an
++            # in-place update of its contents.
++            output_field[:] = output_field.replace(encode_ascii('E'),
++                                                   encode_ascii('D'))
+ 
+ 
+ def _get_recarray_field(array, key):

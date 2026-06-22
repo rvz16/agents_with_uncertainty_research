@@ -1,0 +1,56 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -11,6 +11,7 @@
+ """
+ 
+ import importlib
++import sys
+ import re
+ import warnings
+ from inspect import Parameter, Signature
+@@ -2293,12 +2294,39 @@
+     return safe_getattr(obj, name, *defargs)
+ 
+ 
+-def migrate_autodoc_member_order(app: Sphinx, config: Config) -> None:
+-    if config.autodoc_member_order == 'alphabetic':
+-        # RemovedInSphinx50Warning
+-        logger.warning(__('autodoc_member_order now accepts "alphabetical" '
+-                          'instead of "alphabetic". Please update your setting.'))
+-        config.autodoc_member_order = 'alphabetical'  # type: ignore
++def _get_type_hints_for(obj: Any, config: Config) -> Dict[str, Any]:
++    """Return evaluated type hints for ``obj`` while honoring autodoc_type_aliases.
++
++    This builds a globals namespace from the module where ``obj`` is defined
++    (or the module itself if ``obj`` is a module) and injects resolved entries
++    from :confval:`autodoc_type_aliases` so ForwardRefs in annotations that use
++    the alias names can be resolved by typing.get_type_hints().
++    """
++    try:
++        # Determine module-level globals to pass to get_type_hints().
++        if isinstance(obj, ModuleType):
++            module_globals = getattr(obj, '__dict__', {})
++        else:
++            module_globals = {}
++            modname = getattr(obj, '__module__', None)
++            if modname and modname in sys.modules:
++                module_globals = dict(vars(sys.modules[modname]))
++
++        # Resolve aliases from the config into real objects where possible.
++        aliases = {}
++        for alias_name, target in getattr(config, 'autodoc_type_aliases', {}).items():
++            if isinstance(target, str):
++                # Try to import/resolve the dotted path.
++                try:
++                    # Split and import the module portion first, then traverse.
++                    parts = target.split('.')
++                    module_part = parts[0]
++                    module_obj = importlib.import_module(module_part)
++                    objt = module_obj
++                    for part in parts[1:]:
++                        objt = getattr(objt, part)
++                    aliases[alias_name] = objt
++                except
+ 
+ 
+ def setup(app: Sphinx) -> Dict[str, Any]:

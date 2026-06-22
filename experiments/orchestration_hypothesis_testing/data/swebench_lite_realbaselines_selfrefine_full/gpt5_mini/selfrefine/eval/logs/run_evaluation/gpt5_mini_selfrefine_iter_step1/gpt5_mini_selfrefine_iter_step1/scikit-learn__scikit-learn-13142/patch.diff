@@ -1,0 +1,52 @@
+--- a/sklearn/mixture/base.py
++++ b/sklearn/mixture/base.py
+@@ -224,6 +224,12 @@
+         max_lower_bound = -np.infty
+         self.converged_ = False
+ 
++        # Track the best initialization's convergence state and index so that
++        # we can restore the best parameters and corresponding metadata after
++        # trying multiple inits.
++        best_converged = False
++        best_init = 0
++
+         random_state = check_random_state(self.random_state)
+ 
+         n_samples, _ = X.shape
+@@ -256,22 +262,31 @@
+                 max_lower_bound = lower_bound
+                 best_params = self._get_parameters()
+                 best_n_iter = n_iter
++                best_converged = self.converged_
++                best_init = init
++
++        # Make sure the estimator's parameters correspond to the best
++        # initialization before computing responsibilities so that the labels
++        # returned by fit_predict(X) correspond to the best found solution and
++        # are consistent with fit(X).predict(X).
++        self._set_parameters(best_params)
+ 
+         # Always do a final e-step to guarantee that the labels returned by
+         # fit_predict(X) are always consistent with fit(X).predict(X)
+         # for any value of max_iter and tol (and any random_state).
+         _, log_resp = self._e_step(X)
++
++        # Use convergence information from the best initialization.
++        self.n_iter_ = best_n_iter
++        self.lower_bound_ = max_lower_bound
++        self.converged_ = best_converged
+ 
+         if not self.converged_:
+             warnings.warn('Initialization %d did not converge. '
+                           'Try different init parameters, '
+                           'or increase max_iter, tol '
+                           'or check for degenerate data.'
+-                          % (init + 1), ConvergenceWarning)
+-
+-        self._set_parameters(best_params)
+-        self.n_iter_ = best_n_iter
+-        self.lower_bound_ = max_lower_bound
++                          % (best_init + 1), ConvergenceWarning)
+ 
+         return log_resp.argmax(axis=1)
+ 

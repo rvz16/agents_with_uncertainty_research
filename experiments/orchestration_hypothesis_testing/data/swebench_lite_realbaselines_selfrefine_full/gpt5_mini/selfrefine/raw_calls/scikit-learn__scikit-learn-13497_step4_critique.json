@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:54:10.242983+00:00",
+  "instance_id": "scikit-learn__scikit-learn-13497",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nComparing string to array in _estimate_mi\nIn ``_estimate_mi`` there is ``discrete_features == 'auto'`` but discrete features can be an array of indices or a boolean mask.\r\nThis will error in future versions of numpy.\r\nAlso this means we never test this function with discrete features != 'auto', it seems?\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no changes were made to _estimate_mi, so the reported issue is not addressed.\n\nThe code still likely uses direct equality (discrete_features == 'auto') which will raise or emit warnings when discrete_features is an array/boolean mask (ambiguous truth value or future numpy error).\n\nNo handling added to distinguish string sentinel from array-like inputs (should check isinstance(discrete_features, str) or use is to compare to a canonical sentinel).\n\nNo conversion/validation of array-like discrete_features into a boolean mask or index list (need to accept True/False mask, integer indices, list/ndarray of ints, and ensure mask length equals n_features).\n\nNo tests were added or updated to exercise discrete_features != 'auto' (so that branch remains untested).\n\nNo defensive handling for numpy scalar string types or bytes vs str (e.g., np.str_('auto')) that could affect equality checks.\n\nNo changes to error messages or documentation to clarify allowed types for discrete_features.\n\nPotential inconsistency with the rest of the codebase: other places may already normalize discrete_features to a mask \u2014 this function should either reuse that normalization or replicate it consistently, but the patch makes no such change.",
+  "prompt_tokens": 202,
+  "completion_tokens": 633,
+  "cost_usd": 0.0013165
+}

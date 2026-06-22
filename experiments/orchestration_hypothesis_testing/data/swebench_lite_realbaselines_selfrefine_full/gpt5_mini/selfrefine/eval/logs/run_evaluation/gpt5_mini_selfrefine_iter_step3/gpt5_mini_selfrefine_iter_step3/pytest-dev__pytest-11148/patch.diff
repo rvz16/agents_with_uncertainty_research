@@ -1,0 +1,35 @@
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -638,19 +638,19 @@
+     child_name: str = ""
+     while module_name:
+         if module_name not in modules:
+-            try:
+-                # If sys.meta_path is empty, calling import_module will issue
+-                # a warning and raise ModuleNotFoundError. To avoid the
+-                # warning, we check sys.meta_path explicitly and raise the error
+-                # ourselves to fall back to creating a dummy module.
+-                if not sys.meta_path:
+-                    raise ModuleNotFoundError
+-                module = importlib.import_module(module_name)
+-            except ModuleNotFoundError:
+-                module = ModuleType(
+-                    module_name,
+-                    doc="Empty module created by pytest's importmode=importlib.",
+-                )
++            # Avoid importing parent packages via importlib.import_module here.
++            # Importing real packages can cause them to be loaded from their
++            # normal locations, which may create distinct module objects and
++            # lead to duplicates when pytest is using import-mode=importlib.
++            # Instead, create a synthetic module to serve as the parent
++            # package and mark it as a package by giving it a __path__.
++            module = ModuleType(
++                module_name,
++                doc="Empty module created by pytest's importmode=importlib.",
++            )
++            # Mark as package so attribute access like `pkg.sub` works and
++            # so import machinery treats it as a package when necessary.
++            module.__path__ = []
+         else:
+             module = modules[module_name]
+         if child_module:

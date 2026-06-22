@@ -1,0 +1,53 @@
+2026-06-22 17:09:49,594 - INFO - Creating container for sympy__sympy-22005...
+2026-06-22 17:09:49,728 - INFO - Container for sympy__sympy-22005 created: a2b3432bec0cf44602b06629b43d89050ed94d6e0807dddf92ac97600b10bbd7
+2026-06-22 17:09:49,889 - INFO - Container for sympy__sympy-22005 started: a2b3432bec0cf44602b06629b43d89050ed94d6e0807dddf92ac97600b10bbd7
+2026-06-22 17:09:49,889 - INFO - Intermediate patch for sympy__sympy-22005 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-22005/patch.diff, now applying to container...
+2026-06-22 17:09:50,021 - INFO - >>>>> Applied Patch:
+Checking patch sympy/solvers/polysys.py...
+Applied patch sympy/solvers/polysys.py cleanly.
+
+2026-06-22 17:09:50,354 - INFO - Git diff before:
+diff --git a/sympy/solvers/polysys.py b/sympy/solvers/polysys.py
+index b9809fd4e9..217b432f76 100644
+--- a/sympy/solvers/polysys.py
++++ b/sympy/solvers/polysys.py
+@@ -257,6 +257,11 @@ def _solve_reduced_system(system, gens, entry=False):
+             return []
+ 
+         if len(basis) == 1:
++            if len(gens) != 1:
++                raise NotImplementedError(filldedent('''
++                    only zero-dimensional systems supported
++                    (finite number of solutions)
++                    '''))
+             return [(zero,) for zero in zeros]
+ 
+         solutions = []
+2026-06-22 17:09:50,354 - INFO - Eval script for sympy__sympy-22005 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-22005/eval.sh; copying to container...
+2026-06-22 17:09:56,253 - INFO - Test runtime: 5.85 seconds
+2026-06-22 17:09:56,253 - INFO - Test output for sympy__sympy-22005 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-22005/test_output.txt
+2026-06-22 17:09:56,311 - INFO - Git diff after:
+diff --git a/sympy/solvers/polysys.py b/sympy/solvers/polysys.py
+index b9809fd4e9..217b432f76 100644
+--- a/sympy/solvers/polysys.py
++++ b/sympy/solvers/polysys.py
+@@ -257,6 +257,11 @@ def _solve_reduced_system(system, gens, entry=False):
+             return []
+ 
+         if len(basis) == 1:
++            if len(gens) != 1:
++                raise NotImplementedError(filldedent('''
++                    only zero-dimensional systems supported
++                    (finite number of solutions)
++                    '''))
+             return [(zero,) for zero in zeros]
+ 
+         solutions = []
+2026-06-22 17:09:56,311 - INFO - Grading answer for sympy__sympy-22005...
+2026-06-22 17:09:56,311 - INFO - report: {'sympy__sympy-22005': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_solve_poly_system'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_solve_biquadratic', 'test_solve_triangulated'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-22005: resolved: True
+2026-06-22 17:09:56,312 - INFO - Attempting to stop container sweb.eval.sympy__sympy-22005.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:10:11,546 - INFO - Attempting to remove container sweb.eval.sympy__sympy-22005.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:10:11,565 - INFO - Container sweb.eval.sympy__sympy-22005.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 17:10:11,566 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-22005:latest...
+2026-06-22 17:10:11,624 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-22005:latest removed.

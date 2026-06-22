@@ -1,0 +1,65 @@
+2026-06-22 15:28:24,129 - INFO - Creating container for sympy__sympy-13031...
+2026-06-22 15:28:24,249 - INFO - Container for sympy__sympy-13031 created: c8feadc317ce3d86bf956233fbda6c6409cca20a2426d3cae14bfb04f15bac7e
+2026-06-22 15:28:24,409 - INFO - Container for sympy__sympy-13031 started: c8feadc317ce3d86bf956233fbda6c6409cca20a2426d3cae14bfb04f15bac7e
+2026-06-22 15:28:24,409 - INFO - Intermediate patch for sympy__sympy-13031 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-13031/patch.diff, now applying to container...
+2026-06-22 15:28:24,502 - INFO - >>>>> Applied Patch:
+Checking patch sympy/matrices/sparse.py...
+Applied patch sympy/matrices/sparse.py cleanly.
+
+2026-06-22 15:28:24,712 - INFO - Git diff before:
+diff --git a/sympy/matrices/sparse.py b/sympy/matrices/sparse.py
+index e6f36cdf3..613a63c6d 100644
+--- a/sympy/matrices/sparse.py
++++ b/sympy/matrices/sparse.py
+@@ -985,7 +985,7 @@ def col_join(self, other):
+         >>> C == A.row_insert(A.rows, Matrix(B))
+         True
+         """
+-        if not self:
++        if self.rows == 0 and self.cols == 0:
+             return type(self)(other)
+         A, B = self, other
+         if not A.cols == B.cols:
+@@ -1191,7 +1191,7 @@ def row_join(self, other):
+         >>> C == A.col_insert(A.cols, B)
+         True
+         """
+-        if not self:
++        if self.rows == 0 and self.cols == 0:
+             return type(self)(other)
+         A, B = self, other
+         if not A.rows == B.rows:
+2026-06-22 15:28:24,712 - INFO - Eval script for sympy__sympy-13031 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-13031/eval.sh; copying to container...
+2026-06-22 15:28:27,344 - INFO - Test runtime: 2.58 seconds
+2026-06-22 15:28:27,345 - INFO - Test output for sympy__sympy-13031 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-13031/test_output.txt
+2026-06-22 15:28:27,395 - INFO - Git diff after:
+diff --git a/sympy/matrices/sparse.py b/sympy/matrices/sparse.py
+index e6f36cdf3..613a63c6d 100644
+--- a/sympy/matrices/sparse.py
++++ b/sympy/matrices/sparse.py
+@@ -985,7 +985,7 @@ def col_join(self, other):
+         >>> C == A.row_insert(A.rows, Matrix(B))
+         True
+         """
+-        if not self:
++        if self.rows == 0 and self.cols == 0:
+             return type(self)(other)
+         A, B = self, other
+         if not A.cols == B.cols:
+@@ -1191,7 +1191,7 @@ def row_join(self, other):
+         >>> C == A.col_insert(A.cols, B)
+         True
+         """
+-        if not self:
++        if self.rows == 0 and self.cols == 0:
+             return type(self)(other)
+         A, B = self, other
+         if not A.rows == B.rows:
+2026-06-22 15:28:27,395 - INFO - Grading answer for sympy__sympy-13031...
+2026-06-22 15:28:27,395 - INFO - report: {'sympy__sympy-13031': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_sparse_matrix'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_transpose', 'test_trace', 'test_CL_RL', 'test_add', 'test_errors', 'test_len', 'test_sparse_zeros_sparse_eye', 'test_copyin', 'test_sparse_solve'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13031: resolved: True
+2026-06-22 15:28:27,395 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13031.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:28:42,609 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13031.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:28:42,628 - INFO - Container sweb.eval.sympy__sympy-13031.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:28:42,628 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-13031:latest...
+2026-06-22 15:28:42,671 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-13031:latest removed.

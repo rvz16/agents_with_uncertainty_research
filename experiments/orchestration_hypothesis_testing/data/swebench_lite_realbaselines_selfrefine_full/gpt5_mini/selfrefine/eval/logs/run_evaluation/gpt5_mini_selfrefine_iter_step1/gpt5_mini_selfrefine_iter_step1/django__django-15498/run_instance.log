@@ -1,0 +1,57 @@
+2026-06-22 14:42:14,478 - INFO - Creating container for django__django-15498...
+2026-06-22 14:42:15,192 - INFO - Container for django__django-15498 created: d7eb657e0e046584b60b2cdf396c23a43cb3e3a16629138cb40733aa02c90e48
+2026-06-22 14:42:15,386 - INFO - Container for django__django-15498 started: d7eb657e0e046584b60b2cdf396c23a43cb3e3a16629138cb40733aa02c90e48
+2026-06-22 14:42:15,386 - INFO - Intermediate patch for django__django-15498 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-15498/patch.diff, now applying to container...
+2026-06-22 14:42:15,495 - INFO - >>>>> Applied Patch:
+Checking patch django/views/static.py...
+Applied patch django/views/static.py cleanly.
+
+2026-06-22 14:42:15,976 - INFO - Git diff before:
+diff --git a/django/views/static.py b/django/views/static.py
+index 1c558a53ff..2d1216daa4 100644
+--- a/django/views/static.py
++++ b/django/views/static.py
+@@ -126,9 +126,12 @@ def was_modified_since(header=None, mtime=0, size=0):
+       This is the size of the item we're talking about.
+     """
+     try:
+-        if header is None:
++        # Treat None or empty-string headers as if the header wasn't provided.
++        if not header:
+             raise ValueError
+         matches = re.match(r"^([^;]+)(; length=([0-9]+))?$", header, re.IGNORECASE)
++        if not matches:
++            raise ValueError
+         header_mtime = parse_http_date(matches[1])
+         header_len = matches[3]
+         if header_len and int(header_len) != size:
+2026-06-22 14:42:15,977 - INFO - Eval script for django__django-15498 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-15498/eval.sh; copying to container...
+2026-06-22 14:42:21,880 - INFO - Test runtime: 5.86 seconds
+2026-06-22 14:42:21,880 - INFO - Test output for django__django-15498 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-15498/test_output.txt
+2026-06-22 14:42:21,932 - INFO - Git diff after:
+diff --git a/django/views/static.py b/django/views/static.py
+index 1c558a53ff..2d1216daa4 100644
+--- a/django/views/static.py
++++ b/django/views/static.py
+@@ -126,9 +126,12 @@ def was_modified_since(header=None, mtime=0, size=0):
+       This is the size of the item we're talking about.
+     """
+     try:
+-        if header is None:
++        # Treat None or empty-string headers as if the header wasn't provided.
++        if not header:
+             raise ValueError
+         matches = re.match(r"^([^;]+)(; length=([0-9]+))?$", header, re.IGNORECASE)
++        if not matches:
++            raise ValueError
+         header_mtime = parse_http_date(matches[1])
+         header_len = matches[3]
+         if header_len and int(header_len) != size:
+2026-06-22 14:42:21,932 - INFO - Grading answer for django__django-15498...
+2026-06-22 14:42:21,933 - INFO - report: {'django__django-15498': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_was_modified_since_empty_string (view_tests.tests.test_static.StaticUtilsTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['A floating point mtime does not disturb was_modified_since (#18675).', 'test_404 (view_tests.tests.test_static.StaticHelperTest)', 'The static view should stream files in chunks to avoid large memory usage', 'test_copes_with_empty_path_component (view_tests.tests.test_static.StaticHelperTest)', 'No URLs are served if DEBUG=False.', 'test_empty_prefix (view_tests.tests.test_static.StaticHelperTest)', 'test_index (view_tests.tests.test_static.StaticHelperTest)', 'test_index_custom_template (view_tests.tests.test_static.StaticHelperTest)', 'test_index_subdir (view_tests.tests.test_static.StaticHelperTest)', 'Handle bogus If-Modified-Since values gracefully', 'Handle even more bogus If-Modified-Since values gracefully', 'test_is_modified_since (view_tests.tests.test_static.StaticHelperTest)', 'test_not_modified_since (view_tests.tests.test_static.StaticHelperTest)', 'test_prefix (view_tests.tests.test_static.StaticHelperTest)', 'The static view can serve static media', 'No URLs are served if prefix contains a netloc part.', 'test_unknown_mime_type (view_tests.tests.test_static.StaticHelperTest)', 'test_404 (view_tests.tests.test_static.StaticTests)', 'test_copes_with_empty_path_component (view_tests.tests.test_static.StaticTests)', 'test_index (view_tests.tests.test_static.StaticTests)', 'test_index_custom_template (view_tests.tests.test_static.StaticTests)', 'test_index_subdir (view_tests.tests.test_static.StaticTests)', 'test_is_modified_since (view_tests.tests.test_static.StaticTests)', 'test_not_modified_since (view_tests.tests.test_static.StaticTests)', 'test_unknown_mime_type (view_tests.tests.test_static.StaticTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15498: resolved: True
+2026-06-22 14:42:21,933 - INFO - Attempting to stop container sweb.eval.django__django-15498.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:42:37,244 - INFO - Attempting to remove container sweb.eval.django__django-15498.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:42:37,263 - INFO - Container sweb.eval.django__django-15498.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 14:42:37,263 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15498:latest...
+2026-06-22 14:42:37,429 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15498:latest removed.

@@ -1,0 +1,12 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -1244,6 +1244,9 @@
+                 if other is not self.axes:
+                     other._axis_map[name]._set_lim(
+                         v0, v1, emit=False, auto=auto)
++                    # Also notify the sibling Axes' callbacks so listeners on
++                    # shared axes see the change.
++                    other.callbacks.process(f"{name}lim_changed", other)
+                     if other.figure != self.figure:
+                         other.figure.canvas.draw_idle()
+ 

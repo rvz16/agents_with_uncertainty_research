@@ -1,0 +1,65 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -107,7 +108,19 @@
+                  algorithm='auto', leaf_size=30, metric='minkowski',
+                  p=2, metric_params=None, n_jobs=1):
+ 
+-        self.n_neighbors = n_neighbors
++        # validate n_neighbors: must be integer-like if provided
++        if n_neighbors is None:
++            self.n_neighbors = None
++        else:
++            if isinstance(n_neighbors, numbers.Integral):
++                self.n_neighbors = int(n_neighbors)
++            elif isinstance(n_neighbors, numbers.Real) and float(n_neighbors).is_integer():
++                # allow integer-valued floats (e.g. 3.0) by casting to int
++                self.n_neighbors = int(float(n_neighbors))
++            else:
++                raise ValueError("n_neighbors must be an integer, got %r"
++                                 % (n_neighbors,))
++
+         self.radius = radius
+         self.algorithm = algorithm
+         self.leaf_size = leaf_size
+@@ -328,6 +341,16 @@
+         if n_neighbors is None:
+             n_neighbors = self.n_neighbors
+ 
++        # validate n_neighbors
++        if n_neighbors is not None:
++            if isinstance(n_neighbors, numbers.Integral):
++                n_neighbors = int(n_neighbors)
++            elif isinstance(n_neighbors, numbers.Real) and float(n_neighbors).is_integer():
++                n_neighbors = int(float(n_neighbors))
++            else:
++                raise ValueError("n_neighbors must be an integer, got %r"
++                                 % (n_neighbors,))
++
+         if X is not None:
+             query_is_train = False
+             X = check_array(X, accept_sparse='csr')
+@@ -467,6 +490,16 @@
+         if n_neighbors is None:
+             n_neighbors = self.n_neighbors
+ 
++        # validate n_neighbors
++        if n_neighbors is not None:
++            if isinstance(n_neighbors, numbers.Integral):
++                n_neighbors = int(n_neighbors)
++            elif isinstance(n_neighbors, numbers.Real) and float(n_neighbors).is_integer():
++                n_neighbors = int(float(n_neighbors))
++            else:
++                raise ValueError("n_neighbors must be an integer, got %r"
++                                 % (n_neighbors,))
++
+         # kneighbors does the None handling.
+         if X is not None:
+             X = check_array(X, accept_sparse='csr')

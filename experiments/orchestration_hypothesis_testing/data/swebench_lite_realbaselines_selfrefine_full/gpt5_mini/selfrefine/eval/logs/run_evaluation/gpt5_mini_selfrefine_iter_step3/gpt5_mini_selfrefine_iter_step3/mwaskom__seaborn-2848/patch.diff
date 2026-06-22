@@ -1,0 +1,60 @@
+--- a/seaborn/_oldcore.py
++++ b/seaborn/_oldcore.py
+@@ -144,24 +144,45 @@
+             self.cmap = cmap
+ 
+     def _lookup_single(self, key):
+-        """Get the color for a single value, using colormap to interpolate."""
++        """Get the color for a single value, using colormap to interpolate.
++
++        If a key is missing from the lookup table, handle it gracefully:
++        - For numeric mappings (where `norm` and `cmap` are set), attempt to
++          interpolate with the colormap and fall back to a transparent color
++          for NA-like keys.
++        - For categorical mappings (no `norm`/`cmap`), return a transparent
++          color for keys not present in the lookup table so that points with
++          hues outside of `hue_order` are effectively not drawn.
++        """
+         try:
+             # Use a value that's in the original data vector
+             value = self.lookup_table[key]
+         except KeyError:
+-            # Use the colormap to interpolate between existing datapoints
+-            # (e.g. in the context of making a continuous legend)
+-            try:
+-                normed = self.norm(key)
+-            except TypeError as err:
+-                if np.isnan(key):
++            # If we have a numeric mapping setup, try to interpolate using the
++            # normalization and colormap. If that fails because the key is
++            # NA-like, return a transparent color. If interpolation is not
++            # possible for other reasons, propagate the error.
++            if (self.norm is not None) and (self.cmap is not None):
++                try:
++                    normed = self.norm(key)
++                except TypeError as err:
++                    # Use pandas.isna which safely handles many types
++                    if pd.isna(key):
++                        value = (0, 0, 0, 0)
++                    else:
++                        raise err
++                else:
++                    if np.ma.is_masked(normed):
++                        normed = np.nan
++                    value = self.cmap(normed)
++            else:
++                # Categorical mapping: missing keys should result in no visible
++                # artist. Return a fully transparent RGBA tuple for such cases.
++                # Also treat NA-like keys as transparent.
++                if pd.isna(key):
+                     value = (0, 0, 0, 0)
+                 else:
+-                    raise err
+-            else:
+-                if np.ma.is_masked(normed):
+-                    normed = np.nan
+-                value = self.cmap(normed)
++                    value = (0, 0, 0, 0)
+         return value
+ 
+     def infer_map_type(self, palette, norm, input_format, var_type):

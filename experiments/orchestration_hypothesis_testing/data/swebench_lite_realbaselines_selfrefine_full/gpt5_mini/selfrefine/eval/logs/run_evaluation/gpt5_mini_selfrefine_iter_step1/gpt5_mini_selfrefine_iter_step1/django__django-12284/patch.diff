@@ -1,0 +1,21 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -764,10 +764,16 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            if not hasattr(cls, 'get_%s_display' % self.name):
++            method_name = 'get_%s_display' % self.name
++            # Only set the display method if it hasn't been defined on the
++            # model class itself. Using cls.__dict__ avoids treating inherited
++            # methods (e.g. from abstract base classes) as "already defined",
++            # so subclasses that override a field's choices get their own
++            # get_FOO_display implementation.
++            if method_name not in cls.__dict__:
+                 setattr(
+                     cls,
+-                    'get_%s_display' % self.name,
++                    method_name,
+                     partialmethod(cls._get_FIELD_display, field=self),
+                 )
+ 

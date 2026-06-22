@@ -1,0 +1,77 @@
+--- a/sympy/combinatorics/permutations.py
++++ b/sympy/combinatorics/permutations.py
+@@ -895,28 +895,54 @@
+         # counting starts from 1.
+ 
+         temp = flatten(args)
+-        if has_dups(temp):
+-            if is_cycle:
+-                raise ValueError('there were repeated elements; to resolve '
+-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
+-            else:
++        if not is_cycle:
++            if has_dups(temp):
+                 raise ValueError('there were repeated elements.')
+-        temp = set(temp)
+-
+-        if not is_cycle and \
+-                any(i not in temp for i in range(len(temp))):
+-            raise ValueError("Integers 0 through %s must be present." %
+-                             max(temp))
+-
+-        if is_cycle:
+-            # it's not necessarily canonical so we won't store
+-            # it -- use the array form instead
+-            c = Cycle()
++            temp = set(temp)
++
++            if any(i not in temp for i in range(len(temp))):
++                raise ValueError("Integers 0 through %s must be present." %
++                                 max(temp))
++            aform = list(args)
++        else:
++            # For cycle notation allow repeated elements across different
++            # cycles (non-disjoint cycles). Validate each individual cycle
++            # has unique, non-negative elements.
++            for c in args:
++                if any(int(x) < 0 for x in c):
++                    raise ValueError('negative integers are not allowed in a cycle.')
++                if has_dups(c):
++                    raise ValueError('there were repeated elements; to resolve '
++                                     'cycles use Cycle%s.' %
++                                     ''.join([str(tuple(cc)) for cc in args]))
++            # determine working size: largest element mentioned or provided size
++            flat = temp
++            max_el = max(flat) if flat else -1
++            work_size = size if size is not None else (max_el + 1)
++            if work_size is None:
++                work_size = 0
++            work_size = int(work_size)
++            # start with identity
++            aform = list(range(work_size))
++            # apply cycles left-to-right: for each cycle C, set aform = C * aform
+             for ci in args:
+-                c = c(*ci)
+-            aform = c.list()
+-        else:
+-            aform = list(args)
++                # if any element in cycle is outside current work_size, extend
++                if any(int(x) >= work_size for x in ci):
++                    new_size = max(work_size, max(int(x) for x in ci) + 1)
++                    aform.extend(list(range(work_size, new_size)))
++                    work_size = new_size
++                # build array form for this cycle
++                c_arr = list(range(work_size))
++                k = len(ci)
++                if k == 1:
++                    # singleton: ensure size but no change
++                    continue
++                for idx in range(k):
++                    i_from = int(ci[idx])
++                    i_to = int(ci[(idx + 1) % k])
++                    c_arr[i_from] = i_to
++                # compose: new_aform[i] = c_arr[aform[i]]
++                aform = [c_arr[aform[i]] for i in range(work_size)]
+         if size and size > len(aform):
+             # don't allow for truncation of permutation which
+             # might split a cycle and lead to an invalid aform

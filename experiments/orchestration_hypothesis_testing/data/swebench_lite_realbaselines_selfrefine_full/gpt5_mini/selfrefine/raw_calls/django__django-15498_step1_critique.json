@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:13:47.101330+00:00",
+  "instance_id": "django__django-15498",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nFix handling empty string for If-Modified-Since header\nDescription\n\t\nEmpty string used to be ignored for If-Modified-Since header, but now raises exception since d6aff369ad3.\nFix handling empty string for If-Modified-Since header\nDescription\n\t\nEmpty string used to be ignored for If-Modified-Since header, but now raises exception since d6aff369ad3.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/views/static.py\n+++ b/django/views/static.py\n@@ -126,9 +126,12 @@\n       This is the size of the item we're talking about.\n     \"\"\"\n     try:\n-        if header is None:\n+        # Treat None or empty-string headers as if the header wasn't provided.\n+        if not header:\n             raise ValueError\n         matches = re.match(r\"^([^;]+)(; length=([0-9]+))?$\", header, re.IGNORECASE)\n+        if not matches:\n+            raise ValueError\n         header_mtime = parse_http_date(matches[1])\n         header_len = matches[3]\n         if header_len and int(header_len) != size:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 364,
+  "completion_tokens": 1013,
+  "cost_usd": 0.002117
+}

@@ -1,0 +1,123 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -422,61 +422,72 @@
+         """
+         Return True if the given operation depends on the given dependency,
+         False otherwise.
+-        """
++
++        Robustly compare operation attributes (name/model_name) in a way that
++        doesn't rely on potentially-missing lowercased helper attributes on
++        operation instances. This avoids incorrect dependency detection when
++        operation instances don't expose name_lower/model_name_lower.
++        """
++        def _lower(value):
++            return value.lower() if isinstance(value, str) else None
++
++        dep_app_label, dep_model_name, dep_field_name, dep_action = dependency
++        dep_model_l = _lower(dep_model_name)
++        dep_field_l = _lower(dep_field_name)
++
++        # Helper to get model name for an operation (some ops use `model_name`,
++        # some use `name` for the model name).
++        op_model_name = getattr(operation, "model_name", None)
++        if op_model_name is None:
++            # CreateModel/DeleteModel/AlterUniqueTogether/etc. use `name`.
++            op_model_name = getattr(operation, "name", None)
++        op_model_l = _lower(op_model_name)
++
++        # Helper to get field name for an operation (AddField/RemoveField/AlterField).
++        op_field_name = getattr(operation, "name", None)
++        op_field_l = _lower(op_field_name)
++
+         # Created model
+-        if dependency[2] is None and dependency[3] is True:
+-            return (
+-                isinstance(operation, operations.CreateModel)
+-                and operation.name_lower == dependency[1].lower()
+-            )
++        if dep_field_name is None and dep_action is True:
++            return isinstance(operation, operations.CreateModel) and op_model_l == dep_model_l
++
+         # Created field
+-        elif dependency[2] is not None and dependency[3] is True:
+-            return (
+-                isinstance(operation, operations.CreateModel)
+-                and operation.name_lower == dependency[1].lower()
+-                and any(dependency[2] == x for x, y in operation.fields)
+-            ) or (
+-                isinstance(operation, operations.AddField)
+-                and operation.model_name_lower == dependency[1].lower()
+-                and operation.name_lower == dependency[2].lower()
+-            )
++        elif dep_field_name is not None and dep_action is True:
++            # It could be satisfied by a CreateModel that defines the field
++            if isinstance(operation, operations.CreateModel) and op_model_l == dep_model_l:
++                # operation.fields is a list of (name, field) tuples
++                return any(dep_field_l == _lower(f_name) for f_name, _ in operation.fields)
++            # Or by an AddField operation
++            if isinstance(operation, operations.AddField):
++                return op_model_l == dep_model_l and op_field_l == dep_field_l
++            return False
++
+         # Removed field
+-        elif dependency[2] is not None and dependency[3] is False:
+-            return (
+-                isinstance(operation, operations.RemoveField)
+-                and operation.model_name_lower == dependency[1].lower()
+-                and operation.name_lower == dependency[2].lower()
+-            )
++        elif dep_field_name is not None and dep_action is False:
++            return isinstance(operation, operations.RemoveField) and op_model_l == dep_model_l and op_field_l == dep_field_l
++
+         # Removed model
+-        elif dependency[2] is None and dependency[3] is False:
+-            return (
+-                isinstance(operation, operations.DeleteModel)
+-                and operation.name_lower == dependency[1].lower()
+-            )
++        elif dep_field_name is None and dep_action is False:
++            return isinstance(operation, operations.DeleteModel) and op_model_l == dep_model_l
++
+         # Field being altered
+-        elif dependency[2] is not None and dependency[3] == "alter":
+-            return (
+-                isinstance(operation, operations.AlterField)
+-                and operation.model_name_lower == dependency[1].lower()
+-                and operation.name_lower == dependency[2].lower()
+-            )
++        elif dep_field_name is not None and dep_action == "alter":
++            return isinstance(operation, operations.AlterField) and op_model_l == dep_model_l and op_field_l == dep_field_l
++
+         # order_with_respect_to being unset for a field
+-        elif dependency[2] is not None and dependency[3] == "order_wrt_unset":
+-            return (
+-                isinstance(operation, operations.AlterOrderWithRespectTo)
+-                and operation.name_lower == dependency[1].lower()
+-                and (operation.order_with_respect_to or "").lower()
+-                != dependency[2].lower()
+-            )
++        elif dep_field_name is not None and dep_action == "order_wrt_unset":
++            if isinstance(operation, operations.AlterOrderWithRespectTo):
++                # operation.name is the model name for this op
++                op_name_for_order = getattr(operation, "name", None)
++                if _lower(op_name_for_order) == dep_model_l:
++                    return (_lower(getattr(operation, "order_with_respect_to", None)) or "") != dep_field_l
++            return False
++
+         # Field is removed and part of an index/unique_together
+-        elif dependency[2] is not None and dependency[3] == "foo_together_change":
+-            return (
+-                isinstance(
+-                    operation,
+-                    (operations.AlterUniqueTogether, operations.AlterIndexTogether),
+-                )
+-                and operation.name_lower == dependency[1].lower()
+-            )
++        elif dep_field_name is not None and dep_action == "foo_together_change":
++            # These ops use `name` for the model name
++            return isinstance(operation, (operations.AlterUniqueTogether, operations.AlterIndexTogether)) and op_model_l == dep_model_l
++
+         # Unknown dependency. Raise an error.
+         else:
+             raise ValueError("Can't handle dependency %r" % (dependency,))

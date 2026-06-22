@@ -1,0 +1,87 @@
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -2,6 +2,8 @@
+ import os
+ import re
+ import tempfile
++import hashlib
++import unicodedata
+ from pathlib import Path
+ from typing import Optional
+ 
+@@ -149,14 +151,72 @@
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return the current user name sanitized for use in filesystem paths,
++    or None if getuser() does not work in the current environment (see #1010).
++
++    The returned name is safe to use as a single path component on Windows and
++    POSIX (path separators and characters illegal on Windows are replaced or
++    removed). If sanitization results in an empty name, a stable hash-based
++    fallback is returned. Reserved Windows names are avoided by appending a
++    short hash suffix when necessary.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
++
++    if not isinstance(user, str):
++        try:
++            user = str(user)
++        except Exception:
++            return None
++
++    # Normalize unicode to a stable form
++    user_norm = unicodedata.normalize("NFKD", user)
++
++    # Characters that should not appear in a single path component on Windows.
++    forbidden = set('<>:"/\\|?*\0')
++    # Add the OS-specific separators just in case
++    if os.sep:
++        forbidden.add(os.sep)
++    if os.altsep:
++        forbidden.add(os.altsep)
++
++    # Replace forbidden/control/whitespace characters with underscore; keep others.
++    sanitized_chars = []
++    for ch in user_norm:
++        cp = ord(ch)
++        if ch in forbidden or cp < 32 or cp == 127 or ch.isspace():
++            sanitized_chars.append("_")
++        else:
++            sanitized_chars.append(ch)
++
++    sanitized = "".join(sanitized_chars)
++    # Collapse repeated underscores
++    sanitized = re.sub(r"_+", "_", sanitized)
++    # Strip leading/trailing underscores, dots and spaces (Windows disallows trailing dots/spaces)
++    sanitized = sanitized.strip(" _.")
++    # If empty after sanitization, fall back to a stable hash-based name
++    if not sanitized:
++        h = hashlib.sha1(user.encode("utf-8", "ignore")).hexdigest()[:8]
++        sanitized = f"user-{h}"
++
++    # Avoid reserved Windows names (case-insensitive)
++    reserved = {
++        "CON",
++        "PRN",
++        "AUX",
++        "NUL",
++        *(f"COM{i}" for i in range(1, 10)),
++        *(f"LPT{i}" for i in range(1, 10)),
++    }
++    if sanitized.upper() in reserved:
++        h = hashlib.sha1(user.encode("utf-8", "ignore")).hexdigest()[:8]
++        sanitized = f"{sanitized}_{h}"
++
++    return sanitized
+ 
+ 
+ def pytest_configure(config: Config) -> None:

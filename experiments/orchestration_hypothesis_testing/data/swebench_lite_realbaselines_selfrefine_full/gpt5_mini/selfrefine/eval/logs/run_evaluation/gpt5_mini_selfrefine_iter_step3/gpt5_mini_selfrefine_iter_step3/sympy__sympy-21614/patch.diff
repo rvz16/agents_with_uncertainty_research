@@ -1,0 +1,21 @@
+--- a/sympy/core/function.py
++++ b/sympy/core/function.py
+@@ -1615,6 +1615,18 @@
+ 
+     def _eval_is_commutative(self):
+         return self.expr.is_commutative
++
++    def _eval_kind(self):
++        """
++        Delegate kind determination to the underlying expression.
++
++        This allows Derivative instances to inherit the kind of their
++        expression (for example MatrixKind for matrix-valued expressions),
++        instead of defaulting to UndefinedKind.
++        """
++        # Use getattr to avoid AttributeError if the expression does not
++        # define a kind attribute; the caller will handle a None result.
++        return getattr(self.expr, "kind", None)
+ 
+     def _eval_derivative(self, v):
+         # If v (the variable of differentiation) is not in

@@ -1,0 +1,27 @@
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -139,9 +139,10 @@
+         path = Path(filename)
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+-        except FileNotFoundError:
+-            # The module could have been removed, don't fail loudly if this
+-            # is the case.
++        except (FileNotFoundError, ValueError):
++            # The module could have been removed or the path is invalid (for
++            # example it contains an embedded null byte). Don't fail loudly if
++            # this is the case.
+             continue
+         results.add(resolved_path)
+     return frozenset(results)
+@@ -187,7 +188,9 @@
+         path = Path(path)
+         try:
+             resolved_path = path.resolve(strict=True).absolute()
+-        except FileNotFoundError:
++        except (FileNotFoundError, ValueError):
++            # Ignore paths that don't exist or are invalid (e.g. contain
++            # embedded null bytes), they shouldn't crash the reloader.
+             continue
+         # If the path is a file (like a zip file), watch the parent directory.
+         if resolved_path.is_file():

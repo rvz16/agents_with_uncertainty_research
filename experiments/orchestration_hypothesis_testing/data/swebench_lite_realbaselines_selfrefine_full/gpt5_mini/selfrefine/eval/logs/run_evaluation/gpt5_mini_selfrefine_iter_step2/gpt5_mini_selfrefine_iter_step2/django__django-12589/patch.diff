@@ -1,0 +1,39 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1942,6 +1942,36 @@
+                 else:
+                     if not allow_aliases:
+                         alias = None
++                    else:
++                        # If annotation alias collides with any column name from
++                        # the tables involved in this query, disable aliasing so
++                        # that get_group_by_cols() will return fully-qualified
++                        # expressions (e.g. subqueries) instead of a plain alias.
++                        # Import apps locally to avoid top-level import-time
++                        # side-effects and catch AppRegistryNotReady to be safe.
++                        try:
++                            from django.apps import apps
++                        except Exception:
++                            apps = None
++                        if alias is not None and apps is not None:
++                            column_names = set()
++                            # self.table_map maps table_name -> [aliases,...]
++                            for table_name in self.table_map:
++                                # Try to resolve Django model for the table name.
++                                # This is potentially expensive, but this path is
++                                # only used for edge-case alias collision handling.
++                                for model in apps.get_models():
++                                    try:
++                                        if model._meta.db_table == table_name:
++                                            for f in model._meta.concrete_fields:
++                                                # Use the actual column name.
++                                                column_names.add(getattr(f, 'column', f.attname))
++                                            break
++                                    except Exception:
++                                        # Be defensive in case model metadata isn't ready.
++                                        continue
++                            if alias in column_names:
++                                alias = None
+                     group_by_cols = annotation.get_group_by_cols(alias=alias)
+                 group_by.extend(group_by_cols)
+         self.group_by = tuple(group_by)

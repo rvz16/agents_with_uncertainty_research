@@ -1,0 +1,30 @@
+--- a/sympy/core/function.py
++++ b/sympy/core/function.py
+@@ -1615,6 +1615,27 @@
+ 
+     def _eval_is_commutative(self):
+         return self.expr.is_commutative
++
++    @property
++    def kind(self):
++        """
++        The kind of a Derivative is taken from the underlying expression.
++        If the underlying expression does not define a kind, return
++        UndefinedKind.
++        """
++        # Defer the import so that the module doesn't fail to import in
++        # environments where the kind system may not yet be available.
++        try:
++            # Many expression types will expose a `.kind` attribute.
++            return self.expr.kind
++        except Exception:
++            try:
++                from sympy.core.kind import UndefinedKind
++                return UndefinedKind
++            except Exception:
++                # As a last resort, try to use a sentinel on S if present;
++                # otherwise return None.
++                return getattr(S, 'UndefinedKind', None)
+ 
+     def _eval_derivative(self, v):
+         # If v (the variable of differentiation) is not in

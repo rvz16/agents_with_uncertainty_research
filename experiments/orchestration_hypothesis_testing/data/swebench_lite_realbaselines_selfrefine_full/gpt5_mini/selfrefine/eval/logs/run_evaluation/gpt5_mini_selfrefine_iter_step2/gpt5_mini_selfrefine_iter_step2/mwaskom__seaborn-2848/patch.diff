@@ -1,0 +1,16 @@
+--- a/seaborn/_oldcore.py
++++ b/seaborn/_oldcore.py
+@@ -154,7 +154,12 @@
+             try:
+                 normed = self.norm(key)
+             except TypeError as err:
+-                if np.isnan(key):
++                # Use pandas.isna to safely detect missing values across dtypes.
++                # Calling numpy.isnan on non-numeric types (e.g. strings) raises
++                # a TypeError (ufunc 'isnan' not supported...), which could
++                # surface for hue values that are not present in the lookup
++                # table. pd.isna handles these cases gracefully.
++                if pd.isna(key):
+                     value = (0, 0, 0, 0)
+                 else:
+                     raise err

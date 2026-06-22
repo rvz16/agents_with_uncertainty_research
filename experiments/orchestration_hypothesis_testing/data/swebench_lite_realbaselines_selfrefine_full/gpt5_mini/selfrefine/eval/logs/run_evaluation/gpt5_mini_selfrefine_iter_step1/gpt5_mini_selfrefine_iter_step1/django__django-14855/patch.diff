@@ -1,0 +1,19 @@
+--- a/django/contrib/admin/helpers.py
++++ b/django/contrib/admin/helpers.py
+@@ -209,7 +209,15 @@
+             remote_field.model._meta.model_name,
+         )
+         try:
+-            url = reverse(url_name, args=[quote(remote_obj.pk)])
++            if self.model_admin is not None:
++                current_app = self.model_admin.admin_site.name
++                url = reverse(
++                    url_name,
++                    args=[quote(remote_obj.pk)],
++                    current_app=current_app,
++                )
++            else:
++                url = reverse(url_name, args=[quote(remote_obj.pk)])
+             return format_html('<a href="{}">{}</a>', url, remote_obj)
+         except NoReverseMatch:
+             return str(remote_obj)

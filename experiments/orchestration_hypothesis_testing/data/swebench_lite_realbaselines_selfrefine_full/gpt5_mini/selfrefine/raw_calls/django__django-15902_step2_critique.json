@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:17:02.146472+00:00",
+  "instance_id": "django__django-15902",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\n\"default.html\" deprecation warning raised for ManagementForm's\nDescription\n\t\nI have a project where I never render forms with the {{ form }} expression. However, I'm still getting the new template deprecation warning because of the formset management form production, during which the template used is insignificant (only hidden inputs are produced).\nIs it worth special-casing this and avoid producing the warning for the management forms?\n\n\n## Your previous patch (diff format)\n```\n--- a/django/forms/formsets.py\n+++ b/django/forms/formsets.py\n@@ -31,6 +31,11 @@\n     new forms via JavaScript, you should increment the count field of this form\n     as well.\n     \"\"\"\n+    # The management form is only rendered as a set of hidden inputs. Avoid\n+    # triggering the default template deprecation warning by using a known\n+    # formset template here. RemovedInDjango50Warning: this will be removed\n+    # once the legacy default template deprecation is gone.\n+    template_name = \"django/forms/formsets/div.html\"  # RemovedInDjango50Warning.\n \n     TOTAL_FORMS = IntegerField(widget=HiddenInput)\n     INITIAL_FORMS = IntegerField(widget=HiddenInput)\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 378,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030385
+}

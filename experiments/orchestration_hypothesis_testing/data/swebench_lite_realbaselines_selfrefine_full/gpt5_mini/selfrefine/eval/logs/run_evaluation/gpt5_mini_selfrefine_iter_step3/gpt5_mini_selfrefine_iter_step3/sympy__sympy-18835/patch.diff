@@ -1,0 +1,22 @@
+--- a/sympy/utilities/iterables.py
++++ b/sympy/utilities/iterables.py
+@@ -2109,10 +2109,19 @@
+     try:
+         seen = set()
+         result = result or []
++        # Record initial size if the sequence supports __len__ so that
++        # mutations that change the size can be detected and reported.
++        initial_len = len(seq) if hasattr(seq, '__len__') else None
+         for i, s in enumerate(seq):
++            if initial_len is not None and len(seq) != initial_len:
++                raise RuntimeError("sequence changed size during iteration")
+             if not (s in seen or seen.add(s)):
+                 yield s
+     except TypeError:
++        # If an unhashable element was encountered we fall back to the
++        # list-based approach. Check for size changes before proceeding.
++        if initial_len is not None and hasattr(seq, '__len__') and len(seq) != initial_len:
++            raise RuntimeError("sequence changed size during iteration")
+         if s not in result:
+             yield s
+             result.append(s)

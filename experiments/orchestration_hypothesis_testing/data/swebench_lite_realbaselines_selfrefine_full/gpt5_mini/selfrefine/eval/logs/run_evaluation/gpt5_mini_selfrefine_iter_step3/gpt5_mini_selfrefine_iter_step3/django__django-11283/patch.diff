@@ -1,0 +1,79 @@
+--- a/django/contrib/auth/migrations/0011_update_proxy_permissions.py
++++ b/django/contrib/auth/migrations/0011_update_proxy_permissions.py
+@@ -24,10 +24,74 @@
+         proxy_content_type = ContentType.objects.get_for_model(Model, for_concrete_model=False)
+         old_content_type = proxy_content_type if reverse else concrete_content_type
+         new_content_type = concrete_content_type if reverse else proxy_content_type
+-        Permission.objects.filter(
++        # We can't use a plain update() here because that may cause a unique
++        # constraint violation on (content_type_id, codename) if a permission
++        # with the target content type and codename already exists. In that
++        # case, re-use the existing permission by moving any m2m relations
++        # (groups and user user_permissions) to the existing permission and
++        # removing the duplicate.
++        from django.conf import settings
++        Group = apps.get_model('auth', 'Group')
++        group_through = Group.permissions.through
++        # Resolve the user model from settings to get its through model for
++        # user_permissions, if present.
++        user_through = None
++        try:
++            user_app_label, user_model_name = settings.AUTH_USER_MODEL.split('.')
++            User = apps.get_model(user_app_label, user_model_name)
++            # The user model may not define user_permissions (custom models),
++            # so guard access.
++            if hasattr(User, 'user_permissions'):
++                user_through = User.user_permissions.through
++        except Exception:
++            # If anything goes wrong resolving the user model, ignore merging
++            # user m2m relations.
++            user_through = None
++
++        qs = Permission.objects.filter(
+             permissions_query,
+             content_type=old_content_type,
+-        ).update(content_type=new_content_type)
++        )
++        for perm in list(qs):
++            try:
++                existing = Permission.objects.get(
++                    content_type=new_content_type,
++                    codename=perm.codename,
++                )
++            except Permission.DoesNotExist:
++                # No conflict: move this permission to the new content type.
++                perm.content_type = new_content_type
++                perm.save()
++            else:
++                # Merge group relations: for each relation referencing the old
++                # permission, either delete it if the group already has the
++                # target permission, or update it to point to the existing one.
++                for rel in list(group_through.objects.filter(permission_id=perm.pk)):
++                    # group_through typically has group_id and permission_id fields.
++                    if group_through.objects.filter(
++                        group_id=getattr(rel, 'group_id'),
++                        permission_id=existing.pk,
++                    ).exists():
++                        rel.delete()
++                    else:
++                        rel.permission_id = existing.pk
++                        rel.save()
++
++                # Merge user relations if we resolved a through model above.
++                if user_through is not None:
++                    # The user through model typically has user_id and permission_id.
++                    for rel in list(user_through.objects.filter(permission_id=perm.pk)):
++                        if user_through.objects.filter(
++                            user_id=getattr(rel, 'user_id'),
++                            permission_id=existing.pk,
++                        ).exists():
++                            rel.delete()
++                        else:
++                            rel.permission_id = existing.pk
++                            rel.save()
++
++                # Remove the now-unreferenced duplicate permission.
++                perm.delete()
+ 
+ 
+ def revert_proxy_model_permissions(apps, schema_editor):

@@ -1,0 +1,57 @@
+--- a/sklearn/neighbors/nca.py
++++ b/sklearn/neighbors/nca.py
+@@ -298,8 +298,25 @@
+         y = LabelEncoder().fit_transform(y)
+ 
+         # Check the preferred dimensionality of the projected space
++        def _coerce_to_python_scalar(value, expected_type):
++            """Coerce numpy scalar types to native Python scalars for validation.
++
++            This helps accept numpy types coming from e.g. GridSearchCV param
++            grids (np.int64, np.float64, np.bool_) while keeping validation
++            strict for regular Python types.
++            """
++            if isinstance(value, np.generic):
++                if expected_type is int and isinstance(value, np.integer):
++                    return int(value)
++                if expected_type is float and isinstance(value, np.floating):
++                    return float(value)
++                if expected_type is bool and isinstance(value, (np.bool_,)):
++                    return bool(value)
++            return value
++
+         if self.n_components is not None:
+-            check_scalar(self.n_components, 'n_components', int, 1)
++            n_components = _coerce_to_python_scalar(self.n_components, int)
++            check_scalar(n_components, 'n_components', int, 1)
+ 
+             if self.n_components > X.shape[1]:
+                 raise ValueError('The preferred dimensionality of the '
+@@ -309,8 +326,9 @@
+                                  .format(self.n_components, X.shape[1]))
+ 
+         # If warm_start is enabled, check that the inputs are consistent
+-        check_scalar(self.warm_start, 'warm_start', bool)
+-        if self.warm_start and hasattr(self, 'components_'):
++        warm_start = _coerce_to_python_scalar(self.warm_start, bool)
++        check_scalar(warm_start, 'warm_start', bool)
++        if warm_start and hasattr(self, 'components_'):
+             if self.components_.shape[1] != X.shape[1]:
+                 raise ValueError('The new inputs dimensionality ({}) does not '
+                                  'match the input dimensionality of the '
+@@ -318,9 +336,12 @@
+                                  .format(X.shape[1],
+                                          self.components_.shape[1]))
+ 
+-        check_scalar(self.max_iter, 'max_iter', int, 1)
+-        check_scalar(self.tol, 'tol', float, 0.)
+-        check_scalar(self.verbose, 'verbose', int, 0)
++        max_iter = _coerce_to_python_scalar(self.max_iter, int)
++        check_scalar(max_iter, 'max_iter', int, 1)
++        tol = _coerce_to_python_scalar(self.tol, float)
++        check_scalar(tol, 'tol', float, 0.)
++        verbose = _coerce_to_python_scalar(self.verbose, int)
++        check_scalar(verbose, 'verbose', int, 0)
+ 
+         if self.callback is not None:
+             if not callable(self.callback):

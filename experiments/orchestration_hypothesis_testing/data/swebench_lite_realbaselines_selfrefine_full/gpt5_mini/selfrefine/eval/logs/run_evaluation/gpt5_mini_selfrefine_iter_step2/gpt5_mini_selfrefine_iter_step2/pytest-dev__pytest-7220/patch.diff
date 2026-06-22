@@ -1,0 +1,16 @@
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -602,6 +602,12 @@
+             fspath = location[0]
+         else:
+             fspath = py.path.local(location[0])
+-        relfspath = self.session._node_location_to_relpath(fspath)
++        # Prefer to show the path relative to the original pytest root/initial
++        # paths instead of the possibly changed current working directory.
++        relfspath = fspath.relto(self.session.config.rootdir)
++        if not relfspath:
++            relfspath = _check_initialpaths_for_relpath(self.session, fspath)
++        if not relfspath:
++            relfspath = str(fspath)
+         assert type(location[2]) is str
+         return (relfspath, location[1], location[2])

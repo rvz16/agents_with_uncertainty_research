@@ -1,0 +1,147 @@
+2026-06-22 21:11:10,403 - INFO - Creating container for pytest-dev__pytest-8365...
+2026-06-22 21:11:10,657 - INFO - Container for pytest-dev__pytest-8365 created: c44b08484e040c5e14802ae3f020e8995a9100424717930667a00d4143bf1eec
+2026-06-22 21:11:10,809 - INFO - Container for pytest-dev__pytest-8365 started: c44b08484e040c5e14802ae3f020e8995a9100424717930667a00d4143bf1eec
+2026-06-22 21:11:10,809 - INFO - Intermediate patch for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/pytest-dev__pytest-8365/patch.diff, now applying to container...
+2026-06-22 21:11:10,918 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/tmpdir.py...
+Applied patch src/_pytest/tmpdir.py cleanly.
+
+2026-06-22 21:11:10,993 - INFO - Git diff before:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..e0a3ca70a 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -149,15 +149,55 @@ class TempdirFactory:
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return a sanitized current user name, or None if getuser() does not work
++    in the current environment (see #1010).
++
++    The returned value is safe to use as part of a directory name on common
++    platforms (Windows, POSIX). Illegal characters are replaced with underscores,
++    trailing dots/spaces are removed (Windows forbids them), reserved Windows
++    device names are avoided by prefixing an underscore, and the result is
++    length-limited. If sanitization yields an empty name, None is returned so
++    callers can fall back to a default like "unknown".
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        raw = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not raw:
++        return None
++
++    # Replace characters that are problematic in file/directory names with '_'.
++    # Allow common safe characters: alphanumeric, dot, underscore, hyphen.
++    sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", str(raw))
++
++    # Windows forbids trailing dots or spaces in names.
++    sanitized = sanitized.rstrip(" .")
++
++    # Avoid Windows reserved device names (case-insensitive).
++    reserved = {
++        "con",
++        "prn",
++        "aux",
++        "nul",
++        *(f"com{i}" for i in range(1, 10)),
++        *(f"lpt{i}" for i in range(1, 10)),
++    }
++    if sanitized.lower() in reserved:
++        sanitized = "_" + sanitized
++
++    # Bound the length to avoid excessively long paths (choose a modest limit).
++    MAX_USER_LEN = 30
++    if len(sanitized) > MAX_USER_LEN:
++        sanitized = sanitized[:MAX_USER_LEN]
++
++    if not sanitized:
++        return None
++
++    return sanitized
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 21:11:10,993 - INFO - Eval script for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/pytest-dev__pytest-8365/eval.sh; copying to container...
+2026-06-22 21:11:15,062 - INFO - Test runtime: 4.01 seconds
+2026-06-22 21:11:15,062 - INFO - Test output for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/pytest-dev__pytest-8365/test_output.txt
+2026-06-22 21:11:15,120 - INFO - Git diff after:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..e0a3ca70a 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -149,15 +149,55 @@ class TempdirFactory:
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return a sanitized current user name, or None if getuser() does not work
++    in the current environment (see #1010).
++
++    The returned value is safe to use as part of a directory name on common
++    platforms (Windows, POSIX). Illegal characters are replaced with underscores,
++    trailing dots/spaces are removed (Windows forbids them), reserved Windows
++    device names are avoided by prefixing an underscore, and the result is
++    length-limited. If sanitization yields an empty name, None is returned so
++    callers can fall back to a default like "unknown".
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        raw = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not raw:
++        return None
++
++    # Replace characters that are problematic in file/directory names with '_'.
++    # Allow common safe characters: alphanumeric, dot, underscore, hyphen.
++    sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", str(raw))
++
++    # Windows forbids trailing dots or spaces in names.
++    sanitized = sanitized.rstrip(" .")
++
++    # Avoid Windows reserved device names (case-insensitive).
++    reserved = {
++        "con",
++        "prn",
++        "aux",
++        "nul",
++        *(f"com{i}" for i in range(1, 10)),
++        *(f"lpt{i}" for i in range(1, 10)),
++    }
++    if sanitized.lower() in reserved:
++        sanitized = "_" + sanitized
++
++    # Bound the length to avoid excessively long paths (choose a modest limit).
++    MAX_USER_LEN = 30
++    if len(sanitized) > MAX_USER_LEN:
++        sanitized = sanitized[:MAX_USER_LEN]
++
++    if not sanitized:
++        return None
++
++    return sanitized
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 21:11:15,120 - INFO - Grading answer for pytest-dev__pytest-8365...
+2026-06-22 21:11:15,121 - INFO - report: {'pytest-dev__pytest-8365': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_tmpdir.py::test_tmp_path_factory_handles_invalid_dir_characters']}, 'PASS_TO_PASS': {'success': ['testing/test_tmpdir.py::TestTempdirHandler::test_mktemp', 'testing/test_tmpdir.py::TestTempdirHandler::test_tmppath_relative_basetemp_absolute', 'testing/test_tmpdir.py::test_get_user_uid_not_found', 'testing/test_tmpdir.py::TestNumberedDir::test_make', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_lock_create', 'testing/test_tmpdir.py::TestNumberedDir::test_lock_register_cleanup_removal', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_keep', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_locked', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_ignores_symlink', 'testing/test_tmpdir.py::TestNumberedDir::test_removal_accepts_lock', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_file', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_directory', 'testing/test_tmpdir.py::TestRmRf::test_on_rm_rf_error', 'testing/test_tmpdir.py::test_tmpdir_equals_tmp_path', 'testing/test_tmpdir.py::test_tmpdir_fixture', 'testing/test_tmpdir.py::TestConfigTmpdir::test_getbasetemp_custom_removes_old', 'testing/test_tmpdir.py::test_mktemp[mypath-True]', 'testing/test_tmpdir.py::test_mktemp[/mypath1-False]', 'testing/test_tmpdir.py::test_mktemp[./mypath1-True]', 'testing/test_tmpdir.py::test_mktemp[../mypath3-False]', 'testing/test_tmpdir.py::test_mktemp[../../mypath4-False]', 'testing/test_tmpdir.py::test_mktemp[mypath5/..-False]', 'testing/test_tmpdir.py::test_mktemp[mypath6/../mypath6-True]', 'testing/test_tmpdir.py::test_mktemp[mypath7/../mypath7/..-False]', 'testing/test_tmpdir.py::test_tmpdir_always_is_realpath', 'testing/test_tmpdir.py::test_tmp_path_always_is_realpath', 'testing/test_tmpdir.py::test_tmpdir_too_long_on_parametrization', 'testing/test_tmpdir.py::test_tmpdir_factory', 'testing/test_tmpdir.py::test_tmpdir_fallback_tox_env', 'testing/test_tmpdir.py::test_tmpdir_fallback_uid_not_found', 'testing/test_tmpdir.py::test_basetemp_with_read_only_files'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-8365: resolved: False
+2026-06-22 21:11:15,121 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:11:30,386 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:11:30,408 - INFO - Container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:11:30,408 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest...
+2026-06-22 21:11:30,671 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest removed.

@@ -1,0 +1,16 @@
+--- a/sympy/matrices/expressions/matexpr.py
++++ b/sympy/matrices/expressions/matexpr.py
+@@ -987,6 +987,13 @@
+ 
+     __bool__ = __nonzero__
+ 
++    def __mul__(self, other):
++        """
++        Ensure multiplication by (or with) a ZeroMatrix yields a ZeroMatrix
++        of the appropriate shape when possible. This prevents simplifications
++        to scalar zero that would lose matrix shape information (which is
++        important
++
+ 
+ class GenericZeroMatrix(ZeroMatrix):
+     """

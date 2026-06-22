@@ -1,0 +1,36 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -216,7 +216,32 @@
+         try:
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:
+-            raise GeometryError("Don't know how to add {} and a Point object".format(other))
++            # Handle the case where SymPy has created a Mul with a Point
++            # as one of its arguments (e.g., 2*Point). In that situation
++            # Point(other) raises a TypeError because `other` is a Mul.
++            # If we can find a single Point inside the Mul we can
++            # reconstruct the scaled Point and proceed.
++            from sympy import Mul
++            if isinstance(other, Mul):
++                point_term = None
++                scalar = S.One
++                for term in other.args:
++                    if isinstance(term, Point):
++                        if point_term is not None:
++                            # More than one Point in the Mul: give up.
++                            point_term = None
++                            break
++                        point_term = term
++                    else:
++                        scalar = scalar * term
++                if point_term is not None:
++                    # Build the scaled point (this uses Point.__mul__)
++                    other = point_term * scalar
++                    s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
++                else:
++                    raise GeometryError("Don't know how to add {} and a Point object".format(other))
++            else:
++                raise GeometryError("Don't know how to add {} and a Point object".format(other))
+ 
+         coords = [simplify(a + b) for a, b in zip(s, o)]
+         return Point(coords, evaluate=False)

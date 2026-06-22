@@ -1,0 +1,63 @@
+--- a/sympy/matrices/expressions/blockmatrix.py
++++ b/sympy/matrices/expressions/blockmatrix.py
+@@ -7,7 +7,7 @@
+ from sympy.utilities import sift
+ from sympy.utilities.misc import filldedent
+ 
+-from sympy.matrices.expressions.matexpr import MatrixExpr, ZeroMatrix, Identity
++from sympy.matrices.expressions.matexpr import MatrixExpr, ZeroMatrix, Identity, MatrixElement
+ from sympy.matrices.expressions.matmul import MatMul
+ from sympy.matrices.expressions.matadd import MatAdd
+ from sympy.matrices.expressions.matpow import MatPow
+@@ -233,18 +233,42 @@
+         return self._eval_transpose()
+ 
+     def _entry(self, i, j, **kwargs):
++        # Determine which block the (i, j) entry belongs to.
++        # If the comparisons between indices and block sizes are indeterminate
++        # (e.g. symbolic), return a MatrixElement of the BlockMatrix so that
++        # the access remains unevaluated.
+         # Find row entry
++        row_index = i
++        found_row = False
+         for row_block, numrows in enumerate(self.rowblocksizes):
+-            if (i < numrows) != False:
+-                break
+-            else:
+-                i -= numrows
++            try:
++                if bool(row_index < numrows):
++                    found_row = True
++                    break
++                else:
++                    row_index = row_index - numrows
++            except Exception:
++                # comparison is indeterminate; leave unevaluated
++                return MatrixElement(self, i, j)
++        if not found_row:
++            raise IndexError("Row index out of range")
++
++        col_index = j
++        found_col = False
+         for col_block, numcols in enumerate(self.colblocksizes):
+-            if (j < numcols) != False:
+-                break
+-            else:
+-                j -= numcols
+-        return self.blocks[row_block, col_block][i, j]
++            try:
++                if bool(col_index < numcols):
++                    found_col = True
++                    break
++                else:
++                    col_index = col_index - numcols
++            except Exception:
++                # comparison is indeterminate; leave unevaluated
++                return MatrixElement(self, i, j)
++        if not found_col:
++            raise IndexError("Column index out of range")
++
++        return self.blocks[row_block, col_block][row_index, col_index]
+ 
+     @property
+     def is_Identity(self):

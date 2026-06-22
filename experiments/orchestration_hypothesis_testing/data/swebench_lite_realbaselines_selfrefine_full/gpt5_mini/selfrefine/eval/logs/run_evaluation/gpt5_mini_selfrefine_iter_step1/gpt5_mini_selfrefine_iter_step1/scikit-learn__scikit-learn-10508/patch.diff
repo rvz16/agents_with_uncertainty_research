@@ -1,0 +1,16 @@
+--- a/sklearn/preprocessing/label.py
++++ b/sklearn/preprocessing/label.py
+@@ -126,6 +126,13 @@
+         """
+         check_is_fitted(self, 'classes_')
+         y = column_or_1d(y, warn=True)
++
++        # If y is empty, return an empty integer array immediately.
++        # This avoids passing an empty float64 array to np.searchsorted when
++        # self.classes_ has a non-compatible dtype (e.g. strings), which would
++        # raise a TypeError in some numpy versions trying to cast types.
++        if getattr(y, "size", None) == 0:
++            return np.empty(0, dtype=np.intp)
+ 
+         classes = np.unique(y)
+         if len(np.intersect1d(classes, self.classes_)) < len(classes):

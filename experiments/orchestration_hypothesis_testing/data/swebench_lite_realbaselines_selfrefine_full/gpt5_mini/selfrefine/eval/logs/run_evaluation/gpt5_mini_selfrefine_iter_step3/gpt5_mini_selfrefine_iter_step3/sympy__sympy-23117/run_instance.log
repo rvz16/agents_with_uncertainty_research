@@ -1,0 +1,65 @@
+2026-06-22 19:11:07,600 - INFO - Creating container for sympy__sympy-23117...
+2026-06-22 19:11:07,740 - INFO - Container for sympy__sympy-23117 created: 6e94beff0d69503226d0d2e05e8d9a79cc3120fbb85276ad0446501ed8c67962
+2026-06-22 19:11:07,923 - INFO - Container for sympy__sympy-23117 started: 6e94beff0d69503226d0d2e05e8d9a79cc3120fbb85276ad0446501ed8c67962
+2026-06-22 19:11:07,923 - INFO - Intermediate patch for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-23117/patch.diff, now applying to container...
+2026-06-22 19:11:08,039 - INFO - >>>>> Applied Patch:
+Checking patch sympy/tensor/array/ndim_array.py...
+Applied patch sympy/tensor/array/ndim_array.py cleanly.
+
+2026-06-22 19:11:08,327 - INFO - Git diff before:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..bd0abf25e3 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -194,8 +194,16 @@ def f(pointer):
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Materialize the pointer to safely check for emptiness.
++            # This also ensures we can iterate over it multiple times
++            # (e.g. when it's a generator).
++            pointer_list = list(pointer)
++            if len(pointer_list) == 0:
++                # An empty iterable corresponds to a 1-D array of length 0.
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+2026-06-22 19:11:08,327 - INFO - Eval script for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-23117/eval.sh; copying to container...
+2026-06-22 19:11:11,716 - INFO - Test runtime: 3.34 seconds
+2026-06-22 19:11:11,716 - INFO - Test output for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-23117/test_output.txt
+2026-06-22 19:11:11,760 - INFO - Git diff after:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..bd0abf25e3 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -194,8 +194,16 @@ def f(pointer):
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Materialize the pointer to safely check for emptiness.
++            # This also ensures we can iterate over it multiple times
++            # (e.g. when it's a generator).
++            pointer_list = list(pointer)
++            if len(pointer_list) == 0:
++                # An empty iterable corresponds to a 1-D array of length 0.
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+2026-06-22 19:11:11,760 - INFO - Grading answer for sympy__sympy-23117...
+2026-06-22 19:11:11,760 - INFO - report: {'sympy__sympy-23117': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_17851'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_array_negative_indices', 'test_issue_18361', 'test_issue_20222'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-23117: resolved: True
+2026-06-22 19:11:11,761 - INFO - Attempting to stop container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:11:26,982 - INFO - Attempting to remove container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:11:27,004 - INFO - Container sweb.eval.sympy__sympy-23117.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 19:11:27,004 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest...
+2026-06-22 19:11:27,074 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest removed.

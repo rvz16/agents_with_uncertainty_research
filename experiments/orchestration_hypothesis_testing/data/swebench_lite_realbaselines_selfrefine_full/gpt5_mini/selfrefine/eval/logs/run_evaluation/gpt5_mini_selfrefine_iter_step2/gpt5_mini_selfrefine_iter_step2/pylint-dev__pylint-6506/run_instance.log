@@ -1,0 +1,65 @@
+2026-06-22 16:38:16,941 - INFO - Creating container for pylint-dev__pylint-6506...
+2026-06-22 16:38:17,290 - INFO - Container for pylint-dev__pylint-6506 created: 1e42a703e30bf0d4b84f3880871167a09e383ba1071e14abfda9e3de6f29ffde
+2026-06-22 16:38:17,430 - INFO - Container for pylint-dev__pylint-6506 started: 1e42a703e30bf0d4b84f3880871167a09e383ba1071e14abfda9e3de6f29ffde
+2026-06-22 16:38:17,431 - INFO - Intermediate patch for pylint-dev__pylint-6506 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pylint-dev__pylint-6506/patch.diff, now applying to container...
+2026-06-22 16:38:17,523 - INFO - >>>>> Applied Patch:
+Checking patch pylint/config/config_initialization.py...
+Applied patch pylint/config/config_initialization.py cleanly.
+
+2026-06-22 16:38:17,668 - INFO - Git diff before:
+diff --git a/pylint/config/config_initialization.py b/pylint/config/config_initialization.py
+index 24e453a73..ae8bbeff5 100644
+--- a/pylint/config/config_initialization.py
++++ b/pylint/config/config_initialization.py
+@@ -82,6 +82,17 @@ def _config_initialization(
+     if unrecognized_options:
+         msg = ", ".join(unrecognized_options)
+         linter.add_message("unrecognized-option", line=0, args=msg)
++        # If this function was called as part of the top-level CLI invocation
++        # (args_list is the same as sys.argv[1:]), prefer a clean exit instead of
++        # raising the internal _UnrecognizedOptionError to avoid printing a
++        # traceback for the end-user. If called programmatically with a custom
++        # args_list, keep raising the exception so callers can handle it.
++        try:
++            cli_invocation = args_list == sys.argv[1:]
++        except Exception:
++            cli_invocation = False
++        if cli_invocation:
++            raise SystemExit(32)
+         raise _UnrecognizedOptionError(options=unrecognized_options)
+ 
+     # Set the current module to configuration as we don't know where
+2026-06-22 16:38:17,668 - INFO - Eval script for pylint-dev__pylint-6506 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pylint-dev__pylint-6506/eval.sh; copying to container...
+2026-06-22 16:38:20,096 - INFO - Test runtime: 2.37 seconds
+2026-06-22 16:38:20,096 - INFO - Test output for pylint-dev__pylint-6506 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pylint-dev__pylint-6506/test_output.txt
+2026-06-22 16:38:20,139 - INFO - Git diff after:
+diff --git a/pylint/config/config_initialization.py b/pylint/config/config_initialization.py
+index 24e453a73..ae8bbeff5 100644
+--- a/pylint/config/config_initialization.py
++++ b/pylint/config/config_initialization.py
+@@ -82,6 +82,17 @@ def _config_initialization(
+     if unrecognized_options:
+         msg = ", ".join(unrecognized_options)
+         linter.add_message("unrecognized-option", line=0, args=msg)
++        # If this function was called as part of the top-level CLI invocation
++        # (args_list is the same as sys.argv[1:]), prefer a clean exit instead of
++        # raising the internal _UnrecognizedOptionError to avoid printing a
++        # traceback for the end-user. If called programmatically with a custom
++        # args_list, keep raising the exception so callers can handle it.
++        try:
++            cli_invocation = args_list == sys.argv[1:]
++        except Exception:
++            cli_invocation = False
++        if cli_invocation:
++            raise SystemExit(32)
+         raise _UnrecognizedOptionError(options=unrecognized_options)
+ 
+     # Set the current module to configuration as we don't know where
+2026-06-22 16:38:20,139 - INFO - Grading answer for pylint-dev__pylint-6506...
+2026-06-22 16:38:20,140 - INFO - report: {'pylint-dev__pylint-6506': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['tests/config/test_config.py::test_unknown_option_name', 'tests/config/test_config.py::test_unknown_short_option_name']}, 'PASS_TO_PASS': {'success': ['tests/config/test_config.py::test_can_read_toml_env_variable', 'tests/config/test_config.py::test_unknown_message_id', 'tests/config/test_config.py::test_unknown_confidence', 'tests/config/test_config.py::test_unknown_yes_no', 'tests/config/test_config.py::test_unknown_py_version', 'tests/config/test_config.py::test_short_verbose'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pylint-dev__pylint-6506: resolved: False
+2026-06-22 16:38:20,140 - INFO - Attempting to stop container sweb.eval.pylint-dev__pylint-6506.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:38:35,432 - INFO - Attempting to remove container sweb.eval.pylint-dev__pylint-6506.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:38:35,455 - INFO - Container sweb.eval.pylint-dev__pylint-6506.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:38:35,455 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-6506:latest...
+2026-06-22 16:38:35,870 - INFO - Image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-6506:latest removed.

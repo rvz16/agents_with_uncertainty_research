@@ -1,0 +1,30 @@
+--- a/src/_pytest/junitxml.py
++++ b/src/_pytest/junitxml.py
+@@ -13,6 +13,7 @@
+ import re
+ import sys
+ import time
++import socket
+ 
+ import py
+ 
+@@ -657,6 +658,10 @@
+         )
+         logfile.write('<?xml version="1.0" encoding="utf-8"?>')
+ 
++        # timestamp should reflect when the test session started (ISO8601-like)
++        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(self.suite_start_time))
++        hostname = socket.gethostname()
++
+         suite_node = Junit.testsuite(
+             self._get_global_properties_node(),
+             [x.to_xml() for x in self.node_reporters_ordered],
+@@ -666,6 +671,8 @@
+             skipped=self.stats["skipped"],
+             tests=numtests,
+             time="%.3f" % suite_time_delta,
++            timestamp=timestamp,
++            hostname=hostname,
+         )
+         logfile.write(Junit.testsuites([suite_node]).unicode(indent=0))
+         logfile.close()

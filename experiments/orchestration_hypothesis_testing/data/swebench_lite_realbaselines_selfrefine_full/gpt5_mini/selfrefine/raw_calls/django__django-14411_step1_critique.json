@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:05:48.667878+00:00",
+  "instance_id": "django__django-14411",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nLabel for ReadOnlyPasswordHashWidget points to non-labelable element.\nDescription\n\t \n\t\t(last modified by David Sanders)\n\t \nIn the admin, the label element for the ReadOnlyPasswordHashWidget widget has a 'for' attribute which points to a non-labelable element, since the widget just renders text, not an input. There's no labelable element for the widget, so the label shouldn't have a 'for' attribute.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/contrib/auth/forms.py\n+++ b/django/contrib/auth/forms.py\n@@ -33,6 +33,13 @@\n class ReadOnlyPasswordHashWidget(forms.Widget):\n     template_name = 'auth/widgets/read_only_password_hash.html'\n     read_only = True\n+\n+    def id_for_label(self, id_):\n+        # This widget only renders read-only text (no input), so it is not\n+        # labelable. Returning None prevents form rendering from adding a\n+        # 'for' attribute on the <label> element that would otherwise point\n+        # to a non-labelable element.\n+        return None\n \n     def get_context(self, name, value, attrs):\n         context = super().get_context(name, value, attrs)\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 382,
+  "completion_tokens": 766,
+  "cost_usd": 0.0016275
+}

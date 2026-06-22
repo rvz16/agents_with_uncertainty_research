@@ -1,0 +1,19 @@
+--- a/sympy/simplify/cse_main.py
++++ b/sympy/simplify/cse_main.py
+@@ -586,6 +586,16 @@
+         if isinstance(expr, RootOf):
+             return
+ 
++        # Treat MatrixSymbol as atomic for CSE: don't replace whole matrix symbols.
++        # If a MatrixSymbol is treated as a repeated subexpression and extracted
++        # as a replacement, later code generation will end up emitting copies
++        # of the whole matrix (e.g. x0 = a) and then element-wise copies
++        # (x0[i] = a[i]) which is undesirable. Mark MatrixSymbol instances as
++        # excluded so they are not considered for extraction.
++        if isinstance(expr, MatrixSymbol):
++            excluded_symbols.add(expr)
++            return
++
+         if isinstance(expr, Basic) and (expr.is_Atom or expr.is_Order):
+             if expr.is_Symbol:
+                 excluded_symbols.add(expr)

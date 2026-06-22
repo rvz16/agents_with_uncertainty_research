@@ -1,0 +1,133 @@
+2026-06-22 15:11:34,353 - INFO - Creating container for pylint-dev__pylint-7993...
+2026-06-22 15:11:34,447 - INFO - Container for pylint-dev__pylint-7993 created: 54e520decee1a277c23879dff9d4fa2b53bf8f1364cfb5a03fb47a82d4b92ae1
+2026-06-22 15:11:34,586 - INFO - Container for pylint-dev__pylint-7993 started: 54e520decee1a277c23879dff9d4fa2b53bf8f1364cfb5a03fb47a82d4b92ae1
+2026-06-22 15:11:34,586 - INFO - Intermediate patch for pylint-dev__pylint-7993 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/pylint-dev__pylint-7993/patch.diff, now applying to container...
+2026-06-22 15:11:34,709 - INFO - >>>>> Applied Patch:
+Checking patch pylint/reporters/text.py...
+Applied patch pylint/reporters/text.py cleanly.
+
+2026-06-22 15:11:34,878 - INFO - Git diff before:
+diff --git a/pylint/reporters/text.py b/pylint/reporters/text.py
+index 29bd46798..272895f20 100644
+--- a/pylint/reporters/text.py
++++ b/pylint/reporters/text.py
+@@ -16,6 +16,7 @@ import sys
+ import warnings
+ from dataclasses import asdict, fields
+ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, TextIO, cast, overload
++from string import Formatter
+ 
+ from pylint.message import Message
+ from pylint.reporters import BaseReporter
+@@ -174,15 +175,37 @@ class TextReporter(BaseReporter):
+         # Set template to the currently selected template
+         self._template = template
+ 
+-        # Check to see if all parameters in the template are attributes of the Message
+-        arguments = re.findall(r"\{(.+?)(:.*)?\}", template)
+-        for argument in arguments:
+-            if argument[0] not in MESSAGE_FIELDS:
++        # Check to see if all parameters in the template are attributes of the Message.
++        # Use string.Formatter.parse() so that escaped braces ({{ and }}) are handled
++        # correctly (they will be returned as literal text and not as fields).
++        formatter = Formatter()
++        for parsed in formatter.parse(template):
++            # parsed can be (literal_text, field_name, format_spec, conversion)
++            # or (literal_text, field_name, format_spec) depending on Python version.
++            if len(parsed) == 4:
++                _, field_name, format_spec, conversion = parsed
++            else:
++                _, field_name, format_spec = parsed  # type: ignore[assignment]
++                conversion = None
++            # field_name is None or empty for literal text (including escaped braces)
++            if not field_name:
++                continue
++            # Consider only the base field name (before attribute or indexing),
++            # e.g. "msg.attr" or "msg[0]" -> "msg"
++            base_field = re.split(r"[.\[]", field_name)[0]
++            if base_field not in MESSAGE_FIELDS:
+                 warnings.warn(
+-                    f"Don't recognize the argument '{argument[0]}' in the --msg-template. "
++                    f"Don't recognize the argument '{base_field}' in the --msg-template. "
+                     "Are you sure it is supported on the current version of pylint?"
+                 )
+-                template = re.sub(r"\{" + argument[0] + r"(:.*?)?\}", "", template)
++                # Reconstruct the exact field pattern and remove it from the template.
++                field_pattern = "{" + field_name
++                if conversion:
++                    field_pattern += "!" + conversion
++                if format_spec:
++                    field_pattern += ":" + format_spec
++                field_pattern += "}"
++                template = template.replace(field_pattern, "")
+         self._fixed_template = template
+ 
+     def write_message(self, msg: Message) -> None:
+2026-06-22 15:11:34,878 - INFO - Eval script for pylint-dev__pylint-7993 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/pylint-dev__pylint-7993/eval.sh; copying to container...
+2026-06-22 15:11:39,914 - INFO - Test runtime: 4.99 seconds
+2026-06-22 15:11:39,915 - INFO - Test output for pylint-dev__pylint-7993 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/pylint-dev__pylint-7993/test_output.txt
+2026-06-22 15:11:39,964 - INFO - Git diff after:
+diff --git a/pylint/reporters/text.py b/pylint/reporters/text.py
+index 29bd46798..272895f20 100644
+--- a/pylint/reporters/text.py
++++ b/pylint/reporters/text.py
+@@ -16,6 +16,7 @@ import sys
+ import warnings
+ from dataclasses import asdict, fields
+ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, TextIO, cast, overload
++from string import Formatter
+ 
+ from pylint.message import Message
+ from pylint.reporters import BaseReporter
+@@ -174,15 +175,37 @@ class TextReporter(BaseReporter):
+         # Set template to the currently selected template
+         self._template = template
+ 
+-        # Check to see if all parameters in the template are attributes of the Message
+-        arguments = re.findall(r"\{(.+?)(:.*)?\}", template)
+-        for argument in arguments:
+-            if argument[0] not in MESSAGE_FIELDS:
++        # Check to see if all parameters in the template are attributes of the Message.
++        # Use string.Formatter.parse() so that escaped braces ({{ and }}) are handled
++        # correctly (they will be returned as literal text and not as fields).
++        formatter = Formatter()
++        for parsed in formatter.parse(template):
++            # parsed can be (literal_text, field_name, format_spec, conversion)
++            # or (literal_text, field_name, format_spec) depending on Python version.
++            if len(parsed) == 4:
++                _, field_name, format_spec, conversion = parsed
++            else:
++                _, field_name, format_spec = parsed  # type: ignore[assignment]
++                conversion = None
++            # field_name is None or empty for literal text (including escaped braces)
++            if not field_name:
++                continue
++            # Consider only the base field name (before attribute or indexing),
++            # e.g. "msg.attr" or "msg[0]" -> "msg"
++            base_field = re.split(r"[.\[]", field_name)[0]
++            if base_field not in MESSAGE_FIELDS:
+                 warnings.warn(
+-                    f"Don't recognize the argument '{argument[0]}' in the --msg-template. "
++                    f"Don't recognize the argument '{base_field}' in the --msg-template. "
+                     "Are you sure it is supported on the current version of pylint?"
+                 )
+-                template = re.sub(r"\{" + argument[0] + r"(:.*?)?\}", "", template)
++                # Reconstruct the exact field pattern and remove it from the template.
++                field_pattern = "{" + field_name
++                if conversion:
++                    field_pattern += "!" + conversion
++                if format_spec:
++                    field_pattern += ":" + format_spec
++                field_pattern += "}"
++                template = template.replace(field_pattern, "")
+         self._fixed_template = template
+ 
+     def write_message(self, msg: Message) -> None:
+2026-06-22 15:11:39,964 - INFO - Grading answer for pylint-dev__pylint-7993...
+2026-06-22 15:11:39,965 - INFO - report: {'pylint-dev__pylint-7993': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/reporters/unittest_reporting.py::test_template_option_with_header'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/reporters/unittest_reporting.py::test_template_option', 'tests/reporters/unittest_reporting.py::test_template_option_default', 'tests/reporters/unittest_reporting.py::test_template_option_end_line', 'tests/reporters/unittest_reporting.py::test_template_option_non_existing', 'tests/reporters/unittest_reporting.py::test_deprecation_set_output', 'tests/reporters/unittest_reporting.py::test_parseable_output_deprecated', 'tests/reporters/unittest_reporting.py::test_parseable_output_regression', 'tests/reporters/unittest_reporting.py::test_multi_format_output', 'tests/reporters/unittest_reporting.py::test_multi_reporter_independant_messages', 'tests/reporters/unittest_reporting.py::test_display_results_is_renamed'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pylint-dev__pylint-7993: resolved: True
+2026-06-22 15:11:39,965 - INFO - Attempting to stop container sweb.eval.pylint-dev__pylint-7993.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:11:55,147 - INFO - Attempting to remove container sweb.eval.pylint-dev__pylint-7993.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:11:55,162 - INFO - Container sweb.eval.pylint-dev__pylint-7993.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:11:55,162 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-7993:latest...
+2026-06-22 15:11:55,444 - INFO - Image swebench/sweb.eval.x86_64.pylint-dev_1776_pylint-7993:latest removed.

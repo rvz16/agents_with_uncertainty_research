@@ -1,0 +1,59 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_choices_max_length(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -290,6 +291,48 @@
+                 id='fields.E005',
+             )
+         ]
++
++    def _check_choices_max_length(self):
++        """
++        Ensure that when a field defines max_length, any textual choice values
++        will fit in that max_length. Only run for fields that define a
++        max_length and whose internal type implies a character/blob column.
++        """
++        if self.max_length is None:
++            return []
++
++        try:
++            max_len = int(self.max_length)
++        except (TypeError, ValueError):
++            return []
++
++        # Only apply this check to field types where max_length is meaningful
++        # for the stored value (char/blob like fields).
++        internal = self.get_internal_type()
++        if internal not in (
++            "CharField", "FilePathField", "GenericIPAddressField", "UUIDField",
++            "SlugField", "EmailField", "URLField", "BinaryField",
++        ):
++            return []
++
++        for choice_value, _ in self.flatchoices:
++            # Only consider values that will be stored as textual/binary data.
++            if isinstance(choice_value, (str, bytes, Promise)):
++                try:
++                    length = len(choice_value) if not isinstance(choice_value, Promise) else len(str(choice_value))
++                except Exception:
++                    # If we can't determine length, skip this choice.
++                    continue
++                if length > max_len:
++                    return [
++                        checks.Error(
++                            "'max_length' must be at least %d to fit the longest choice (%r)." % (length, choice_value),
++                            hint="Increase the 'max_length' of this field to %d or more." % length,
++                            obj=self,
++                            id='fields.E126',
++                        )
++                    ]
++        return []
+ 
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):

@@ -1,0 +1,25 @@
+--- a/django/utils/decorators.py
++++ b/django/utils/decorators.py
+@@ -37,7 +37,21 @@
+         # 'self' argument, but it's a closure over self so it can call
+         # 'func'. Also, wrap method.__get__() in a function because new
+         # attributes can't be set on bound method objects, only on functions.
+-        bound_method = partial(method.__get__(self, type(self)))
++        bound = method.__get__(self, type(self))
++
++        def bound_method(*_args, **_kwargs):
++            return bound(*_args, **_kwargs)
++
++        # Copy attributes from the bound method so decorators that rely on
++        # function attributes (like functools.wraps) can access __name__,
++        # __module__, etc. If 'bound' doesn't expose those attributes (e.g.
++        # it's a functools.partial), fall back to copying from the original
++        # 'method'.
++        try:
++            update_wrapper(bound_method, bound)
++        except Exception:
++            update_wrapper(bound_method, method)
++
+         for dec in decorators:
+             bound_method = dec(bound_method)
+         return bound_method(*args, **kwargs)

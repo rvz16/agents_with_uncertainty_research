@@ -1,0 +1,58 @@
+--- a/pylint/config/argument.py
++++ b/pylint/config/argument.py
+@@ -99,11 +99,25 @@
+     return version
+ 
+ 
++def _regexp_transformer(value: str) -> Pattern[str]:
++    """Transforms a string into a compiled regular expression.
++
++    Convert re.error into argparse.ArgumentTypeError so argparse can handle
++    invalid patterns gracefully (instead of letting a raw traceback bubble up).
++    """
++    try:
++        return re.compile(value)
++    except re.error as exc:
++        raise argparse.ArgumentTypeError(
++            f"Invalid regular expression '{value}': {exc}"
++        ) from exc
++
++
+ def _regexp_csv_transfomer(value: str) -> Sequence[Pattern[str]]:
+     """Transforms a comma separated list of regular expressions."""
+     patterns: list[Pattern[str]] = []
+     for pattern in _csv_transformer(value):
+-        patterns.append(re.compile(pattern))
++        patterns.append(_regexp_transformer(pattern))
+     return patterns
+ 
+ 
+@@ -111,13 +125,12 @@
+     """Transforms a comma separated list of regular expressions paths."""
+     patterns: list[Pattern[str]] = []
+     for pattern in _csv_transformer(value):
+-        patterns.append(
+-            re.compile(
+-                str(pathlib.PureWindowsPath(pattern)).replace("\\", "\\\\")
+-                + "|"
+-                + pathlib.PureWindowsPath(pattern).as_posix()
+-            )
+-        )
++        combined = (
++            str(pathlib.PureWindowsPath(pattern)).replace("\\", "\\\\")
++            + "|"
++            + pathlib.PureWindowsPath(pattern).as_posix()
++        )
++        patterns.append(_regexp_transformer(combined))
+     return patterns
+ 
+ 
+@@ -130,7 +143,7 @@
+     "non_empty_string": _non_empty_string_transformer,
+     "path": _path_transformer,
+     "py_version": _py_version_transformer,
+-    "regexp": re.compile,
++    "regexp": _regexp_transformer,
+     "regexp_csv": _regexp_csv_transfomer,
+     "regexp_paths_csv": _regexp_paths_csv_transfomer,
+     "string": pylint_utils._unquote,

@@ -1,0 +1,29 @@
+--- a/lib/matplotlib/legend.py
++++ b/lib/matplotlib/legend.py
+@@ -342,7 +342,10 @@
+         title_fontproperties=None,  # properties for the legend title
+         alignment="center",       # control the alignment within the legend box
+         *,
+-        ncol=1  # synonym for ncols (backward compatibility)
++        ncol=1,  # synonym for ncols (backward compatibility)
++        draggable=None,
++        draggable_use_blit=False,
++        draggable_update="loc"
+     ):
+         """
+         Parameters
+@@ -538,6 +541,14 @@
+ 
+         self.set_title(title, prop=title_prop_fp)
+         self._draggable = None
++
++        # Initialize draggable state if requested. If *draggable* is None we
++        # leave the state unchanged (default behavior). Otherwise, call
++        # set_draggable to enable/disable dragging immediately.
++        if draggable is not None:
++            self.set_draggable(bool(draggable),
++                               use_blit=draggable_use_blit,
++                               update=draggable_update)
+ 
+         # set the text color
+ 

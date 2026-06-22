@@ -1,0 +1,17 @@
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,7 +23,13 @@
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++
++        # Drop missing observations so fitting is robust to NaN/None values
++        mask = x.notna() & y.notna()
++        x = x[mask].astype(float)
++        y = y[mask].astype(float)
++
++        if len(x) == 0 or x.nunique() <= self.order:
+             # TODO warn?
+             xx = yy = []
+         else:

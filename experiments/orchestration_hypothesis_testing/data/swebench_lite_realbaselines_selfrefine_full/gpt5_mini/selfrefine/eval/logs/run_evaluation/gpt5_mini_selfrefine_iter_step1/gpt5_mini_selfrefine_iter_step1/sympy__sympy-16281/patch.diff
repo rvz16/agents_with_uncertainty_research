@@ -1,0 +1,60 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -474,14 +474,18 @@
+         func = expr.term
+         pretty_func = self._print(func)
+ 
+-        horizontal_chr = xobj('_', 1)
+-        corner_chr = xobj('_', 1)
+-        vertical_chr = xobj('|', 1)
+-
+-        if self._use_unicode:
+-            # use unicode corners
+-            horizontal_chr = xobj('-', 1)
+-            corner_chr = u'\N{BOX DRAWINGS LIGHT DOWN AND HORIZONTAL}'
++        # Default ASCII characters
++        horizontal_chr = '_'
++        vertical_chr = '|'
++        top_corner = '_'
++        bottom_corner = '_'
++
++        if self._use_unicode:
++            # Use box-drawing characters for a cleaner, slimmer product sign
++            horizontal_chr = u'\N{BOX DRAWINGS LIGHT HORIZONTAL}'
++            vertical_chr = u'\N{BOX DRAWINGS LIGHT VERTICAL}'
++            top_corner = u'\N{BOX DRAWINGS LIGHT DOWN AND HORIZONTAL}'
++            bottom_corner = u'\N{BOX DRAWINGS LIGHT UP AND HORIZONTAL}'
+ 
+         func_height = pretty_func.height()
+ 
+@@ -490,11 +494,18 @@
+         sign_height = 0
+ 
+         for lim in expr.limits:
+-            width = (func_height + 2) * 5 // 3 - 2
++            # Make the product sign slim but proportional to the height of the
++            # argument. Ensure at least one horizontal character.
++            width = max(1, func_height)
++
+             sign_lines = []
+-            sign_lines.append(corner_chr + (horizontal_chr*width) + corner_chr)
+-            for i in range(func_height + 1):
+-                sign_lines.append(vertical_chr + (' '*width) + vertical_chr)
++            # Top bar
++            sign_lines.append(top_corner + (horizontal_chr * width) + top_corner)
++            # Vertical body matching the function's height
++            for i in range(func_height):
++                sign_lines.append(vertical_chr + (' ' * width) + vertical_chr)
++            # Bottom bar for symmetry and to avoid an extra empty line
++            sign_lines.append(bottom_corner + (horizontal_chr * width) + bottom_corner)
+ 
+             pretty_sign = stringPict('')
+             pretty_sign = prettyForm(*pretty_sign.stack(*sign_lines))
+@@ -511,6 +522,7 @@
+             pretty_sign = prettyForm(*pretty_sign.below(pretty_lower))
+ 
+             if first:
++                # align the function baseline with the sign the first time
+                 pretty_func.baseline = 0
+                 first = False
+ 

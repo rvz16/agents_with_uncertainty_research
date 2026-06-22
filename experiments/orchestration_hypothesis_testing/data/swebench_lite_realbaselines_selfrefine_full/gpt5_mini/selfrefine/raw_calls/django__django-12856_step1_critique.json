@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:53:08.390264+00:00",
+  "instance_id": "django__django-12856",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nAdd check for fields of UniqueConstraints.\nDescription\n\t \n\t\t(last modified by Marnanel Thurman)\n\t \nWhen a model gains a UniqueConstraint, makemigrations doesn't check that the fields named therein actually exist.\nThis is in contrast to the older unique_together syntax, which raises models.E012 if the fields don't exist.\nIn the attached demonstration, you'll need to uncomment \"with_unique_together\" in settings.py in order to show that unique_together raises E012.\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/base.py\n+++ b/django/db/models/base.py\n@@ -1926,6 +1926,10 @@\n                         id='models.W038',\n                     )\n                 )\n+        # Validate fields referenced by UniqueConstraint instances.\n+        for constraint in cls._meta.constraints:\n+            if isinstance(constraint, UniqueConstraint) and getattr(constraint, 'fields', None):\n+                errors.extend(cls._check_local_fields(constraint.fields, \"unique constraint\"))\n         return errors\n \n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 334,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030275
+}

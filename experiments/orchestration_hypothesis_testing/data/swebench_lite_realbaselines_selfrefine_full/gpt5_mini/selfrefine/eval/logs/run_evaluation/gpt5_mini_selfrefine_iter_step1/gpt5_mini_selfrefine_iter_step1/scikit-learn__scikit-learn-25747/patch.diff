@@ -1,0 +1,55 @@
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -52,14 +52,50 @@
+ 
+     pd = check_pandas_support("Setting output container to 'pandas'")
+ 
++    # If the transformer already returned a DataFrame, only override the columns
++    # and index when it is safe to do so. In particular, we should not force a
++    # new index when the returned DataFrame has a different number of rows than
++    # the original input (this happens for aggregating transformers).
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+             data_to_wrap.columns = columns
+         if index is not None:
+-            data_to_wrap.index = index
++            try:
++                if len(data_to_wrap) == len(index):
++                    data_to_wrap.index = index
++                # If lengths differ, preserve the transformer's own index.
++            except Exception:
++                # If for any reason length-checking fails, do not overwrite the index.
++                pass
+         return data_to_wrap
+ 
+-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    # If a Series was returned, preserve its own index unless it explicitly matches
++    # the original input index. This avoids attempting to broadcast a shorter
++    # aggregated Series to the original longer index.
++    if isinstance(data_to_wrap, getattr(pd, "Series")):
++        try:
++            if index is not None and len(data_to_wrap) == len(index):
++                return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++        except Exception:
++            # Fall through to preserve the series' own index.
++            pass
++        result = pd.DataFrame(data_to_wrap)
++        if columns is not None:
++            # If columns provided, apply them to the created DataFrame.
++            result.columns = columns
++        return result
++
++    # For ndarray or other array-like values, only set the provided index when
++    # the lengths match. Otherwise, let pandas infer the index.
++    try:
++        n_rows = len(data_to_wrap)
++    except Exception:
++        n_rows = None
++
++    if index is not None and n_rows is not None and n_rows == len(index):
++        return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++
++    return pd.DataFrame(data_to_wrap, columns=columns)
+ 
+ 
+ def _get_output_config(method, estimator=None):

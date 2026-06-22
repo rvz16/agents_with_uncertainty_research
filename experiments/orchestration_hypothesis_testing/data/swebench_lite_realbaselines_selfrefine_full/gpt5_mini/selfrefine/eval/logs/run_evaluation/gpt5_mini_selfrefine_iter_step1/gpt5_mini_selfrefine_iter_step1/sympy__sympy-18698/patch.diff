@@ -1,0 +1,37 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5998,6 +5998,34 @@
+         fp = _sorted_factors(fp, method)
+         fq = _sorted_factors(fq, method)
+ 
++        # For square-free factorization we want to combine factors that have
++        # the same multiplicity into a single polynomial factor. For example,
++        # (x - 2)**3 * (x - 3)**3 should be returned as (x**2 - 5*x + 6, 3).
++        # Do this combining only for 'sqf' method; do not change behavior for
++        # general factorization ('factor') where irreducible factors must be
++        # returned individually.
++        if method == 'sqf':
++            def _combine_same_power(factors):
++                if not factors:
++                    return factors
++                combined = []
++                i = 0
++                n = len(factors)
++                while i < n:
++                    base_poly, exp = factors[i]
++                    # collect and multiply all subsequent factors with same exponent
++                    j = i + 1
++                    prod = base_poly
++                    while j < n and factors[j][1] == exp:
++                        prod = prod.mul(factors[j][0])
++                        j += 1
++                    combined.append((prod, exp))
++                    i = j
++                return combined
++
++            fp = _combine_same_power(fp)
++            fq = _combine_same_power(fq)
++
+         if not opt.polys:
+             fp = [(f.as_expr(), k) for f, k in fp]
+             fq = [(f.as_expr(), k) for f, k in fq]

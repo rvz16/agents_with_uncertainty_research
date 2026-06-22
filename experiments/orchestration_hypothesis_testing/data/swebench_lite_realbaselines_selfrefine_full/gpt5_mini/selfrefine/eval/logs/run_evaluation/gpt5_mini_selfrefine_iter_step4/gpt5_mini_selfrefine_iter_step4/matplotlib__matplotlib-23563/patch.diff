@@ -1,0 +1,66 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -171,6 +171,10 @@
+     def set_3d_properties(self, zs=0, zdir='z'):
+         xs = self.get_xdata()
+         ys = self.get_ydata()
++        # Ensure zs is a 1-D array (avoid shapes like (N,1) causing broadcast errors)
++        zs = np.asarray(zs)
++        if zs.ndim > 1:
++            zs = zs.ravel()
+         zs = np.broadcast_to(zs, len(xs))
+         self._verts3d = juggle_axes(xs, ys, zs, zdir)
+         self.stale = True
+@@ -228,6 +232,11 @@
+ def _path_to_3d_segment(path, zs=0, zdir='z'):
+     """Convert a path to a 3D segment."""
+ 
++    # Ensure zs is a 1-D array so broadcasting to len(path) works even if
++    # zs was passed as a column vector (e.g. shape (N,1)).
++    zs = np.asarray(zs)
++    if zs.ndim > 1:
++        zs = zs.ravel()
+     zs = np.broadcast_to(zs, len(path))
+     pathsegs = path.iter_segments(simplify=False, curves=False)
+     seg = [(x, y, z) for (((x, y), code), z) in zip(pathsegs, zs)]
+@@ -238,11 +247,16 @@
+ def _paths_to_3d_segments(paths, zs=0, zdir='z'):
+     """Convert paths from a collection object to 3D segments."""
+ 
+-    if not np.iterable(zs):
++    # Normalize zs to a 1-D array. This avoids issues when zs is an array
++    # with shape (N,1) which would otherwise break broadcasting/iteration.
++    zs = np.asarray(zs)
++    if zs.ndim > 1:
++        zs = zs.ravel()
++
++    if zs.size == 1:
+         zs = np.broadcast_to(zs, len(paths))
+-    else:
+-        if len(zs) != len(paths):
+-            raise ValueError('Number of z-coordinates does not match paths.')
++    elif len(zs) != len(paths):
++        raise ValueError('Number of z-coordinates does not match paths.')
+ 
+     segs = [_path_to_3d_segment(path, pathz, zdir)
+             for path, pathz in zip(paths, zs)]
+@@ -252,6 +266,10 @@
+ def _path_to_3d_segment_with_codes(path, zs=0, zdir='z'):
+     """Convert a path to a 3D segment with path codes."""
+ 
++    # Normalize zs to 1-D to avoid broadcasting errors with shapes like (N,1).
++    zs = np.asarray(zs)
++    if zs.ndim > 1:
++        zs = zs.ravel()
+     zs = np.broadcast_to(zs, len(path))
+     pathsegs = path.iter_segments(simplify=False, curves=False)
+     seg_codes = [((x, y, z), code) for ((x, y), code), z in zip(pathsegs, zs)]
+@@ -261,7 +279,7 @@
+     else:
+         seg3d = []
+         codes = []
+-    return seg3d, list(codes)
++    return
+ 
+ 
+ def _paths_to_3d_segments_with_codes(paths, zs=0, zdir='z'):

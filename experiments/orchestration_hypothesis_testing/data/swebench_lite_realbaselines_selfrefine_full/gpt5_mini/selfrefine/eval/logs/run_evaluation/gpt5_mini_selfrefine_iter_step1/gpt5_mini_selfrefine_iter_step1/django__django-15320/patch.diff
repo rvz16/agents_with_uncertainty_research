@@ -1,0 +1,25 @@
+--- a/django/db/models/expressions.py
++++ b/django/db/models/expressions.py
+@@ -1149,7 +1149,21 @@
+ 
+     def __init__(self, queryset, output_field=None, **extra):
+         # Allow the usage of both QuerySet and sql.Query objects.
+-        self.query = getattr(queryset, 'query', queryset)
++        orig_query = getattr(queryset, 'query', queryset)
++        # Use a clone of the query to avoid mutating the original Query/QuerySet.
++        if hasattr(orig_query, 'clone'):
++            query = orig_query.clone()
++            # Mark as a subquery so as_sql() will emit surrounding parens.
++            query.subquery = True
++        else:
++            query = orig_query
++            # If it's not clonable, try to mark it as a subquery in-place.
++            try:
++                query.subquery = True
++            except Exception:
++                # If the object doesn't support the attribute, ignore.
++                pass
++        self.query = query
+         self.extra = extra
+         super().__init__(output_field)
+ 

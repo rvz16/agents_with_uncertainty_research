@@ -1,0 +1,47 @@
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,8 @@
+ from itertools import chain
+ 
+ from django.apps import apps
+-from django.core.checks import Error, Tags, register
++from django.conf import settings
++from django.core.checks import Error, Warning, Tags, register
+ 
+ 
+ @register(Tags.models)
+@@ -35,16 +36,27 @@
+             indexes[model_index.name].append(model._meta.label)
+         for model_constraint in model._meta.constraints:
+             constraints[model_constraint.name].append(model._meta.label)
++    routers_configured = bool(getattr(settings, 'DATABASE_ROUTERS', []))
+     for db_table, model_labels in db_table_models.items():
+         if len(model_labels) != 1:
+-            errors.append(
+-                Error(
+-                    "db_table '%s' is used by multiple models: %s."
+-                    % (db_table, ', '.join(db_table_models[db_table])),
+-                    obj=db_table,
+-                    id='models.E028',
++            if routers_configured:
++                errors.append(
++                    Warning(
++                        "db_table '%s' is used by multiple models: %s."
++                        % (db_table, ', '.join(db_table_models[db_table])),
++                        obj=db_table,
++                        id='models.W028',
++                    )
+                 )
+-            )
++            else:
++                errors.append(
++                    Error(
++                        "db_table '%s' is used by multiple models: %s."
++                        % (db_table, ', '.join(db_table_models[db_table])),
++                        obj=db_table,
++                        id='models.E028',
++                    )
++                )
+     for index_name, model_labels in indexes.items():
+         if len(model_labels) > 1:
+             model_labels = set(model_labels)

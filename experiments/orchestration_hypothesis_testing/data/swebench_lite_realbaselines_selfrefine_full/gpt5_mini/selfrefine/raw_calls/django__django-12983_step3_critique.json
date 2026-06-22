@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:55:02.571658+00:00",
+  "instance_id": "django__django-12983",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nMake django.utils.text.slugify() strip dashes and underscores\nDescription\n\t \n\t\t(last modified by Elinaldo do Nascimento Monteiro)\n\t \nBug generation slug\nExample:\nfrom django.utils import text\ntext.slugify(\"___This is a test ---\")\noutput: ___this-is-a-test-\nImprovement after correction\nfrom django.utils import text\ntext.slugify(\"___This is a test ---\")\noutput: this-is-a-test\n\u200bPR\n\n\n## Your previous patch (diff format)\n```\n--- a/django/utils/text.py\n+++ b/django/utils/text.py\n@@ -403,7 +403,10 @@\n     else:\n         value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')\n     value = re.sub(r'[^\\w\\s-]', '', value.lower()).strip()\n-    return re.sub(r'[-\\s]+', '-', value)\n+    # Collapse runs of hyphens and whitespace into single hyphens.\n+    slug = re.sub(r'[-\\s]+', '-', value)\n+    # Strip any leading/trailing hyphens or underscores.\n+    return slug.strip('-_')\n \n \n def camel_case_to_spaces(value):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 377,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00303825
+}

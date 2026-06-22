@@ -1,0 +1,113 @@
+2026-06-22 18:55:36,511 - INFO - Creating container for scikit-learn__scikit-learn-25747...
+2026-06-22 18:55:36,630 - INFO - Container for scikit-learn__scikit-learn-25747 created: c92e928515e5c7e6d53e9a44363cdacd9fe3f3f5f484eaa74edaaba32d8550f6
+2026-06-22 18:55:36,785 - INFO - Container for scikit-learn__scikit-learn-25747 started: c92e928515e5c7e6d53e9a44363cdacd9fe3f3f5f484eaa74edaaba32d8550f6
+2026-06-22 18:55:36,785 - INFO - Intermediate patch for scikit-learn__scikit-learn-25747 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/scikit-learn__scikit-learn-25747/patch.diff, now applying to container...
+2026-06-22 18:55:36,923 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/utils/_set_output.py...
+Applied patch sklearn/utils/_set_output.py cleanly.
+
+2026-06-22 18:55:37,209 - INFO - Git diff before:
+diff --git a/sklearn/utils/_set_output.py b/sklearn/utils/_set_output.py
+index 335773c6a..b77c23f83 100644
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -52,14 +52,39 @@ def _wrap_in_pandas_container(
+ 
+     pd = check_pandas_support("Setting output container to 'pandas'")
+ 
++    # Determine whether it is safe to set the original input index on the output.
++    # Users may legitimately return outputs with different numbers of rows
++    # (e.g. aggregated data). In that case we should not attempt to force the
++    # original input index onto the returned object because this raises a
++    # pandas Length mismatch error. We therefore only set the index when the
++    # output length matches the original input length, or when no original
++    # index was provided.
++    safe_to_set_index = True
++    if index is not None:
++        try:
++            # Prefer using len(...) which works for pandas objects, numpy arrays,
++            # lists, etc.
++            output_len = len(data_to_wrap)
++            input_len = len(index)
++            if output_len != input_len:
++                safe_to_set_index = False
++        except Exception:
++            # If we cannot determine lengths, avoid forcing the index.
++            safe_to_set_index = False
++
++    # If data_to_wrap is already a DataFrame, update columns/index in-place
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+             data_to_wrap.columns = columns
+-        if index is not None:
++        if index is not None and safe_to_set_index:
+             data_to_wrap.index = index
+         return data_to_wrap
+ 
+-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    # For other array-like outputs (including Series), only pass the index to
++    # the DataFrame constructor when it is safe (lengths match). Otherwise,
++    # create the DataFrame without forcing the original input index.
++    index_to_use = index if (index is not None and safe_to_set_index) else None
++    return pd.DataFrame(data_to_wrap, index=index_to_use, columns=columns)
+ 
+ 
+ def _get_output_config(method, estimator=None):
+2026-06-22 18:55:37,209 - INFO - Eval script for scikit-learn__scikit-learn-25747 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/scikit-learn__scikit-learn-25747/eval.sh; copying to container...
+2026-06-22 18:55:40,469 - INFO - Test runtime: 3.20 seconds
+2026-06-22 18:55:40,469 - INFO - Test output for scikit-learn__scikit-learn-25747 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/scikit-learn__scikit-learn-25747/test_output.txt
+2026-06-22 18:55:40,496 - INFO - Git diff after:
+diff --git a/sklearn/utils/_set_output.py b/sklearn/utils/_set_output.py
+index 335773c6a..b77c23f83 100644
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -52,14 +52,39 @@ def _wrap_in_pandas_container(
+ 
+     pd = check_pandas_support("Setting output container to 'pandas'")
+ 
++    # Determine whether it is safe to set the original input index on the output.
++    # Users may legitimately return outputs with different numbers of rows
++    # (e.g. aggregated data). In that case we should not attempt to force the
++    # original input index onto the returned object because this raises a
++    # pandas Length mismatch error. We therefore only set the index when the
++    # output length matches the original input length, or when no original
++    # index was provided.
++    safe_to_set_index = True
++    if index is not None:
++        try:
++            # Prefer using len(...) which works for pandas objects, numpy arrays,
++            # lists, etc.
++            output_len = len(data_to_wrap)
++            input_len = len(index)
++            if output_len != input_len:
++                safe_to_set_index = False
++        except Exception:
++            # If we cannot determine lengths, avoid forcing the index.
++            safe_to_set_index = False
++
++    # If data_to_wrap is already a DataFrame, update columns/index in-place
+     if isinstance(data_to_wrap, pd.DataFrame):
+         if columns is not None:
+             data_to_wrap.columns = columns
+-        if index is not None:
++        if index is not None and safe_to_set_index:
+             data_to_wrap.index = index
+         return data_to_wrap
+ 
+-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
++    # For other array-like outputs (including Series), only pass the index to
++    # the DataFrame constructor when it is safe (lengths match). Otherwise,
++    # create the DataFrame without forcing the original input index.
++    index_to_use = index if (index is not None and safe_to_set_index) else None
++    return pd.DataFrame(data_to_wrap, index=index_to_use, columns=columns)
+ 
+ 
+ def _get_output_config(method, estimator=None):
+2026-06-22 18:55:40,496 - INFO - Grading answer for scikit-learn__scikit-learn-25747...
+2026-06-22 18:55:40,497 - INFO - report: {'scikit-learn__scikit-learn-25747': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['sklearn/utils/tests/test_set_output.py::test_set_output_pandas_keep_index']}, 'PASS_TO_PASS': {'success': ['sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_dense', 'sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_dense_update_columns_and_index', 'sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_error_validation', 'sklearn/utils/tests/test_set_output.py::test__safe_set_output', 'sklearn/utils/tests/test_set_output.py::test_set_output_mixin', 'sklearn/utils/tests/test_set_output.py::test__safe_set_output_error', 'sklearn/utils/tests/test_set_output.py::test_set_output_method', 'sklearn/utils/tests/test_set_output.py::test_set_output_method_error', 'sklearn/utils/tests/test_set_output.py::test__get_output_config', 'sklearn/utils/tests/test_set_output.py::test_get_output_auto_wrap_false', 'sklearn/utils/tests/test_set_output.py::test_auto_wrap_output_keys_errors_with_incorrect_input', 'sklearn/utils/tests/test_set_output.py::test_set_output_mixin_custom_mixin', 'sklearn/utils/tests/test_set_output.py::test__wrap_in_pandas_container_column_errors', 'sklearn/utils/tests/test_set_output.py::test_set_output_mro'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-25747: resolved: False
+2026-06-22 18:55:40,497 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-25747.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:55:55,756 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-25747.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:55:55,771 - INFO - Container sweb.eval.scikit-learn__scikit-learn-25747.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 18:55:55,771 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25747:latest...
+2026-06-22 18:55:56,661 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-25747:latest removed.

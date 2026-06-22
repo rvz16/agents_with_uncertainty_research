@@ -1,0 +1,15 @@
+--- a/django/forms/models.py
++++ b/django/forms/models.py
+@@ -1171,6 +1171,12 @@
+             other = other.value
+         return self.value == other
+ 
++    def __hash__(self):
++        # Make ModelChoiceIteratorValue usable in hashed collections (e.g. sets,
++        # dict keys). Hash based on the wrapped value to preserve equality
++        # semantics (objects compare equal to their underlying value).
++        return hash(self.value)
++
+ 
+ class ModelChoiceIterator:
+     def __init__(self, field):

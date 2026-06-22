@@ -1,0 +1,81 @@
+--- a/django/contrib/auth/tokens.py
++++ b/django/contrib/auth/tokens.py
+@@ -79,22 +79,76 @@
+     def _make_hash_value(self, user, timestamp):
+         """
+         Hash the user's primary key and some user state that's sure to change
+-        after a password reset to produce a token that invalidated when it's
++        after a password reset to produce a token that is invalidated when it's
+         used:
+         1. The password field will change upon a password reset (even if the
+            same password is chosen, due to password salting).
+         2. The last_login field will usually be updated very shortly after
+            a password reset.
++        3. The user's email address. Including the email (normalized) ensures
++           that changing the user's email invalidates existing tokens.
+         Failing those things, settings.PASSWORD_RESET_TIMEOUT eventually
+         invalidates the token.
+ 
+         Running this data through salted_hmac() prevents password cracking
+         attempts using the reset token, provided the secret isn't compromised.
++
++        The user's email is obtained using a model hook if provided:
++        - If the user instance defines a callable get_email_for_token(), it
++          will be used.
++        - Otherwise the EMAIL_FIELD attribute on the model class is used, if
++          present.
++        - As a final fallback, the 'email' attribute is used if present.
+         """
+         # Truncate microseconds so that tokens are consistent even if the
+         # database doesn't support microseconds.
+         login_timestamp = '' if user.last_login is None else user.last_login.replace(microsecond=0, tzinfo=None)
+-        return str(user.pk) + user.password + str(login_timestamp) + str(timestamp)
++        email = self._get_user_email_for_token(user)
++        return str(user.pk) + user.password + email + str(login_timestamp) + str(timestamp)
++
++    def _get_user_email_for_token(self, user):
++        """
++        Return the user's email to include in the token hash.
++        Preference order:
++        1. user.get_email_for_token() if present (callable)
++        2. getattr(user.__class__, 'EMAIL_FIELD', None) -> getattr(user, field)
++        3. getattr(user, 'email', '')
++
++        The result is coerced to a string and lower-cased (to avoid trivial
++        case-only differences). An absent email yields an empty string.
++        """
++        # Model hook
++        getter = getattr(user, "get_email_for_token", None)
++        if callable(getter):
++            try:
++                value = getter()
++            except TypeError:
++                # Support callables that might expect the user as an argument
++                try:
++                    value = getter(user)
++                except Exception:
++                    value = ''
++            return (value or '').strip().lower()
++
++        # EMAIL_FIELD on model class (e.g., AbstractUser.EMAIL_FIELD)
++        email_field = getattr(user.__class__, "EMAIL_FIELD", None)
++        if email_field:
++            value = getattr(user, email_field, '')
++            if callable(value):
++                try:
++                    value = value()
++                except Exception:
++                    value = ''
++            return (value or '').strip().lower()
++
++        # Fallback to attribute 'email'
++        value = getattr(user, 'email', '')
++        if callable(value):
++            try:
++                value = value()
++            except Exception:
++                value = ''
++        return (value or '').strip().lower()
+ 
+     def _num_seconds(self, dt):
+         return int((dt - datetime(2001, 1, 1)).total_seconds())

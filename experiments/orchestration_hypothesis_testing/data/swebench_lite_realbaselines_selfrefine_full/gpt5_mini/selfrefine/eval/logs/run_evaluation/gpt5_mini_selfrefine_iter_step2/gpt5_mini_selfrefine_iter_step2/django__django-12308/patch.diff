@@ -1,0 +1,52 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -13,6 +13,18 @@
+ from django.utils.regex_helper import _lazy_re_compile
+ from django.utils.text import capfirst
+ from django.utils.translation import ngettext, override as translation_override
++
++# Try to import known JSONField implementations so we can special-case them
++# in admin readonly display without coupling to a single implementation.
++try:
++    from django.db.models import JSONField as BUILTIN_JSONFIELD
++except Exception:
++    BUILTIN_JSONFIELD = None
++
++try:
++    from django.contrib.postgres.fields import JSONField as PG_JSONFIELD
++except Exception:
++    PG_JSONFIELD = None
+ 
+ QUOTE_MAP = {i: '_%02X' % i for i in b'":/_#?;@&=+$,"[]<>%\n\\'}
+ UNQUOTE_MAP = {v: chr(k) for k, v in QUOTE_MAP.items()}
+@@ -398,8 +410,28 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
+-    else:
+-        return display_for_value(value, empty_value_display)
++
++    # Special-case JSONField readonly display so that the value is presented
++    # consistently with how the field prepares its value for forms. This avoids
++    # showing Python dict/quote syntax (e.g. single quotes) for JSON content.
++    if ((BUILTIN_JSONFIELD is not None and isinstance(field, BUILTIN_JSONFIELD)) or
++            (PG_JSONFIELD is not None and isinstance(field, PG_JSONFIELD))):
++        prepare = getattr(field, 'prepare_value', None)
++        if callable(prepare):
++            try:
++                prepared = prepare(value)
++            except Exception:
++                # If prepare_value raises (e.g. InvalidJSONInput), fall back to
++                # displaying the original value.
++                return display_for_value(value, empty_value_display)
++            try:
++                return display_for_value(prepared, empty_value_display)
++            except Exception:
++                # If displaying the prepared value fails for any reason,
++                # fall back to the original value.
++                return display_for_value(value, empty_value_display)
++
++    return display_for_value(value, empty_value_display)
+ 
+ 
+ def display_for_value(value, empty_value_display, boolean=False):

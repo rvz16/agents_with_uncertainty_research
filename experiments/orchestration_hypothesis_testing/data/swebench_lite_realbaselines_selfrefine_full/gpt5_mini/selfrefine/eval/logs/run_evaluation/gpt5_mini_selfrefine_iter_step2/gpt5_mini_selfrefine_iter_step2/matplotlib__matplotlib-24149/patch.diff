@@ -1,0 +1,35 @@
+--- a/lib/matplotlib/axes/_axes.py
++++ b/lib/matplotlib/axes/_axes.py
+@@ -2178,15 +2178,23 @@
+             # We can't just cast x0 and dx to numpy arrays because that
+             # removes the units from unit packages like `pint` that
+             # wrap numpy arrays.
+-            try:
+-                x0 = cbook._safe_first_finite(x0)
+-            except (TypeError, IndexError, KeyError):
+-                pass
+-
+-            try:
+-                x = cbook._safe_first_finite(xconv)
+-            except (TypeError, IndexError, KeyError):
+-                x = xconv
++        try:
++            x0 = cbook._safe_first_finite(x0)
++        except StopIteration:
++            # this means we found no finite element, fall back to first
++            # element unconditionally
++            x0 = cbook.safe_first_element(x0)
++        except (TypeError, IndexError, KeyError):
++            pass
++
++        try:
++            x = cbook._safe_first_finite(xconv)
++        except StopIteration:
++            # this means we found no finite element, fall back to first
++            # element unconditionally
++            x = cbook.safe_first_element(xconv)
++        except (TypeError, IndexError, KeyError):
++            x = xconv
+ 
+             delist = False
+             if not np.iterable(dx):

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:11:10.606678+00:00",
+  "instance_id": "django__django-15213",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nExpressionWrapper for ~Q(pk__in=[]) crashes.\nDescription\n\t \n\t\t(last modified by Stefan Brand)\n\t \nProblem Description\nI'm reducing some Q objects (similar to what is described in ticket:32554. Everything is fine for the case where the result is ExpressionWrapper(Q(pk__in=[])). However, when I reduce to ExpressionWrapper(~Q(pk__in=[])) the query breaks.\nSymptoms\nWorking for ExpressionWrapper(Q(pk__in=[]))\nprint(queryset.annotate(foo=ExpressionWrapper(Q(pk__in=[]), output_field=BooleanField())).values(\"foo\").query)\nSELECT 0 AS \"foo\" FROM \"table\"\nNot working for ExpressionWrapper(~Q(pk__in=[]))\nprint(queryset.annotate(foo=ExpressionWrapper(~Q(pk__in=[]), output_field=BooleanField())).values(\"foo\").query)\nSELECT AS \"foo\" FROM \"table\"\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/models/fields/__init__.py\n+++ b/django/db/models/fields/__init__.py\n@@ -412,6 +412,14 @@\n         selected as AsText(table.col) on MySQL as the table.col data can't be\n         used by Django.\n         \"\"\"\n+        # Some expressions (for example negated Q objects reduced to a\n+        # constant True) may yield an empty SQL fragment. In SELECT clauses\n+        # an empty fragment results in invalid SQL like \"SELECT AS alias\".\n+        # Coerce an empty fragment for BooleanField into a SQL boolean\n+        # constant. If the expression already produced a concrete SQL\n+        # fragment (for example '0' for a False constant), keep it.\n+        if not sql:\n+            return \"1\", params\n         return sql, params\n \n     def deconstruct(self):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 498,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030685
+}

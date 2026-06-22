@@ -1,0 +1,67 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -819,18 +819,57 @@
+         return self._print(B.blocks)
+ 
+     def _print_MatAdd(self, expr):
++        """
++        Pretty print for matrix addition.  This mirrors the logic used for
++        _print_Add: when a term is negative it should be printed with a
++        leading minus sign rather than prefixed by " + -".  The previous
++        implementation attempted to inspect item.args[0] via sympify(S(...))
++        which fails for non-sympified MatrixSymbol name parts (e.g. strings).
++        Here we follow the same sign detection approach as for scalar Add.
++        """
+         s = None
+-        for item in expr.args:
+-            pform = self._print(item)
++
++        def pretty_negative_mat(pform, index):
++            """Prepend a minus sign to a pretty form (for matrix terms)."""
++            if index == 0:
++                # If multi-line, put a space after the minus
++                if pform.height() > 1:
++                    pneg = '- '
++                else:
++                    pneg = '-'
++            else:
++                pneg = ' - '
++
++            if (pform.binding > prettyForm.NEG or pform.binding == prettyForm.ADD):
++                p = stringPict(*pform.parens())
++            else:
++                p = pform
++            p = stringPict.next(pneg, p)
++            return prettyForm(binding=prettyForm.NEG, *p)
++
++        for i, term in enumerate(expr.args):
++            # Detect negative coefficient similar to Add
++            if term.is_Mul and _coeff_isneg(term):
++                coeff, other = term.as_coeff_mul(rational=False)
++                pterm = self._print(Mul(-coeff, *other, evaluate=False))
++                pform = pretty_negative_mat(pterm, i)
++            elif term.is_Number and term < 0:
++                pterm = self._print(-term)
++                pform = pretty_negative_mat(pterm, i)
++            else:
++                pform = self._print(term)
++
+             if s is None:
+-                s = pform     # First element
+-            else:
+-                if S(item.args[0]).is_negative:
++                s = pform
++            else:
++                # If the term already carries a leading minus (binding == NEG),
++                # don't insert a '+'; just separate with a space. Otherwise add ' + '.
++                if getattr(pform, 'binding', None) == prettyForm.NEG:
+                     s = prettyForm(*stringPict.next(s, ' '))
+-                    pform = self._print(item)
++                    s = prettyForm(*stringPict.next(s, pform))
+                 else:
+                     s = prettyForm(*stringPict.next(s, ' + '))
+-                s = prettyForm(*stringPict.next(s, pform))
++                    s = prettyForm(*stringPict.next(s, pform))
+ 
+         return s
+ 

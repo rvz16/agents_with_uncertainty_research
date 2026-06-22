@@ -1,0 +1,20 @@
+--- a/django/utils/numberformat.py
++++ b/django/utils/numberformat.py
+@@ -31,6 +31,8 @@
+     use_grouping = use_grouping or force_grouping
+     use_grouping = use_grouping and grouping != 0
+     # Make the common case fast
++    if number is None:
++        return ""
+     if isinstance(number, int) and not use_grouping and not decimal_pos:
+         return mark_safe(number)
+     # sign
+@@ -68,6 +70,8 @@
+             str_number = "{:f}".format(number)
+     else:
+         str_number = str(number)
++    if not str_number:
++        return ""
+     if str_number[0] == "-":
+         sign = "-"
+         str_number = str_number[1:]

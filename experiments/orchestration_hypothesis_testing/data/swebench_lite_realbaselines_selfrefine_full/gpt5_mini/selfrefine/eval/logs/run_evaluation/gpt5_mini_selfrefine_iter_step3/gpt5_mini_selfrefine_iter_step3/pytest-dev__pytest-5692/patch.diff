@@ -1,0 +1,48 @@
+--- a/src/_pytest/junitxml.py
++++ b/src/_pytest/junitxml.py
+@@ -13,6 +13,7 @@
+ import re
+ import sys
+ import time
++import socket
+ 
+ import py
+ 
+@@ -646,7 +647,9 @@
+             os.makedirs(dirname)
+         logfile = open(self.logfile, "w", encoding="utf-8")
+         suite_stop_time = time.time()
+-        suite_time_delta = suite_stop_time - self.suite_start_time
++        # Fallback in case pytest_sessionstart wasn't called for some reason
++        start_time = getattr(self, "suite_start_time", suite_stop_time)
++        suite_time_delta = suite_stop_time - start_time
+ 
+         numtests = (
+             self.stats["passed"]
+@@ -656,6 +659,17 @@
+             - self.cnt_double_fail_tests
+         )
+         logfile.write('<?xml version="1.0" encoding="utf-8"?>')
++
++        # Format timestamp as ISO8601 without timezone (YYYY-MM-DDThh:mm:ss)
++        try:
++            timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(start_time))
++        except Exception:
++            timestamp = ""
++
++        try:
++            hostname = socket.gethostname()
++        except Exception:
++            hostname = ""
+ 
+         suite_node = Junit.testsuite(
+             self._get_global_properties_node(),
+@@ -666,6 +680,8 @@
+             skipped=self.stats["skipped"],
+             tests=numtests,
+             time="%.3f" % suite_time_delta,
++            timestamp=timestamp,
++            hostname=hostname,
+         )
+         logfile.write(Junit.testsuites([suite_node]).unicode(indent=0))
+         logfile.close()

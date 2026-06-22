@@ -1,0 +1,225 @@
+2026-06-22 19:09:38,349 - INFO - Creating container for sympy__sympy-20322...
+2026-06-22 19:09:38,478 - INFO - Container for sympy__sympy-20322 created: 9339c65048acfbcadc99d6b4f21ceb53ee40ba893982362519625392e63f6cb1
+2026-06-22 19:09:38,650 - INFO - Container for sympy__sympy-20322 started: 9339c65048acfbcadc99d6b4f21ceb53ee40ba893982362519625392e63f6cb1
+2026-06-22 19:09:38,651 - INFO - Intermediate patch for sympy__sympy-20322 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-20322/patch.diff, now applying to container...
+2026-06-22 19:09:38,772 - INFO - >>>>> Applied Patch:
+Checking patch sympy/core/mul.py...
+Applied patch sympy/core/mul.py cleanly.
+
+2026-06-22 19:09:39,088 - INFO - Git diff before:
+diff --git a/sympy/core/mul.py b/sympy/core/mul.py
+index 46f310b122..2877da22b9 100644
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,80 @@ def _eval_is_zero(self):
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+-        from sympy.core.numbers import Float
++        """
++        Determine whether the product is an integer in a conservative way
++        without performing potentially-evaluating operations (such as
++        fraction()) that can give incorrect results for unevaluated Muls.
++
++        Returns True, False, or None.
++        """
++        numerators = []
++        denominators = []
++
++        for a in self.args:
++            # an integer factor contributes to the numerator
++            if a.is_integer:
++                numerators.append(a)
++
++            # a rational contributes its numerator and denominator
++            elif a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++
++            # a power may contribute to numerator or denominator depending on exponent
++            elif a.is_Pow:
++                b, e = a.as_base_exp()
++                # handle explicit reciprocal 1/b where base is integer
++                if e is S.NegativeOne and b.is_integer:
++                    denominators.append(b)
++                # handle integer exponents when they are known integers
++                elif b.is_integer and e.is_integer:
++                    # if exponent is negative, it contributes to denominators
++                    if e.is_negative:
++                        # if exponent is not a concrete integer we give up
++                        if e.is_integer is None:
++                            return
++                        try:
++                            ex = int(e)
++                        except Exception:
++                            return
++                        if ex < 0:
++                            denominators.extend([b] * (-ex))
++                        elif ex > 0:
++                            numerators.extend([b] * ex)
++                    else:
++                        # positive integer exponent -> base**exp is integer (base treated above)
++                        numerators.append(b**e)
++                else:
++                    # cannot determine conservatively
++                    return
+ 
+-        is_rational = self._eval_is_rational()
+-        if is_rational is False:
++            else:
++                # unknown factor: cannot decide without evaluation
++                return
++
++        # if there are no denominators then it's an integer
++        if not denominators:
++            return True
++
++        # simple parity-based deductions:
++        # if all numerators are odd and any denominator is even => not integer
++        if numerators:
++            all_numer_odd = all(getattr(n, 'is_odd', False) for n in numerators)
++        else:
++            all_numer_odd = False
++        any_denom_even = any(getattr(d, 'is_even', False) for d in denominators)
++
++        if all_numer_odd and any_denom_even:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        # common simple case: all numerators even and single denominator 2 -> integer
++        if all(getattr(n, 'is_even', False) for n in numerators) and len(denominators) == 1 and denominators[0] == S(2):
++            return True
++
++        # otherwise be conservative and give up
++        return
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)
+2026-06-22 19:09:39,089 - INFO - Eval script for sympy__sympy-20322 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-20322/eval.sh; copying to container...
+2026-06-22 19:09:52,154 - INFO - Test runtime: 13.01 seconds
+2026-06-22 19:09:52,154 - INFO - Test output for sympy__sympy-20322 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-20322/test_output.txt
+2026-06-22 19:09:52,208 - INFO - Git diff after:
+diff --git a/sympy/core/mul.py b/sympy/core/mul.py
+index 46f310b122..2877da22b9 100644
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,80 @@ def _eval_is_zero(self):
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+-        from sympy.core.numbers import Float
++        """
++        Determine whether the product is an integer in a conservative way
++        without performing potentially-evaluating operations (such as
++        fraction()) that can give incorrect results for unevaluated Muls.
++
++        Returns True, False, or None.
++        """
++        numerators = []
++        denominators = []
++
++        for a in self.args:
++            # an integer factor contributes to the numerator
++            if a.is_integer:
++                numerators.append(a)
++
++            # a rational contributes its numerator and denominator
++            elif a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++
++            # a power may contribute to numerator or denominator depending on exponent
++            elif a.is_Pow:
++                b, e = a.as_base_exp()
++                # handle explicit reciprocal 1/b where base is integer
++                if e is S.NegativeOne and b.is_integer:
++                    denominators.append(b)
++                # handle integer exponents when they are known integers
++                elif b.is_integer and e.is_integer:
++                    # if exponent is negative, it contributes to denominators
++                    if e.is_negative:
++                        # if exponent is not a concrete integer we give up
++                        if e.is_integer is None:
++                            return
++                        try:
++                            ex = int(e)
++                        except Exception:
++                            return
++                        if ex < 0:
++                            denominators.extend([b] * (-ex))
++                        elif ex > 0:
++                            numerators.extend([b] * ex)
++                    else:
++                        # positive integer exponent -> base**exp is integer (base treated above)
++                        numerators.append(b**e)
++                else:
++                    # cannot determine conservatively
++                    return
+ 
+-        is_rational = self._eval_is_rational()
+-        if is_rational is False:
++            else:
++                # unknown factor: cannot decide without evaluation
++                return
++
++        # if there are no denominators then it's an integer
++        if not denominators:
++            return True
++
++        # simple parity-based deductions:
++        # if all numerators are odd and any denominator is even => not integer
++        if numerators:
++            all_numer_odd = all(getattr(n, 'is_odd', False) for n in numerators)
++        else:
++            all_numer_odd = False
++        any_denom_even = any(getattr(d, 'is_even', False) for d in denominators)
++
++        if all_numer_odd and any_denom_even:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        # common simple case: all numerators even and single denominator 2 -> integer
++        if all(getattr(n, 'is_even', False) for n in numerators) and len(denominators) == 1 and denominators[0] == S(2):
++            return True
++
++        # otherwise be conservative and give up
++        return
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)
+2026-06-22 19:09:52,208 - INFO - Grading answer for sympy__sympy-20322...
+2026-06-22 19:09:52,209 - INFO - report: {'sympy__sympy-20322': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_Mul_is_integer']}, 'PASS_TO_PASS': {'success': ['test_bug1', 'test_Symbol', 'test_arit0', 'test_div', 'test_pow', 'test_pow2', 'test_pow3', 'test_mod_pow', 'test_pow_E', 'test_pow_issue_3516', 'test_pow_im', 'test_real_mul', 'test_ncmul', 'test_mul_add_identity', 'test_ncpow', 'test_powerbug', 'test_Mul_doesnt_expand_exp', 'test_Add_Mul_is_integer', 'test_Add_Mul_is_finite', 'test_evenness_in_ternary_integer_product_with_even', 'test_oddness_in_ternary_integer_product_with_even', 'test_Mul_is_rational', 'test_Add_is_rational', 'test_Add_is_even_odd', 'test_Mul_is_negative_positive', 'test_Mul_is_negative_positive_2', 'test_Mul_is_nonpositive_nonnegative', 'test_Add_is_negative_positive', 'test_Add_is_nonpositive_nonnegative', 'test_Pow_is_integer', 'test_Pow_is_real', 'test_real_Pow', 'test_Pow_is_finite', 'test_Pow_is_even_odd', 'test_Pow_is_negative_positive', 'test_Pow_is_zero', 'test_Pow_is_nonpositive_nonnegative', 'test_Mul_is_imaginary_real', 'test_Mul_hermitian_antihermitian', 'test_Add_is_comparable', 'test_Mul_is_comparable', 'test_Pow_is_comparable', 'test_Add_is_positive_2', 'test_Add_is_irrational', 'test_Mul_is_irrational', 'test_issue_3531', 'test_issue_3531b', 'test_bug3', 'test_suppressed_evaluation', 'test_AssocOp_doit', 'test_Add_Mul_Expr_args', 'test_Add_as_coeff_mul', 'test_Pow_as_coeff_mul_doesnt_expand', 'test_issue_3514_18626', 'test_make_args', 'test_issue_5126', 'test_Rational_as_content_primitive', 'test_Add_as_content_primitive', 'test_Mul_as_content_primitive', 'test_Pow_as_content_primitive', 'test_issue_5460', 'test_product_irrational', 'test_issue_5919', 'test_Mod', 'test_Mod_Pow', 'test_Mod_is_integer', 'test_Mod_is_nonposneg', 'test_issue_6001', 'test_polar', 'test_issue_6040', 'test_issue_6082', 'test_issue_6077', 'test_mul_flatten_oo', 'test_add_flatten', 'test_issue_5160_6087_6089_6090', 'test_float_int_round', 'test_issue_6611a', 'test_denest_add_mul', 'test_mul_coeff', 'test_mul_zero_detection', 'test_Mul_with_zero_infinite', 'test_Mul_does_not_cancel_infinities', 'test_Mul_does_not_distribute_infinity', 'test_issue_8247_8354', 'test_Add_is_zero', 'test_issue_14392', 'test_divmod', 'test__neg__'], 'failure': ['test_Mul_is_even_odd']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-20322: resolved: False
+2026-06-22 19:09:52,209 - INFO - Attempting to stop container sweb.eval.sympy__sympy-20322.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:10:07,469 - INFO - Attempting to remove container sweb.eval.sympy__sympy-20322.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:10:07,498 - INFO - Container sweb.eval.sympy__sympy-20322.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 19:10:07,498 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-20322:latest...
+2026-06-22 19:10:07,574 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-20322:latest removed.

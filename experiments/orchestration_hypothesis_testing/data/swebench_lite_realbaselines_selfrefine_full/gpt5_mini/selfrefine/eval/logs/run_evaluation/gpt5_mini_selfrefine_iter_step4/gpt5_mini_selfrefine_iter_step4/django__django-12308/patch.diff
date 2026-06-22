@@ -1,0 +1,18 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -396,6 +396,15 @@
+         return formats.number_format(value, field.decimal_places)
+     elif isinstance(field, (models.IntegerField, models.FloatField)):
+         return formats.number_format(value)
++    # JSONField should use its prepare_value so that JSON is rendered
++    # correctly (and so any field-specific validation/formatting is applied).
++    elif getattr(field, 'get_internal_type', None) == 'JSONField':
++        try:
++            return field.prepare_value(value)
++        except Exception:
++            # If prepare_value cannot handle the value for any reason,
++            # fall back to the generic display logic.
++            return display_for_value(value, empty_value_display)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
+     else:

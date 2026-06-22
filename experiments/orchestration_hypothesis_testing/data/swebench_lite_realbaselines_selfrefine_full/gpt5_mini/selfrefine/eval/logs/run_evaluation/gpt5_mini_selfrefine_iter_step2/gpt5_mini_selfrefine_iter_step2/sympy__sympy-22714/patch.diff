@@ -1,0 +1,30 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,8 +152,25 @@
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
+-            raise ValueError('Imaginary coordinates are not permitted.')
++        # Reject coordinates with non-zero imaginary part.
++        # Prefer using the `is_real` property when possible to avoid
++        # calling `im(...)` eagerly which can trigger unexpected
++        # evaluation (for example under evaluate(False)).
++        for a in coords:
++            if a.is_number:
++                # If it's explicitly not real, reject.
++                if a.is_real is False:
++                    raise ValueError('Imaginary coordinates are not permitted.')
++                # If undecidable, try to inspect the imaginary part
++                # but guard against any errors and be conservative.
++                if a.is_real is None:
++                    try:
++                        if im(a) != 0:
++                            raise ValueError('Imaginary coordinates are not permitted.')
++                    except Exception:
++                        # If we cannot determine the imaginary part, allow it
++                        # to pass for now; other checks may catch invalid types.
++                        pass
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+ 

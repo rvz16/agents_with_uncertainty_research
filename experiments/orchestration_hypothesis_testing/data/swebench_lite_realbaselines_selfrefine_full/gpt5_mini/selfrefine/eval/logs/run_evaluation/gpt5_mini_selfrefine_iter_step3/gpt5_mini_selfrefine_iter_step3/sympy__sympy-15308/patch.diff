@@ -1,0 +1,21 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -2186,9 +2186,16 @@
+             return r'\mathrm{d}\left(%s\right)' % string
+ 
+     def _print_Tr(self, p):
+-        #Todo: Handle indices
++        # Todo: Handle indices
++        # Use \operatorname so that the "Tr" is typeset in upright font and
++        # LaTeX will insert the correct spacing for an operator.
+         contents = self._print(p.args[0])
+-        return r'\mbox{Tr}\left(%s\right)' % (contents)
++        return r'\operatorname{Tr}\left(%s\right)' % (contents)
++
++    # Some parts of SymPy use the name "Trace" (e.g., matrix expressions).
++    # Provide the same printer for that name so that Trace(...) is rendered
++    # consistently with Tr(...).
++    _print_Trace = _print_Tr
+ 
+     def _print_totient(self, expr, exp=None):
+         if exp is not None:

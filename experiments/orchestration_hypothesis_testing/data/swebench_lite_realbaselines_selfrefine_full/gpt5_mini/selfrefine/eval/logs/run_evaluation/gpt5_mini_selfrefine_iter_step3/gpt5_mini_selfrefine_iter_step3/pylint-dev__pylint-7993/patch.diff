@@ -1,0 +1,49 @@
+--- a/pylint/reporters/text.py
++++ b/pylint/reporters/text.py
+@@ -14,6 +14,7 @@
+ import re
+ import sys
+ import warnings
++from string import Formatter
+ from dataclasses import asdict, fields
+ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, TextIO, cast, overload
+ 
+@@ -174,16 +175,31 @@
+         # Set template to the currently selected template
+         self._template = template
+ 
+-        # Check to see if all parameters in the template are attributes of the Message
+-        arguments = re.findall(r"\{(.+?)(:.*)?\}", template)
+-        for argument in arguments:
+-            if argument[0] not in MESSAGE_FIELDS:
++        # Use string.Formatter.parse to correctly handle escaped braces
++        formatter = Formatter()
++        parts: list[str] = []
++        for literal_text, field_name, format_spec, conversion in formatter.parse(template):
++            # literal_text contains text between fields (and accounts for escaped braces)
++            parts.append(literal_text)
++            # If there's no field here, continue
++            if field_name is None or field_name == "":
++                continue
++            if field_name not in MESSAGE_FIELDS:
+                 warnings.warn(
+-                    f"Don't recognize the argument '{argument[0]}' in the --msg-template. "
++                    f"Don't recognize the argument '{field_name}' in the --msg-template. "
+                     "Are you sure it is supported on the current version of pylint?"
+                 )
+-                template = re.sub(r"\{" + argument[0] + r"(:.*?)?\}", "", template)
+-        self._fixed_template = template
++                # Skip adding this field to the fixed template (effectively removing it)
++                continue
++            # Reconstruct the field as it should appear in the format string
++            field = "{" + field_name
++            if conversion:
++                field += "!" + conversion
++            if format_spec:
++                field += ":" + format_spec
++            field += "}"
++            parts.append(field)
++        self._fixed_template = "".join(parts)
+ 
+     def write_message(self, msg: Message) -> None:
+         """Convenience method to write a formatted message with class default

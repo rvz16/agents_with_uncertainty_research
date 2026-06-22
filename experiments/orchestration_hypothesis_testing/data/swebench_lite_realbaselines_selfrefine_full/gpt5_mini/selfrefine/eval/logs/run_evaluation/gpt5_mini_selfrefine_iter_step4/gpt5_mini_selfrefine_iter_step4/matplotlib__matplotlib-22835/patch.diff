@@ -1,0 +1,36 @@
+--- a/lib/matplotlib/artist.py
++++ b/lib/matplotlib/artist.py
+@@ -1304,10 +1304,29 @@
+             normed = self.norm(data)
+             if np.isfinite(normed):
+                 # Midpoints of neighboring color intervals.
+-                neighbors = self.norm.inverse(
+-                    (int(self.norm(data) * n) + np.array([0, 1])) / n)
+-                delta = abs(neighbors - data).max()
+-                g_sig_digits = cbook._g_sig_digits(data, delta)
++                try:
++                    neighbors = self.norm.inverse(
++                        (int(normed * n) + np.array([0, 1])) / n)
++                    delta = abs(neighbors - data).max()
++                    g_sig_digits = cbook._g_sig_digits(data, delta)
++                except ValueError:
++                    # Non-invertible norm (for example, BoundaryNorm) — fall
++                    # back to using the boundaries nearest to *data* to estimate
++                    # a delta for determining significant digits.
++                    if isinstance(self.norm, mpl.colors.BoundaryNorm):
++                        b = np.asarray(self.norm.boundaries)
++                        # Find the enclosing boundary indices.
++                        idx = np.searchsorted(b, data)
++                        # left boundary
++                        left = b[idx - 1] if idx > 0 else b[0]
++                        # right boundary
++                        right = b[idx] if idx < len(b) else b[-1]
++                        neighbors = np.array([left, right])
++                        delta = abs(neighbors - data).max()
++                        g_sig_digits = cbook._g_sig_digits(data, delta)
++                    else:
++                        # Conservative default if we don't know how to handle.
++                        g_sig_digits = 3
+             else:
+                 g_sig_digits = 3  # Consistent with default below.
+             return "[{:-#.{}g}]".format(data, g_sig_digits)

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:14:24.819159+00:00",
+  "instance_id": "django__django-14999",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nRenameModel with db_table should be a noop.\nDescription\n\t\nA RenameModel operation that already has db_table defined must be a noop.\nIn Postgres, it drops and recreates foreign key constraints. In sqlite it recreates the table (as expected for a table renaming).\n\n\n## Your previous patch (diff format)\n```\n--- a/django/db/migrations/operations/models.py\n+++ b/django/db/migrations/operations/models.py\n@@ -320,6 +320,11 @@\n         new_model = to_state.apps.get_model(app_label, self.new_name)\n         if self.allow_migrate_model(schema_editor.connection.alias, new_model):\n             old_model = from_state.apps.get_model(app_label, self.old_name)\n+            # If both states have the same db_table, this rename only changes the\n+            # model name in the ORM (db_table was explicitly set). No database\n+            # schema changes are required.\n+            if old_model._meta.db_table == new_model._meta.db_table:\n+                return\n             # Move the main table\n             schema_editor.alter_db_table(\n                 new_model,\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 354,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030325
+}

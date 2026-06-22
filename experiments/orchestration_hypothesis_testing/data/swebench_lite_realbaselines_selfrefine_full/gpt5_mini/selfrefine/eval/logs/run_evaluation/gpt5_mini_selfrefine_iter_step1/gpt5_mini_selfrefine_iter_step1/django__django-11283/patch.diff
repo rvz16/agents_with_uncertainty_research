@@ -1,0 +1,72 @@
+--- a/django/contrib/auth/migrations/0011_update_proxy_permissions.py
++++ b/django/contrib/auth/migrations/0011_update_proxy_permissions.py
+@@ -6,9 +6,26 @@
+     """
+     Update the content_type of proxy model permissions to use the ContentType
+     of the proxy model.
++
++    This migration must avoid IntegrityError when a permission with the same
++    codename already exists on the target content type. In that case, move any
++    relations (groups/users) from the source permission to the existing target
++    permission and remove the duplicate source permission row. If no target
++    exists, just update the content_type on the permission.
+     """
+     Permission = apps.get_model('auth', 'Permission')
+     ContentType = apps.get_model('contenttypes', 'ContentType')
++    # Get Group and User models and their through models for m2m relations.
++    Group = apps.get_model('auth', 'Group')
++    try:
++        User = apps.get_model('auth', 'User')
++    except LookupError:
++        User = None
++    group_through = Group._meta.get_field('permissions').remote_field.through
++    user_through = None
++    if User is not None:
++        user_through = User._meta.get_field('user_permissions').remote_field.through
++
+     for Model in apps.get_models():
+         opts = Model._meta
+         if not opts.proxy:
+@@ -24,10 +41,38 @@
+         proxy_content_type = ContentType.objects.get_for_model(Model, for_concrete_model=False)
+         old_content_type = proxy_content_type if reverse else concrete_content_type
+         new_content_type = concrete_content_type if reverse else proxy_content_type
+-        Permission.objects.filter(
+-            permissions_query,
+-            content_type=old_content_type,
+-        ).update(content_type=new_content_type)
++
++        # Iterate over matching permissions on the old content type. Use list()
++        # so we can modify the DB safely while iterating.
++        perms_qs = Permission.objects.filter(permissions_query, content_type=old_content_type)
++        for perm in list(perms_qs):
++            # If a permission with the same codename exists on the target content
++            # type, merge relations into it and remove the source permission.
++            existing = Permission.objects.filter(codename=perm.codename, content_type=new_content_type).first()
++            if existing:
++                # Merge group relations:
++                existing_group_ids = list(
++                    group_through.objects.filter(permission_id=existing.pk)
++                    .values_list('group_id', flat=True)
++                )
++                # Remove source links that would conflict, then re-point remaining links.
++                group_through.objects.filter(permission_id=perm.pk, group_id__in=existing_group_ids).delete()
++                group_through.objects.filter(permission_id=perm.pk).update(permission_id=existing.pk)
++
++                # Merge user relations if User model is available:
++                if user_through is not None:
++                    existing_user_ids = list(
++                        user_through.objects.filter(permission_id=existing.pk)
++                        .values_list('user_id', flat=True)
++                    )
++                    user_through.objects.filter(permission_id=perm.pk, user_id__in=existing_user_ids).delete()
++                    user_through.objects.filter(permission_id=perm.pk).update(permission_id=existing.pk)
++
++                # Remove the now-unreferenced source permission.
++                Permission.objects.filter(pk=perm.pk).delete()
++            else:
++                # Safe to update the content_type directly.
++                Permission.objects.filter(pk=perm.pk).update(content_type=new_content_type)
+ 
+ 
+ def revert_proxy_model_permissions(apps, schema_editor):

@@ -1,0 +1,23 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -967,7 +967,19 @@
+ 
+     def database_backwards(self, app_label, schema_editor, from_state, to_state):
+         if self.old_fields:
+-            # Backward operation with unnamed index is a no-op.
++            # Backward operation for an originally unnamed index: compute the
++            # auto-generated name and rename the current (named) index back to
++            # it. This makes the operation idempotent when moving an unnamed
++            # index forward (becoming named) and then backward.
++            model = from_state.apps.get_model(app_label, self.model_name)
++            columns = [model._meta.get_field(field).column for field in self.old_fields]
++            # Construct the auto-generated name using the schema editor helper.
++            auto_name = schema_editor._create_index_name(model._meta.db_table, columns)
++            # The index currently in the database has the explicit new_name;
++            # rename it back to the auto-generated name.
++            old_index = models.Index(fields=self.old_fields, name=self.new_name)
++            new_index = models.Index(fields=self.old_fields, name=auto_name)
++            schema_editor.rename_index(model, old_index, new_index)
+             return
+ 
+         self.new_name_lower, self.old_name_lower = (

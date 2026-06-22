@@ -1,0 +1,27 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -171,8 +171,22 @@
+     def set_3d_properties(self, zs=0, zdir='z'):
+         xs = self.get_xdata()
+         ys = self.get_ydata()
+-        zs = np.broadcast_to(zs, len(xs))
+-        self._verts3d = juggle_axes(xs, ys, zs, zdir)
++        # Some callers may pass column-vectors (shape (N,1)) or other
++        # higher-dimension array-like objects for *zs*. Attempting to
++        # broadcast such objects directly to (len(xs),) can raise a
++        # ValueError in numpy. Normalize *zs* to a 1-D array first so
++        # that broadcasting behaves as expected.
++        zs_arr = np.atleast_1d(zs).ravel()
++        try:
++            zs_b = np.broadcast_to(zs_arr, (len(xs),))
++        except ValueError:
++            # Fallbacks: if zs is a scalar-like array, fill; otherwise try
++            # broadcasting the ravelled array again (covers odd shapes).
++            if zs_arr.size == 1:
++                zs_b = np.full((len(xs),), zs_arr[0])
++            else:
++                zs_b = np.broadcast_to(zs_arr.ravel(), (len(xs),))
++        self._verts3d = juggle_axes(xs, ys, zs_b, zdir)
+         self.stale = True
+ 
+     def set_data_3d(self, *args):

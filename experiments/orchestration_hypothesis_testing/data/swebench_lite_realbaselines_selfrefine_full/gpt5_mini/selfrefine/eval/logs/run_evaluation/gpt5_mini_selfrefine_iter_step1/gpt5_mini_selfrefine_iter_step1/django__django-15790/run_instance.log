@@ -1,0 +1,59 @@
+2026-06-22 14:43:09,149 - INFO - Creating container for django__django-15790...
+2026-06-22 14:43:09,311 - INFO - Container for django__django-15790 created: 1912b3a50cce6b27d9174438176cb0dac5191b7ffe0b95a5a3d3ceec8c147e4e
+2026-06-22 14:43:09,485 - INFO - Container for django__django-15790 started: 1912b3a50cce6b27d9174438176cb0dac5191b7ffe0b95a5a3d3ceec8c147e4e
+2026-06-22 14:43:09,488 - INFO - Intermediate patch for django__django-15790 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-15790/patch.diff, now applying to container...
+2026-06-22 14:43:09,637 - INFO - >>>>> Applied Patch:
+Checking patch django/core/checks/templates.py...
+Applied patch django/core/checks/templates.py cleanly.
+
+2026-06-22 14:43:10,062 - INFO - Git diff before:
+diff --git a/django/core/checks/templates.py b/django/core/checks/templates.py
+index 5214276987..0625130a66 100644
+--- a/django/core/checks/templates.py
++++ b/django/core/checks/templates.py
+@@ -55,10 +55,12 @@ def check_for_template_tags_with_the_same_name(app_configs, **kwargs):
+     for conf in settings.TEMPLATES:
+         custom_libraries = conf.get("OPTIONS", {}).get("libraries", {})
+         for module_name, module_path in custom_libraries.items():
+-            libraries[module_name].append(module_path)
++            if module_path not in libraries[module_name]:
++                libraries[module_name].append(module_path)
+ 
+     for module_name, module_path in get_template_tag_modules():
+-        libraries[module_name].append(module_path)
++        if module_path not in libraries[module_name]:
++            libraries[module_name].append(module_path)
+ 
+     for library_name, items in libraries.items():
+         if len(items) > 1:
+2026-06-22 14:43:10,062 - INFO - Eval script for django__django-15790 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-15790/eval.sh; copying to container...
+2026-06-22 14:43:14,671 - INFO - Test runtime: 4.56 seconds
+2026-06-22 14:43:14,671 - INFO - Test output for django__django-15790 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-15790/test_output.txt
+2026-06-22 14:43:14,731 - INFO - Git diff after:
+diff --git a/django/core/checks/templates.py b/django/core/checks/templates.py
+index 5214276987..0625130a66 100644
+--- a/django/core/checks/templates.py
++++ b/django/core/checks/templates.py
+@@ -55,10 +55,12 @@ def check_for_template_tags_with_the_same_name(app_configs, **kwargs):
+     for conf in settings.TEMPLATES:
+         custom_libraries = conf.get("OPTIONS", {}).get("libraries", {})
+         for module_name, module_path in custom_libraries.items():
+-            libraries[module_name].append(module_path)
++            if module_path not in libraries[module_name]:
++                libraries[module_name].append(module_path)
+ 
+     for module_name, module_path in get_template_tag_modules():
+-        libraries[module_name].append(module_path)
++        if module_path not in libraries[module_name]:
++            libraries[module_name].append(module_path)
+ 
+     for library_name, items in libraries.items():
+         if len(items) > 1:
+2026-06-22 14:43:14,731 - INFO - Grading answer for django__django-15790...
+2026-06-22 14:43:14,732 - INFO - report: {'django__django-15790': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_template_tags_same_library_in_installed_apps_libraries (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['Error if template loaders are specified and APP_DIRS is True.', 'test_app_dirs_removed (check_framework.test_templates.CheckTemplateSettingsAppDirsTest)', 'test_loaders_removed (check_framework.test_templates.CheckTemplateSettingsAppDirsTest)', 'test_string_if_invalid_both_are_strings (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_string_if_invalid_first_is_string (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_string_if_invalid_not_specified (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_string_if_invalid_not_string (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_template_tags_with_different_library_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_different_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_same_library_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_same_library_name_and_module_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_same_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15790: resolved: True
+2026-06-22 14:43:14,732 - INFO - Attempting to stop container sweb.eval.django__django-15790.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:43:30,006 - INFO - Attempting to remove container sweb.eval.django__django-15790.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:43:30,032 - INFO - Container sweb.eval.django__django-15790.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 14:43:30,032 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15790:latest...
+2026-06-22 14:43:30,159 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15790:latest removed.

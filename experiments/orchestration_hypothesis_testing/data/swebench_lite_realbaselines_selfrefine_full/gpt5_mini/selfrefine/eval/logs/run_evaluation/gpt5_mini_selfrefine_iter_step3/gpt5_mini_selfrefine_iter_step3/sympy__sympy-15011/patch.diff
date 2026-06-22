@@ -1,0 +1,34 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -555,8 +555,10 @@
+             dummies = flatten([sub_args(a, dummies_dict) for a in args])
+             return ",".join(str(a) for a in dummies)
+         else:
+-            #Sub in dummy variables for functions or symbols
+-            if isinstance(args, (Function, Symbol)):
++            # Sub in dummy variables for functions, symbols, or other named
++            # symbolic objects (like MatrixSymbol). This ensures invalid Python
++            # identifiers are replaced when dummify=True.
++            if isinstance(args, (Function, Symbol)) or hasattr(args, 'name'):
+                 dummies = Dummy()
+                 dummies_dict.update({args : dummies})
+                 return str(dummies)
+@@ -728,6 +730,18 @@
+             elif isinstance(arg, Symbol):
+                 argrep = self._argrepr(arg)
+ 
++                if dummify or not self._is_safe_ident(argrep):
++                    dummy = Dummy()
++                    argstrs.append(self._argrepr(dummy))
++                    expr = self._subexpr(expr, {arg: dummy})
++                else:
++                    argstrs.append(argrep)
++            # MatrixSymbol and other named symbolic objects that are not
++            # instances of Symbol (e.g. MatrixSymbol) should be dummified
++            # when appropriate so that invalid Python identifiers do not
++            # appear in the generated code.
++            elif hasattr(arg, 'name'):
++                argrep = self._argrepr(arg)
+                 if dummify or not self._is_safe_ident(argrep):
+                     dummy = Dummy()
+                     argstrs.append(self._argrepr(dummy))

@@ -1,0 +1,36 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -9,6 +9,7 @@
+ 
+ import collections
+ import datetime
++import socket
+ 
+ from io import BytesIO, UnsupportedOperation
+ from .hooks import default_hooks
+@@ -640,13 +641,20 @@
+                     raise ChunkedEncodingError(e)
+                 except DecodeError as e:
+                     raise ContentDecodingError(e)
++                except socket.error as e:
++                    # Normalize socket errors to requests' ConnectionError so callers
++                    # can catch requests exceptions rather than raw socket errors.
++                    raise ConnectionError(e)
+             except AttributeError:
+                 # Standard file-like object.
+-                while True:
+-                    chunk = self.raw.read(chunk_size)
+-                    if not chunk:
+-                        break
+-                    yield chunk
++                try:
++                    while True:
++                        chunk = self.raw.read(chunk_size)
++                        if not chunk:
++                            break
++                        yield chunk
++                except socket.error as e:
++                    raise ConnectionError(e)
+ 
+             self._content_consumed = True
+ 

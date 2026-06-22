@@ -1,0 +1,54 @@
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,8 +96,10 @@
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations. However, do not create/ensure the table if the router
++        # prevents migrations from being recorded on this database.
++        if router.allow_migrate(self.connection.alias, self.recorder.Migration) is not False:
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+             plan = self.migration_plan(targets)
+@@ -245,6 +247,10 @@
+         return state
+ 
+     def record_migration(self, migration):
++        # Don't attempt to record migrations on databases where the router
++        # prevents the migration model from being migrated.
++        if router.allow_migrate(self.connection.alias, self.recorder.Migration) is False:
++            return
+         # For replacement migrations, record individual statuses
+         if migration.replaces:
+             for app_label, name in migration.replaces:
+@@ -260,10 +266,11 @@
+             with self.connection.schema_editor(atomic=migration.atomic) as schema_editor:
+                 state = migration.unapply(state, schema_editor)
+         # For replacement migrations, also record individual statuses.
+-        if migration.replaces:
+-            for app_label, name in migration.replaces:
+-                self.recorder.record_unapplied(app_label, name)
+-        self.recorder.record_unapplied(migration.app_label, migration.name)
++        if router.allow_migrate(self.connection.alias, self.recorder.Migration) is not False:
++            if migration.replaces:
++                for app_label, name in migration.replaces:
++                    self.recorder.record_unapplied(app_label, name)
++            self.recorder.record_unapplied(migration.app_label, migration.name)
+         # Report progress
+         if self.progress_callback:
+             self.progress_callback("unapply_success", migration, fake)
+@@ -280,6 +287,11 @@
+         be applied, but the applied state of the squashed migration must be
+         maintained.
+         """
++        # If the router disallows migration records on this database, skip
++        # replacement checks as they would interact with the django_migrations
++        # table which is not present/allowed on this connection.
++        if router.allow_migrate(self.connection.alias, self.recorder.Migration) is False:
++            return
+         applied = self.recorder.applied_migrations()
+         for key, migration in self.loader.replacements.items():
+             all_applied = all(m in applied for m in migration.replaces)

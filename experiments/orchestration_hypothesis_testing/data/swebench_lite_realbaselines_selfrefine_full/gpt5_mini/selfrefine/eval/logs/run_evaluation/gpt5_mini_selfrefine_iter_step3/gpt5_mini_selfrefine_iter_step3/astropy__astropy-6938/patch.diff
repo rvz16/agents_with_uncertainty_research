@@ -1,0 +1,23 @@
+--- a/astropy/io/fits/fitsrec.py
++++ b/astropy/io/fits/fitsrec.py
+@@ -1261,7 +1261,19 @@
+ 
+         # Replace exponent separator in floating point numbers
+         if 'D' in format:
+-            output_field.replace(encode_ascii('E'), encode_ascii('D'))
++            # Use numpy.char.replace and assign back to ensure an in-place
++            # update of the underlying array buffer.  Handle both byte ('S')
++            # and unicode ('U') dtypes, and also scalars (0-D) by using
++            # output_field[...] for assignment.
++            if getattr(output_field, 'dtype', None) is not None and \
++                    output_field.dtype.kind == 'U':
++                sep_from = 'E'
++                sep_to = 'D'
++            else:
++                sep_from = encode_ascii('E')
++                sep_to = encode_ascii('D')
++            replaced = np.char.replace(output_field, sep_from, sep_to)
++            output_field[...] = replaced
+ 
+ 
+ def _get_recarray_field(array, key):

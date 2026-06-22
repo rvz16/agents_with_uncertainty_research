@@ -1,0 +1,20 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -575,7 +575,16 @@
+                 for i in reversed(range(0, d)):
+                     lines.append('%s%s%s' % (' '*i, vsum[4], ' '*(w - i - 1)))
+                 lines.append(vsum[8]*(w))
+-                return d, h + 2*more, lines, more
++                # The "more" value represents the extra padding introduced when
++                # constructing a unicode sum symbol for odd heights.  Downstream
++                # code expects an adjustment value that corresponds to the
++                # vertical offset (in lines) that needs to be applied to the
++                # function being summed so that it is visually centered on the
++                # sum symbol.  For odd heights this offset is effectively half
++                # of the extra padding.  Returning the halved value produces
++                # better alignment across various cases (single-line summands,
++                # multi-line summands, and nested constructs).
++                return d, h + 2*more, lines, more//2
+ 
+         f = expr.function
+ 

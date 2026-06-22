@@ -1,0 +1,25 @@
+--- a/src/_pytest/_io/saferepr.py
++++ b/src/_pytest/_io/saferepr.py
+@@ -9,7 +9,9 @@
+     except (KeyboardInterrupt, SystemExit):
+         raise
+     except BaseException:
+-        return '{}("{}")'.format(type(obj).__name__, obj)
++        # Avoid calling user-defined __str__/__repr__ here as they may be broken;
++        # fall back to a minimal safe representation using type and id.
++        return "{} object at 0x{:x}".format(type(obj).__name__, id(obj))
+ 
+ 
+ def _format_repr_exception(exc: BaseException, obj: Any) -> str:
+@@ -19,8 +21,10 @@
+         raise
+     except BaseException as exc:
+         exc_info = "unpresentable exception ({})".format(_try_repr_or_str(exc))
++    # Use type(obj).__name__ instead of obj.__class__.__name__ to avoid triggering
++    # a broken __getattribute__ implementation on the object.
+     return "<[{} raised in repr()] {} object at 0x{:x}>".format(
+-        exc_info, obj.__class__.__name__, id(obj)
++        exc_info, type(obj).__name__, id(obj)
+     )
+ 
+ 

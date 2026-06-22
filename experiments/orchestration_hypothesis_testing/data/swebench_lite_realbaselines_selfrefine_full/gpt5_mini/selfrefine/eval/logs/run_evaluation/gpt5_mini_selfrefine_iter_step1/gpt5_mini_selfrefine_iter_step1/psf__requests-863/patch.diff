@@ -1,0 +1,24 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -461,9 +461,18 @@
+         return ''.join(url)
+ 
+     def register_hook(self, event, hook):
+-        """Properly register a hook."""
+-
+-        self.hooks[event].append(hook)
++        """Properly register a hook.
++
++        Accept either a single callable hook or an iterable (list/tuple) of
++        callables. This preserves backward compatibility while allowing the
++        `hooks` dict passed to Request(...) to contain lists of hooks.
++        """
++        # Allow registering multiple hooks at once by passing a list/tuple
++        if isinstance(hook, (list, tuple)):
++            for h in hook:
++                self.register_hook(event, h)
++        else:
++            self.hooks[event].append(hook)
+ 
+     def deregister_hook(self, event, hook):
+         """Deregister a previously registered hook.

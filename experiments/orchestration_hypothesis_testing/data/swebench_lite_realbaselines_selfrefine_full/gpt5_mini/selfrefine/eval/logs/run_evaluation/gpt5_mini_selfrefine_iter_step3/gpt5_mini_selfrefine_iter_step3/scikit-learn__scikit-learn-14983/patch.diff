@@ -1,0 +1,39 @@
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -1162,6 +1162,9 @@
+         cv = self.cv(random_state=rng, shuffle=True,
+                      **self.cvargs)
+         return cv.get_n_splits(X, y, groups) * self.n_repeats
++
++    def __repr__(self):
++        return _build_repr(self)
+ 
+ 
+ class RepeatedKFold(_RepeatedSplits):
+@@ -2136,7 +2139,9 @@
+ 
+ 
+ def _build_repr(self):
+-    # XXX This is copied from BaseEstimator's get_params
++    # XXX This is copied from BaseEstimator's get_params but enhanced to
++    # support wrappers (e.g. _RepeatedSplits) that store some init args in
++    # a `cvargs` dict instead of as instance attributes.
+     cls = self.__class__
+     init = getattr(cls.__init__, 'deprecated_original', cls.__init__)
+     # Ignore varargs, kw and default values and pop self
+@@ -2157,7 +2162,14 @@
+         warnings.simplefilter("always", DeprecationWarning)
+         try:
+             with warnings.catch_warnings(record=True) as w:
+-                value = getattr(self, key, None)
++                # Prefer actual attribute value if present on the instance;
++                # otherwise, if this object stores constructor arguments in
++                # a `cvargs` dict (as _RepeatedSplits does), use that value.
++                if hasattr(self, key):
++                    value = getattr(self, key)
++                else:
++                    value = (self.cvargs.get(key, None)
++                             if hasattr(self, "cvargs") else None)
+             if len(w) and w[0].category == DeprecationWarning:
+                 # if the parameter is deprecated, don't show it
+                 continue

@@ -1,0 +1,65 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -1,6 +1,8 @@
+ """
+ Global Django exception and warning classes.
+ """
++
++from collections import Counter
+ 
+ 
+ class FieldDoesNotExist(Exception):
+@@ -179,6 +181,53 @@
+             return repr(dict(self))
+         return repr(list(self))
+ 
++    def _normalize_param(self, value):
++        """
++        Normalize params into a hashable, comparable structure.
++        Converts dicts to sorted tuples of items, lists/tuples/sets to tuples,
++        and leaves other objects as-is.
++        """
++        if isinstance(value, dict):
++            return tuple((k, self._normalize_param(v)) for k, v in sorted(value.items()))
++        if isinstance(value, (list, tuple)):
++            return tuple(self._normalize_param(v) for v in value)
++        if isinstance(value, set):
++            return tuple(sorted(self._normalize_param(v) for v in value))
++        return value
++
++    def _error_tuple(self, error):
++        """
++        Represent a single leaf ValidationError as a tuple of (message, code, params)
++        where params is normalized for reliable comparison.
++        """
++        return (error.message, error.code, self._normalize_param(error.params))
++
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++
++        # Both must be error dicts or both must be error lists (non-field).
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            # Compare keys (fields) first.
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            # For each field, compare the multiset of error tuples (order-independent).
++            for field in self.error_dict:
++                self_tuples = [self._error_tuple(e) for e in self.error_dict.get(field, [])]
++                other_tuples = [self._error_tuple(e) for e in other.error_dict.get(field, [])]
++                if Counter(self_tuples) != Counter(other_tuples):
++                    return False
++            return True
++
++        if hasattr(self, 'error_dict') != hasattr(other, 'error_dict'):
++            # One has dict and the other doesn't.
++            return False
++
++        # Both are non-field error lists: compare multisets of error tuples.
++        self_tuples = [self._error_tuple(e) for e in self.error_list]
++        other_tuples = [self._error_tuple(e) for e in other.error_list]
++        return Counter(self_tuples) == Counter(other_tuples)
++
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+ 

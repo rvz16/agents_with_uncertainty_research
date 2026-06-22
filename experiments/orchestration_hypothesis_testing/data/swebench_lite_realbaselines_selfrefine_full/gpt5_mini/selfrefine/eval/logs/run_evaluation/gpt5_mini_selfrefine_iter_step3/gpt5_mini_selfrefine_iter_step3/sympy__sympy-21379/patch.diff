@@ -1,0 +1,28 @@
+--- a/sympy/core/mod.py
++++ b/sympy/core/mod.py
+@@ -166,10 +166,21 @@
+         # XXX other possibilities?
+ 
+         # extract gcd; any further simplification should be done by the user
+-        G = gcd(p, q)
+-        if G != 1:
+-            p, q = [
+-                gcd_terms(i/G, clear=False, fraction=False) for i in (p, q)]
++        # gcd(...) can raise PolynomialError for expressions it cannot handle
++        # (for example when Piecewise occurs in generators). Only guard the
++        # call to gcd here so that errors from gcd_terms (which may indicate
++        # real problems) are not accidentally swallowed.
++        from sympy.polys.polyerrors import PolynomialError
++        try:
++            G = gcd(p, q)
++        except PolynomialError:
++            # If gcd cannot be determined for these expressions, proceed
++            # conservatively as if gcd == 1.
++            G = S.One
++        else:
++            if G != 1:
++                p, q = [
++                    gcd_terms(i/G, clear=False, fraction=False) for i in (p, q)]
+         pwas, qwas = p, q
+ 
+         # simplify terms

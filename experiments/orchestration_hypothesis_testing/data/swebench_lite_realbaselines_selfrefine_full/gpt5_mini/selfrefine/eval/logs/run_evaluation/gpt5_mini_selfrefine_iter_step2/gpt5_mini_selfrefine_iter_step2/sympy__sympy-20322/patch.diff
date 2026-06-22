@@ -1,0 +1,68 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1266,15 +1266,51 @@
+         from sympy import fraction
+         from sympy.core.numbers import Float
+ 
++        # If we can determine the rationality is False then this cannot be an
++        # integer. If rationality is True then further checks below may show
++        # integrality. If rationality is unknown we still try to be careful
++        # but remain conservative and return None if we can't conclude.
+         is_rational = self._eval_is_rational()
+         if is_rational is False:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
++        # The fraction(...) routine can mis-handle unevaluated nested Muls
++        # because arguments may be unflattened (evaluate=False). To avoid
++        # triggering evaluation, compute the numerator and denominator by
++        # recursing into nested Muls and calling fraction on the atomic
++        # factors only.
++        def mul_args(e):
++            # Recurse into any nested Mul nodes returned by Mul.make_args
++            for term in Mul.make_args(e):
++                if term.is_Mul:
++                    for t in mul_args(term):
++                        yield t
++                else:
++                    yield term
++
++        num = S.One
++        den = S.One
++        for term in mul_args(self):
++            # Use fraction on the (non-Mul) term; this is safe because we
++            # only call it on atoms/pows/rationals rather than on an
++            # unevaluated Mul that may contain nested structure.
++            tn, td = fraction(term, exact=True)
++            num *= tn
++            den *= td
++
++        n, d = num, den
++
++        # If we already know the expression is rational then a unit
++        # denominator suffices to show integrality.
+         if is_rational:
+             if d is S.One:
+                 return True
++
++        # Some simple tests that can be done without evaluating nested Muls:
++        # - if the denominator is even and the numerator is odd then the
++        #   product is not an integer.
++        # - if numerator and denominator are equal then the result is 1
++        #   (provided there are no Float atoms and denominator is not zero).
+         if d.is_even:
+             if d.is_prime:  # literal or symbolic 2
+                 return n.is_even
+@@ -1282,7 +1318,10 @@
+                 return False  # true even if d = 0
+         if n == d:
+             return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++                              fuzzy_not(d.is_zero)])
++        # Otherwise be conservative: if we can't decide from the above
++        # return None rather than attempting to evaluate unevaluated Muls.
++Replace>>>
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

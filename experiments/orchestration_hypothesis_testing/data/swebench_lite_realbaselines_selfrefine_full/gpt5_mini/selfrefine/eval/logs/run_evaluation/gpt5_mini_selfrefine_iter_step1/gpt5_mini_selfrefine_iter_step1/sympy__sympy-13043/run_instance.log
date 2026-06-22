@@ -1,0 +1,49 @@
+2026-06-22 15:29:12,248 - INFO - Creating container for sympy__sympy-13043...
+2026-06-22 15:29:12,388 - INFO - Container for sympy__sympy-13043 created: 0530a740dc1052e6d4aad0855467568df6d955b945c8e1c17feaf6e05c924f42
+2026-06-22 15:29:12,531 - INFO - Container for sympy__sympy-13043 started: 0530a740dc1052e6d4aad0855467568df6d955b945c8e1c17feaf6e05c924f42
+2026-06-22 15:29:12,531 - INFO - Intermediate patch for sympy__sympy-13043 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-13043/patch.diff, now applying to container...
+2026-06-22 15:29:12,649 - INFO - >>>>> Applied Patch:
+Checking patch sympy/integrals/intpoly.py...
+Applied patch sympy/integrals/intpoly.py cleanly.
+
+2026-06-22 15:29:12,868 - INFO - Git diff before:
+diff --git a/sympy/integrals/intpoly.py b/sympy/integrals/intpoly.py
+index fc72bd206f..feeeb02f17 100644
+--- a/sympy/integrals/intpoly.py
++++ b/sympy/integrals/intpoly.py
+@@ -593,7 +593,10 @@ def decompose(expr, separate=False):
+         poly_dict[0] = expr
+ 
+     if separate:
+-        return list(poly_dict.values())
++        # Return the constituent monomials in a deterministic order.
++        # Sort by degree (dictionary keys), then by string form to break ties.
++        items = sorted(poly_dict.items(), key=lambda kv: (kv[0], str(kv[1])))
++        return [v for _, v in items]
+     return poly_dict
+2026-06-22 15:29:12,868 - INFO - Eval script for sympy__sympy-13043 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-13043/eval.sh; copying to container...
+2026-06-22 15:29:15,563 - INFO - Test runtime: 2.65 seconds
+2026-06-22 15:29:15,564 - INFO - Test output for sympy__sympy-13043 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-13043/test_output.txt
+2026-06-22 15:29:15,616 - INFO - Git diff after:
+diff --git a/sympy/integrals/intpoly.py b/sympy/integrals/intpoly.py
+index fc72bd206f..feeeb02f17 100644
+--- a/sympy/integrals/intpoly.py
++++ b/sympy/integrals/intpoly.py
+@@ -593,7 +593,10 @@ def decompose(expr, separate=False):
+         poly_dict[0] = expr
+ 
+     if separate:
+-        return list(poly_dict.values())
++        # Return the constituent monomials in a deterministic order.
++        # Sort by degree (dictionary keys), then by string form to break ties.
++        items = sorted(poly_dict.items(), key=lambda kv: (kv[0], str(kv[1])))
++        return [v for _, v in items]
+     return poly_dict
+2026-06-22 15:29:15,617 - INFO - Grading answer for sympy__sympy-13043...
+2026-06-22 15:29:15,622 - INFO - report: {'sympy__sympy-13043': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_decompose']}, 'PASS_TO_PASS': {'success': ['test_best_origin'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13043: resolved: False
+2026-06-22 15:29:15,622 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13043.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:29:30,870 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13043.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:29:30,896 - INFO - Container sweb.eval.sympy__sympy-13043.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:29:30,896 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-13043:latest...
+2026-06-22 15:29:30,965 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-13043:latest removed.

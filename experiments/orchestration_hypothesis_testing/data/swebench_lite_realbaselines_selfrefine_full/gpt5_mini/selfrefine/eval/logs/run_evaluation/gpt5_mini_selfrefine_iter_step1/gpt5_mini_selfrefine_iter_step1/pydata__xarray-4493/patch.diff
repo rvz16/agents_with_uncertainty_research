@@ -1,0 +1,18 @@
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -201,7 +201,14 @@
+         # can't use fastpath (yet) for scalars
+         return _maybe_wrap_data(data)
+ 
+-    if isinstance(data, Variable):
++    # Avoid importing DataArray at module import time to reduce circular import
++    # risk; import locally when needed.
++    from .dataarray import DataArray
++
++    # If given a Variable or DataArray, prefer their underlying data without
++    # accessing the .values attribute which may trigger computation for
++    # dask-backed DataArray objects.
++    if isinstance(data, (Variable, DataArray)):
+         return data.data
+ 
+     if isinstance(data, NON_NUMPY_SUPPORTED_ARRAY_TYPES):

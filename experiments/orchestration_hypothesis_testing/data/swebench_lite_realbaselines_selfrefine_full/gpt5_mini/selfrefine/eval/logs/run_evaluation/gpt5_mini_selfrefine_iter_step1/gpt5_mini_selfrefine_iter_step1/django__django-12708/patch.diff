@@ -1,0 +1,17 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -403,6 +403,14 @@
+         meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
++        # Make a copy so we don't mutate the caller's dict.
++        constraint_kwargs = dict(constraint_kwargs)
++        # When deleting an index, avoid matching unique constraints that may
++        # also create an index (e.g. unique_together). On some backends
++        # unique constraints are reported as indexed objects; explicitly
++        # require unique=False to exclude them.
++        if constraint_kwargs.get('index'):
++            constraint_kwargs.setdefault('unique', False)
+         constraint_names = self._constraint_names(
+             model, columns, exclude=meta_constraint_names | meta_index_names,
+             **constraint_kwargs

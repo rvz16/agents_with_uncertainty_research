@@ -1,0 +1,19 @@
+--- a/sphinx/ext/napoleon/docstring.py
++++ b/sphinx/ext/napoleon/docstring.py
+@@ -318,9 +318,13 @@
+             return [line[min_indent:] for line in lines]
+ 
+     def _escape_args_and_kwargs(self, name: str) -> str:
+-        if name.endswith('_'):
+-            name = name[:-1] + r'\_'
+-
++        # Do not escape a trailing underscore. Historically Sphinx/Napoleon
++        # emitted names like "hello_" directly (for example in
++        # ".. attribute:: hello_") and escaping the trailing underscore
++        # produced a visible backslash in the rendered HTML.
++        #
++        # Preserve escaping for leading '*' or '**' to avoid reST markup
++        # interpretation of varargs/kwargs.
+         if name[:2] == '**':
+             return r'\*\*' + name[2:]
+         elif name[:1] == '*':

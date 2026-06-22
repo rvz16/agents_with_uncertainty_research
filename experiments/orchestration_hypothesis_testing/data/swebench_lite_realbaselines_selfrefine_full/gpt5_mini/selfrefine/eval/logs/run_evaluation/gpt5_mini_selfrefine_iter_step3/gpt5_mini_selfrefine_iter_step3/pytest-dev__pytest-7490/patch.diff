@@ -1,0 +1,21 @@
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -239,9 +239,17 @@
+         skip(skipped.reason)
+ 
+     if not item.config.option.runxfail:
+-        item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
++        xfailed = evaluate_xfail_marks(item)
+         if xfailed and not xfailed.run:
++            # Store the evaluation so we can act on it (not run) now and for reporting.
++            item._store[xfailed_key] = xfailed
+             xfail("[NOTRUN] " + xfailed.reason)
++        else:
++            # Do not cache a non-blocking xfail evaluation here: allow xfail marks
++            # to be added dynamically during the test (e.g. via request.node.add_marker)
++            # and be picked up by pytest_runtest_call which will evaluate the marks
++            # if the store value is None.
++            item._store[xfailed_key] = None
+ 
+ 
+ @hookimpl(hookwrapper=True)

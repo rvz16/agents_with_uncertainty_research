@@ -1,0 +1,12 @@
+--- a/django/contrib/sitemaps/__init__.py
++++ b/django/contrib/sitemaps/__init__.py
+@@ -167,7 +167,8 @@
+             return None
+         if callable(self.lastmod):
+             try:
+-                return max([self.lastmod(item) for item in self.items()])
++                # Use max's default to avoid ValueError on empty sequences.
++                return max((self.lastmod(item) for item in self.items()), default=None)
+             except TypeError:
+                 return None
+         else:

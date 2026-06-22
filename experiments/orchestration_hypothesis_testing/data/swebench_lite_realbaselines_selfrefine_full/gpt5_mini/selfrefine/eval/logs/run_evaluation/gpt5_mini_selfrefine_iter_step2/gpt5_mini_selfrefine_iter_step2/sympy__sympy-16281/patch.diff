@@ -1,0 +1,30 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -490,10 +490,17 @@
+         sign_height = 0
+ 
+         for lim in expr.limits:
+-            width = (func_height + 2) * 5 // 3 - 2
++            # Make the product sign slightly slimmer than before while keeping
++            # it proportional to the height of the argument.
++            # Ensure at least width 1.
++            width = max(1, (func_height + 1) * 4 // 3 - 1)
++
+             sign_lines = []
++            # top bar
+             sign_lines.append(corner_chr + (horizontal_chr*width) + corner_chr)
+-            for i in range(func_height + 1):
++            # vertical body: use func_height lines so there is no extra
++            # empty line at the bottom (previously range(func_height + 1))
++            for i in range(func_height):
+                 sign_lines.append(vertical_chr + (' '*width) + vertical_chr)
+ 
+             pretty_sign = stringPict('')
+@@ -515,6 +522,7 @@
+                 first = False
+ 
+             height = pretty_sign.height()
++            # pad to the right so the sign and the function are separated
+             padding = stringPict('')
+             padding = prettyForm(*padding.stack(*[' ']*(height - 1)))
+             pretty_sign = prettyForm(*pretty_sign.right(padding))

@@ -1,0 +1,18 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,7 +1854,14 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++        # When printing a Poly, preserve the monomial ordering used by the
++        # pretty/str printers. Respect the 'order' setting if provided;
++        # otherwise default to the legacy 'old' ordering which prints
++        # monomials from highest to lowest degree.
++        order = self._settings.get('order', None)
++        if order is None:
++            order = 'old'
++        expr = self._print(poly.as_expr(), order=order)
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 

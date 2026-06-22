@@ -1,0 +1,15 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -60,7 +60,11 @@
+ 
+ class Choices(enum.Enum, metaclass=ChoicesMeta):
+     """Class for creating enumerated choices."""
+-    pass
++    def __str__(self):
++        # Use the underlying value for stringification so that newly created
++        # model instances that may hold enum members behave the same as
++        # instances retrieved from the database (which hold plain values).
++        return str(self.value)
+ 
+ 
+ class IntegerChoices(int, Choices):

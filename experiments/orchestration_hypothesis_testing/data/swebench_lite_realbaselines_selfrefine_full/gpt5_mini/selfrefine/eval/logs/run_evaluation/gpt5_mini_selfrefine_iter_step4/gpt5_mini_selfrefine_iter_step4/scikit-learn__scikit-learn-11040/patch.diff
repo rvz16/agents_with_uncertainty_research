@@ -1,0 +1,71 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -53,6 +54,35 @@
+     else:
+         raise ValueError("weights not recognized: should be 'uniform', "
+                          "'distance', or a callable function")
++
++
++def _check_n_neighbors(n_neighbors, name='n_neighbors'):
++    """Validate and normalize n_neighbors-like parameters.
++
++    Accept integer types, numpy integer scalars and float values that are
++    integer-valued (e.g., 3.0). Return an int or None. Raise ValueError for
++    invalid values.
++    """
++    if n_neighbors is None:
++        return None
++
++    # Accept integer types (including numpy integer scalars)
++    if isinstance(n_neighbors, (numbers.Integral, np.integer)):
++        n_neighbors_int = int(n_neighbors)
++        if n_neighbors_int <= 0:
++            raise ValueError("Expected %s > 0. Got %d" % (name, n_neighbors_int))
++        return n_neighbors_int
++
++    # Accept float values that are integer-valued (e.g., 3.0)
++    if isinstance(n_neighbors, float):
++        if not n_neighbors.is_integer():
++            raise ValueError("%s must be an integer, got %r" % (name, n_neighbors))
++        n_neighbors_int = int(n_neighbors)
++        if n_neighbors_int <= 0:
++            raise ValueError("Expected %s > 0. Got %d" % (name, n_neighbors_int))
++        return n_neighbors_int
++
++    raise ValueError("%s must be an integer, got %r" % (name, n_neighbors))
+ 
+ 
+ def _get_weights(dist, weights):
+@@ -107,7 +137,9 @@
+                  algorithm='auto', leaf_size=30, metric='minkowski',
+                  p=2, metric_params=None, n_jobs=1):
+ 
+-        self.n_neighbors = n_neighbors
++        # Validate n_neighbors early so that downstream code that expects an
++        # integer does not fail with a less informative TypeError.
++        self.n_neighbors = _check_n_neighbors(n_neighbors)
+         self.radius = radius
+         self.algorithm = algorithm
+         self.leaf_size = leaf_size
+@@ -325,8 +357,11 @@
+         """
+         check_is_fitted(self, "_fit_method")
+ 
+-        if n_neighbors is None:
+-            n_neighbors = self.n_neighbors
++        if n
++
++        # Validate user-specified n_neighbors (allow None to be handled below).
++        if n_neighbors is not None:
++            n_neighbors = _check_n_neighbors(n_neighbors)
+ 
+         if X is not None:
+             query_is_train = False

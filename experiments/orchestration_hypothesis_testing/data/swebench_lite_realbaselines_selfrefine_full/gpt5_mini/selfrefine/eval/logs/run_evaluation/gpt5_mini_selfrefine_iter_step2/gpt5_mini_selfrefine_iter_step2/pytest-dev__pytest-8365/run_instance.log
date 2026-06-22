@@ -1,0 +1,121 @@
+2026-06-22 16:43:48,861 - INFO - Creating container for pytest-dev__pytest-8365...
+2026-06-22 16:43:49,131 - INFO - Container for pytest-dev__pytest-8365 created: 261d354e75cb6a859e9eaf56a49b62f4f2317ea0f61674af1125ac4f4ce87071
+2026-06-22 16:43:49,266 - INFO - Container for pytest-dev__pytest-8365 started: 261d354e75cb6a859e9eaf56a49b62f4f2317ea0f61674af1125ac4f4ce87071
+2026-06-22 16:43:49,266 - INFO - Intermediate patch for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-8365/patch.diff, now applying to container...
+2026-06-22 16:43:49,382 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/tmpdir.py...
+Applied patch src/_pytest/tmpdir.py cleanly.
+
+2026-06-22 16:43:49,470 - INFO - Git diff before:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..d4c88fc72 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -149,15 +149,42 @@ class TempdirFactory:
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return the current user name, sanitized for use in filesystem paths,
++    or None if getuser() does not work in the current environment (see #1010).
++
++    The username may include characters that are not safe for directory names
++    (for example a domain separator '\' on Windows). We normalize path
++    separators and replace any remaining unsafe characters with underscores.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not user:
++        return None
++
++    # Replace OS-specific path separators first (e.g. 'DOMAIN\user' on Windows)
++    try:
++        user = user.replace(os.path.sep, "_")
++    except Exception:
++        # be defensive; if replacement fails just continue to regex sanitize
++        pass
++    if os.path.altsep:
++        user = user.replace(os.path.altsep, "_")
++
++    # Replace any remaining characters that are not word characters, dot or hyphen.
++    # \w includes letters, digits and underscore (and Unicode word chars).
++    user = re.sub(r"[^\w.-]", "_", user)
++
++    # Collapse repeated underscores and strip surrounding punctuation to avoid
++    # awkward names like '___' or '-name-'.
++    user = re.sub(r"_+", "_", user).strip("_.-")
++
++    return user or None
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 16:43:49,470 - INFO - Eval script for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-8365/eval.sh; copying to container...
+2026-06-22 16:43:53,471 - INFO - Test runtime: 3.95 seconds
+2026-06-22 16:43:53,471 - INFO - Test output for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/pytest-dev__pytest-8365/test_output.txt
+2026-06-22 16:43:53,523 - INFO - Git diff after:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..d4c88fc72 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -149,15 +149,42 @@ class TempdirFactory:
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return the current user name, sanitized for use in filesystem paths,
++    or None if getuser() does not work in the current environment (see #1010).
++
++    The username may include characters that are not safe for directory names
++    (for example a domain separator '\' on Windows). We normalize path
++    separators and replace any remaining unsafe characters with underscores.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not user:
++        return None
++
++    # Replace OS-specific path separators first (e.g. 'DOMAIN\user' on Windows)
++    try:
++        user = user.replace(os.path.sep, "_")
++    except Exception:
++        # be defensive; if replacement fails just continue to regex sanitize
++        pass
++    if os.path.altsep:
++        user = user.replace(os.path.altsep, "_")
++
++    # Replace any remaining characters that are not word characters, dot or hyphen.
++    # \w includes letters, digits and underscore (and Unicode word chars).
++    user = re.sub(r"[^\w.-]", "_", user)
++
++    # Collapse repeated underscores and strip surrounding punctuation to avoid
++    # awkward names like '___' or '-name-'.
++    user = re.sub(r"_+", "_", user).strip("_.-")
++
++    return user or None
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 16:43:53,523 - INFO - Grading answer for pytest-dev__pytest-8365...
+2026-06-22 16:43:53,524 - INFO - report: {'pytest-dev__pytest-8365': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_tmpdir.py::test_tmp_path_factory_handles_invalid_dir_characters']}, 'PASS_TO_PASS': {'success': ['testing/test_tmpdir.py::TestTempdirHandler::test_mktemp', 'testing/test_tmpdir.py::TestTempdirHandler::test_tmppath_relative_basetemp_absolute', 'testing/test_tmpdir.py::test_get_user_uid_not_found', 'testing/test_tmpdir.py::TestNumberedDir::test_make', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_lock_create', 'testing/test_tmpdir.py::TestNumberedDir::test_lock_register_cleanup_removal', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_keep', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_locked', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_ignores_symlink', 'testing/test_tmpdir.py::TestNumberedDir::test_removal_accepts_lock', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_file', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_directory', 'testing/test_tmpdir.py::TestRmRf::test_on_rm_rf_error', 'testing/test_tmpdir.py::test_tmpdir_equals_tmp_path', 'testing/test_tmpdir.py::test_tmpdir_fixture', 'testing/test_tmpdir.py::TestConfigTmpdir::test_getbasetemp_custom_removes_old', 'testing/test_tmpdir.py::test_mktemp[mypath-True]', 'testing/test_tmpdir.py::test_mktemp[/mypath1-False]', 'testing/test_tmpdir.py::test_mktemp[./mypath1-True]', 'testing/test_tmpdir.py::test_mktemp[../mypath3-False]', 'testing/test_tmpdir.py::test_mktemp[../../mypath4-False]', 'testing/test_tmpdir.py::test_mktemp[mypath5/..-False]', 'testing/test_tmpdir.py::test_mktemp[mypath6/../mypath6-True]', 'testing/test_tmpdir.py::test_mktemp[mypath7/../mypath7/..-False]', 'testing/test_tmpdir.py::test_tmpdir_always_is_realpath', 'testing/test_tmpdir.py::test_tmp_path_always_is_realpath', 'testing/test_tmpdir.py::test_tmpdir_too_long_on_parametrization', 'testing/test_tmpdir.py::test_tmpdir_factory', 'testing/test_tmpdir.py::test_tmpdir_fallback_tox_env', 'testing/test_tmpdir.py::test_tmpdir_fallback_uid_not_found', 'testing/test_tmpdir.py::test_basetemp_with_read_only_files'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-8365: resolved: False
+2026-06-22 16:43:53,524 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:44:08,754 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:44:08,781 - INFO - Container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:44:08,781 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest...
+2026-06-22 16:44:09,038 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest removed.

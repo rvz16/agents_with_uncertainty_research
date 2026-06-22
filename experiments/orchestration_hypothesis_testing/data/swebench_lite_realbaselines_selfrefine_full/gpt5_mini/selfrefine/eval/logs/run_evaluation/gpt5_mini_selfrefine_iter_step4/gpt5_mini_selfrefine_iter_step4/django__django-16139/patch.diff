@@ -1,0 +1,22 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -163,7 +163,18 @@
+         super().__init__(*args, **kwargs)
+         password = self.fields.get("password")
+         if password:
+-            password.help_text = password.help_text.format("../password/")
++            # If the User admin is accessed via another model using to_field,
++            # the change URL may include a query string (e.g. ?_to_field=uuid)
++            # and the password change form URL needs to reference the user's
++            # primary key. Construct a relative path that works in both cases:
++            # - when instance.pk is available, point to ../../<pk>/password/
++            # - otherwise, fall back to the previous ../password/ relative link.
++            if self.instance is not None and getattr(self.instance, "pk", None) is not None:
++                password.help_text = password.help_text.format(
++                    f"../../{self.instance.pk}/password/"
++                )
++            else:
++                password.help_text = password.help_text.format("../password/")
+         user_permissions = self.fields.get("user_permissions")
+         if user_permissions:
+             user_permissions.queryset = user_permissions.queryset.select_related(

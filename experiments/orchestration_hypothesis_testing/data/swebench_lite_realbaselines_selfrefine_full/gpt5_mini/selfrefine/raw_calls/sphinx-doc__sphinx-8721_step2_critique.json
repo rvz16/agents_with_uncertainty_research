@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:08:24.865675+00:00",
+  "instance_id": "sphinx-doc__sphinx-8721",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nviewcode creates pages for epub even if `viewcode_enable_epub=False` on `make html epub`\n**Describe the bug**\r\nviewcode creates pages for epub even if `viewcode_enable_epub=False` on `make html epub`\r\n\r\n**To Reproduce**\r\n```\r\n$ make html epub\r\n```\r\n\r\n**Expected behavior**\r\nmodule pages should not be created for epub by default.\r\n\r\n**Your project**\r\nNo\r\n\r\n**Screenshots**\r\nNo\r\n\r\n**Environment info**\r\n- OS: Mac\r\n- Python version: 3.9.1\r\n- Sphinx version: HEAD of 3.x\r\n- Sphinx extensions:  sphinx.ext.viewcode\r\n- Extra tools: No\r\n\r\n**Additional context**\r\nNo\r\n\n\n\n## Your previous patch (diff format)\n```\n--- a/sphinx/ext/viewcode.py\n+++ b/sphinx/ext/viewcode.py\n@@ -180,6 +180,13 @@\n \n def collect_pages(app: Sphinx) -> Generator[Tuple[str, Dict[str, Any], str], None, None]:\n     env = app.builder.env\n+    # Don't generate viewcode pages for epub builders unless explicitly enabled.\n+    # doctree_read already avoids collecting tags for epub when viewcode_enable_epub\n+    # is False, but env._viewcode_modules may be populated from a previous HTML\n+    # build when running multiple builders (e.g. \"make html epub\"). In that case\n+    # skip page generation here as well.\n+    if app.builder.name.startswith(\"epub\") and not env.config.viewcode_enable_epub:\n+        return\n     if not hasattr(env, '_viewcode_modules'):\n         return\n     highlighter = app.builder.highlighter  # type: ignore\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 479,
+  "completion_tokens": 1373,
+  "cost_usd": 0.0028657500000000002
+}

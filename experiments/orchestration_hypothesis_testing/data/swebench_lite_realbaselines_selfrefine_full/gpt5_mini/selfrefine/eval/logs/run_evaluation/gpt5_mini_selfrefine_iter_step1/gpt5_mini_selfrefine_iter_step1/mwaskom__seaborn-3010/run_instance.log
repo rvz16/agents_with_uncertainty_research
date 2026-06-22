@@ -1,0 +1,83 @@
+2026-06-22 15:02:22,850 - INFO - Creating container for mwaskom__seaborn-3010...
+2026-06-22 15:02:22,996 - INFO - Container for mwaskom__seaborn-3010 created: e96a4703c7c44df1e54dde5ab004f3805f7c555952785db0e6fd3ec8d057e7b1
+2026-06-22 15:02:23,145 - INFO - Container for mwaskom__seaborn-3010 started: e96a4703c7c44df1e54dde5ab004f3805f7c555952785db0e6fd3ec8d057e7b1
+2026-06-22 15:02:23,146 - INFO - Intermediate patch for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/mwaskom__seaborn-3010/patch.diff, now applying to container...
+2026-06-22 15:02:23,284 - INFO - >>>>> Applied Patch:
+Checking patch seaborn/_stats/regression.py...
+Applied patch seaborn/_stats/regression.py cleanly.
+
+2026-06-22 15:02:23,356 - INFO - Git diff before:
+diff --git a/seaborn/_stats/regression.py b/seaborn/_stats/regression.py
+index 7b7ddc8d..c3040b2f 100644
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,13 +23,23 @@ class PolyFit(Stat):
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++        # Drop missing values in either x or y before fitting
++        mask = x.notna() & y.notna()
++        x = x[mask]
++        y = y[mask]
++
++        # Need more unique points than the polynomial order to fit
++        if len(x) == 0 or x.nunique() <= self.order:
+             # TODO warn?
+             xx = yy = []
+         else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++            try:
++                p = np.polyfit(x, y, self.order)
++                xx = np.linspace(x.min(), x.max(), self.gridsize)
++                yy = np.polyval(p, xx)
++            except np.linalg.LinAlgError:
++                # Fall back to an empty result if the fit fails numerically
++                xx = yy = []
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+2026-06-22 15:02:23,356 - INFO - Eval script for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/mwaskom__seaborn-3010/eval.sh; copying to container...
+2026-06-22 15:02:26,429 - INFO - Test runtime: 3.03 seconds
+2026-06-22 15:02:26,429 - INFO - Test output for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/mwaskom__seaborn-3010/test_output.txt
+2026-06-22 15:02:26,458 - INFO - Git diff after:
+diff --git a/seaborn/_stats/regression.py b/seaborn/_stats/regression.py
+index 7b7ddc8d..c3040b2f 100644
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,13 +23,23 @@ class PolyFit(Stat):
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++        # Drop missing values in either x or y before fitting
++        mask = x.notna() & y.notna()
++        x = x[mask]
++        y = y[mask]
++
++        # Need more unique points than the polynomial order to fit
++        if len(x) == 0 or x.nunique() <= self.order:
+             # TODO warn?
+             xx = yy = []
+         else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++            try:
++                p = np.polyfit(x, y, self.order)
++                xx = np.linspace(x.min(), x.max(), self.gridsize)
++                yy = np.polyval(p, xx)
++            except np.linalg.LinAlgError:
++                # Fall back to an empty result if the fit fails numerically
++                xx = yy = []
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+2026-06-22 15:02:26,458 - INFO - Grading answer for mwaskom__seaborn-3010...
+2026-06-22 15:02:26,458 - INFO - report: {'mwaskom__seaborn-3010': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/_stats/test_regression.py::TestPolyFit::test_missing_data'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/_stats/test_regression.py::TestPolyFit::test_no_grouper', 'tests/_stats/test_regression.py::TestPolyFit::test_one_grouper'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for mwaskom__seaborn-3010: resolved: True
+2026-06-22 15:02:26,458 - INFO - Attempting to stop container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:02:41,685 - INFO - Attempting to remove container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:02:41,708 - INFO - Container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:02:41,708 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3010:latest...
+2026-06-22 15:02:41,785 - INFO - Image swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3010:latest removed.

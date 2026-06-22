@@ -1,0 +1,16 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -463,6 +463,13 @@
+     prepare_rhs = False
+ 
+     def as_sql(self, compiler, connection):
++        # Require an explicit boolean value on the RHS. Previously non-boolean
++        # truthy/falsey values were accepted which could lead to confusing and
++        # inconsistent behaviour (e.g. passing an expression or a string).
++        if not isinstance(self.rhs, bool):
++            raise ValueError(
++                'The QuerySet value for an isnull lookup must be True or False.'
++            )
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+             return "%s IS NULL" % sql, params

@@ -1,0 +1,18 @@
+--- a/sympy/solvers/polysys.py
++++ b/sympy/solvers/polysys.py
+@@ -257,6 +257,15 @@
+             return []
+ 
+         if len(basis) == 1:
++            # A single polynomial in the Groebner basis but more than one
++            # generator means the system is not zero-dimensional (it has
++            # infinitely many solutions). This implementation only
++            # supports zero-dimensional systems.
++            if len(gens) != 1:
++                raise NotImplementedError(filldedent('''
++                    only zero-dimensional systems supported
++                    (finite number of solutions)
++                    '''))
+             return [(zero,) for zero in zeros]
+ 
+         solutions = []

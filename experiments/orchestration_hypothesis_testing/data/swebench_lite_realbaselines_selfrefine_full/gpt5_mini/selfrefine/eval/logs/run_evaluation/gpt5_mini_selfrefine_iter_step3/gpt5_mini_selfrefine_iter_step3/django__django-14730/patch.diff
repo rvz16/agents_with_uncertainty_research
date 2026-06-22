@@ -1,0 +1,55 @@
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1211,6 +1211,7 @@
+         return [
+             *super().check(**kwargs),
+             *self._check_unique(**kwargs),
++            *self._check_symmetrical_related_name(**kwargs),
+             *self._check_relationship_model(**kwargs),
+             *self._check_ignored_options(**kwargs),
+             *self._check_table_uniqueness(**kwargs),
+@@ -1259,6 +1260,44 @@
+             )
+ 
+         return warnings
++
++    def _check_symmetrical_related_name(self, from_model=None, **kwargs):
++        """
++        Warn when a related_name is provided for a symmetrical many-to-many
++        relation to the same model (self-referential). Symmetrical relations
++        do not create a backwards relation on the target model, so a
++        developer-provided related_name is likely ineffective/confusing.
++        """
++        # Only validate if the user explicitly provided a related_name.
++        if self._related_name is None:
++            return []
++
++        # Only relevant for symmetrical relations.
++        if not getattr(self.remote_field, 'symmetrical', False):
++            return []
++
++        # If no model context is provided, we cannot reliably determine if this
++        # is a self-referential relation; skip the check.
++        if from_model is None:
++            return []
++
++        # Resolve the 'to' side relative to the model where the field is defined.
++        to_model = resolve_relation(from_model, self.remote_field.model)
++        # If the resolved target model is the same as the source model, it's
++        # self-referential and symmetrical. In that case, the provided
++        # related_name will not create a backward accessor.
++        if to_model == from_model:
++            return [
++                checks.Warning(
++                    "The related_name '%s' for field '%s.%s' has no effect for a symmetrical "
++                    "ManyToManyField." % (self._related_name, from_model._meta.label, self.name),
++                    hint=("Remove the related_name argument, or set symmetrical=False to "
++                          "create a reverse relation."),
++                    obj=self,
++                    id='fields.W346',
++                )
++            ]
++        return []
+ 
+     def _check_relationship_model(self, from_model=None, **kwargs):
+         if hasattr(self.remote_field.through, '_meta'):

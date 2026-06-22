@@ -1,0 +1,23 @@
+--- a/django/utils/http.py
++++ b/django/utils/http.py
+@@ -176,10 +176,16 @@
+     try:
+         year = int(m.group('year'))
+         if year < 100:
+-            if year < 70:
+-                year += 2000
+-            else:
+-                year += 1900
++            # Interpret 2-digit years per RFC 7231: map the year into the
++            # century of the current year unless that would place the date
++            # more than 50 years in the future, in which case roll back to
++            # the previous century so it represents the most recent past
++            # year with the same two digits.
++            now = datetime.datetime.utcnow().year
++            century = (now // 100) * 100
++            year = century + year
++            if year - now > 50:
++                year -= 100
+         month = MONTHS.index(m.group('mon').lower()) + 1
+         day = int(m.group('day'))
+         hour = int(m.group('hour'))

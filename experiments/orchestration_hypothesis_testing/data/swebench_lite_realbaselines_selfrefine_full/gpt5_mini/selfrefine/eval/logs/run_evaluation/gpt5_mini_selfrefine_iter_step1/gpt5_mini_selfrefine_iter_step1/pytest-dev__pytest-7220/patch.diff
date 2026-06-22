@@ -1,0 +1,30 @@
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -602,6 +602,26 @@
+             fspath = location[0]
+         else:
+             fspath = py.path.local(location[0])
+-        relfspath = self.session._node_location_to_relpath(fspath)
++        # Compute a stable representation of the file path relative to the original
++        # test run rootdir (and any initial paths). This prevents the displayed
++        # location from changing if a fixture or test changes the current working
++        # directory during setup/teardown.
++        relfspath = None
++        try:
++            rootdir = self.session.config.rootdir
++        except Exception:
++            rootdir = None
++        if rootdir is not None:
++            relfspath = fspath.relto(rootdir)
++        if not relfspath:
++            relfspath = _check_initialpaths_for_relpath(self.session, fspath)
++        if relfspath:
++            # normalize path separator for display
++            if os.sep != SEP:
++                relfspath = relfspath.replace(os.sep, SEP)
++        else:
++            # fallback to the absolute path string
++            relfspath = str(fspath)
++
+         assert type(location[2]) is str
+         return (relfspath, location[1], location[2])

@@ -1,0 +1,38 @@
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,35 @@
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++
++    # Provide legacy aliases for the seaborn styles that were renamed in
++    # Matplotlib 3.6 (to "seaborn-v0_8-<style>"). This preserves backward
++    # compatibility for code that accesses these names directly from
++    # `matplotlib.style.library`, e.g. `plt.style.library['seaborn-colorblind']`.
++    seaborn_legacy = [
++        "seaborn",
++        "seaborn-bright",
++        "seaborn-colorblind",
++        "seaborn-dark",
++        "seaborn-darkgrid",
++        "seaborn-dark-palette",
++        "seaborn-deep",
++        "seaborn-muted",
++        "seaborn-notebook",
++        "seaborn-paper",
++        "seaborn-pastel",
++        "seaborn-poster",
++        "seaborn-talk",
++        "seaborn-ticks",
++        "seaborn-white",
++        "seaborn-whitegrid",
++    ]
++    for name in seaborn_legacy:
++        new_name = name.replace("seaborn", "seaborn-v0_8")
++        if new_name in library and name not in library:
++            # Shallow-copy to avoid accidental shared-mutation of the dicts.
++            library[name] = dict(library[new_name])
++
+     available[:] = sorted(library.keys())
+ 
+ 

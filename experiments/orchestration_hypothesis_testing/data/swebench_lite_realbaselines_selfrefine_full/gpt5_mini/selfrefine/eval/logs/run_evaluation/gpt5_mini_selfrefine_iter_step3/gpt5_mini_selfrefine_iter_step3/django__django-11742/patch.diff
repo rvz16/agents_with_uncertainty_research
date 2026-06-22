@@ -1,0 +1,34 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -280,6 +280,31 @@
+             if isinstance(choices_group, str):
+                 break
+         else:
++            # After validating the structure of choices, ensure that if
++            # max_length is provided it can accommodate the longest stored
++            # choice value. Only string-like stored values are checked;
++            # other types (e.g. integers) are skipped since their DB storage
++            # may not be character-based.
++            if self.choices and getattr(self, 'max_length', None) is not None:
++                try:
++                    max_length = int(self.max_length)
++                except Exception:
++                    max_length = None
++                if max_length is not None and max_length > 0:
++                    for choice_value, _ in self.flatchoices:
++                        # Skip values we cannot determine length for (promises)
++                        if isinstance(choice_value, Promise):
++                            continue
++                        # Only check actual strings; other types are ignored.
++                        if isinstance(choice_value, str) and len(choice_value) > max_length:
++                            return [
++                                checks.Error(
++                                    "'max_length' must be large enough to store the longest value in 'choices'.",
++                                    hint="Either shorten the longest choice value or increase 'max_length'.",
++                                    obj=self,
++                                    id='fields.E124',
++                                )
++                            ]
+             return []
+ 
+         return [

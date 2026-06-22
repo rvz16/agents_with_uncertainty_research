@@ -1,0 +1,59 @@
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1212,8 +1212,56 @@
+             *super().check(**kwargs),
+             *self._check_unique(**kwargs),
+             *self._check_relationship_model(**kwargs),
++            *self._check_symmetrical_related_name(**kwargs),
+             *self._check_ignored_options(**kwargs),
+             *self._check_table_uniqueness(**kwargs),
++        ]
++
++    def _check_symmetrical_related_name(self, from_model=None, **kwargs):
++        """
++        Warn if a related_name or related_query_name was explicitly provided
++        on a symmetrical self-referential ManyToManyField (including "self"
++        references). Symmetrical many-to-many relations do not create a
++        reverse relation, so any supplied reverse names are ignored and
++        likely indicate confusion by the developer.
++        """
++        # Only relevant for symmetrical relations.
++        if not self.remote_field.symmetrical:
++            return []
++
++        # If we don't have the model where the field is attached, we can't
++        # determine whether the relation is self-referential.
++        if from_model is None:
++            return []
++
++        # Resolve the target model relative to the model the field is defined on.
++        to_model = resolve_relation(from_model, self.remote_field.model)
++
++        # Determine whether this is self-referential.
++        self_referential = (from_model == to_model)
++
++        if not self_referential:
++            return []
++
++        # Detect whether the developer explicitly provided a related name.
++        # _related_name and _related_query_name are the values provided at
++        # construction time (None if the argument was not supplied).
++        if self._related_name is None and self._related_query_name is None:
++            return []
++
++        return [
++            checks.Warning(
++                "ManyToManyField '%s' defines a reverse name (related_name=%r or related_query_name=%r) "
++                "for a symmetrical self-referential relation. The reverse relation will not be created "
++                "and the specified name will be ignored." % (
++                    self.name, self._related_name, self._related_query_name
++                ),
++                hint=("Remove the related_name or related_query_name argument "
++                      "from the field definition, or set symmetrical=False if you "
++                      "intend to create a bi-directional relation."),
++                obj=self,
++                id='fields.W345',
++            )
+         ]
+ 
+     def _check_unique(self, **kwargs):

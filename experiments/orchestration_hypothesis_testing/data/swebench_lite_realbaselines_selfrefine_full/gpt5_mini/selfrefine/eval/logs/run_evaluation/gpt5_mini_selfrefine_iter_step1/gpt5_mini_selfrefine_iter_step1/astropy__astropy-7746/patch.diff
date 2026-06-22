@@ -1,0 +1,36 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1218,6 +1218,17 @@
+                 raise ValueError(
+                     "Coordinate arrays are not broadcastable to each other")
+ 
++            # If there are no points, avoid calling into wcslib which
++            # may raise errors for zero-length inputs. Return empty
++            # arrays shaped like the broadcasted axes instead.
++            if axes[0].size == 0:
++                if ra_dec_order and sky == 'output':
++                    return (np.empty(axes[0].shape, dtype=float),
++                            np.empty(axes[0].shape, dtype=float))
++                else:
++                    return [np.empty(axes[0].shape, dtype=float)
++                            for _ in range(self.naxis)]
++
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
+             if ra_dec_order and sky == 'input':
+@@ -1231,6 +1242,15 @@
+                     for i in range(output.shape[1])]
+ 
+         def _return_single_array(xy, origin):
++            xy = np.asarray(xy)
++            # If empty, avoid calling wcslib; return an appropriately
++            # shaped empty array.
++            if xy.size == 0:
++                if ra_dec_order and sky == 'output':
++                    return np.empty((0, 2))
++                else:
++                    return np.empty((0, self.naxis))
++
+             if xy.shape[-1] != self.naxis:
+                 raise ValueError(
+                     "When providing two arguments, the array must be "

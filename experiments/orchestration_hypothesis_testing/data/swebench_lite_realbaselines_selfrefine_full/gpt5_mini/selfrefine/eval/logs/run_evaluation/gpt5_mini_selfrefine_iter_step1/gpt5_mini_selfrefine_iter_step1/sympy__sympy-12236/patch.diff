@@ -1,0 +1,27 @@
+--- a/sympy/polys/domains/polynomialring.py
++++ b/sympy/polys/domains/polynomialring.py
+@@ -112,8 +112,22 @@
+             return None
+ 
+     def get_field(self):
+-        """Returns a field associated with `self`. """
+-        return self.ring.to_field().to_domain()
++        """Returns a field associated with `self`.
++
++        Ensure that the coefficient domain is first converted to its field
++        (e.g. ZZ -> QQ) before constructing the polynomial field. This avoids
++        creating a rational function field over an integral domain (like ZZ(y))
++        where rational coefficients (such as 1/2) would be treated as zero.
++        """
++        # Import locally to avoid circular imports at module load time.
++        from sympy.polys.rings import PolyRing
++
++        # Build a PolyRing that uses the field of the current coefficient
++        # domain (for example QQ instead of ZZ) and then convert that to a
++        # fraction field. This ensures divisions produce rational coefficients
++        # as expected.
++        ring = PolyRing(self.symbols, self.domain.get_field(), self.order)
++        return ring.to_field().to_domain()
+ 
+     def is_positive(self, a):
+         """Returns True if `LC(a)` is positive. """

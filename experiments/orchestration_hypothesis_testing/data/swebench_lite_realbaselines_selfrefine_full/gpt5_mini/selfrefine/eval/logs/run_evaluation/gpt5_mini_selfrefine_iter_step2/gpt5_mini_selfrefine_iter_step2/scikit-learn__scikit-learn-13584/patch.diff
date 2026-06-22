@@ -1,0 +1,50 @@
+--- a/sklearn/utils/_pprint.py
++++ b/sklearn/utils/_pprint.py
+@@ -70,6 +70,10 @@
+ from ..base import BaseEstimator
+ from .._config import get_config
+ from . import is_scalar_nan
++try:
++    import numpy as _np
++except Exception:
++    _np = None
+ 
+ 
+ class KeyValTuple(tuple):
+@@ -94,9 +98,34 @@
+                         estimator.__init__)
+     init_params = signature(init_func).parameters
+     init_params = {name: param.default for name, param in init_params.items()}
++
++    def _param_changed(v, default):
++        # Treat both values as unchanged if both are NaN
++        if is_scalar_nan(default) and is_scalar_nan(v):
++            return False
++
++        # If numpy is available, try array-aware comparison which handles
++        # element-wise comparisons and avoids ambiguous truth-value errors.
++        if _np is not None:
++            try:
++                # np.array_equal returns a single boolean for array-like inputs
++                if _np.array_equal(v, default):
++                    return False
++                return True
++            except Exception:
++                # Fall back to generic comparison below on any error.
++                pass
++
++        # Fallback: try the normal inequality check. If it raises (e.g. because
++        # of ambiguous truth value for array-like objects), conservatively
++        # assume the parameter changed.
++        try:
++            return v != default
++        except Exception:
++            return True
++
+     for k, v in params.items():
+-        if (v != init_params[k] and
+-                not (is_scalar_nan(init_params[k]) and is_scalar_nan(v))):
++        if _param_changed(v, init_params[k]):
+             filtered_params[k] = v
+     return filtered_params
+ 

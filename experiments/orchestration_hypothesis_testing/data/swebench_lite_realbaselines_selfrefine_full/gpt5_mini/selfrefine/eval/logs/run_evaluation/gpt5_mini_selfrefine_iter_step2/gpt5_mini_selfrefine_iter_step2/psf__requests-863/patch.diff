@@ -1,0 +1,18 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -149,7 +149,14 @@
+         hooks = hooks or {}
+ 
+         for (k, v) in list(hooks.items()):
+-            self.register_hook(event=k, hook=v)
++            # Allow a list/tuple of hooks to be provided for a single event.
++            # This preserves the original behavior of accepting a single
++            # callable while also supporting multiple callables.
++            if isinstance(v, (list, tuple)):
++                for item in v:
++                    self.register_hook(event=k, hook=item)
++            else:
++                self.register_hook(event=k, hook=v)
+ 
+         #: Session.
+         self.session = session

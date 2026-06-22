@@ -1,0 +1,55 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,17 +1854,47 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++
++        # Build the polynomial expression from its terms in a logical
++        # (descending degree) order so that LaTeX output matches pretty/str
++        # printers. We construct the Add without evaluation to preserve the
++        # order of terms, and temporarily tell the printer not to reorder
++        # Add args when printing.
++        term_list = []
++        for monom, coeff in poly.terms():
++            term = coeff
++            for gen, exp in zip(poly.gens, monom):
++                if exp:
++                    term = term * gen**exp
++            term_list.append((monom, term))
++
++        # Sort by total degree (descending) then lexicographically by exponents
++        def _monom_key(item):
++            monom = item[0]
++            return (-sum(monom),) + tuple([-e for e in monom])
++
++        ordered_terms = [t for _, t in sorted(term_list, key=_monom_key)]
++
++        # Create Add without evaluation to avoid automatic reordering
++        expr = Add(*ordered_terms, evaluate=False)
++
++        # Temporarily disable ordering in the printer so _print_Add uses the
++        # terms as-is (it checks self.order == 'none').
++        old_order = getattr(self, 'order', None)
++        try:
++            self.order = 'none'
++            expr_tex = self._print(expr)
++        finally:
++            self.order = old_order
++
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 
+-        args = ", ".join([expr] + gens + [domain])
++        args = ", ".join([expr_tex] + gens + [domain])
+         if cls in accepted_latex_functions:
+             tex = r"\%s {\left (%s \right )}" % (cls, args)
+         else:
+-            tex = r"\operatorname{%s}{\left( %s \right)}" % (cls, args)
+-
+-        return tex
++            tex = r"\operatorname{%s}{\left( %s \right)}" % (cls,
+ 
+     def _print_ComplexRootOf(self, root):
+         cls = root.__class__.__name__

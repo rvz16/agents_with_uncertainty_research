@@ -1,0 +1,17 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -764,7 +764,13 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            if not hasattr(cls, 'get_%s_display' % self.name):
++            # Only add get_<field>_display if the model class itself doesn't
++            # define it. Use cls.__dict__ so that subclasses can get their own
++            # display methods when they override a field (for example, by
++            # overriding choices). Using hasattr() here prevents subclasses from
++            # getting a new method because the attribute may be present on a
++            # parent class's __dict__ and thus found via the MRO.
++            if 'get_%s_display' % self.name not in cls.__dict__:
+                 setattr(
+                     cls,
+                     'get_%s_display' % self.name,

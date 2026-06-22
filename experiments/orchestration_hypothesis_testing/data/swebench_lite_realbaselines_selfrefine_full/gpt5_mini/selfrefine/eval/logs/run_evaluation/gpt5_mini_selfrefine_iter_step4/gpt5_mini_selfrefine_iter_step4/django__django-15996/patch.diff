@@ -1,0 +1,41 @@
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -125,10 +125,34 @@
+     def serialize(self):
+         enum_class = self.value.__class__
+         module = enum_class.__module__
+-        return (
+-            "%s.%s[%r]" % (module, enum_class.__qualname__, self.value.name),
+-            {"import %s" % module},
+-        )
++        name = getattr(self.value, "name", None)
++        if name is not None:
++            return (
++                "%s.%s[%r]" % (module, enum_class.__qualname__, name),
++                {"import %s" % module},
++            )
++        # Fallback for Flag/IntFlag combinations without a single name.
++        # Try to decompose into named members and build an OR expression:
++        # Module.Class.NAME | Module.Class.OTHER
++        try:
++            value_int = int(self.value)
++        except Exception:
++            # As a last resort, fall back to repr()
++            return repr(self.value), {"import %s" % module}
++        parts = []
++        remaining = value_int
++        # Iterate through members sorted by descending value to pick larger flags first.
++        members = list(enum_class)
++        members.sort(key=lambda m: getattr(m, "value", 0), reverse=True)
++        for member in members:
++            member_value = getattr(member, "value", 0)
++            if member_value and (remaining & member_value) == member_value:
++                parts.append("%s.%s.%s" % (module, enum_class.__qualname__, member.name))
++                remaining &= ~member_value
++        if remaining == 0 and parts:
++            return (" | ".join(parts), {"import %s" % module})
++        # Could not decompose; fall back to constructing from the integer value.
++        return "%s.%s(%r)" % (module, enum_class.__qualname__, value_int), {"import %s" % module}
+ 
+ 
+ class FloatSerializer(BaseSimpleSerializer):

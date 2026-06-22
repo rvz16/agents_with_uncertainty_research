@@ -1,0 +1,34 @@
+--- a/lib/matplotlib/artist.py
++++ b/lib/matplotlib/artist.py
+@@ -1304,8 +1304,29 @@
+             normed = self.norm(data)
+             if np.isfinite(normed):
+                 # Midpoints of neighboring color intervals.
+-                neighbors = self.norm.inverse(
+-                    (int(self.norm(data) * n) + np.array([0, 1])) / n)
++                # Try the normal inverse operation, but fall back gracefully for
++                # non-invertible norms (e.g. BoundaryNorm).  We avoid assuming
++                # a specific norm class here and instead look for a
++                # 'boundaries' attribute as a fallback; if nothing sensible can
++                # be determined, use the data value itself to avoid raising.
++                try:
++                    neighbors = self.norm.inverse(
++                        (int(normed * n) + np.array([0, 1])) / n)
++                except Exception:
++                    b = getattr(self.norm, "boundaries", None)
++                    if b is not None:
++                        b = np.asarray(b)
++                        # Find the interval that contains *data* and pick the
++                        # adjacent boundaries as "neighbors".
++                        idx = np.searchsorted(b, data, side="right")
++                        left_idx = max(0, idx - 1)
++                        right_idx = min(len(b) - 1, idx)
++                        neighbors = b[[left_idx, right_idx]]
++                    else:
++                        # As a last resort, use the value itself for both
++                        # neighbors so that formatting still works instead of
++                        # raising.
++                        neighbors = np.array([data, data])
+                 delta = abs(neighbors - data).max()
+                 g_sig_digits = cbook._g_sig_digits(data, delta)
+             else:

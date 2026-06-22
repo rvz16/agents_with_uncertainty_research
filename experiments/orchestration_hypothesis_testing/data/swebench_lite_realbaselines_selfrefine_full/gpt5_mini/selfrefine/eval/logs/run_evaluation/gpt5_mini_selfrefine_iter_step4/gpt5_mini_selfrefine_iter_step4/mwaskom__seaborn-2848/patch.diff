@@ -1,0 +1,33 @@
+--- a/seaborn/_oldcore.py
++++ b/seaborn/_oldcore.py
+@@ -149,15 +149,27 @@
+             # Use a value that's in the original data vector
+             value = self.lookup_table[key]
+         except KeyError:
++            # If there's no lookup for this key, handle it gracefully.
++            # For categorical mappings (or when no numeric colormap is set)
++            # treat unknown keys as missing and return a fully transparent
++            # RGBA so they won't appear in the plot.
++            if self.map_type != "numeric" or self.norm is None or self.cmap is None:
++                return (0, 0, 0, 0)
+             # Use the colormap to interpolate between existing datapoints
+             # (e.g. in the context of making a continuous legend)
+             try:
+                 normed = self.norm(key)
+             except TypeError as err:
+-                if np.isnan(key):
+-                    value = (0, 0, 0, 0)
+-                else:
++                # If the key cannot be processed by the normalizer, check for
++                # an actual NaN and otherwise re-raise the error.
++                try:
++                    if np.isnan(key):
++                        return (0, 0, 0, 0)
++                except TypeError:
++                    # np.isnan can raise for non-numeric types; in that case
++                    # re-raise the original TypeError to surface the issue.
+                     raise err
++                raise err
+             else:
+                 if np.ma.is_masked(normed):
+                     normed = np.nan

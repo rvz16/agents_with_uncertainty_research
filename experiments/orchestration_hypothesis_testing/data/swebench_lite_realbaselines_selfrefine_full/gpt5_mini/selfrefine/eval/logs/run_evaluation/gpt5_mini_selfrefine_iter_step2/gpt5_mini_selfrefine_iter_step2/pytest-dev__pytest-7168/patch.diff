@@ -1,0 +1,16 @@
+--- a/src/_pytest/_io/saferepr.py
++++ b/src/_pytest/_io/saferepr.py
+@@ -19,8 +19,12 @@
+         raise
+     except BaseException as exc:
+         exc_info = "unpresentable exception ({})".format(_try_repr_or_str(exc))
++    # Use type(obj).__name__ instead of obj.__class__.__name__ because attribute
++    # access on obj (including __class__) may itself raise, e.g. if the object's
++    # __getattribute__ or __repr__ are broken. Using type() avoids triggering
++    # user-defined attribute access.
+     return "<[{} raised in repr()] {} object at 0x{:x}>".format(
+-        exc_info, obj.__class__.__name__, id(obj)
++        exc_info, type(obj).__name__, id(obj)
+     )
+ 
+ 

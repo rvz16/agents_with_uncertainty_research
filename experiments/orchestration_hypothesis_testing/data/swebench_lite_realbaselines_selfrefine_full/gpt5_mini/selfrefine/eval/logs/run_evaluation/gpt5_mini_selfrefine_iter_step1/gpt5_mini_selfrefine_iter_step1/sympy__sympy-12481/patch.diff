@@ -1,0 +1,55 @@
+--- a/sympy/combinatorics/permutations.py
++++ b/sympy/combinatorics/permutations.py
+@@ -895,28 +895,32 @@
+         # counting starts from 1.
+ 
+         temp = flatten(args)
+-        if has_dups(temp):
+-            if is_cycle:
+-                raise ValueError('there were repeated elements; to resolve '
+-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
+-            else:
++        # For array-form input (not cycle notation) duplicates are forbidden
++        if not is_cycle:
++            if has_dups(temp):
+                 raise ValueError('there were repeated elements.')
+-        temp = set(temp)
+-
+-        if not is_cycle and \
+-                any(i not in temp for i in range(len(temp))):
+-            raise ValueError("Integers 0 through %s must be present." %
+-                             max(temp))
+-
+-        if is_cycle:
+-            # it's not necessarily canonical so we won't store
+-            # it -- use the array form instead
+-            c = Cycle()
+-            for ci in args:
+-                c = c(*ci)
+-            aform = c.list()
++            temp = set(temp)
++            if any(i not in temp for i in range(len(temp))):
++                raise ValueError("Integers 0 through %s must be present." %
++                                 max(temp))
++            aform = list(args)
+         else:
+-            aform = list(args)
++            # Cycle-form input: allow non-disjoint cycles by applying them
++            # left-to-right. However, a single cycle must not contain duplicate
++            # elements and elements must be non-negative integers.
++            if any(has_dups(ci) for ci in args):
++                raise ValueError('All elements must be unique in a cycle.')
++            if any(any(i < 0 for i in ci) for ci in args):
++                raise ValueError('negative integers are not allowed in a cycle.')
++            # determine initial size from largest element mentioned (or 0)
++            temp_set = set(temp) if temp else set()
++            max_elem = max(temp_set) if temp_set else -1
++            n = max_elem + 1
++            if size is not None and size > n:
++                n = size
++            # start with identity permutation of length n
++            perm = list(range(n))
++            # apply each cycle in left
+         if size and size > len(aform):
+             # don't allow for truncation of permutation which
+             # might split a cycle and lead to an invalid aform

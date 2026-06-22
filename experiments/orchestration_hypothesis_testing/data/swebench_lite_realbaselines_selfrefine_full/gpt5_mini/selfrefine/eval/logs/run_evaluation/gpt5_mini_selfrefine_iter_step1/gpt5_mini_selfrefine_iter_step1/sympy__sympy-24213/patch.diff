@@ -1,0 +1,47 @@
+--- a/sympy/physics/units/unitsystem.py
++++ b/sympy/physics/units/unitsystem.py
+@@ -175,11 +175,40 @@
+             for addend in expr.args[1:]:
+                 addend_factor, addend_dim = \
+                     self._collect_factor_and_dimension(addend)
++                # Check for exact equality first
+                 if dim != addend_dim:
+-                    raise ValueError(
+-                        'Dimension of "{}" is {}, '
+-                        'but it should be {}'.format(
+-                            addend, addend_dim, dim))
++                    # Try to use the dimension system to determine equivalence.
++                    ds = self.get_dimension_system()
++                    equivalent = False
++                    # Try a few possible method names that DimensionSystem might provide
++                    for meth in ("are_equivalent", "is_equivalent", "equivalent"):
++                        if hasattr(ds, meth):
++                            try:
++                                equivalent = getattr(ds, meth)(dim, addend_dim)
++                            except Exception:
++                                equivalent = False
++                            if equivalent:
++                                break
++                    # Fallback: compare dimensional dependencies if available
++                    if not equivalent:
++                        for depmeth in ("get_dimensional_dependencies",
++                                        "get_dimensional_relation",
++                                        "get_dimensional_expr"):
++                            if hasattr(ds, depmeth):
++                                try:
++                                    d1 = getattr(ds, depmeth)(dim)
++                                    d2 = getattr(ds, depmeth)(addend_dim)
++                                    if d1 == d2:
++                                        equivalent = True
++                                        break
++                                except Exception:
++                                    # ignore and try next option
++                                    pass
++                    if not equivalent:
++                        raise ValueError(
++                            'Dimension of "{}" is {}, '
++                            'but it should be {}'.format(
++                                addend, addend_dim, dim))
+                 factor += addend_factor
+             return factor, dim
+         elif isinstance(expr, Derivative):

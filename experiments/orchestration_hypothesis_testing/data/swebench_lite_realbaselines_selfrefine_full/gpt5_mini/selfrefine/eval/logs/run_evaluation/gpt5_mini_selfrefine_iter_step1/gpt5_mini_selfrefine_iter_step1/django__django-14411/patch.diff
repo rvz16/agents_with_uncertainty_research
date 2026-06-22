@@ -1,0 +1,16 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -33,6 +33,13 @@
+ class ReadOnlyPasswordHashWidget(forms.Widget):
+     template_name = 'auth/widgets/read_only_password_hash.html'
+     read_only = True
++
++    def id_for_label(self, id_):
++        # This widget only renders read-only text (no input), so it is not
++        # labelable. Returning None prevents form rendering from adding a
++        # 'for' attribute on the <label> element that would otherwise point
++        # to a non-labelable element.
++        return None
+ 
+     def get_context(self, name, value, attrs):
+         context = super().get_context(name, value, attrs)

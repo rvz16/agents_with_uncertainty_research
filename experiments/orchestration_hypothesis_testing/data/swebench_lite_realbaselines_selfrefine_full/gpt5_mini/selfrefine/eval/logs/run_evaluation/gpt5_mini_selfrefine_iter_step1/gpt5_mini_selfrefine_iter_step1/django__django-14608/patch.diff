@@ -1,0 +1,58 @@
+--- a/django/forms/formsets.py
++++ b/django/forms/formsets.py
+@@ -292,10 +292,23 @@
+         Return an ErrorList of errors that aren't associated with a particular
+         form -- i.e., from formset.clean(). Return an empty ErrorList if there
+         are none.
++
++        The returned ErrorList will include the 'nonform' CSS class when the
++        ErrorList constructor supports an extra CSS class argument. This
++        mirrors the 'nonfield' CSS class added for form non-field errors,
++        allowing custom ErrorList subclasses to render form field, form
++        non-field, and formset non-form errors differently.
+         """
+         if self._non_form_errors is None:
+             self.full_clean()
+-        return self._non_form_errors
++        # Wrap the stored errors in a new ErrorList with the 'nonform' CSS
++        # class when possible. If the ErrorList constructor doesn't accept a
++        # second argument for a CSS class, fall back to returning the stored
++        # ErrorList instance.
++        try:
++            return self.error_class(self._non_form_errors, 'nonform')
++        except TypeError:
++            return self._non_form_errors
+ 
+     @property
+     def errors(self):
+@@ -333,7 +346,14 @@
+         self._non_form_errors.
+         """
+         self._errors = []
+-        self._non_form_errors = self.error_class()
++        # Create an empty ErrorList for non-form errors. If the ErrorList
++        # constructor accepts a second argument for a CSS class (as the
++        # ErrorList used for non-field errors does), provide 'nonform' so
++        # custom ErrorList subclasses can distinguish formset-level errors.
++        try:
++            self._non_form_errors = self.error_class([], 'nonform')
++        except TypeError:
++            self._non_form_errors = self.error_class()
+         empty_forms_count = 0
+ 
+         if not self.is_bound:  # Stop further processing.
+@@ -380,7 +400,13 @@
+             # Give self.clean() a chance to do cross-form validation.
+             self.clean()
+         except ValidationError as e:
+-            self._non_form_errors = self.error_class(e.error_list)
++            # Prefer to construct the ErrorList with the 'nonform' CSS class
++            # when possible so templates / custom ErrorList subclasses can
++            # distinguish these errors from field and non-field (form) errors.
++            try:
++                self._non_form_errors = self.error_class(e.error_list, 'nonform')
++            except TypeError:
++                self._non_form_errors = self.error_class(e.error_list)
+ 
+     def clean(self):
+         """

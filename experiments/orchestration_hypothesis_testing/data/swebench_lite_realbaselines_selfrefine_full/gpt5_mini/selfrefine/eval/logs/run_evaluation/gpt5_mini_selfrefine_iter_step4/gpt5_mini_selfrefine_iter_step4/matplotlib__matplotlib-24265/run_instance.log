@@ -1,0 +1,69 @@
+2026-06-22 20:49:16,625 - INFO - Creating container for matplotlib__matplotlib-24265...
+2026-06-22 20:49:18,243 - INFO - Container for matplotlib__matplotlib-24265 created: 7c546e338babe152b4cd0b880631ebb836229b919d6a4f6006c9da490fb00080
+2026-06-22 20:49:18,496 - INFO - Container for matplotlib__matplotlib-24265 started: 7c546e338babe152b4cd0b880631ebb836229b919d6a4f6006c9da490fb00080
+2026-06-22 20:49:18,496 - INFO - Intermediate patch for matplotlib__matplotlib-24265 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/matplotlib__matplotlib-24265/patch.diff, now applying to container...
+2026-06-22 20:49:18,618 - INFO - >>>>> Applied Patch:
+Checking patch lib/matplotlib/style/core.py...
+Applied patch lib/matplotlib/style/core.py cleanly.
+
+2026-06-22 20:49:19,344 - INFO - Git diff before:
+diff --git a/lib/matplotlib/style/core.py b/lib/matplotlib/style/core.py
+index fb0a5426e6..00d27e0fb1 100644
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,21 @@ def reload_library():
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++
++    # For backward compatibility with older Matplotlib versions, provide
++    # legacy "seaborn-<style>" aliases for the shipped
++    # "seaborn-v0_8-<style>" names so that code accessing
++    # `style.library["seaborn-..."]` continues to work.
++    for name in list(library.keys()):
++        # alias "seaborn-v0_8-<style>" -> "seaborn-<style>"
++        if name.startswith("seaborn-v0_8-"):
++            alias = name.replace("seaborn-v0_8-", "seaborn-")
++            if alias not in library:
++                library[alias] = library[name]
++    # also alias top-level "seaborn" -> "seaborn-v0_8" if present
++    if "seaborn-v0_8" in library and "seaborn" not in library:
++        library["seaborn"] = library["seaborn-v0_8"]
++
+     available[:] = sorted(library.keys())
+2026-06-22 20:49:19,344 - INFO - Eval script for matplotlib__matplotlib-24265 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/matplotlib__matplotlib-24265/eval.sh; copying to container...
+2026-06-22 20:49:57,303 - INFO - Test runtime: 37.91 seconds
+2026-06-22 20:49:57,303 - INFO - Test output for matplotlib__matplotlib-24265 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/matplotlib__matplotlib-24265/test_output.txt
+2026-06-22 20:49:57,369 - INFO - Git diff after:
+diff --git a/lib/matplotlib/style/core.py b/lib/matplotlib/style/core.py
+index fb0a5426e6..00d27e0fb1 100644
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,21 @@ def reload_library():
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++
++    # For backward compatibility with older Matplotlib versions, provide
++    # legacy "seaborn-<style>" aliases for the shipped
++    # "seaborn-v0_8-<style>" names so that code accessing
++    # `style.library["seaborn-..."]` continues to work.
++    for name in list(library.keys()):
++        # alias "seaborn-v0_8-<style>" -> "seaborn-<style>"
++        if name.startswith("seaborn-v0_8-"):
++            alias = name.replace("seaborn-v0_8-", "seaborn-")
++            if alias not in library:
++                library[alias] = library[name]
++    # also alias top-level "seaborn" -> "seaborn-v0_8" if present
++    if "seaborn-v0_8" in library and "seaborn" not in library:
++        library["seaborn"] = library["seaborn-v0_8"]
++
+     available[:] = sorted(library.keys())
+2026-06-22 20:49:57,369 - INFO - Grading answer for matplotlib__matplotlib-24265...
+2026-06-22 20:49:57,369 - INFO - report: {'matplotlib__matplotlib-24265': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['lib/matplotlib/tests/test_style.py::test_deprecated_seaborn_styles']}, 'PASS_TO_PASS': {'success': ['lib/matplotlib/tests/test_style.py::test_invalid_rc_warning_includes_filename', 'lib/matplotlib/tests/test_style.py::test_available', 'lib/matplotlib/tests/test_style.py::test_use', 'lib/matplotlib/tests/test_style.py::test_use_url', 'lib/matplotlib/tests/test_style.py::test_single_path', 'lib/matplotlib/tests/test_style.py::test_context', 'lib/matplotlib/tests/test_style.py::test_context_with_dict', 'lib/matplotlib/tests/test_style.py::test_context_with_dict_after_namedstyle', 'lib/matplotlib/tests/test_style.py::test_context_with_dict_before_namedstyle', 'lib/matplotlib/tests/test_style.py::test_context_with_union_of_dict_and_namedstyle', 'lib/matplotlib/tests/test_style.py::test_context_with_badparam', 'lib/matplotlib/tests/test_style.py::test_alias[mpl20]', 'lib/matplotlib/tests/test_style.py::test_alias[mpl15]', 'lib/matplotlib/tests/test_style.py::test_xkcd_no_cm', 'lib/matplotlib/tests/test_style.py::test_xkcd_cm', 'lib/matplotlib/tests/test_style.py::test_up_to_date_blacklist'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for matplotlib__matplotlib-24265: resolved: False
+2026-06-22 20:49:57,369 - INFO - Attempting to stop container sweb.eval.matplotlib__matplotlib-24265.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:50:12,872 - INFO - Attempting to remove container sweb.eval.matplotlib__matplotlib-24265.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:50:12,900 - INFO - Container sweb.eval.matplotlib__matplotlib-24265.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 20:50:12,900 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-24265:latest...
+2026-06-22 20:50:13,578 - INFO - Image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-24265:latest removed.

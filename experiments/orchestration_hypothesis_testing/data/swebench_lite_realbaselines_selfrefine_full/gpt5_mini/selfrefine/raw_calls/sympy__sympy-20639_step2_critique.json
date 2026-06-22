@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:34:15.125925+00:00",
+  "instance_id": "sympy__sympy-20639",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\ninaccurate rendering of pi**(1/E)\nThis claims to be version 1.5.dev; I just merged from the project master, so I hope this is current.  I didn't notice this bug among others in printing.pretty.\r\n\r\n```\r\nIn [52]: pi**(1/E)                                                               \r\nOut[52]: \r\n-1___\r\n\u2572\u2571 \u03c0 \r\n\r\n```\r\nLaTeX and str not fooled:\r\n```\r\nIn [53]: print(latex(pi**(1/E)))                                                 \r\n\\pi^{e^{-1}}\r\n\r\nIn [54]: str(pi**(1/E))                                                          \r\nOut[54]: 'pi**exp(-1)'\r\n```\r\n\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/printing/pretty/pretty.py\n+++ b/sympy/printing/pretty/pretty.py\n@@ -1954,7 +1954,11 @@\n             if e is S.NegativeOne:\n                 return prettyForm(\"1\")/self._print(b)\n             n, d = fraction(e)\n-            if n is S.One and d.is_Atom and not e.is_Integer and self._settings['root_notation']:\n+            # Only use root notation for rational exponents like 1/n.\n+            # Avoid using root notation for non-rational exponents such as\n+            # 1/E (which is exp(-1)) since those have different argument\n+            # structure and would be rendered incorrectly (see issue).\n+            if e.is_Rational and n is S.One and d.is_Atom and not e.is_Integer and self._settings['root_notation']:\n                 return self._print_nth_root(b, e)\n             if e.is_Rational and e < 0:\n                 return prettyForm(\"1\")/self._print(Pow(b, -e, evaluate=False))\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 509,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00307125
+}

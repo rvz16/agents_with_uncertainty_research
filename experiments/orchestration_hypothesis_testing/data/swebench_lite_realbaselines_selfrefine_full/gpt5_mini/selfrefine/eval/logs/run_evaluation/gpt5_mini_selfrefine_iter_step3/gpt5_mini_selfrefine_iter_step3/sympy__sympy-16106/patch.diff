@@ -1,0 +1,42 @@
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -443,11 +443,34 @@
+             x.appendChild(self._print(arg))
+         return x
+ 
+-    def _print_Basic(self, e):
+-        x = self.dom.createElement(self.mathml_tag(e))
+-        for arg in e.args:
+-            x.appendChild(self._print(arg))
+-        return x
++    def _print_Indexed(self, expr):
++        """
++        Content MathML for Indexed expressions.
++
++        Structure:
++        <indexed>
++            <indexedbase>...base...</indexedbase>
++            ...indices...
++        </indexed>
++        """
++        x = self.dom.createElement('indexed')
++        base_elem = self.dom.createElement('indexedbase')
++        # expr.base may be an IndexedBase or Symbol; delegate printing
++        base_elem.appendChild(self._print(expr.base))
++        x.appendChild(base_elem)
++        # expr.indices is a tuple of indices
++        for idx in expr.indices:
++            x.appendChild(self._print(idx))
++        return x
++
++    def _print_IndexedBase(self, expr):
++        """
++        Content MathML for IndexedBase.
++
++        Structure:
++        <indexedbase><ci>label</ci></indexedbase>
++        """
++        x = self
+ 
+     def _print_AssocOp(self, e):
+         x = self.dom.createElement('apply')

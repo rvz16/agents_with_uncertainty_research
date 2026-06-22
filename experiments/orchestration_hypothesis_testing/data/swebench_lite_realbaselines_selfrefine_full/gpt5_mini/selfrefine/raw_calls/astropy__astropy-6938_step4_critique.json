@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:39:59.676082+00:00",
+  "instance_id": "astropy__astropy-6938",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nPossible bug in io.fits related to D exponents\nI came across the following code in ``fitsrec.py``:\r\n\r\n```python\r\n        # Replace exponent separator in floating point numbers\r\n        if 'D' in format:\r\n            output_field.replace(encode_ascii('E'), encode_ascii('D'))\r\n```\r\n\r\nI think this may be incorrect because as far as I can tell ``replace`` is not an in-place operation for ``chararray`` (it returns a copy). Commenting out this code doesn't cause any tests to fail so I think this code isn't being tested anyway.\n\n\n## Your previous patch (diff format)\n```\n--- a/astropy/io/fits/fitsrec.py\n+++ b/astropy/io/fits/fitsrec.py\n@@ -1261,7 +1261,19 @@\n \n         # Replace exponent separator in floating point numbers\n         if 'D' in format:\n-            output_field.replace(encode_ascii('E'), encode_ascii('D'))\n+            # Use numpy.char.replace and assign back to ensure an in-place\n+            # update of the underlying array buffer.  Handle both byte ('S')\n+            # and unicode ('U') dtypes, and also scalars (0-D) by using\n+            # output_field[...] for assignment.\n+            if getattr(output_field, 'dtype', None) is not None and \\\n+                    output_field.dtype.kind == 'U':\n+                sep_from = 'E'\n+                sep_to = 'D'\n+            else:\n+                sep_from = encode_ascii('E')\n+                sep_to = encode_ascii('D')\n+            replaced = np.char.replace(output_field, sep_from, sep_to)\n+            output_field[...] = replaced\n \n \n def _get_recarray_field(array, key):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 489,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00306625
+}

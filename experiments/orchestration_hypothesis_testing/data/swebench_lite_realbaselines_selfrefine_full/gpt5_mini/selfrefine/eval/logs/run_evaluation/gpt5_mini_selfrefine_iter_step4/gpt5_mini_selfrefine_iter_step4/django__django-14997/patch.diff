@@ -1,0 +1,19 @@
+--- a/django/db/backends/ddl_references.py
++++ b/django/db/backends/ddl_references.py
+@@ -215,7 +215,15 @@
+         expressions = deepcopy(self.expressions)
+         self.columns = []
+         for col in self.compiler.query._gen_cols([expressions]):
+-            col.alias = new_table
++            # Only update the alias if one is already set on the Col. Some Col
++            # instances don't have an alias (or have it set to None) and
++            # overwriting it with the table name causes invalid index
++            # expressions on SQLite (the '.' operator is prohibited in index
++            # expressions). Rebuild the columns list from the expressions as in
++            # __init__.
++            if getattr(col, 'alias', None) is not None:
++                col.alias = new_table
++            self.columns.append(col.target.column)
+         self.expressions = expressions
+         super().rename_table_references(old_table, new_table)
+ 

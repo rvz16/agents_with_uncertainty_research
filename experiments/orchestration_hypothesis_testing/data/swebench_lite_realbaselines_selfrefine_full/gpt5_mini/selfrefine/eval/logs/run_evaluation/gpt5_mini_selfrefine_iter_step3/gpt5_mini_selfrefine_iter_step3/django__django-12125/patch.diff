@@ -1,0 +1,24 @@
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -266,10 +266,19 @@
+                 return string, set(imports)
+         if hasattr(self.value, "__module__"):
+             module = self.value.__module__
++            # Builtins are referenced by name only.
+             if module == builtins.__name__:
+                 return self.value.__name__, set()
+-            else:
+-                return "%s.%s" % (module, self.value.__name__), {"import %s" % module}
++            # Use __qualname__ so nested (inner) classes are referenced with
++            # their full qualifying path (e.g. module.Outer.Inner) rather
++            # than just the class __name__. Reject local classes whose
++            # qualname contains '<locals>' or similar.
++            qualname = getattr(self.value, "__qualname__", self.value.__name__)
++            if '<' in qualname:
++                raise ValueError(
++                    "Could not find type %s in %s." % (self.value.__name__, module)
++                )
++            return "%s.%s" % (module, qualname), {"import %s" % module}
+ 
+ 
+ class UUIDSerializer(BaseSerializer):

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:58:52.287049+00:00",
+  "instance_id": "scikit-learn__scikit-learn-15535",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nregression in input validation of clustering metrics\n```python\r\nfrom sklearn.metrics.cluster import mutual_info_score\r\nimport numpy as np\r\n\r\nx = np.random.choice(['a', 'b'], size=20).astype(object)\r\nmutual_info_score(x, x)\r\n```\r\nValueError: could not convert string to float: 'b'\r\n\r\nwhile\r\n```python\r\nx = np.random.choice(['a', 'b'], size=20)\r\nmutual_info_score(x, x)\r\n```\r\nworks with a warning?\r\n\r\nthis worked in 0.21.1 without a warning (as I think it should)\r\n\r\n\r\nEdit by @ogrisel: I removed the `.astype(object)` in the second code snippet.\n\n\n## Your previous patch (diff format)\n```\n--- a/sklearn/metrics/cluster/_supervised.py\n+++ b/sklearn/metrics/cluster/_supervised.py\n@@ -42,12 +42,13 @@\n     labels_pred : array-like of shape (n_samples,)\n         The predicted labels.\n     \"\"\"\n-    labels_true = check_array(\n-        labels_true, ensure_2d=False, ensure_min_samples=0\n-    )\n-    labels_pred = check_array(\n-        labels_pred, ensure_2d=False, ensure_min_samples=0\n-    )\n+    # Accept arbitrary label dtypes (strings, objects, etc.). We intentionally\n+    # avoid sklearn.utils.validation.check_array here because it enforces a\n+    # numeric dtype and checks for finiteness which fails for non-numeric\n+    # label arrays. Using np.asarray preserves original dtype and supports\n+    # object/string labels as valid cluster identifiers.\n+    labels_true = np.asarray(labels_true)\n+    labels_pred = np.asarray(labels_pred)\n \n     # input checks\n     if labels_true.ndim != 1:\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 500,
+  "completion_tokens": 1472,
+  "cost_usd": 0.003069
+}

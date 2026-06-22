@@ -1,0 +1,23 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1077,10 +1077,18 @@
+         elif isinstance(value, (list, tuple)):
+             # The items of the iterable may be expressions and therefore need
+             # to be resolved independently.
+-            return type(value)(
++            resolved_items = [
+                 self.resolve_lookup_value(sub_value, can_reuse, allow_joins)
+                 for sub_value in value
+-            )
++            ]
++            # Preserve the original sequence type where possible. Namedtuples
++            # (which are a subclass of tuple) expect positional arguments
++            # rather than a single iterable, so expand the items for them.
++            if isinstance(value, list):
++                return type(value)(resolved_items)
++            if isinstance(value, tuple) and hasattr(value, '_fields'):
++                return type(value)(*resolved_items)
++            return type(value)(resolved_items)
+         return value
+ 
+     def solve_lookup_type(self, lookup):

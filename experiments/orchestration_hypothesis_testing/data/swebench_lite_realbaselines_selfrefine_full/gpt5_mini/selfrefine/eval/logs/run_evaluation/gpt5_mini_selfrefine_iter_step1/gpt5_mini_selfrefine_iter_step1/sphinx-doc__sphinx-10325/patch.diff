@@ -1,0 +1,77 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -110,10 +110,24 @@
+ 
+ 
+ def inherited_members_option(arg: Any) -> Union[object, Set[str]]:
+-    """Used to convert the :members: option to auto directives."""
++    """Used to convert the :inherited-members: option to auto directives.
++
++    Accepts:
++    - no argument / boolean True -> the special sentinel 'object' (backwards compatible)
++    - a comma separated list of class names -> returns a set of class-name strings
++    - False -> returns None
++    - a single class name string -> returns a set containing that name
++    """
+     if arg in (None, True):
+         return 'object'
++    elif arg is False:
++        return None
+     else:
++        # support comma-separated list like "Parent1, Parent2"
++        if isinstance(arg, str):
++            names = {x.strip() for x in arg.split(',') if x.strip()}
++            return names
++        # fall back to whatever the caller passed (e.g. already a set)
+         return arg
+ 
+ 
+@@ -680,17 +694,37 @@
+         ``autodoc-skip-member`` event.
+         """
+         def is_filtered_inherited_member(name: str, obj: Any) -> bool:
+-            if inspect.isclass(self.object):
+-                for cls in self.object.__mro__:
+-                    if cls.__name__ == self.options.inherited_members and cls != self.object:
+-                        # given member is a member of specified *super class*
+-                        return True
+-                    elif name in cls.__dict__:
+-                        return False
+-                    elif name in self.get_attr(cls, '__annotations__', {}):
+-                        return False
+-                    elif isinstance(obj, ObjectMember) and obj.class_ is cls:
+-                        return False
++            if not inspect.isclass(self.object):
++                return False
++
++            inherited_opt = self.options.inherited_members
++            if not inherited_opt:
++                return False
++
++            # Normalize option to a set of names for easy membership checks.
++            if isinstance(inherited_opt, str):
++                check_names = {inherited_opt}
++            elif isinstance(inherited_opt, (set, list, tuple)):
++                check_names = set(inherited_opt)
++            else:
++                # unknown type -- don't filter
++                return False
++
++            for cls in self.object.__mro__:
++                # If this class matches one of the specified names, and it's not
++                # the class being documented itself, then members coming from
++                # here (and later in MRO) should be considered filtered.
++                if cls.__name__ in check_names and cls is not self.object:
++                    # given member is a member of specified *super class*
++                    return True
++                # If the member is defined in this class (or annotated here),
++                # then it is not considered filtered inherited member.
++                elif name in cls.__dict__:
++                    return False
++                elif name in self.get_attr(cls, '__annotations__', {}):
++                    return False
++                elif isinstance(obj, ObjectMember) and obj.class_ is cls:
++                    return False
+ 
+             return False
+ 

@@ -1,0 +1,71 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -179,6 +179,68 @@
+             return repr(dict(self))
+         return repr(list(self))
+ 
++    def __eq__(self, other):
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++
++        def is_leaf(e):
++            # A "leaf" ValidationError has a message and its error_list contains itself.
++            return hasattr(e, 'message') and getattr(e, 'error_list', None) == [e]
++
++        def leaf_eq(a, b):
++            return (
++                getattr(a, 'message', None) == getattr(b, 'message', None) and
++                getattr(a, 'code', None) == getattr(b, 'code', None) and
++                getattr(a, 'params', None) == getattr(b, 'params', None)
++            )
++
++        def list_eq(list1, list2):
++            # Order-independent comparison of two lists of ValidationError instances.
++            if len(list1) != len(list2):
++                return False
++            used = [False] * len(list2)
++            for item1 in list1:
++                found = False
++                for i, item2 in enumerate(list2):
++                    if used[i]:
++                        continue
++                    if is_leaf(item1) and is_leaf(item2):
++                        if leaf_eq(item1, item2):
++                            used[i] = True
++                            found = True
++                            break
++                    else:
++                        # For nested/non-leaf items, rely on their equality.
++                        if item1 == item2:
++                            used[i] = True
++                            found = True
++                            break
++                if not found:
++                    return False
++            return True
++
++        # Both are dict-style ValidationErrors.
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for key in self.error_dict:
++                if not list_eq(list(self.error_dict[key]), list(other.error_dict[key])):
++                    return False
++            return True
++
++        # If only one has an error_dict, not equal.
++        if hasattr(self, 'error_dict') != hasattr(other, 'error_dict'):
++            return False
++
++        # Compare non-field errors (error_list) order-independently.
++        return list_eq(list(self.error_list), list(other.error_list))
++
++    def __ne__(self, other):
++        eq = self.__eq__(other)
++        if eq is NotImplemented:
++            return NotImplemented
++        return not eq
++
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+ 

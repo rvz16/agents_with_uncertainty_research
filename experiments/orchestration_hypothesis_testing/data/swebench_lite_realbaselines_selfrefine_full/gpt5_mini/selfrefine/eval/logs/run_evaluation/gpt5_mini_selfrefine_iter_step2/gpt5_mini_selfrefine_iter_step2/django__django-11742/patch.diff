@@ -1,0 +1,67 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_choices_max_length(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -290,6 +291,56 @@
+                 id='fields.E005',
+             )
+         ]
++
++    def _check_choices_max_length(self):
++        """
++        Ensure that, when a field defines both 'choices' and 'max_length',
++        the 'max_length' is large enough to store the longest choice value.
++        This check only applies to fields that store their values as strings
++        or bytes (e.g., CharField and common string-like fields).
++        """
++        if not self.choices or self.max_length is None:
++            return []
++
++        # Only validate for field types that store textual/byte data.
++        try:
++            applicable = isinstance(self, (CharField, BinaryField, FilePathField,
++                                           GenericIPAddressField, UUIDField, EmailField,
++                                           SlugField, URLField))
++        except NameError:
++            # If any of the classes aren't defined yet at runtime, skip this check.
++            applicable = False
++        if not applicable:
++            return []
++
++        max_choice_length = 0
++        for choice, _ in self.flatchoices:
++            # Skip blank/null sentinel choices which aren't stored as actual values.
++            if choice in (None, ''):
++                continue
++            # Determine the length in characters (or bytes for bytes-like choices).
++            if isinstance(choice, (bytes, bytearray)):
++                length = len(choice)
++            else:
++                try:
++                    # Evaluate lazy objects (Promise) via str() to get their length.
++                    length = len(str(choice))
++                except Exception:
++                    # If we can't determine the length, skip this choice.
++                    continue
++            if length > max_choice_length:
++                max_choice_length = length
++
++        if max_choice_length > self.max_length:
++            return [
++                checks.Error(
++                    "'max_length' (%d) is not large enough to store the longest 'choices' value (%d characters)." % (self.max_length, max_choice_length),
++                    hint=("Increase 'max_length' to at least %d, or shorten the longest choice." % (max_choice_length,)),
++                    obj=self,
++                    id='fields.E125',
++                )
++            ]
++        return []
+ 
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):

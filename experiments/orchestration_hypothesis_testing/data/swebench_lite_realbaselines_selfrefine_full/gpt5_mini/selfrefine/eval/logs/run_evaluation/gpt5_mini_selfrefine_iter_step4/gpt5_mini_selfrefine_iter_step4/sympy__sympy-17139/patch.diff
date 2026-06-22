@@ -1,0 +1,23 @@
+--- a/sympy/simplify/fu.py
++++ b/sympy/simplify/fu.py
+@@ -501,9 +501,17 @@
+         if not (rv.is_Pow and rv.base.func == f):
+             return rv
+ 
+-        if (rv.exp < 0) == True:
+-            return rv
+-        if (rv.exp > max) == True:
++        # Avoid direct comparisons when the exponent may be
++        # complex (e.g. I) or otherwise not comparable. Use the
++        # boolean properties provided by SymPy where possible so
++        # that no TypeError is raised for invalid comparisons.
++        if rv.exp.is_negative is True:
++            return rv
++        # Only perform the numeric comparison to `max` when the
++        # exponent is a concrete real number; otherwise behave as
++        # if the > check is not definitely True (matching previous
++        # behavior where (rv.exp > max) == True was used).
++        if rv.exp.is_real is True and rv.exp.is_Number and rv.exp > max:
+             return rv
+         if rv.exp == 2:
+             return h(g(rv.base.args[0])**2)

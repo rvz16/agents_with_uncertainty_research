@@ -1,0 +1,20 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -262,9 +262,14 @@
+         from django.db.models.sql.query import Query
+         if isinstance(self.rhs, Query):
+             if self.rhs.has_limit_one():
+-                # The subquery must select only the pk.
+-                self.rhs.clear_select_clause()
+-                self.rhs.add_fields(['pk'])
++                # The subquery must select only the pk if it doesn't already
++                # have explicit select fields (e.g. values()/values_list()).
++                # If explicit select fields are present, leave them intact so
++                # that queries like values(...).annotate(...).values(...) work
++                # as expected.
++                if not getattr(self.rhs, 'has_select_fields', True):
++                    self.rhs.clear_select_clause()
++                    self.rhs.add_fields(['pk'])
+             else:
+                 raise ValueError(
+                     'The QuerySet value for an exact lookup must be limited to '

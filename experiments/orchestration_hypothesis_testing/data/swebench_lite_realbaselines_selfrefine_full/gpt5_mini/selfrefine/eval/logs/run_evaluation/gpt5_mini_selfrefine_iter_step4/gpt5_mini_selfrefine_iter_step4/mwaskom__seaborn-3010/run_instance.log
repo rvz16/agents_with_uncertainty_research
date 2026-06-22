@@ -1,0 +1,91 @@
+2026-06-22 20:53:37,866 - INFO - Creating container for mwaskom__seaborn-3010...
+2026-06-22 20:53:38,055 - INFO - Container for mwaskom__seaborn-3010 created: ab22c0af5637be1db222d7b489b2ab558331fc1ee8a3b2fa988399e1035697cd
+2026-06-22 20:53:38,216 - INFO - Container for mwaskom__seaborn-3010 started: ab22c0af5637be1db222d7b489b2ab558331fc1ee8a3b2fa988399e1035697cd
+2026-06-22 20:53:38,217 - INFO - Intermediate patch for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/mwaskom__seaborn-3010/patch.diff, now applying to container...
+2026-06-22 20:53:38,325 - INFO - >>>>> Applied Patch:
+Checking patch seaborn/_stats/regression.py...
+Applied patch seaborn/_stats/regression.py cleanly.
+
+2026-06-22 20:53:38,432 - INFO - Git diff before:
+diff --git a/seaborn/_stats/regression.py b/seaborn/_stats/regression.py
+index 7b7ddc8d..f04811d8 100644
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,13 +23,24 @@ class PolyFit(Stat):
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
+-            # TODO warn?
+-            xx = yy = []
+-        else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++
++        # Drop missing data before fitting so numpy.polyfit does not receive NaNs
++        df = data[["x", "y"]].dropna()
++        if df.empty or df["x"].nunique() <= self.order:
++            # Not enough data to fit the requested polynomial order
++            return pd.DataFrame(dict(x=[], y=[]))
++
++        x_clean = df["x"].to_numpy()
++        y_clean = df["y"].to_numpy()
++
++        try:
++            p = np.polyfit(x_clean, y_clean, self.order)
++        except np.linalg.LinAlgError:
++            # If the fit fails for numerical reasons, return an empty frame
++            return pd.DataFrame(dict(x=[], y=[]))
++
++        xx = np.linspace(x_clean.min(), x_clean.max(), self.gridsize)
++        yy = np.polyval(p, xx)
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+2026-06-22 20:53:38,433 - INFO - Eval script for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/mwaskom__seaborn-3010/eval.sh; copying to container...
+2026-06-22 20:53:41,067 - INFO - Test runtime: 2.58 seconds
+2026-06-22 20:53:41,067 - INFO - Test output for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/mwaskom__seaborn-3010/test_output.txt
+2026-06-22 20:53:41,117 - INFO - Git diff after:
+diff --git a/seaborn/_stats/regression.py b/seaborn/_stats/regression.py
+index 7b7ddc8d..f04811d8 100644
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,13 +23,24 @@ class PolyFit(Stat):
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
+-            # TODO warn?
+-            xx = yy = []
+-        else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++
++        # Drop missing data before fitting so numpy.polyfit does not receive NaNs
++        df = data[["x", "y"]].dropna()
++        if df.empty or df["x"].nunique() <= self.order:
++            # Not enough data to fit the requested polynomial order
++            return pd.DataFrame(dict(x=[], y=[]))
++
++        x_clean = df["x"].to_numpy()
++        y_clean = df["y"].to_numpy()
++
++        try:
++            p = np.polyfit(x_clean, y_clean, self.order)
++        except np.linalg.LinAlgError:
++            # If the fit fails for numerical reasons, return an empty frame
++            return pd.DataFrame(dict(x=[], y=[]))
++
++        xx = np.linspace(x_clean.min(), x_clean.max(), self.gridsize)
++        yy = np.polyval(p, xx)
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+2026-06-22 20:53:41,117 - INFO - Grading answer for mwaskom__seaborn-3010...
+2026-06-22 20:53:41,118 - INFO - report: {'mwaskom__seaborn-3010': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/_stats/test_regression.py::TestPolyFit::test_missing_data'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/_stats/test_regression.py::TestPolyFit::test_no_grouper', 'tests/_stats/test_regression.py::TestPolyFit::test_one_grouper'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for mwaskom__seaborn-3010: resolved: True
+2026-06-22 20:53:41,118 - INFO - Attempting to stop container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:53:56,360 - INFO - Attempting to remove container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:53:56,377 - INFO - Container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 20:53:56,377 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3010:latest...
+2026-06-22 20:53:56,817 - INFO - Image swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3010:latest removed.

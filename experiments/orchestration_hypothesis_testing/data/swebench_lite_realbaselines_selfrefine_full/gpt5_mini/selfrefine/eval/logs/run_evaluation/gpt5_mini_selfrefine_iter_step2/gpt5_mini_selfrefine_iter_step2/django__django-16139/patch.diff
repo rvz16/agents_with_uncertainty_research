@@ -1,0 +1,22 @@
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -163,7 +163,18 @@
+         super().__init__(*args, **kwargs)
+         password = self.fields.get("password")
+         if password:
+-            password.help_text = password.help_text.format("../password/")
++            # If the admin change view was reached via another model's Admin
++            # using to_field (e.g. .../user/<to_field_value>/change/?_to_field=...),
++            # the current URL may not include the object's pk. The password
++            # change view, however, is pk-based. If we have the instance's pk,
++            # build a relative path to that pk-based password view; otherwise
++            # fall back to the original relative path.
++            if self.instance is not None and self.instance.pk is not None:
++                password.help_text = password.help_text.format(
++                    f"../../{self.instance.pk}/password/"
++                )
++            else:
++                password.help_text = password.help_text.format("../password/")
+         user_permissions = self.fields.get("user_permissions")
+         if user_permissions:
+             user_permissions.queryset = user_permissions.queryset.select_related(

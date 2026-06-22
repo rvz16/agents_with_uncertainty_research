@@ -1,0 +1,22 @@
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -95,7 +95,16 @@
+         TEST NAME. See https://www.sqlite.org/inmemorydb.html
+         """
+         test_database_name = self._get_test_db_name()
+-        sig = [self.connection.settings_dict['NAME']]
++        # For in-memory databases (including the URI form created for shared
++        # memory), distinguish databases by the test database name and the
++        # connection alias.
+         if self.is_in_memory_db(test_database_name):
+-            sig.append(self.connection.alias)
+-        return tuple(sig)
++            return (test_database_name, self.connection.alias)
++        # For file-based databases, use the absolute filesystem path so that
++        # different relative paths that resolve to the same file are treated
++        # as the same database.
++        try:
++            db_path = os.path.abspath(str(test_database_name))
++        except Exception:
++            db_path = str(test_database_name)
++        return (db_path,)

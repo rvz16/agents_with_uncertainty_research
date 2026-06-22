@@ -1,0 +1,59 @@
+2026-06-22 16:00:21,690 - INFO - Creating container for django__django-12113...
+2026-06-22 16:00:21,837 - INFO - Container for django__django-12113 created: afce33832f8ebce45f26b19d3067a9b713103f04ddd6c02103674578e2e5dcba
+2026-06-22 16:00:21,971 - INFO - Container for django__django-12113 started: afce33832f8ebce45f26b19d3067a9b713103f04ddd6c02103674578e2e5dcba
+2026-06-22 16:00:21,972 - INFO - Intermediate patch for django__django-12113 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-12113/patch.diff, now applying to container...
+2026-06-22 16:00:22,076 - INFO - >>>>> Applied Patch:
+Checking patch django/db/backends/sqlite3/creation.py...
+Applied patch django/db/backends/sqlite3/creation.py cleanly.
+
+2026-06-22 16:00:22,498 - INFO - Git diff before:
+diff --git a/django/db/backends/sqlite3/creation.py b/django/db/backends/sqlite3/creation.py
+index d97052f52d..72c1aaac1e 100644
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -95,7 +95,13 @@ class DatabaseCreation(BaseDatabaseCreation):
+         TEST NAME. See https://www.sqlite.org/inmemorydb.html
+         """
+         test_database_name = self._get_test_db_name()
+-        sig = [self.connection.settings_dict['NAME']]
++        # Use the actual test database name in the signature (not the original
++        # 'NAME'). When TEST['NAME'] is set, that is the file that will be used
++        # for the test database; using the source NAME caused different
++        # databases to be treated as identical which could lead to multiple
++        # connections trying to use the same file and causing "database is
++        # locked" errors.
++        sig = [test_database_name]
+         if self.is_in_memory_db(test_database_name):
+             sig.append(self.connection.alias)
+         return tuple(sig)
+2026-06-22 16:00:22,499 - INFO - Eval script for django__django-12113 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-12113/eval.sh; copying to container...
+2026-06-22 16:00:34,829 - INFO - Test runtime: 12.29 seconds
+2026-06-22 16:00:34,829 - INFO - Test output for django__django-12113 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/django__django-12113/test_output.txt
+2026-06-22 16:00:34,918 - INFO - Git diff after:
+diff --git a/django/db/backends/sqlite3/creation.py b/django/db/backends/sqlite3/creation.py
+index d97052f52d..72c1aaac1e 100644
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -95,7 +95,13 @@ class DatabaseCreation(BaseDatabaseCreation):
+         TEST NAME. See https://www.sqlite.org/inmemorydb.html
+         """
+         test_database_name = self._get_test_db_name()
+-        sig = [self.connection.settings_dict['NAME']]
++        # Use the actual test database name in the signature (not the original
++        # 'NAME'). When TEST['NAME'] is set, that is the file that will be used
++        # for the test database; using the source NAME caused different
++        # databases to be treated as identical which could lead to multiple
++        # connections trying to use the same file and causing "database is
++        # locked" errors.
++        sig = [test_database_name]
+         if self.is_in_memory_db(test_database_name):
+             sig.append(self.connection.alias)
+         return tuple(sig)
+2026-06-22 16:00:34,918 - INFO - Grading answer for django__django-12113...
+2026-06-22 16:00:34,919 - INFO - report: {'django__django-12113': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_custom_test_name (backends.sqlite.test_creation.TestDbSignatureTests)']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12113: resolved: False
+2026-06-22 16:00:34,919 - INFO - Attempting to stop container sweb.eval.django__django-12113.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:00:50,141 - INFO - Attempting to remove container sweb.eval.django__django-12113.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:00:50,162 - INFO - Container sweb.eval.django__django-12113.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:00:50,162 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12113:latest...
+2026-06-22 16:00:50,279 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12113:latest removed.

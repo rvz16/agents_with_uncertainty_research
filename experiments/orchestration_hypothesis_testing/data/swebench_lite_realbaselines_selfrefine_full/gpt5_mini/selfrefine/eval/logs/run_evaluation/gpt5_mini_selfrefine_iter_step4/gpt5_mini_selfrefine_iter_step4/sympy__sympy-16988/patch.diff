@@ -1,0 +1,23 @@
+--- a/sympy/sets/sets.py
++++ b/sympy/sets/sets.py
+@@ -1073,7 +1073,8 @@
+             args = list(cls._new_args_filter(args))
+             return simplify_union(args)
+ 
+-        args = list(ordered(args, Set._infimum_key))
++        # Remove duplicate arguments and order them canonically.
++        args = list(ordered(set(args), Set._infimum_key))
+ 
+         obj = Basic.__new__(cls, *args)
+         obj._argset = frozenset(args)
+@@ -1265,6 +1266,10 @@
+         # Reduce sets using known rules
+         if evaluate:
+             args = list(cls._new_args_filter(args))
++            # Remove duplicate arguments and order them canonically so that
++            # subsequent simplification is deterministic and not dependent
++            # on the original argument ordering or repeated identical args.
++            args = list(ordered(set(args), Set._infimum_key))
+             return simplify_intersection(args)
+ 
+         args = list(ordered(args, Set._infimum_key))

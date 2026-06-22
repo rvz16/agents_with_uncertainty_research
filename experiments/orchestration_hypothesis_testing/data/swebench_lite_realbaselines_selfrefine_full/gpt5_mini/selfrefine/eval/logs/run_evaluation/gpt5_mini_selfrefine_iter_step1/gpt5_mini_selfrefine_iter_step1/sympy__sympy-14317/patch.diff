@@ -1,0 +1,14 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,7 +1854,10 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++        # Use Poly.str to format the polynomial expression so that the
++        # monomials are emitted in the same logical order as pretty() and str().
++        mul_symbol = self._settings['mul_symbol_latex']
++        expr = poly.str(self, PRECEDENCE, "{%s}^{%d}", mul_symbol)
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 

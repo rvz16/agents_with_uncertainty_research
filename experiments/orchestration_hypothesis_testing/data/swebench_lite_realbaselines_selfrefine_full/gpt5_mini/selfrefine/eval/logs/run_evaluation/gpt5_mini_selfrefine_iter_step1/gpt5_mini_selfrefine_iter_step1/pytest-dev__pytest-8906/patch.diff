@@ -1,0 +1,32 @@
+--- a/src/_pytest/python.py
++++ b/src/_pytest/python.py
+@@ -605,13 +605,25 @@
+                 "{traceback}".format(path=self.path, traceback=formatted_tb)
+             ) from e
+         except skip.Exception as e:
++            # If the skip was explicitly allowed at module level, re-raise so
++            # the normal skip handling can take place.
+             if e.allow_module_level:
+                 raise
++            # Improve the error message to help users who want to skip a whole
++            # module at import time (for example to avoid importing syntax that
++            # isn't supported on the running Python version). The public API
++            # currently supports calling pytest.skip(..., allow_module_level=True)
++            # at module level; require this explicit flag so users don't
++            # accidentally skip entire modules by calling skip() unintentionally.
+             raise self.CollectError(
+-                "Using pytest.skip outside of a test is not allowed. "
+-                "To decorate a test function, use the @pytest.mark.skip "
+-                "or @pytest.mark.skipif decorators instead, and to skip a "
+-                "module use `pytestmark = pytest.mark.{skip,skipif}."
++                "Using pytest.skip outside of a test is not allowed.\n"
++                "If you really want to skip the entire module at import time "
++                "(for example to avoid importing code that requires a newer "
++                "Python version), call:\n\n"
++                "    pytest.skip('reason', allow_module_level=True)\n\n"
++                "Make sure to do this before importing any incompatible symbols.\n"
++                "To skip a specific test function or class instead, use the "
++                "@pytest.mark.skip or @pytest.mark.skipif decorators."
+             ) from e
+         self.config.pluginmanager.consider_module(mod)
+         return mod

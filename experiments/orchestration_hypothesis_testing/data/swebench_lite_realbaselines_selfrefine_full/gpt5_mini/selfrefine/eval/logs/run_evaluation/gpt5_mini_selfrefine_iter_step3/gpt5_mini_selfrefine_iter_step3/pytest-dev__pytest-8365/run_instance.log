@@ -1,0 +1,53 @@
+2026-06-22 18:49:04,637 - INFO - Creating container for pytest-dev__pytest-8365...
+2026-06-22 18:49:04,883 - INFO - Container for pytest-dev__pytest-8365 created: 0bc4c79e460ffdf6bd75f9d20eb37ae040b3c2e74f2bef481746356ddf37e544
+2026-06-22 18:49:05,053 - INFO - Container for pytest-dev__pytest-8365 started: 0bc4c79e460ffdf6bd75f9d20eb37ae040b3c2e74f2bef481746356ddf37e544
+2026-06-22 18:49:05,053 - INFO - Intermediate patch for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/pytest-dev__pytest-8365/patch.diff, now applying to container...
+2026-06-22 18:49:05,165 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/tmpdir.py...
+Applied patch src/_pytest/tmpdir.py cleanly.
+
+2026-06-22 18:49:05,245 - INFO - Git diff before:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..8fa5bb48f 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -112,6 +112,11 @@ class TempPathFactory:
+             from_env = os.environ.get("PYTEST_DEBUG_TEMPROOT")
+             temproot = Path(from_env or tempfile.gettempdir()).resolve()
+             user = get_user() or "unknown"
++            # sanitize username to a safe filesystem name (avoid path-separators and other
++            # potentially illegal characters). Replace any character that is not a word
++            # character, dot or hyphen with an underscore. This avoids problems such as
++            # domain\username on Windows being interpreted as a path.
++            user = re.sub(r"[^\w.-]", "_", user)
+             # use a sub-directory in the temproot to speed-up
+             # make_numbered_dir() call
+             rootdir = temproot.joinpath(f"pytest-of-{user}")
+2026-06-22 18:49:05,245 - INFO - Eval script for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/pytest-dev__pytest-8365/eval.sh; copying to container...
+2026-06-22 18:49:09,426 - INFO - Test runtime: 4.14 seconds
+2026-06-22 18:49:09,426 - INFO - Test output for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/pytest-dev__pytest-8365/test_output.txt
+2026-06-22 18:49:09,472 - INFO - Git diff after:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..8fa5bb48f 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -112,6 +112,11 @@ class TempPathFactory:
+             from_env = os.environ.get("PYTEST_DEBUG_TEMPROOT")
+             temproot = Path(from_env or tempfile.gettempdir()).resolve()
+             user = get_user() or "unknown"
++            # sanitize username to a safe filesystem name (avoid path-separators and other
++            # potentially illegal characters). Replace any character that is not a word
++            # character, dot or hyphen with an underscore. This avoids problems such as
++            # domain\username on Windows being interpreted as a path.
++            user = re.sub(r"[^\w.-]", "_", user)
+             # use a sub-directory in the temproot to speed-up
+             # make_numbered_dir() call
+             rootdir = temproot.joinpath(f"pytest-of-{user}")
+2026-06-22 18:49:09,472 - INFO - Grading answer for pytest-dev__pytest-8365...
+2026-06-22 18:49:09,473 - INFO - report: {'pytest-dev__pytest-8365': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_tmpdir.py::test_tmp_path_factory_handles_invalid_dir_characters']}, 'PASS_TO_PASS': {'success': ['testing/test_tmpdir.py::TestTempdirHandler::test_mktemp', 'testing/test_tmpdir.py::TestTempdirHandler::test_tmppath_relative_basetemp_absolute', 'testing/test_tmpdir.py::test_get_user_uid_not_found', 'testing/test_tmpdir.py::TestNumberedDir::test_make', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_lock_create', 'testing/test_tmpdir.py::TestNumberedDir::test_lock_register_cleanup_removal', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_keep', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_locked', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_ignores_symlink', 'testing/test_tmpdir.py::TestNumberedDir::test_removal_accepts_lock', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_file', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_directory', 'testing/test_tmpdir.py::TestRmRf::test_on_rm_rf_error', 'testing/test_tmpdir.py::test_tmpdir_equals_tmp_path', 'testing/test_tmpdir.py::test_tmpdir_fixture', 'testing/test_tmpdir.py::TestConfigTmpdir::test_getbasetemp_custom_removes_old', 'testing/test_tmpdir.py::test_mktemp[mypath-True]', 'testing/test_tmpdir.py::test_mktemp[/mypath1-False]', 'testing/test_tmpdir.py::test_mktemp[./mypath1-True]', 'testing/test_tmpdir.py::test_mktemp[../mypath3-False]', 'testing/test_tmpdir.py::test_mktemp[../../mypath4-False]', 'testing/test_tmpdir.py::test_mktemp[mypath5/..-False]', 'testing/test_tmpdir.py::test_mktemp[mypath6/../mypath6-True]', 'testing/test_tmpdir.py::test_mktemp[mypath7/../mypath7/..-False]', 'testing/test_tmpdir.py::test_tmpdir_always_is_realpath', 'testing/test_tmpdir.py::test_tmp_path_always_is_realpath', 'testing/test_tmpdir.py::test_tmpdir_too_long_on_parametrization', 'testing/test_tmpdir.py::test_tmpdir_factory', 'testing/test_tmpdir.py::test_tmpdir_fallback_tox_env', 'testing/test_tmpdir.py::test_tmpdir_fallback_uid_not_found', 'testing/test_tmpdir.py::test_basetemp_with_read_only_files'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-8365: resolved: False
+2026-06-22 18:49:09,474 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:49:24,805 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:49:24,832 - INFO - Container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 18:49:24,832 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest...
+2026-06-22 18:49:25,080 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest removed.

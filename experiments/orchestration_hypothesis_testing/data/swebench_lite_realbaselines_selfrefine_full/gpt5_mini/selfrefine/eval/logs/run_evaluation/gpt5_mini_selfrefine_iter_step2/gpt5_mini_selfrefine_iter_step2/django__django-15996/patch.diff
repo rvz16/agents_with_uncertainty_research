@@ -1,0 +1,37 @@
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -125,10 +125,30 @@
+     def serialize(self):
+         enum_class = self.value.__class__
+         module = enum_class.__module__
+-        return (
+-            "%s.%s[%r]" % (module, enum_class.__qualname__, self.value.name),
+-            {"import %s" % module},
+-        )
++        name = getattr(self.value, "name", None)
++        # If this is a normal enum member with a name, keep the existing format.
++        if name is not None:
++            return (
++                "%s.%s[%r]" % (module, enum_class.__qualname__, name),
++                {"import %s" % module},
++            )
++        # For Flag/IntFlag combinations there may be no single name. Try to
++        # decompose into constituent members and OR them together.
++        members = None
++        try:
++            # EnumMeta._decompose is an internal helper that returns the
++            # constituent members for flag combinations.
++            members = enum_class._decompose(self.value)
++        except Exception:
++            members = None
++        if members:
++            parts = [
++                "%s.%s[%r]" % (module, enum_class.__qualname__, m.name) for m in members
++            ]
++            return (" | ".join(parts), {"import %s" % module})
++        # Fallback: construct the enum from its underlying value.
++        underlying = getattr(self.value, "value", self.value)
++        return ("%s.%s(%r)" % (module, enum_class.__qualname__, underlying), {"import %s" % module})
+ 
+ 
+ class FloatSerializer(BaseSimpleSerializer):

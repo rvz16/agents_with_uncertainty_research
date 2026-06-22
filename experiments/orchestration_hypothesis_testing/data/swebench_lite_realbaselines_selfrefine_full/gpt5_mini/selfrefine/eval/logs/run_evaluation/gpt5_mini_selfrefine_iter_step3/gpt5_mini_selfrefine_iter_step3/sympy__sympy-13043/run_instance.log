@@ -1,0 +1,77 @@
+2026-06-22 19:00:54,887 - INFO - Creating container for sympy__sympy-13043...
+2026-06-22 19:00:55,049 - INFO - Container for sympy__sympy-13043 created: 517b431b1a5be0b322952257fb20d076d3ba6edbe6f33b8ff83dca50da4147f2
+2026-06-22 19:00:55,224 - INFO - Container for sympy__sympy-13043 started: 517b431b1a5be0b322952257fb20d076d3ba6edbe6f33b8ff83dca50da4147f2
+2026-06-22 19:00:55,225 - INFO - Intermediate patch for sympy__sympy-13043 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-13043/patch.diff, now applying to container...
+2026-06-22 19:00:55,339 - INFO - >>>>> Applied Patch:
+Checking patch sympy/integrals/intpoly.py...
+Applied patch sympy/integrals/intpoly.py cleanly.
+
+2026-06-22 19:00:55,562 - INFO - Git diff before:
+diff --git a/sympy/integrals/intpoly.py b/sympy/integrals/intpoly.py
+index fc72bd206f..676fd4d9a3 100644
+--- a/sympy/integrals/intpoly.py
++++ b/sympy/integrals/intpoly.py
+@@ -569,10 +569,11 @@ def decompose(expr, separate=False):
+             degrees = [(sum(degree_list(monom, *symbols)), monom)
+                        for monom in expr.args]
+             if separate:
+-                return [monom[1] for monom in degrees]
++                # Return monomials in a deterministic order: sort by total degree
++                # (ascending) and break ties by string representation.
++                return [m for _, m in sorted(degrees, key=lambda d: (d[0], str(d[1])))]
+             else:
+-                for monom in degrees:
+-                    degree, term = monom
++                for degree, term in degrees:
+                     if poly_dict.get(degree):
+                         poly_dict[degree] += term
+                     else:
+@@ -593,7 +594,9 @@ def decompose(expr, separate=False):
+         poly_dict[0] = expr
+ 
+     if separate:
+-        return list(poly_dict.values())
++        # Return the constituent monomials/polynomials sorted by degree
++        # (ascending) to ensure deterministic ordering.
++        return [poly_dict[k] for k in sorted(poly_dict.keys())]
+     return poly_dict
+2026-06-22 19:00:55,562 - INFO - Eval script for sympy__sympy-13043 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-13043/eval.sh; copying to container...
+2026-06-22 19:00:58,558 - INFO - Test runtime: 2.94 seconds
+2026-06-22 19:00:58,559 - INFO - Test output for sympy__sympy-13043 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sympy__sympy-13043/test_output.txt
+2026-06-22 19:00:58,619 - INFO - Git diff after:
+diff --git a/sympy/integrals/intpoly.py b/sympy/integrals/intpoly.py
+index fc72bd206f..676fd4d9a3 100644
+--- a/sympy/integrals/intpoly.py
++++ b/sympy/integrals/intpoly.py
+@@ -569,10 +569,11 @@ def decompose(expr, separate=False):
+             degrees = [(sum(degree_list(monom, *symbols)), monom)
+                        for monom in expr.args]
+             if separate:
+-                return [monom[1] for monom in degrees]
++                # Return monomials in a deterministic order: sort by total degree
++                # (ascending) and break ties by string representation.
++                return [m for _, m in sorted(degrees, key=lambda d: (d[0], str(d[1])))]
+             else:
+-                for monom in degrees:
+-                    degree, term = monom
++                for degree, term in degrees:
+                     if poly_dict.get(degree):
+                         poly_dict[degree] += term
+                     else:
+@@ -593,7 +594,9 @@ def decompose(expr, separate=False):
+         poly_dict[0] = expr
+ 
+     if separate:
+-        return list(poly_dict.values())
++        # Return the constituent monomials/polynomials sorted by degree
++        # (ascending) to ensure deterministic ordering.
++        return [poly_dict[k] for k in sorted(poly_dict.keys())]
+     return poly_dict
+2026-06-22 19:00:58,619 - INFO - Grading answer for sympy__sympy-13043...
+2026-06-22 19:00:58,624 - INFO - report: {'sympy__sympy-13043': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_decompose']}, 'PASS_TO_PASS': {'success': ['test_best_origin'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13043: resolved: False
+2026-06-22 19:00:58,624 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13043.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:01:13,851 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13043.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 19:01:13,878 - INFO - Container sweb.eval.sympy__sympy-13043.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 19:01:13,878 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-13043:latest...
+2026-06-22 19:01:13,948 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-13043:latest removed.

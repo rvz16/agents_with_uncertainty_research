@@ -1,0 +1,31 @@
+--- a/django/core/validators.py
++++ b/django/core/validators.py
+@@ -127,7 +127,13 @@
+                 raise
+         else:
+             # Now verify IPv6 in the netloc part
+-            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', urlsplit(value).netloc)
++            try:
++                _scheme, _netloc, _path, _query, _fragment = urlsplit(value)
++            except ValueError:
++                # urlsplit may raise ValueError for malformed IPv6 URLs, translate
++                # that into a ValidationError so form validation behaves correctly.
++                raise ValidationError(self.message, code=self.code, params={'value': value})
++            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', _netloc)
+             if host_match:
+                 potential_ip = host_match[1]
+                 try:
+@@ -139,7 +145,12 @@
+         # section 3.1. It's defined to be 255 bytes or less, but this includes
+         # one byte for the length of the name and one byte for the trailing dot
+         # that's used to indicate absolute names in DNS.
+-        if len(urlsplit(value).hostname) > 253:
++        try:
++            _hostname = urlsplit(value).hostname
++        except ValueError:
++            # As above, convert parsing errors into ValidationError.
++            raise ValidationError(self.message, code=self.code, params={'value': value})
++        if _hostname and len(_hostname) > 253:
+             raise ValidationError(self.message, code=self.code, params={'value': value})
+ 
+ 

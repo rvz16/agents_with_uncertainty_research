@@ -1,0 +1,21 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -957,11 +957,17 @@
+     elif iterable(arg):
+         if isinstance(arg, list):
+             left, right = "[]"
++            body = ', '.join(_recursive_to_string(doprint, e) for e in arg)
+         elif isinstance(arg, tuple):
++            # For single-element tuples we must include a trailing comma so that
++            # Python interprets them as tuples, e.g. "(1,)" instead of "(1)".
++            if len(arg) == 1:
++                return '(' + _recursive_to_string(doprint, arg[0]) + ',)'
+             left, right = "()"
++            body = ', '.join(_recursive_to_string(doprint, e) for e in arg)
+         else:
+             raise NotImplementedError("unhandled type: %s, %s" % (type(arg), arg))
+-        return left +', '.join(_recursive_to_string(doprint, e) for e in arg) + right
++        return left + body + right
+     elif isinstance(arg, str):
+         return arg
+     else:

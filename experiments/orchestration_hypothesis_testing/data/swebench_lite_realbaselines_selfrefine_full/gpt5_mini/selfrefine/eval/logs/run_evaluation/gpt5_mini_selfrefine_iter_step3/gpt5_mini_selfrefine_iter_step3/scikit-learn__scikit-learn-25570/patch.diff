@@ -1,0 +1,19 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -866,6 +866,16 @@
+                     t[0] for t in self._iter(fitted=True, replace_strings=True)
+                 ]
+                 feature_names_outs = [X.columns for X in Xs]
++
++                # If the number of transformer names does not match the number of
++                # transformer outputs, we cannot reliably prefix the column names.
++                # This can happen when some transformers had an empty column
++                # selection and were skipped when building the list of fitted
++                # transformers. In that case, leave the DataFrame columns as
++                # provided by the transformers.
++                if len(transformer_names) != len(feature_names_outs):
++                    return output
++
+                 names_out = self._add_prefix_for_feature_names_out(
+                     list(zip(transformer_names, feature_names_outs))
+                 )

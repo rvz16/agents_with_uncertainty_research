@@ -1,0 +1,103 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -867,10 +867,98 @@
+         self.stale = True
+ 
+     def get_facecolor(self):
+-        return self._facecolors2d
++        """
++        Return the 2D facecolors for this collection.
++
++        If the 2D facecolor cache (_facecolors2d) has not been created yet
++        (this normally happens during the draw/projection), attempt to
++        construct a sensible array from the currently mapped 3D facecolors
++        or from the base PolyCollection facecolors. This makes methods like
++        legend() that query facecolors work even before a draw.
++        """
++        # If already computed during projection/draw, just return it.
++        if hasattr(self, "_facecolors2d"):
++            return self._facecolors2d
++
++        # Ensure any scalar mappable state is up to date.
++        try:
++            self.update_scalarmappable()
++        except Exception:
++            # If update fails for some reason, fall back to base behavior.
++            pass
++
++        # Prefer the stored 3D facecolors if available, otherwise ask the
++        # PolyCollection for its facecolor mapping.
++        cface = getattr(self, "_facecolor3d", None)
++        if cface is None:
++            cface = PolyCollection.get_facecolor(self)
++
++        # Try to determine the number of polygons so we can repeat single
++        # colors to match the number of polygons, similar to do_3d_projection.
++        n = None
++        try:
++            n = len(self._segslices)
++        except Exception:
++            pass
++
++        if n is not None:
++            try:
++                if len(cface) != n:
++                    cface = np.repeat(cface, n, axis=0)
++            except Exception:
++                # If repeating fails, coerce to an array and continue.
++                cface = np.array(cface)
++
++        alpha = getattr(self, "_alpha3d", getattr(self, "_alpha", None))
++        return mcolors.to_rgba_array(cface, alpha)
+ 
+     def get_edgecolor(self):
+-        return self._edgecolors2d
++        """
++        Return the 2D edgecolors for this collection.
++
++        Similar logic to get_facecolor(): if the 2D cache is missing, try to
++        build an appropriate array from the current 3D edgecolors or from
++        the base PolyCollection edgecolors. Honor the case where the edge
++        color is specified as "face".
++        """
++        # If already computed during projection/draw, just return it.
++        if hasattr(self, "_edgecolors2d"):
++            return self._edgecolors2d
++
++        # If edgecolor is set to 'face', delegate to facecolors.
++        if cbook._str_equal(getattr(self, "_edgecolors", None), "face"):
++            return self.get_facecolor()
++
++        # Ensure any scalar mappable state is up to date.
++        try:
++            self.update_scalarmappable()
++        except Exception:
++            pass
++
++        cedge = getattr(self, "_edgecolor3d", None)
++        if cedge is None:
++            cedge = PolyCollection.get_edgecolor(self)
++
++        # Try to determine the number of polygons so we can repeat single
++        # colors to match the number of polygons, similar to do_3d_projection.
++        n = None
++        try:
++            n = len(self._segslices)
++        except Exception:
++            pass
++
++        if n is not None:
++            try:
++                if len(cedge) == 0:
++                    # If there are no explicit edge colors, fall back to face.
++                    cedge = cedge
++                elif len(cedge) != n:
++                    cedge = np.repeat(cedge, n, axis=0)
++            except Exception:
++                cedge = np.array(cedge)
++
++        alpha = getattr(self, "_alpha3d", getattr(self, "_alpha", None))
++        return mcolors.to_rgba_array(cedge, alpha)
+ 
+ 
+ def poly_collection_2d_to_3d(col, zs=0, zdir='z'):

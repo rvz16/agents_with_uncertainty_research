@@ -1,0 +1,29 @@
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -464,7 +464,25 @@
+     dtype_orig = getattr(array, "dtype", None)
+     if not hasattr(dtype_orig, 'kind'):
+         # not a data type (e.g. a column named dtype in a pandas DataFrame)
+-        dtype_orig = None
++        # Try to handle pandas DataFrame: infer a common dtype if all
++        # columns share the same dtype. We avoid importing pandas to keep
++        # optional dependency light-weight.
++        try:
++            dtypes = getattr(array, "dtypes", None)
++            if dtypes is not None and not hasattr(dtypes, "kind"):
++                # array.dtypes is array-like of dtypes (pandas DataFrame)
++                kinds = [getattr(dt, "kind", None) for dt in dtypes]
++                unique_kinds = set(kinds)
++                if len(unique_kinds) == 1:
++                    # homogeneous DataFrame: use that dtype
++                    first = dtypes.iloc[0] if hasattr(dtypes, "iloc") else dtypes[0]
++                    dtype_orig = np.dtype(first)
++                else:
++                    dtype_orig = None
++            else:
++                dtype_orig = None
++        except Exception:
++            dtype_orig = None
+ 
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":

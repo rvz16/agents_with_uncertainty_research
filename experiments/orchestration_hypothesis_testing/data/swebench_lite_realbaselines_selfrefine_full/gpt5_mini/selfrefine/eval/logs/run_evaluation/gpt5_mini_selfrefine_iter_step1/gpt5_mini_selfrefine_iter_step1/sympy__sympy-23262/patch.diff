@@ -1,0 +1,23 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -956,12 +956,19 @@
+         return doprint(arg)
+     elif iterable(arg):
+         if isinstance(arg, list):
++            # left/right are assigned by unpacking the two-character
++            # delimiters (e.g. "[]" -> '[' , ']')
+             left, right = "[]"
++            return left + ', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+         elif isinstance(arg, tuple):
++            # Special-case single-element tuples: in Python a single-element
++            # tuple must include a trailing comma, e.g. "(1,)".
++            if len(arg) == 1:
++                return '(' + _recursive_to_string(doprint, arg[0]) + ',)'
+             left, right = "()"
++            return left + ', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+         else:
+             raise NotImplementedError("unhandled type: %s, %s" % (type(arg), arg))
+-        return left +', '.join(_recursive_to_string(doprint, e) for e in arg) + right
+     elif isinstance(arg, str):
+         return arg
+     else:

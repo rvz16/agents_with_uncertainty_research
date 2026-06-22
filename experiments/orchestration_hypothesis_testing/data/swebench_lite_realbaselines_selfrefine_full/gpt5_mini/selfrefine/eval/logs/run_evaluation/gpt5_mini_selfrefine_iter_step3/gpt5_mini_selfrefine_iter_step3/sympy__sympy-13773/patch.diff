@@ -1,0 +1,47 @@
+--- a/sympy/matrices/common.py
++++ b/sympy/matrices/common.py
+@@ -1973,7 +1973,23 @@
+ 
+     @call_highest_priority('__rmatmul__')
+     def __matmul__(self, other):
+-        return self.__mul__(other)
++        """Matrix multiplication operator `@`. Only supports matrix-like operands.
++        Scalar multiplication must use `*`.
++        """
++        other = _matrixify(other)
++        # If rhs is a Matrix, perform matrix multiplication
++        if getattr(other, 'is_Matrix', False):
++            if self.shape[1] != other.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (self.shape, other.shape))
++            return self._eval_matrix_mul(other)
++        # Matrix-like objects (e.g., numpy arrays) are accepted
++        if getattr(other, 'is_MatrixLike', False):
++            if hasattr(other, 'shape') and len(other.shape) == 2:
++                if self.shape[1] != other.shape[0]:
++                    raise ShapeError("Matrix size mismatch: %s @ %s." % (self.shape, other.shape))
++            return MatrixArithmetic._eval_matrix_mul(self, other)
++        # Not a matrix: do not fall back to scalar multiplication
++        raise TypeError("Matrix multiplication '@' requires a matrix as the right-hand operand. Use '*' for scalar multiplication.")
+ 
+     @call_highest_priority('__rmul__')
+     def __mul__(self, other):
+@@ -2068,7 +2084,18 @@
+ 
+     @call_highest_priority('__matmul__')
+     def __rmatmul__(self, other):
+-        return self.__rmul__(other)
++        """Right-hand matrix multiplication. Only supports matrix-like operands."""
++        other = _matrixify(other)
++        if getattr(other, 'is_Matrix', False):
++            if other.shape[1] != self.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (other.shape, self.shape))
++            return other._eval_matrix_mul(self)
++        if getattr(other, 'is_MatrixLike', False):
++            if hasattr(other, 'shape') and len(other.shape) == 2:
++                if other.shape[1] != self.shape[0]:
++                    raise ShapeError("Matrix size mismatch: %s @ %s." % (other.shape, self.shape))
++            return MatrixArithmetic._eval_matrix_mul(other, self)
++        raise TypeError("Matrix multiplication '@' requires a matrix as the left-hand operand. Use '*' for scalar multiplication.")
+ 
+     @call_highest_priority('__mul__')
+     def __rmul__(self, other):

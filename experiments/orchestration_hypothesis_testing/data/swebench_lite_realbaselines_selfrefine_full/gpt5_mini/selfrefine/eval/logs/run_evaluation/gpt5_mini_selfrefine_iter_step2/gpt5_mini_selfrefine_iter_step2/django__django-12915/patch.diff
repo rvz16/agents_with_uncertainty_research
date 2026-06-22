@@ -1,0 +1,28 @@
+--- a/django/contrib/staticfiles/handlers.py
++++ b/django/contrib/staticfiles/handlers.py
+@@ -1,5 +1,7 @@
+ from urllib.parse import urlparse
+ from urllib.request import url2pathname
++
++from asgiref.sync import sync_to_async
+ 
+ from django.conf import settings
+ from django.contrib.staticfiles import utils
+@@ -52,6 +54,17 @@
+         except Http404 as e:
+             return response_for_exception(request, e)
+ 
++    async def get_response_async(self, request):
++        """
++        Async equivalent of get_response. Call the synchronous serving
++        code in a thread and return the response. Exceptions are handled
++        the same way as the synchronous version.
++        """
++        try:
++            return await sync_to_async(self.serve, thread_sensitive=True)(request)
++        except Http404 as e:
++            return await sync_to_async(response_for_exception, thread_sensitive=True)(request, e)
++
+ 
+ class StaticFilesHandler(StaticFilesHandlerMixin, WSGIHandler):
+     """

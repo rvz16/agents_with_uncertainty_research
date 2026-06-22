@@ -1,0 +1,19 @@
+--- a/django/db/backends/ddl_references.py
++++ b/django/db/backends/ddl_references.py
+@@ -215,7 +215,15 @@
+         expressions = deepcopy(self.expressions)
+         self.columns = []
+         for col in self.compiler.query._gen_cols([expressions]):
+-            col.alias = new_table
++            # Only update the alias when it explicitly references the table being
++            # renamed. Some Col instances may not have an alias attribute or the
++            # attribute may be read-only; attempt assignment and ignore failures.
++            if getattr(col, 'alias', None) == old_table:
++                try:
++                    col.alias = new_table
++                except AttributeError:
++                    # Be conservative: if assignment isn't possible, leave alias as-is.
++                    pass
+         self.expressions = expressions
+         super().rename_table_references(old_table, new_table)
+ 

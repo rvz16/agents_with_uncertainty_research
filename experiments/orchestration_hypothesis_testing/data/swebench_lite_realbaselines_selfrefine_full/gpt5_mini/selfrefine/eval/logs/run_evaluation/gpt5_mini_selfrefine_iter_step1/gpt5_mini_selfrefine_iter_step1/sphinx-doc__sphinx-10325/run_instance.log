@@ -1,0 +1,205 @@
+2026-06-22 15:25:48,814 - INFO - Creating container for sphinx-doc__sphinx-10325...
+2026-06-22 15:25:49,313 - INFO - Container for sphinx-doc__sphinx-10325 created: a0bbfb59ba2e5258e0ba1bf0697497de48eebaa8557c7d6f9500ffe13068c6bb
+2026-06-22 15:25:49,488 - INFO - Container for sphinx-doc__sphinx-10325 started: a0bbfb59ba2e5258e0ba1bf0697497de48eebaa8557c7d6f9500ffe13068c6bb
+2026-06-22 15:25:49,488 - INFO - Intermediate patch for sphinx-doc__sphinx-10325 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-10325/patch.diff, now applying to container...
+2026-06-22 15:25:49,608 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/ext/autodoc/__init__.py...
+Applied patch sphinx/ext/autodoc/__init__.py cleanly.
+
+2026-06-22 15:25:49,913 - INFO - Git diff before:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 62631f7ff..9a7aea5fe 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -110,10 +110,24 @@ def exclude_members_option(arg: Any) -> Union[object, Set[str]]:
+ 
+ 
+ def inherited_members_option(arg: Any) -> Union[object, Set[str]]:
+-    """Used to convert the :members: option to auto directives."""
++    """Used to convert the :inherited-members: option to auto directives.
++
++    Accepts:
++    - no argument / boolean True -> the special sentinel 'object' (backwards compatible)
++    - a comma separated list of class names -> returns a set of class-name strings
++    - False -> returns None
++    - a single class name string -> returns a set containing that name
++    """
+     if arg in (None, True):
+         return 'object'
++    elif arg is False:
++        return None
+     else:
++        # support comma-separated list like "Parent1, Parent2"
++        if isinstance(arg, str):
++            names = {x.strip() for x in arg.split(',') if x.strip()}
++            return names
++        # fall back to whatever the caller passed (e.g. already a set)
+         return arg
+ 
+ 
+@@ -680,17 +694,37 @@ class Documenter:
+         ``autodoc-skip-member`` event.
+         """
+         def is_filtered_inherited_member(name: str, obj: Any) -> bool:
+-            if inspect.isclass(self.object):
+-                for cls in self.object.__mro__:
+-                    if cls.__name__ == self.options.inherited_members and cls != self.object:
+-                        # given member is a member of specified *super class*
+-                        return True
+-                    elif name in cls.__dict__:
+-                        return False
+-                    elif name in self.get_attr(cls, '__annotations__', {}):
+-                        return False
+-                    elif isinstance(obj, ObjectMember) and obj.class_ is cls:
+-                        return False
++            if not inspect.isclass(self.object):
++                return False
++
++            inherited_opt = self.options.inherited_members
++            if not inherited_opt:
++                return False
++
++            # Normalize option to a set of names for easy membership checks.
++            if isinstance(inherited_opt, str):
++                check_names = {inherited_opt}
++            elif isinstance(inherited_opt, (set, list, tuple)):
++                check_names = set(inherited_opt)
++            else:
++                # unknown type -- don't filter
++                return False
++
++            for cls in self.object.__mro__:
++                # If this class matches one of the specified names, and it's not
++                # the class being documented itself, then members coming from
++                # here (and later in MRO) should be considered filtered.
++                if cls.__name__ in check_names and cls is not self.object:
++                    # given member is a member of specified *super class*
++                    return True
++                # If the member is defined in this class (or annotated here),
++                # then it is not considered filtered inherited member.
++                elif name in cls.__dict__:
++                    return False
++                elif name in self.get_attr(cls, '__annotations__', {}):
++                    return False
++                elif isinstance(obj, ObjectMember) and obj.class_ is cls:
++                    return False
+ 
+             return False
+ 
+diff --git a/tox.ini b/tox.ini
+index f0afd779b..30ca90275 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ setenv =
+     PYTHONWARNINGS = all
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =
+2026-06-22 15:25:49,914 - INFO - Eval script for sphinx-doc__sphinx-10325 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-10325/eval.sh; copying to container...
+2026-06-22 15:25:52,777 - INFO - Test runtime: 2.81 seconds
+2026-06-22 15:25:52,778 - INFO - Test output for sphinx-doc__sphinx-10325 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sphinx-doc__sphinx-10325/test_output.txt
+2026-06-22 15:25:52,827 - INFO - Git diff after:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 62631f7ff..9a7aea5fe 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -110,10 +110,24 @@ def exclude_members_option(arg: Any) -> Union[object, Set[str]]:
+ 
+ 
+ def inherited_members_option(arg: Any) -> Union[object, Set[str]]:
+-    """Used to convert the :members: option to auto directives."""
++    """Used to convert the :inherited-members: option to auto directives.
++
++    Accepts:
++    - no argument / boolean True -> the special sentinel 'object' (backwards compatible)
++    - a comma separated list of class names -> returns a set of class-name strings
++    - False -> returns None
++    - a single class name string -> returns a set containing that name
++    """
+     if arg in (None, True):
+         return 'object'
++    elif arg is False:
++        return None
+     else:
++        # support comma-separated list like "Parent1, Parent2"
++        if isinstance(arg, str):
++            names = {x.strip() for x in arg.split(',') if x.strip()}
++            return names
++        # fall back to whatever the caller passed (e.g. already a set)
+         return arg
+ 
+ 
+@@ -680,17 +694,37 @@ class Documenter:
+         ``autodoc-skip-member`` event.
+         """
+         def is_filtered_inherited_member(name: str, obj: Any) -> bool:
+-            if inspect.isclass(self.object):
+-                for cls in self.object.__mro__:
+-                    if cls.__name__ == self.options.inherited_members and cls != self.object:
+-                        # given member is a member of specified *super class*
+-                        return True
+-                    elif name in cls.__dict__:
+-                        return False
+-                    elif name in self.get_attr(cls, '__annotations__', {}):
+-                        return False
+-                    elif isinstance(obj, ObjectMember) and obj.class_ is cls:
+-                        return False
++            if not inspect.isclass(self.object):
++                return False
++
++            inherited_opt = self.options.inherited_members
++            if not inherited_opt:
++                return False
++
++            # Normalize option to a set of names for easy membership checks.
++            if isinstance(inherited_opt, str):
++                check_names = {inherited_opt}
++            elif isinstance(inherited_opt, (set, list, tuple)):
++                check_names = set(inherited_opt)
++            else:
++                # unknown type -- don't filter
++                return False
++
++            for cls in self.object.__mro__:
++                # If this class matches one of the specified names, and it's not
++                # the class being documented itself, then members coming from
++                # here (and later in MRO) should be considered filtered.
++                if cls.__name__ in check_names and cls is not self.object:
++                    # given member is a member of specified *super class*
++                    return True
++                # If the member is defined in this class (or annotated here),
++                # then it is not considered filtered inherited member.
++                elif name in cls.__dict__:
++                    return False
++                elif name in self.get_attr(cls, '__annotations__', {}):
++                    return False
++                elif isinstance(obj, ObjectMember) and obj.class_ is cls:
++                    return False
+ 
+             return False
+ 
+diff --git a/tox.ini b/tox.ini
+index f0afd779b..30ca90275 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ setenv =
+     PYTHONWARNINGS = all
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =
+2026-06-22 15:25:52,827 - INFO - Grading answer for sphinx-doc__sphinx-10325...
+2026-06-22 15:25:52,828 - INFO - report: {'sphinx-doc__sphinx-10325': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/test_ext_autodoc_automodule.py::test_automodule_inherited_members'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/test_ext_autodoc_automodule.py::test_empty_all', 'tests/test_ext_autodoc_automodule.py::test_automodule', 'tests/test_ext_autodoc_automodule.py::test_automodule_undoc_members', 'tests/test_ext_autodoc_automodule.py::test_automodule_special_members', 'tests/test_ext_autodoc_automodule.py::test_subclass_of_mocked_object'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-10325: resolved: True
+2026-06-22 15:25:52,828 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-10325.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:26:07,984 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-10325.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:26:08,002 - INFO - Container sweb.eval.sphinx-doc__sphinx-10325.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:26:08,002 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10325:latest...
+2026-06-22 15:26:08,082 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-10325:latest removed.

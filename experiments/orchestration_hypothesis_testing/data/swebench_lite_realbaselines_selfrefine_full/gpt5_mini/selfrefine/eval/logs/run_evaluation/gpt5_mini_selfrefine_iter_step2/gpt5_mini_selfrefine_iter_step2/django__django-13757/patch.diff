@@ -1,0 +1,22 @@
+--- a/django/db/models/fields/json.py
++++ b/django/db/models/fields/json.py
+@@ -368,12 +368,17 @@
+     def as_oracle(self, compiler, connection):
+         if not self.rhs:
+             return HasKey(self.lhs.lhs, self.lhs.key_name).as_oracle(compiler, connection)
+-        return super().as_sql(compiler, connection)
++        # For isnull=True we only want keys that are missing (not keys with JSON null).
++        has_sql, has_params = HasKey(self.lhs.lhs, self.lhs.key_name).as_oracle(compiler, connection)
++        return ('NOT (%s)' % has_sql, has_params)
+ 
+     def as_sqlite(self, compiler, connection):
+         if not self.rhs:
+             return HasKey(self.lhs.lhs, self.lhs.key_name).as_sqlite(compiler, connection)
+-        return super().as_sql(compiler, connection)
++        # For isnull=True we only want keys that are missing (not keys with JSON null).
++        return HasKey(
++            self.lhs.lhs, self.lhs.key_name
++        ).as_sql(compiler, connection, template='JSON_TYPE(%s, %%s) IS NULL')
+ 
+ 
+ class KeyTransformIn(lookups.In):

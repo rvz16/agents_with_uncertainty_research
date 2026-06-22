@@ -1,0 +1,32 @@
+--- a/lib/mpl_toolkits/axes_grid1/axes_grid.py
++++ b/lib/mpl_toolkits/axes_grid1/axes_grid.py
+@@ -13,8 +13,27 @@
+ def _tick_only(ax, bottom_on, left_on):
+     bottom_off = not bottom_on
+     left_off = not left_on
+-    ax.axis["bottom"].toggle(ticklabels=bottom_off, label=bottom_off)
+-    ax.axis["left"].toggle(ticklabels=left_off, label=left_off)
++    axis_attr = getattr(ax, "axis", None)
++    try:
++        # axis_attr for axisartist-based axes behaves like a dict-like object;
++        # try to index into it. If this fails (e.g. for GeoAxes where
++        # `axis` is a callable/method), fall back to using the standard
++        # Axes API (tick_params / label.set_visible).
++        bottom = axis_attr["bottom"]
++        left = axis_attr["left"]
++    except Exception:
++        # Fallback for non-axisartist axes (e.g. cartopy GeoAxes).
++        # Use tick_params to show/hide tick labels and set axis label
++        # visibility accordingly. Also ensure opposite-side labels are off.
++        ax.xaxis.set_tick_params(labelbottom=bottom_on, labeltop=False)
++        ax.yaxis.set_tick_params(labelleft=left_on, labelright=False)
++        if hasattr(ax.xaxis, "label") and ax.xaxis.label is not None:
++            ax.xaxis.label.set_visible(bottom_on)
++        if hasattr(ax.yaxis, "label") and ax.yaxis.label is not None:
++            ax.yaxis.label.set_visible(left_on)
++    else:
++        bottom.toggle(ticklabels=bottom_off, label=bottom_off)
++        left.toggle(ticklabels=left_off, label=left_off)
+ 
+ 
+ class CbarAxesBase:

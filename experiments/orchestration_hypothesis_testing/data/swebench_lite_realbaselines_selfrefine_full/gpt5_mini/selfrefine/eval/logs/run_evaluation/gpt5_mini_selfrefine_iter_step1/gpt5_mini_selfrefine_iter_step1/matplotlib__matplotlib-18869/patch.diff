@@ -1,0 +1,41 @@
+--- a/lib/matplotlib/__init__.py
++++ b/lib/matplotlib/__init__.py
+@@ -148,6 +148,38 @@
+         else:  # Get the version from the _version.py setuptools_scm file.
+             __version__ = _version.version
+         return __version__
++
++    if name == "__version_info__":
++        # Expose a comparable version-info tuple derived from __version__.
++        # Cache it in the module globals so subsequent access is cheap.
++        # Ensure __version__ is available (compute it if needed).
++        if "__version__" not in globals():
++            # Compute and cache __version__ as above.
++            import setuptools_scm
++            global __version__
++            root = Path(__file__).resolve().parents[2]
++            if (root / ".git").exists() and not (root / ".git/shallow").exists():
++                __version__ = setuptools_scm.get_version(
++                    root=root,
++                    version_scheme="post-release",
++                    local_scheme="node-and-date",
++                    fallback_version=_version.version,
++                )
++            else:
++                __version__ = _version.version
++        # Use packaging.version.parse to get a Version object and expose the
++        # release tuple (e.g., (3, 5, 1)). This is comparable to other tuples.
++        ver = parse_version(__version__)
++        global __version_info__
++        try:
++            # ver.release is a tuple of ints when possible.
++            __version_info__ = tuple(ver.release)
++        except Exception:
++            # Fallback: expose the raw version string in a 1-tuple to avoid
++            # surprising crashes.
++            __version_info__ = (__version__,)
++        return __version_info__
++
+     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+ 
+ 

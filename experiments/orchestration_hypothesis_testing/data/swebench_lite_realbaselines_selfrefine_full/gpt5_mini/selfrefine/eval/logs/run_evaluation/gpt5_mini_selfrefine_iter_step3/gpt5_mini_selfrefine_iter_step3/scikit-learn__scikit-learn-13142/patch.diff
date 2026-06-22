@@ -1,0 +1,33 @@
+--- a/sklearn/mixture/base.py
++++ b/sklearn/mixture/base.py
+@@ -257,9 +257,16 @@
+                 best_params = self._get_parameters()
+                 best_n_iter = n_iter
+ 
+-        # Always do a final e-step to guarantee that the labels returned by
+-        # fit_predict(X) are always consistent with fit(X).predict(X)
+-        # for any value of max_iter and tol (and any random_state).
++        # Set the best found parameters before doing a final e-step so that the
++        # responsibilities (and thus the labels) returned by fit_predict(X)
++        # correspond to the best initialization. This guarantees consistency
++        # between fit_predict(X) and fit(X).predict(X) for any value of
++        # max_iter and tol (and any random_state).
++        self._set_parameters(best_params)
++        self.n_iter_ = best_n_iter
++        self.lower_bound_ = max_lower_bound
++
++        # Always do a final e-step after restoring the best parameters.
+         _, log_resp = self._e_step(X)
+ 
+         if not self.converged_:
+@@ -268,10 +275,6 @@
+                           'or increase max_iter, tol '
+                           'or check for degenerate data.'
+                           % (init + 1), ConvergenceWarning)
+-
+-        self._set_parameters(best_params)
+-        self.n_iter_ = best_n_iter
+-        self.lower_bound_ = max_lower_bound
+ 
+         return log_resp.argmax(axis=1)
+ 

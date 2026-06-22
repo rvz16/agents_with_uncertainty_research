@@ -1,0 +1,38 @@
+--- a/src/_pytest/assertion/util.py
++++ b/src/_pytest/assertion/util.py
+@@ -128,7 +128,16 @@
+             if istext(left) and istext(right):
+                 explanation = _diff_text(left, right, verbose)
+             else:
+-                if issequence(left) and issequence(right):
++                # Special-case bytes and bytearray: present a readable diff
++                # instead of treating them as sequences of integer items which
++                # produces confusing "contains more items" messages (e.g. showing
++                # ASCII ordinals). See issue about confusing assertion rewriting
++                # message with byte strings.
++                if isinstance(left, (bytes, bytearray)) and isinstance(
++                    right, (bytes, bytearray)
++                ):
++                    explanation = _diff_text(left, right, verbose)
++                elif issequence(left) and issequence(right):
+                     explanation = _compare_eq_sequence(left, right, verbose)
+                 elif isset(left) and isset(right):
+                     explanation = _compare_eq_set(left, right, verbose)
+@@ -139,7 +148,16 @@
+                     explanation = _compare_eq_cls(left, right, verbose, type_fn)
+                 elif verbose > 0:
+                     explanation = _compare_eq_verbose(left, right)
+-                if isiterable(left) and isiterable(right):
++                # Avoid adding the generic iterable diff for raw bytes/bytearray
++                # since we already present a human-friendly textual diff above.
++                if (
++                    isiterable(left)
++                    and isiterable(right)
++                    and not (
++                        isinstance(left, (bytes, bytearray))
++                        and isinstance(right, (bytes, bytearray))
++                    )
++                ):
+                     expl = _compare_eq_iterable(left, right, verbose)
+                     if explanation is not None:
+                         explanation.extend(expl)

@@ -1,0 +1,17 @@
+--- a/sklearn/pipeline.py
++++ b/sklearn/pipeline.py
+@@ -219,6 +219,14 @@
+             return self.named_steps[ind]
+         return est
+ 
++    def __len__(self):
++        """Return the number of steps in the pipeline.
++
++        This allows using len(pipeline) and enables slice expressions such as
++        pipeline[:len(pipeline)].
++        """
++        return len(self.steps)
++
+     @property
+     def _estimator_type(self):
+         return self.steps[-1][1]._estimator_type

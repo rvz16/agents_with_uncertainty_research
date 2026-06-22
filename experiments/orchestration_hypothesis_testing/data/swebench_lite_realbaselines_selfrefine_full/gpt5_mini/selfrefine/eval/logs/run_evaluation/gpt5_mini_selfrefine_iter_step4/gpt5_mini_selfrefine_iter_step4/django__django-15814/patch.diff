@@ -1,0 +1,12 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -748,6 +748,9 @@
+                     cur_model = source.related_model
+                 else:
+                     cur_model = source.remote_field.model
++                # Ensure we're working with the concrete model for proxy models,
++                # so that Options lookups (like .pk) are correct.
++                cur_model = cur_model._meta.concrete_model
+                 opts = cur_model._meta
+                 # Even if we're "just passing through" this model, we must add
+                 # both the current model's pk and the related reference field

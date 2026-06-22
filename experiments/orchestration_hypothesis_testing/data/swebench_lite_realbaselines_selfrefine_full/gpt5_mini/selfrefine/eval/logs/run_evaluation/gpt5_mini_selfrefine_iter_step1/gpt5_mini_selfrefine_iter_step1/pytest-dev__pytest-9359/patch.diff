@@ -1,0 +1,40 @@
+--- a/src/_pytest/_code/source.py
++++ b/src/_pytest/_code/source.py
+@@ -149,7 +149,23 @@
+     values: List[int] = []
+     for x in ast.walk(node):
+         if isinstance(x, (ast.stmt, ast.ExceptHandler)):
+-            values.append(x.lineno - 1)
++            # Prefer the actual start of a statement. In newer Python versions
++            # FunctionDef/ClassDef/AsyncFunctionDef may have lineno point to the
++            # first decorator line which would incorrectly mark the start of a
++            # following statement. If decorators are present, use the line of
++            # the 'def'/'class' statement (which is the line after the last
++            # decorator) as the statement start.
++            if hasattr(x, "decorator_list") and getattr(x, "decorator_list"):
++                # decorator linenos are 1-based; the def/class line follows the
++                # last decorator, so converting to 0-based gives last_deco_lineno
++                deco_linenos = [d.lineno for d in x.decorator_list if hasattr(d, "lineno")]
++                if deco_linenos:
++                    # last_deco_lineno (1-based) -> def line 0-based index is last_deco_lineno
++                    values.append(max(deco_linenos))
++                else:
++                    values.append(x.lineno - 1)
++            else:
++                values.append(x.lineno - 1)
+             for name in ("finalbody", "orelse"):
+                 val: Optional[List[ast.stmt]] = getattr(x, name, None)
+                 if val:
+@@ -158,11 +174,7 @@
+     values.sort()
+     insert_index = bisect_right(values, lineno)
+     start = values[insert_index - 1]
+-    if insert_index >= len(values):
+-        end = None
+-    else:
+-        end = values[insert_index]
+-    return start, end
++    if insert_index >=
+ 
+ 
+ def getstatementrange_ast(

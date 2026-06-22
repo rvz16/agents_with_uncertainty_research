@@ -1,0 +1,10 @@
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1140,6 +1140,7 @@
+         """
+         assert not self.query.is_sliced, \
+             "Cannot create distinct fields once a slice has been taken."
++        self._not_support_combined_queries('distinct')
+         obj = self._chain()
+         obj.query.add_distinct_fields(*field_names)
+         return obj

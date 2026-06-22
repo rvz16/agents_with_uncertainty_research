@@ -1,0 +1,21 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -764,10 +764,16 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            if not hasattr(cls, 'get_%s_display' % self.name):
++            method_name = 'get_%s_display' % self.name
++            # Only add the display accessor if the model class itself doesn't
++            # define it. Use cls.__dict__ rather than hasattr() so that
++            # subclasses can override an ancestor's choices by getting their
++            # own accessor (an inherited accessor should not prevent a child
++            # class from receiving a new one for its different choices).
++            if method_name not in cls.__dict__:
+                 setattr(
+                     cls,
+-                    'get_%s_display' % self.name,
++                    method_name,
+                     partialmethod(cls._get_FIELD_display, field=self),
+                 )
+ 

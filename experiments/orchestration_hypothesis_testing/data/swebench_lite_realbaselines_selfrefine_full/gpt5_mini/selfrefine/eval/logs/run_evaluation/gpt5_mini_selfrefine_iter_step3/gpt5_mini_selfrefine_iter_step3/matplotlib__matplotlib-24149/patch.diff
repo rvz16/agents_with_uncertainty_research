@@ -1,0 +1,20 @@
+--- a/lib/matplotlib/axes/_axes.py
++++ b/lib/matplotlib/axes/_axes.py
+@@ -2182,11 +2182,17 @@
+                 x0 = cbook._safe_first_finite(x0)
+             except (TypeError, IndexError, KeyError):
+                 pass
++            except StopIteration:
++                # No finite element found; fall back to the first element.
++                x0 = cbook.safe_first_element(x0)
+ 
+             try:
+                 x = cbook._safe_first_finite(xconv)
+             except (TypeError, IndexError, KeyError):
+                 x = xconv
++            except StopIteration:
++                # No finite element found; fall back to the first element.
++                x = cbook.safe_first_element(xconv)
+ 
+             delist = False
+             if not np.iterable(dx):

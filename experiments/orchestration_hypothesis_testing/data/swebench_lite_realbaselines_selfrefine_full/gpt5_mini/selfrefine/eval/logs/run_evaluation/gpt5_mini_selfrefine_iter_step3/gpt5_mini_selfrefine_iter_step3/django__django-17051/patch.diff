@@ -1,0 +1,32 @@
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -812,7 +812,7 @@
+                 connection = connections[self.db]
+                 if (
+                     connection.features.can_return_rows_from_bulk_insert
+-                    and on_conflict is None
++                    and (on_conflict is None or on_conflict == OnConflict.UPDATE)
+                 ):
+                     assert len(returned_columns) == len(objs_without_pk)
+                 for obj_without_pk, results in zip(objs_without_pk, returned_columns):
+@@ -1837,12 +1837,19 @@
+         inserted_rows = []
+         bulk_return = connection.features.can_return_rows_from_bulk_insert
+         for item in [objs[i : i + batch_size] for i in range(0, len(objs), batch_size)]:
+-            if bulk_return and on_conflict is None:
++            # If the backend can return rows from a bulk insert, request the
++            # returning fields both for plain inserts and for upserts
++            # (ON CONFLICT DO UPDATE), so that callers can have primary keys
++            # and any other db_returning_fields populated.
++            if bulk_return and (on_conflict is None or on_conflict == OnConflict.UPDATE):
+                 inserted_rows.extend(
+                     self._insert(
+                         item,
+                         fields=fields,
+                         using=self.db,
++                        on_conflict=on_conflict,
++                        update_fields=update_fields,
++                        unique_fields=unique_fields,
+                         returning_fields=self.model._meta.db_returning_fields,
+                     )
+                 )

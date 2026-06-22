@@ -1,0 +1,54 @@
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -443,11 +443,46 @@
+             x.appendChild(self._print(arg))
+         return x
+ 
+-    def _print_Basic(self, e):
+-        x = self.dom.createElement(self.mathml_tag(e))
+-        for arg in e.args:
+-            x.appendChild(self._print(arg))
+-        return x
++    def _print_IndexedBase(self, b):
++        """
++        Content MathML representation of an IndexedBase.
++
++        Example:
++            IndexedBase(a) -> <indexedbase>...print(a)...</indexedbase>
++        """
++        x = self.dom.createElement('indexedbase')
++        # Prefer explicit label if present (IndexedBase has .label when created
++        # from a Symbol), otherwise fall back to first arg or the object itself.
++        if hasattr(b, 'label'):
++            x.appendChild(self._print(b.label))
++        elif getattr(b, 'args', None):
++            x.appendChild(self._print(b.args[0]))
++        else:
++            # Fallback to printing the object as text
++            x.appendChild(self.dom.createTextNode(str(b)))
++        return x
++
++    def _print_Indexed(self, i):
++        """
++        Content MathML representation of an Indexed object.
++
++        Example:
++            a[b] -> <indexed> <indexedbase>...a...</indexedbase> <ci>b</ci> </indexed>
++        """
++        x = self.dom.createElement('indexed')
++        # Determine base
++        base = getattr(i, 'base', None)
++        if base is None and getattr(i, 'args', None):
++            base = i.args[0]
++        # Append base
++        x.appendChild(self._print(base))
++        # Determine indices
++        if hasattr(i, 'indices'):
++            indices = i.indices
++        else:
++            # args after the base are the indices
++            indices = i.args[1:] if getattr(i, 'args', None) else ()
++        for
+ 
+     def _print_AssocOp(self, e):
+         x = self.dom.createElement('apply')

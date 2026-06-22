@@ -1,0 +1,15 @@
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -201,7 +201,11 @@
+         # can't use fastpath (yet) for scalars
+         return _maybe_wrap_data(data)
+ 
+-    if isinstance(data, Variable):
++    if isinstance(data, (Variable, xr.DataArray)):
++        # If passed a Variable or a DataArray, extract their backing data
++        # directly. This preserves lazy/back-end arrays (e.g., dask arrays)
++        # instead of falling back to using .values which may trigger
++        # computation.
+         return data.data
+ 
+     if isinstance(data, NON_NUMPY_SUPPORTED_ARRAY_TYPES):

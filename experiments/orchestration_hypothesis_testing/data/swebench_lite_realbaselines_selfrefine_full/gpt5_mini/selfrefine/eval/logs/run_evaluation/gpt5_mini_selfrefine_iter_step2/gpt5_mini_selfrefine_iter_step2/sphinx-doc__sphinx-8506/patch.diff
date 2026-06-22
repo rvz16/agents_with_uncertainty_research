@@ -1,0 +1,16 @@
+--- a/sphinx/domains/std.py
++++ b/sphinx/domains/std.py
+@@ -43,7 +43,12 @@
+ 
+ 
+ # RE for option descriptions
+-option_desc_re = re.compile(r'((?:/|--|-|\+)?[^\s=[]+)(=?\s*.*)')
++# Accept either a bracketed form (like "[enable=]PATTERN") as a whole token
++# or the usual form that splits at the first '=' (like "--opt=VAL" -> "--opt", "=VAL").
++# This preserves older behaviour while allowing option names that include
++# square brackets and '=' inside brackets.
++option_desc_re = re.compile(
++    r'((?:/|--|-|\+)?(?:\[[^\]]*\][^\s]*|[^\s=]+))(=?\s*.*)')
+ # RE for grammar tokens
+ token_re = re.compile(r'`(\w+)`', re.U)
+ 

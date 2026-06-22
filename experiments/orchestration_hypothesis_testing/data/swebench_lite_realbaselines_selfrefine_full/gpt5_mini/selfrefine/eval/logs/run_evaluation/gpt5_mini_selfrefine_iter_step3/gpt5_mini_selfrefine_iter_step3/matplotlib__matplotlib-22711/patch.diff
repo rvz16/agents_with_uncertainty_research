@@ -1,0 +1,61 @@
+--- a/lib/matplotlib/widgets.py
++++ b/lib/matplotlib/widgets.py
+@@ -893,23 +893,45 @@
+         ----------
+         val : tuple or array-like of float
+         """
+-        val = np.sort(val)
++        # Ensure we have a numeric ndarray of shape (2,)
++        val = np.sort(np.asanyarray(val, dtype=float))
+         _api.check_shape((2,), val=val)
+         val[0] = self._min_in_bounds(val[0])
+         val[1] = self._max_in_bounds(val[1])
+-        xy = self.poly.xy
++
++        xy = self.poly.xy.copy()
++        # axvspan/axhspan can create a polygon with 4 vertices (no explicit
++        # closing vertex) or 5 vertices (closing vertex repeats the first).
++        # Handle both cases robustly.
+         if self.orientation == "vertical":
+-            xy[0] = .25, val[0]
+-            xy[1] = .25, val[1]
+-            xy[2] = .75, val[1]
+-            xy[3] = .75, val[0]
+-            xy[4] = .25, val[0]
+-        else:
+-            xy[0] = val[0], .25
+-            xy[1] = val[0], .75
+-            xy[2] = val[1], .75
+-            xy[3] = val[1], .25
+-            xy[4] = val[0], .25
++            xy[0] = (.25, val[0])
++            xy[1] = (.25, val[1])
++            xy[2] = (.75, val[1])
++            xy[3] = (.75, val[0])
++            if xy.shape[0] > 4:
++                xy[4] = (.25, val[0])
++            # Update handle positions (ydata for vertical)
++            try:
++                self._handles[0].set_ydata([val[0]])
++                self._handles[1].set_ydata([val[1]])
++            except Exception:
++                # Be robust if handles are not present for some reason.
++                pass
++        else:
++            xy[0] = (val[0], .25)
++            xy[1] = (val[0], .75)
++            xy[2] = (val[1], .75)
++            xy[3] = (val[1], .25)
++            if xy.shape[0] > 4:
++                xy[4] = (val[0], .25)
++            # Update handle positions (xdata for horizontal)
++            try:
++                self._handles[0].set_xdata([val[0]])
++                self._handles[1].set_xdata([val[1]])
++            except Exception:
++                # Be robust if handles are not present for some reason.
++                pass
++
+         self.poly.xy = xy
+         self.valtext.set_text(self._format(val))
+         if self.drawon:

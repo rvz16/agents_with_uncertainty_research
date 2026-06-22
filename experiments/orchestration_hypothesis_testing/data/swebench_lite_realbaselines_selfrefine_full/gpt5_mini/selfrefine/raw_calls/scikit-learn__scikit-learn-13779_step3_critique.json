@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:55:58.759415+00:00",
+  "instance_id": "scikit-learn__scikit-learn-13779",
+  "step": 3,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nVoting estimator will fail at fit if weights are passed and an estimator is None\nBecause we don't check for an estimator to be `None` in `sample_weight` support, `fit` is failing`.\r\n\r\n```python\r\n    X, y = load_iris(return_X_y=True)\r\n    voter = VotingClassifier(\r\n        estimators=[('lr', LogisticRegression()),\r\n                    ('rf', RandomForestClassifier())]\r\n    )\r\n    voter.fit(X, y, sample_weight=np.ones(y.shape))\r\n    voter.set_params(lr=None)\r\n    voter.fit(X, y, sample_weight=np.ones(y.shape))\r\n```\r\n\r\n```\r\nAttributeError: 'NoneType' object has no attribute 'fit'\r\n```\n\n\n## Your previous patch (diff format)\n```\n--- a/sklearn/ensemble/voting.py\n+++ b/sklearn/ensemble/voting.py\n@@ -78,6 +78,9 @@\n \n         if sample_weight is not None:\n             for name, step in self.estimators:\n+                # Skip estimators that have been set to None via set_params\n+                if step is None:\n+                    continue\n                 if not has_fit_parameter(step, 'sample_weight'):\n                     raise ValueError('Underlying estimator \\'%s\\' does not'\n                                      ' support sample weights.' % name)\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "CRITIQUE_OK",
+  "prompt_tokens": 387,
+  "completion_tokens": 1495,
+  "cost_usd": 0.00308675
+}

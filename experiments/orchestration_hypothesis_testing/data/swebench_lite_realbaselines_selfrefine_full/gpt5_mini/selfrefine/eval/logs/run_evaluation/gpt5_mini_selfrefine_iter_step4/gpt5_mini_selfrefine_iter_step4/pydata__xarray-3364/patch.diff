@@ -1,0 +1,53 @@
+--- a/xarray/core/concat.py
++++ b/xarray/core/concat.py
+@@ -1,4 +1,5 @@
+ import pandas as pd
++import numpy as np
+ 
+ from . import dtypes, utils
+ from .alignment import align
+@@ -311,16 +312,34 @@
+     if variables_to_merge:
+         to_merge = {var: [] for var in variables_to_merge}
+ 
+-        for ds in datasets:
+-            absent_merge_vars = variables_to_merge - set(ds.variables)
+-            if absent_merge_vars:
+-                raise ValueError(
+-                    "variables %r are present in some datasets but not others. "
+-                    % absent_merge_vars
+-                )
+-
+-            for var in variables_to_merge:
+-                to_merge[var].append(ds.variables[var])
++        # For variables that are present in some datasets but not others,
++        # instead of raising, create a missing Variable filled with fill_value
++        # so that unique_variable can handle merging consistently.
++        for var in variables_to_merge:
++            # find a reference variable to infer dims (there should be at least
++            # one since variables_to_merge was derived from the first dataset)
++            ref_var = None
++            for ds in datasets:
++                if var in ds.variables:
++                    ref_var = ds.variables[var]
++                    break
++
++            for ds in datasets:
++                if var in ds.variables:
++                    to_merge[var].append(ds.variables[var])
++                else:
++                    # create a placeholder variable with the same dims as the
++                    # reference variable and sizes taken from dims_sizes
++                    if ref_var is None:
++                        # defensive: shouldn't happen, but create scalar missing var
++                        missing_dims = ()
++                    else:
++                        missing_dims = ref_var.dims
++                    shape = tuple(dims_sizes.get(d, 1) for d in missing_dims)
++                    # create numpy array filled with fill_value
++                    data = np.full(shape, fill_value)
++                    missing_var = Variable(missing_dims, data)
++                    to_merge[var].append(missing_var)
+ 
+         for var in variables_to_merge:
+             result_vars[var] = unique_variable(

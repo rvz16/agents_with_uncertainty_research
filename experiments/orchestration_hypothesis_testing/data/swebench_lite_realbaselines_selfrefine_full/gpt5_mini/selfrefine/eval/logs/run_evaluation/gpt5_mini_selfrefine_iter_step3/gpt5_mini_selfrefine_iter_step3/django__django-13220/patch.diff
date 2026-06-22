@@ -1,0 +1,62 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -179,6 +179,59 @@
+             return repr(dict(self))
+         return repr(list(self))
+ 
++    def __eq__(self, other):
++        """
++        Compare two ValidationError instances for equality.
++
++        Two ValidationErrors are considered equal if they represent the same
++        set of errors. For error lists (including non-field errors), the order
++        of errors does not matter. For error dictionaries, the set of keys
++        must match and the errors for each key are compared as multisets.
++        Each individual error is compared by its (message, code, params).
++        """
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++
++        # Local helper to normalize params into a hashable/comparable form.
++        def _normalize_params(p):
++            if p is None:
++                return None
++            if isinstance(p, dict):
++                return tuple(sorted((k, _normalize_params(v)) for k, v in p.items()))
++            if isinstance(p, (list, tuple)):
++                return tuple(_normalize_params(x) for x in p)
++            if isinstance(p, set):
++                # Sort by repr to produce a stable order for heterogeneous elements.
++                return tuple(sorted((_normalize_params(x) for x in p), key=repr))
++            return p
++
++        # Helper to produce a comparable key for a ValidationError instance
++        def _error_key(err):
++            return (err.message, err.code, _normalize_params(err.params))
++
++        # Import here to avoid module-level import changes.
++        from collections import Counter
++
++        # Both have error_dict -> compare by keys and per-key multisets.
++        if hasattr(self, 'error_dict') and hasattr(other, 'error_dict'):
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for key in self.error_dict:
++                self_counter = Counter(_error_key(e) for e in self.error_dict[key])
++                other_counter = Counter(_error_key(e) for e in other.error_dict[key])
++                if self_counter != other_counter:
++                    return False
++            return True
++
++        # One has error_dict and the other doesn't -> not equal.
++        if hasattr(self, 'error_dict') or hasattr(other, 'error_dict'):
++            return False
++
++        # Compare top-level error lists as multisets (order-insensitive).
++        return Counter(_error_key(e) for e in self.error_list) == Counter(
++            _error_key(e) for e in other.error_list
++        )
++
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+ 

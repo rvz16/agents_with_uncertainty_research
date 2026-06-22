@@ -1,0 +1,26 @@
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -54,8 +54,20 @@
+ 
+ @register(Tags.translation)
+ def check_language_settings_consistent(app_configs, **kwargs):
+-    """Error if language settings are not consistent with each other."""
+-    available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+-    if settings.LANGUAGE_CODE not in available_tags:
++    """Error if language settings are not consistent with each other.
++
++    Allow sublanguages when the base language is available. For example, if
++    LANGUAGE_CODE is "de-at" and "de" is present in LANGUAGES, treat that as
++    valid (Django will fall back to the base language).
++    """
++    # Normalize available language tags to lowercase for comparison.
++    available_tags = {i.lower() for i, _ in settings.LANGUAGES} | {'en-us'}
++    tag = settings.LANGUAGE_CODE
++    if not isinstance(tag, str):
++        return [E004]
++    tag = tag.lower()
++    # Accept either the exact tag (e.g. "de-at") or its base language (e.g. "de").
++    base = tag.split('-', 1)[0]
++    if tag not in available_tags and base not in available_tags:
+         return [E004]
+     return []

@@ -1,0 +1,83 @@
+2026-06-22 20:10:03,937 - INFO - Creating container for django__django-15202...
+2026-06-22 20:10:04,275 - INFO - Container for django__django-15202 created: f4b59b4ba9f0e0c131e4948ab4f32e18a158dc8e56226fb14bc4bddb1d9b871b
+2026-06-22 20:10:04,448 - INFO - Container for django__django-15202 started: f4b59b4ba9f0e0c131e4948ab4f32e18a158dc8e56226fb14bc4bddb1d9b871b
+2026-06-22 20:10:04,448 - INFO - Intermediate patch for django__django-15202 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/django__django-15202/patch.diff, now applying to container...
+2026-06-22 20:10:04,557 - INFO - >>>>> Applied Patch:
+Checking patch django/core/validators.py...
+Applied patch django/core/validators.py cleanly.
+
+2026-06-22 20:10:05,128 - INFO - Git diff before:
+diff --git a/django/core/validators.py b/django/core/validators.py
+index 72fbe15551..ef54d5c43c 100644
+--- a/django/core/validators.py
++++ b/django/core/validators.py
+@@ -127,7 +127,13 @@ class URLValidator(RegexValidator):
+                 raise
+         else:
+             # Now verify IPv6 in the netloc part
+-            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', urlsplit(value).netloc)
++            try:
++                _scheme, _netloc, _path, _query, _fragment = urlsplit(value)
++            except ValueError:
++                # urlsplit may raise ValueError for malformed IPv6 URLs, translate
++                # that into a ValidationError so form validation behaves correctly.
++                raise ValidationError(self.message, code=self.code, params={'value': value})
++            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', _netloc)
+             if host_match:
+                 potential_ip = host_match[1]
+                 try:
+@@ -139,7 +145,12 @@ class URLValidator(RegexValidator):
+         # section 3.1. It's defined to be 255 bytes or less, but this includes
+         # one byte for the length of the name and one byte for the trailing dot
+         # that's used to indicate absolute names in DNS.
+-        if len(urlsplit(value).hostname) > 253:
++        try:
++            _hostname = urlsplit(value).hostname
++        except ValueError:
++            # As above, convert parsing errors into ValidationError.
++            raise ValidationError(self.message, code=self.code, params={'value': value})
++        if _hostname and len(_hostname) > 253:
+             raise ValidationError(self.message, code=self.code, params={'value': value})
+2026-06-22 20:10:05,128 - INFO - Eval script for django__django-15202 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/django__django-15202/eval.sh; copying to container...
+2026-06-22 20:10:10,922 - INFO - Test runtime: 5.74 seconds
+2026-06-22 20:10:10,922 - INFO - Test output for django__django-15202 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/django__django-15202/test_output.txt
+2026-06-22 20:10:10,968 - INFO - Git diff after:
+diff --git a/django/core/validators.py b/django/core/validators.py
+index 72fbe15551..ef54d5c43c 100644
+--- a/django/core/validators.py
++++ b/django/core/validators.py
+@@ -127,7 +127,13 @@ class URLValidator(RegexValidator):
+                 raise
+         else:
+             # Now verify IPv6 in the netloc part
+-            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', urlsplit(value).netloc)
++            try:
++                _scheme, _netloc, _path, _query, _fragment = urlsplit(value)
++            except ValueError:
++                # urlsplit may raise ValueError for malformed IPv6 URLs, translate
++                # that into a ValidationError so form validation behaves correctly.
++                raise ValidationError(self.message, code=self.code, params={'value': value})
++            host_match = re.search(r'^\[(.+)\](?::\d{1,5})?$', _netloc)
+             if host_match:
+                 potential_ip = host_match[1]
+                 try:
+@@ -139,7 +145,12 @@ class URLValidator(RegexValidator):
+         # section 3.1. It's defined to be 255 bytes or less, but this includes
+         # one byte for the length of the name and one byte for the trailing dot
+         # that's used to indicate absolute names in DNS.
+-        if len(urlsplit(value).hostname) > 253:
++        try:
++            _hostname = urlsplit(value).hostname
++        except ValueError:
++            # As above, convert parsing errors into ValidationError.
++            raise ValidationError(self.message, code=self.code, params={'value': value})
++        if _hostname and len(_hostname) > 253:
+             raise ValidationError(self.message, code=self.code, params={'value': value})
+2026-06-22 20:10:10,969 - INFO - Grading answer for django__django-15202...
+2026-06-22 20:10:10,969 - INFO - report: {'django__django-15202': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_urlfield_clean_invalid (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_clean_not_required (forms_tests.field_tests.test_urlfield.URLFieldTest)']}, 'PASS_TO_PASS': {'success': ['test_urlfield_clean (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_clean_required (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_strip_on_none_value (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_unable_to_set_strip_kwarg (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_widget (forms_tests.field_tests.test_urlfield.URLFieldTest)', 'test_urlfield_widget_max_min_length (forms_tests.field_tests.test_urlfield.URLFieldTest)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15202: resolved: False
+2026-06-22 20:10:10,969 - INFO - Attempting to stop container sweb.eval.django__django-15202.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:10:26,195 - INFO - Attempting to remove container sweb.eval.django__django-15202.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 20:10:26,218 - INFO - Container sweb.eval.django__django-15202.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 20:10:26,218 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15202:latest...
+2026-06-22 20:10:26,407 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15202:latest removed.

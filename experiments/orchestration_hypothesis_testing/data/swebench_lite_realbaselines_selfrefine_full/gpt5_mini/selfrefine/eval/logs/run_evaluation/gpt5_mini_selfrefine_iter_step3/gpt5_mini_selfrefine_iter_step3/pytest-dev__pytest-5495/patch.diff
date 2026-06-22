@@ -1,0 +1,15 @@
+--- a/src/_pytest/assertion/util.py
++++ b/src/_pytest/assertion/util.py
+@@ -125,7 +125,11 @@
+     explanation = None
+     try:
+         if op == "==":
+-            if istext(left) and istext(right):
++            if (istext(left) and istext(right)) or (
++                isinstance(left, (bytes, bytearray)) and isinstance(right, (bytes, bytearray))
++            ):
++                # Use the text/bytes diff routine for both str and bytes-like
++                # objects so we get readable diffs for binary sequences
+                 explanation = _diff_text(left, right, verbose)
+             else:
+                 if issequence(left) and issequence(right):

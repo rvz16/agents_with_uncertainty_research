@@ -1,0 +1,39 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -9,6 +9,7 @@
+ 
+ import collections
+ import datetime
++import socket
+ 
+ from io import BytesIO, UnsupportedOperation
+ from .hooks import default_hooks
+@@ -22,7 +23,7 @@
+ from .packages.urllib3.exceptions import DecodeError
+ from .exceptions import (
+     HTTPError, RequestException, MissingSchema, InvalidURL,
+-    ChunkedEncodingError, ContentDecodingError)
++    ChunkedEncodingError, ContentDecodingError, ConnectionError)
+ from .utils import (
+     guess_filename, get_auth_from_url, requote_uri,
+     stream_decode_response_unicode, to_key_val_list, parse_header_links,
+@@ -643,10 +644,18 @@
+             except AttributeError:
+                 # Standard file-like object.
+                 while True:
+-                    chunk = self.raw.read(chunk_size)
++                    try:
++                        chunk = self.raw.read(chunk_size)
++                    except socket.error as e:
++                        # Wrap low-level socket errors in Requests' ConnectionError.
++                        raise ConnectionError(e)
+                     if not chunk:
+                         break
+                     yield chunk
++            except socket.error as e:
++                # Any socket-level errors from urllib3/raw.stream should be
++                # wrapped in Requests' ConnectionError.
++                raise ConnectionError(e)
+ 
+             self._content_consumed = True
+ 

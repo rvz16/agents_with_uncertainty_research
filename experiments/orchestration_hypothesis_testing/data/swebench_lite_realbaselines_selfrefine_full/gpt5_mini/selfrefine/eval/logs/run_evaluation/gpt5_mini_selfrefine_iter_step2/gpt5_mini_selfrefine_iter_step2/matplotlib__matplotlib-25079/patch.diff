@@ -1,0 +1,18 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1691,8 +1691,14 @@
+                 clip = self.clip
+             if clip:
+                 value = np.clip(value, self.vmin, self.vmax)
++            # Ensure vmin and vmax are converted to numeric scalars using the
++            # same rules as process_value. This avoids passing masked / non-numeric
++            # objects to the scale transform which could produce non-finite
++            # transformed extrema and spuriously raise "Invalid vmin or vmax".
++            (vmin,), _ = self.process_value(self.vmin)
++            (vmax,), _ = self.process_value(self.vmax)
+             t_value = self._trf.transform(value).reshape(np.shape(value))
+-            t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++            t_vmin, t_vmax = self._trf.transform([vmin, vmax])
+             if not np.isfinite([t_vmin, t_vmax]).all():
+                 raise ValueError("Invalid vmin or vmax")
+             t_value -= t_vmin

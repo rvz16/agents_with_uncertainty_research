@@ -1,0 +1,93 @@
+2026-06-22 18:02:21,641 - INFO - Creating container for django__django-11742...
+2026-06-22 18:02:21,809 - INFO - Container for django__django-11742 created: 9799aea9e2208eb6d96a0ae6f789982207fd2af2fb7df9fa0c07dbc3e61c6cb7
+2026-06-22 18:02:22,014 - INFO - Container for django__django-11742 started: 9799aea9e2208eb6d96a0ae6f789982207fd2af2fb7df9fa0c07dbc3e61c6cb7
+2026-06-22 18:02:22,014 - INFO - Intermediate patch for django__django-11742 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-11742/patch.diff, now applying to container...
+2026-06-22 18:02:22,153 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/fields/__init__.py...
+Applied patch django/db/models/fields/__init__.py cleanly.
+
+2026-06-22 18:02:22,556 - INFO - Git diff before:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..62276b6ca2 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -280,6 +280,31 @@ class Field(RegisterLookupMixin):
+             if isinstance(choices_group, str):
+                 break
+         else:
++            # After validating the structure of choices, ensure that if
++            # max_length is provided it can accommodate the longest stored
++            # choice value. Only string-like stored values are checked;
++            # other types (e.g. integers) are skipped since their DB storage
++            # may not be character-based.
++            if self.choices and getattr(self, 'max_length', None) is not None:
++                try:
++                    max_length = int(self.max_length)
++                except Exception:
++                    max_length = None
++                if max_length is not None and max_length > 0:
++                    for choice_value, _ in self.flatchoices:
++                        # Skip values we cannot determine length for (promises)
++                        if isinstance(choice_value, Promise):
++                            continue
++                        # Only check actual strings; other types are ignored.
++                        if isinstance(choice_value, str) and len(choice_value) > max_length:
++                            return [
++                                checks.Error(
++                                    "'max_length' must be large enough to store the longest value in 'choices'.",
++                                    hint="Either shorten the longest choice value or increase 'max_length'.",
++                                    obj=self,
++                                    id='fields.E124',
++                                )
++                            ]
+             return []
+ 
+         return [
+2026-06-22 18:02:22,556 - INFO - Eval script for django__django-11742 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-11742/eval.sh; copying to container...
+2026-06-22 18:02:35,556 - INFO - Test runtime: 12.95 seconds
+2026-06-22 18:02:35,556 - INFO - Test output for django__django-11742 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-11742/test_output.txt
+2026-06-22 18:02:35,601 - INFO - Git diff after:
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3f73..62276b6ca2 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -280,6 +280,31 @@ class Field(RegisterLookupMixin):
+             if isinstance(choices_group, str):
+                 break
+         else:
++            # After validating the structure of choices, ensure that if
++            # max_length is provided it can accommodate the longest stored
++            # choice value. Only string-like stored values are checked;
++            # other types (e.g. integers) are skipped since their DB storage
++            # may not be character-based.
++            if self.choices and getattr(self, 'max_length', None) is not None:
++                try:
++                    max_length = int(self.max_length)
++                except Exception:
++                    max_length = None
++                if max_length is not None and max_length > 0:
++                    for choice_value, _ in self.flatchoices:
++                        # Skip values we cannot determine length for (promises)
++                        if isinstance(choice_value, Promise):
++                            continue
++                        # Only check actual strings; other types are ignored.
++                        if isinstance(choice_value, str) and len(choice_value) > max_length:
++                            return [
++                                checks.Error(
++                                    "'max_length' must be large enough to store the longest value in 'choices'.",
++                                    hint="Either shorten the longest choice value or increase 'max_length'.",
++                                    obj=self,
++                                    id='fields.E124',
++                                )
++                            ]
+             return []
+ 
+         return [
+2026-06-22 18:02:35,601 - INFO - Grading answer for django__django-11742...
+2026-06-22 18:02:35,602 - INFO - report: {'django__django-11742': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_choices_in_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group (invalid_models_tests.test_ordinary_fields.CharFieldTests)']}, 'PASS_TO_PASS': {'success': ['test_non_nullable_blank (invalid_models_tests.test_ordinary_fields.GenericIPAddressFieldTests)', 'test_forbidden_files_and_folders (invalid_models_tests.test_ordinary_fields.FilePathFieldTests)', 'test_max_length_warning (invalid_models_tests.test_ordinary_fields.IntegerFieldTests)', 'test_primary_key (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_upload_to_callable_not_checked (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_upload_to_starts_with_slash (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_valid_case (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_valid_default_case (invalid_models_tests.test_ordinary_fields.FileFieldTests)', 'test_str_default_value (invalid_models_tests.test_ordinary_fields.BinaryFieldTests)', 'test_valid_default_value (invalid_models_tests.test_ordinary_fields.BinaryFieldTests)', 'test_max_length_warning (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_primary_key (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_valid_case (invalid_models_tests.test_ordinary_fields.AutoFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.DateTimeFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.DateTimeFieldTests)', 'test_auto_now_and_auto_now_add_raise_error (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.DateFieldTests)', 'test_fix_default_value (invalid_models_tests.test_ordinary_fields.TimeFieldTests)', 'test_fix_default_value_tz (invalid_models_tests.test_ordinary_fields.TimeFieldTests)', 'test_bad_values_of_max_digits_and_decimal_places (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_decimal_places_greater_than_max_digits (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_negative_max_digits_and_decimal_places (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_required_attributes (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_valid_field (invalid_models_tests.test_ordinary_fields.DecimalFieldTests)', 'test_bad_db_index_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_bad_max_length_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_bad_validators (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_containing_lazy (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_containing_non_pairs (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_bad_structure (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_lazy (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_choices_named_group_non_pairs (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_iterable_of_iterable_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_lazy_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_missing_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_negative_max_length (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_non_iterable_choices (invalid_models_tests.test_ordinary_fields.CharFieldTests)', "Two letters isn't a valid choice pair.", 'test_str_max_length_type (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_str_max_length_value (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_valid_field (invalid_models_tests.test_ordinary_fields.CharFieldTests)', 'test_pillow_installed (invalid_models_tests.test_ordinary_fields.ImageFieldTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11742: resolved: False
+2026-06-22 18:02:35,602 - INFO - Attempting to stop container sweb.eval.django__django-11742.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:02:50,938 - INFO - Attempting to remove container sweb.eval.django__django-11742.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:02:50,973 - INFO - Container sweb.eval.django__django-11742.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 18:02:50,973 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11742:latest...
+2026-06-22 18:02:51,152 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11742:latest removed.

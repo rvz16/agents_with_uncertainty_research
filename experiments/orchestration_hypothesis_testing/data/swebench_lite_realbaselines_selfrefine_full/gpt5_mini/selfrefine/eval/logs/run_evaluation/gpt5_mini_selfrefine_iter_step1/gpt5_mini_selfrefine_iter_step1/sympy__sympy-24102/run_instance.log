@@ -1,0 +1,55 @@
+2026-06-22 15:38:42,493 - INFO - Creating container for sympy__sympy-24102...
+2026-06-22 15:38:42,597 - INFO - Container for sympy__sympy-24102 created: 30e2998e498767beac2c0e4f4c12905221991e381856b1478fb3766409c5d74b
+2026-06-22 15:38:42,772 - INFO - Container for sympy__sympy-24102 started: 30e2998e498767beac2c0e4f4c12905221991e381856b1478fb3766409c5d74b
+2026-06-22 15:38:42,772 - INFO - Intermediate patch for sympy__sympy-24102 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-24102/patch.diff, now applying to container...
+2026-06-22 15:38:42,889 - INFO - >>>>> Applied Patch:
+Checking patch sympy/parsing/mathematica.py...
+Applied patch sympy/parsing/mathematica.py cleanly.
+
+2026-06-22 15:38:43,195 - INFO - Git diff before:
+diff --git a/sympy/parsing/mathematica.py b/sympy/parsing/mathematica.py
+index 7ea14ce33a..4164d86855 100644
+--- a/sympy/parsing/mathematica.py
++++ b/sympy/parsing/mathematica.py
+@@ -586,7 +586,11 @@ def parse(self, s):
+         "##": lambda: ["SlotSequence", "1"],
+     }
+ 
+-    _literal = r"[A-Za-z][A-Za-z0-9]*"
++    # allow Unicode letters (including Greek) as initial characters of identifiers,
++    # and allow subsequent characters to be letters or digits (but not underscore)
++    # [^\W\d_] matches any Unicode letter (it is equivalent to \p{L} using Python's
++    # character classes), and [^\W_] matches letters or digits (no underscore).
++    _literal = r"(?:[^\W\d_][^\W_]*)"
+     _number = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+ 
+     _enclosure_open = ["(", "[", "[[", "{"]
+2026-06-22 15:38:43,195 - INFO - Eval script for sympy__sympy-24102 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-24102/eval.sh; copying to container...
+2026-06-22 15:38:45,934 - INFO - Test runtime: 2.71 seconds
+2026-06-22 15:38:45,935 - INFO - Test output for sympy__sympy-24102 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/sympy__sympy-24102/test_output.txt
+2026-06-22 15:38:45,971 - INFO - Git diff after:
+diff --git a/sympy/parsing/mathematica.py b/sympy/parsing/mathematica.py
+index 7ea14ce33a..4164d86855 100644
+--- a/sympy/parsing/mathematica.py
++++ b/sympy/parsing/mathematica.py
+@@ -586,7 +586,11 @@ def parse(self, s):
+         "##": lambda: ["SlotSequence", "1"],
+     }
+ 
+-    _literal = r"[A-Za-z][A-Za-z0-9]*"
++    # allow Unicode letters (including Greek) as initial characters of identifiers,
++    # and allow subsequent characters to be letters or digits (but not underscore)
++    # [^\W\d_] matches any Unicode letter (it is equivalent to \p{L} using Python's
++    # character classes), and [^\W_] matches letters or digits (no underscore).
++    _literal = r"(?:[^\W\d_][^\W_]*)"
+     _number = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+ 
+     _enclosure_open = ["(", "[", "[[", "{"]
+2026-06-22 15:38:45,971 - INFO - Grading answer for sympy__sympy-24102...
+2026-06-22 15:38:45,971 - INFO - report: {'sympy__sympy-24102': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_parser_mathematica_tokenizer'], 'failure': ['test_mathematica']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-24102: resolved: False
+2026-06-22 15:38:45,971 - INFO - Attempting to stop container sweb.eval.sympy__sympy-24102.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:39:01,169 - INFO - Attempting to remove container sweb.eval.sympy__sympy-24102.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:39:01,186 - INFO - Container sweb.eval.sympy__sympy-24102.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:39:01,186 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-24102:latest...
+2026-06-22 15:39:01,765 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-24102:latest removed.

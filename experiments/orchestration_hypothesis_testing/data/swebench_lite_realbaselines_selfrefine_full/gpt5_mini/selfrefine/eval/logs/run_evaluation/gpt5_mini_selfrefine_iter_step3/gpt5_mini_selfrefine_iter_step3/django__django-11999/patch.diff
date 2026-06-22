@@ -1,0 +1,18 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -763,8 +763,13 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            setattr(cls, 'get_%s_display' % self.name,
+-                    partialmethod(cls._get_FIELD_display, field=self))
++            # Only add the convenience get_<field>_display method if the model
++            # (or its bases) doesn't already provide one. This allows users to
++            # override get_<field>_display() on their model classes without
++            # having it clobbered by Field.contribute_to_class().
++            name = 'get_%s_display' % self.name
++            if not hasattr(cls, name):
++                setattr(cls, name, partialmethod(cls._get_FIELD_display, field=self))
+ 
+     def get_filter_kwargs_for_object(self, obj):
+         """

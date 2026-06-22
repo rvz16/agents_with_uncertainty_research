@@ -1,0 +1,13 @@
+--- a/django/forms/formsets.py
++++ b/django/forms/formsets.py
+@@ -31,6 +31,10 @@
+     new forms via JavaScript, you should increment the count field of this form
+     as well.
+     """
++    # ManagementForm is only used to render hidden management inputs. To avoid
++    # triggering the deprecation warning for the default form template, use
++    # the formsets div template which is suitable for this purpose.
++    template_name = "django/forms/formsets/div.html"
+ 
+     TOTAL_FORMS = IntegerField(widget=HiddenInput)
+     INITIAL_FORMS = IntegerField(widget=HiddenInput)

@@ -1,0 +1,10 @@
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1210,6 +1210,7 @@
+     def check(self, **kwargs):
+         return [
+             *super().check(**kwargs),
++            *self._check_symmetrical_related_name(**kwargs),
+             *self._check_unique(**kwargs),
+             *self._check_relationship_model(**kwargs),
+             *self._check_ignored_options(**kwargs),

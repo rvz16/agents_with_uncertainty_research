@@ -1,0 +1,32 @@
+--- a/sympy/matrices/sparse.py
++++ b/sympy/matrices/sparse.py
+@@ -1006,6 +1006,14 @@
+         A.rows += B.rows
+         return A
+ 
++    def _eval_col_join(self, other):
++        """
++        Internal API for joining columns (i.e. appending rows).  CommonMatrix
++        and other internal machinery may call _eval_col_join; provide a
++        compatiblity wrapper that delegates to the public col_join implementation.
++        """
++        return self.col_join(other)
++
+     def col_op(self, j, f):
+         """In-place operation on col j using two-arg functor whose args are
+         interpreted as (self[i, j], i) for i in range(self.rows).
+@@ -1212,6 +1220,14 @@
+         A.cols += B.cols
+         return A
+ 
++    def _eval_row_join(self, other):
++        """
++        Internal API for joining rows (i.e. appending columns).  CommonMatrix
++        and other internal machinery may call _eval_row_join; provide a
++        compatiblity wrapper that delegates to the public row_join implementation.
++        """
++        return self.row_join(other)
++
+     def row_op(self, i, f):
+         """In-place operation on row ``i`` using two-arg functor whose args are
+         interpreted as ``(self[i, j], j)``.

@@ -1,0 +1,25 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -3027,9 +3027,21 @@
+         state['__mpl_version__'] = mpl.__version__
+ 
+         # check whether the figure manager (if any) is registered with pyplot
++        # On some GUI backends (notably MacOSX with HiDPI scaling) restoring
++        # the figure to pylab can cause the backend to adjust the figure DPI
++        # again, resulting in DPI being doubled on repeated unpickling.
++        # Avoid automatic re-attachment for backends that may apply device
++        # pixel ratio scaling on canvas creation.
+         from matplotlib import _pylab_helpers
++        try:
++            backend_name = mpl.get_backend()
++        except Exception:
++            backend_name = None
+         if self.canvas.manager in _pylab_helpers.Gcf.figs.values():
+-            state['_restore_to_pylab'] = True
++            # Only automatically restore to pylab for backends other than
++            # MacOSX to avoid DPI doubling on unpickle/restore. See issue.
++            if backend_name != 'MacOSX':
++                state['_restore_to_pylab'] = True
+         return state
+ 
+     def __setstate__(self, state):

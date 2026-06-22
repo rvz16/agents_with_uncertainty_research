@@ -1,0 +1,91 @@
+2026-06-22 18:56:52,329 - INFO - Creating container for sphinx-doc__sphinx-11445...
+2026-06-22 18:56:52,437 - INFO - Container for sphinx-doc__sphinx-11445 created: e953499760e627d5e516ed87d94551ded3de379043f4c0aa209f8f77ac750574
+2026-06-22 18:56:52,611 - INFO - Container for sphinx-doc__sphinx-11445 started: e953499760e627d5e516ed87d94551ded3de379043f4c0aa209f8f77ac750574
+2026-06-22 18:56:52,613 - INFO - Intermediate patch for sphinx-doc__sphinx-11445 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sphinx-doc__sphinx-11445/patch.diff, now applying to container...
+2026-06-22 18:56:52,736 - INFO - >>>>> Applied Patch:
+Checking patch sphinx/util/rst.py...
+Applied patch sphinx/util/rst.py cleanly.
+
+2026-06-22 18:56:52,945 - INFO - Git diff before:
+diff --git a/sphinx/util/rst.py b/sphinx/util/rst.py
+index 7a1538325..d0b066b56 100644
+--- a/sphinx/util/rst.py
++++ b/sphinx/util/rst.py
+@@ -79,8 +79,23 @@ def prepend_prolog(content: StringList, prolog: str) -> None:
+     """Prepend a string to content body as prolog."""
+     if prolog:
+         pos = 0
+-        for line in content:
++        # Count leading docinfo-like lines, but avoid confusing a title line like
++        # ':mod:`name`' followed by an underline (e.g. '====') with docinfo.
++        for i, line in enumerate(content):
+             if docinfo_re.match(line):
++                # look ahead to see if this is actually a title followed by an
++                # underline (section adornment). If so, stop treating it as
++                # docinfo to avoid inserting the prolog between the title and
++                # its underline.
++                next_line = content[i + 1] if i + 1 < len(content) else ''
++                next_line_stripped = next_line.strip()
++                # A section underline is typically a line consisting only of
++                # punctuation characters (no alphanumerics or whitespace) and its
++                # length is at least as long as the title text.
++                if (next_line_stripped and
++                        re.match(r'^[^\w\s]+$', next_line_stripped) and
++                        len(next_line_stripped) >= len(line.strip())):
++                    break
+                 pos += 1
+             else:
+                 break
+@@ -94,6 +109,7 @@ def prepend_prolog(content: StringList, prolog: str) -> None:
+         for lineno, line in enumerate(prolog.splitlines()):
+             content.insert(pos + lineno, line, '<rst_prolog>', lineno)
+ 
++        # ensure a blank line after the prolog
+         content.insert(pos + lineno + 1, '', '<generated>', 0)
+2026-06-22 18:56:52,945 - INFO - Eval script for sphinx-doc__sphinx-11445 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sphinx-doc__sphinx-11445/eval.sh; copying to container...
+2026-06-22 18:56:55,850 - INFO - Test runtime: 2.85 seconds
+2026-06-22 18:56:55,850 - INFO - Test output for sphinx-doc__sphinx-11445 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/sphinx-doc__sphinx-11445/test_output.txt
+2026-06-22 18:56:55,888 - INFO - Git diff after:
+diff --git a/sphinx/util/rst.py b/sphinx/util/rst.py
+index 7a1538325..d0b066b56 100644
+--- a/sphinx/util/rst.py
++++ b/sphinx/util/rst.py
+@@ -79,8 +79,23 @@ def prepend_prolog(content: StringList, prolog: str) -> None:
+     """Prepend a string to content body as prolog."""
+     if prolog:
+         pos = 0
+-        for line in content:
++        # Count leading docinfo-like lines, but avoid confusing a title line like
++        # ':mod:`name`' followed by an underline (e.g. '====') with docinfo.
++        for i, line in enumerate(content):
+             if docinfo_re.match(line):
++                # look ahead to see if this is actually a title followed by an
++                # underline (section adornment). If so, stop treating it as
++                # docinfo to avoid inserting the prolog between the title and
++                # its underline.
++                next_line = content[i + 1] if i + 1 < len(content) else ''
++                next_line_stripped = next_line.strip()
++                # A section underline is typically a line consisting only of
++                # punctuation characters (no alphanumerics or whitespace) and its
++                # length is at least as long as the title text.
++                if (next_line_stripped and
++                        re.match(r'^[^\w\s]+$', next_line_stripped) and
++                        len(next_line_stripped) >= len(line.strip())):
++                    break
+                 pos += 1
+             else:
+                 break
+@@ -94,6 +109,7 @@ def prepend_prolog(content: StringList, prolog: str) -> None:
+         for lineno, line in enumerate(prolog.splitlines()):
+             content.insert(pos + lineno, line, '<rst_prolog>', lineno)
+ 
++        # ensure a blank line after the prolog
+         content.insert(pos + lineno + 1, '', '<generated>', 0)
+2026-06-22 18:56:55,888 - INFO - Grading answer for sphinx-doc__sphinx-11445...
+2026-06-22 18:56:55,889 - INFO - report: {'sphinx-doc__sphinx-11445': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/test_util_rst.py::test_prepend_prolog_with_roles_in_sections_with_newline', 'tests/test_util_rst.py::test_prepend_prolog_with_roles_in_sections_without_newline'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/test_util_rst.py::test_escape', 'tests/test_util_rst.py::test_append_epilog', 'tests/test_util_rst.py::test_prepend_prolog', 'tests/test_util_rst.py::test_prepend_prolog_with_CR', 'tests/test_util_rst.py::test_prepend_prolog_without_CR', 'tests/test_util_rst.py::test_prepend_prolog_with_roles_in_sections', 'tests/test_util_rst.py::test_textwidth', 'tests/test_util_rst.py::test_heading'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sphinx-doc__sphinx-11445: resolved: True
+2026-06-22 18:56:55,889 - INFO - Attempting to stop container sweb.eval.sphinx-doc__sphinx-11445.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:57:11,147 - INFO - Attempting to remove container sweb.eval.sphinx-doc__sphinx-11445.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:57:11,167 - INFO - Container sweb.eval.sphinx-doc__sphinx-11445.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 18:57:11,167 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-11445:latest...
+2026-06-22 18:57:11,499 - INFO - Image swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-11445:latest removed.

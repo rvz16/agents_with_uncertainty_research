@@ -1,0 +1,83 @@
+2026-06-22 17:09:51,296 - INFO - Creating container for sympy__sympy-22714...
+2026-06-22 17:09:51,412 - INFO - Container for sympy__sympy-22714 created: 3cd495ab70fa375f187fe5b943debe500e97ba13dbb8d44d0b73c7846b10926d
+2026-06-22 17:09:51,566 - INFO - Container for sympy__sympy-22714 started: 3cd495ab70fa375f187fe5b943debe500e97ba13dbb8d44d0b73c7846b10926d
+2026-06-22 17:09:51,566 - INFO - Intermediate patch for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-22714/patch.diff, now applying to container...
+2026-06-22 17:09:51,732 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-22 17:09:52,013 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 73c20334d0..de33ec9416 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,8 +152,25 @@ def __new__(cls, *args, **kwargs):
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
+-            raise ValueError('Imaginary coordinates are not permitted.')
++        # Reject coordinates with non-zero imaginary part.
++        # Prefer using the `is_real` property when possible to avoid
++        # calling `im(...)` eagerly which can trigger unexpected
++        # evaluation (for example under evaluate(False)).
++        for a in coords:
++            if a.is_number:
++                # If it's explicitly not real, reject.
++                if a.is_real is False:
++                    raise ValueError('Imaginary coordinates are not permitted.')
++                # If undecidable, try to inspect the imaginary part
++                # but guard against any errors and be conservative.
++                if a.is_real is None:
++                    try:
++                        if im(a) != 0:
++                            raise ValueError('Imaginary coordinates are not permitted.')
++                    except Exception:
++                        # If we cannot determine the imaginary part, allow it
++                        # to pass for now; other checks may catch invalid types.
++                        pass
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+2026-06-22 17:09:52,013 - INFO - Eval script for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-22714/eval.sh; copying to container...
+2026-06-22 17:09:58,916 - INFO - Test runtime: 6.86 seconds
+2026-06-22 17:09:58,917 - INFO - Test output for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/sympy__sympy-22714/test_output.txt
+2026-06-22 17:09:58,970 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 73c20334d0..de33ec9416 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,8 +152,25 @@ def __new__(cls, *args, **kwargs):
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
+-            raise ValueError('Imaginary coordinates are not permitted.')
++        # Reject coordinates with non-zero imaginary part.
++        # Prefer using the `is_real` property when possible to avoid
++        # calling `im(...)` eagerly which can trigger unexpected
++        # evaluation (for example under evaluate(False)).
++        for a in coords:
++            if a.is_number:
++                # If it's explicitly not real, reject.
++                if a.is_real is False:
++                    raise ValueError('Imaginary coordinates are not permitted.')
++                # If undecidable, try to inspect the imaginary part
++                # but guard against any errors and be conservative.
++                if a.is_real is None:
++                    try:
++                        if im(a) != 0:
++                            raise ValueError('Imaginary coordinates are not permitted.')
++                    except Exception:
++                        # If we cannot determine the imaginary part, allow it
++                        # to pass for now; other checks may catch invalid types.
++                        pass
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+2026-06-22 17:09:58,970 - INFO - Grading answer for sympy__sympy-22714...
+2026-06-22 17:09:58,970 - INFO - report: {'sympy__sympy-22714': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_22684'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_point', 'test_point3D', 'test_Point2D', 'test_issue_9214', 'test_issue_11617', 'test_transform', 'test_concyclic_doctest_bug', 'test_arguments', 'test_unit', 'test_dot', 'test__normalize_dimension'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-22714: resolved: True
+2026-06-22 17:09:58,970 - INFO - Attempting to stop container sweb.eval.sympy__sympy-22714.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:10:14,160 - INFO - Attempting to remove container sweb.eval.sympy__sympy-22714.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 17:10:14,182 - INFO - Container sweb.eval.sympy__sympy-22714.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 17:10:14,182 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest...
+2026-06-22 17:10:14,232 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest removed.

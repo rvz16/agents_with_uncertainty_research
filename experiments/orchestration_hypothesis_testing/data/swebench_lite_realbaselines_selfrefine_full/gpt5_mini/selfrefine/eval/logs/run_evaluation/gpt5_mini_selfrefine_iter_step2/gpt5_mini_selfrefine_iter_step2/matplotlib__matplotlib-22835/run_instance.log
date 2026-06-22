@@ -1,0 +1,107 @@
+2026-06-22 16:21:07,271 - INFO - Creating container for matplotlib__matplotlib-22835...
+2026-06-22 16:21:07,913 - INFO - Container for matplotlib__matplotlib-22835 created: b4793dda340978383b539bd6f43376b80ebdec3e36bdd547a1eb88fec531de88
+2026-06-22 16:21:08,071 - INFO - Container for matplotlib__matplotlib-22835 started: b4793dda340978383b539bd6f43376b80ebdec3e36bdd547a1eb88fec531de88
+2026-06-22 16:21:08,071 - INFO - Intermediate patch for matplotlib__matplotlib-22835 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-22835/patch.diff, now applying to container...
+2026-06-22 16:21:08,187 - INFO - >>>>> Applied Patch:
+Checking patch lib/matplotlib/artist.py...
+Applied patch lib/matplotlib/artist.py cleanly.
+
+2026-06-22 16:21:09,298 - INFO - Git diff before:
+diff --git a/lib/matplotlib/artist.py b/lib/matplotlib/artist.py
+index 1f33b9d3ec..67fc97cff5 100644
+--- a/lib/matplotlib/artist.py
++++ b/lib/matplotlib/artist.py
+@@ -1304,10 +1304,34 @@ class Artist:
+             normed = self.norm(data)
+             if np.isfinite(normed):
+                 # Midpoints of neighboring color intervals.
+-                neighbors = self.norm.inverse(
+-                    (int(self.norm(data) * n) + np.array([0, 1])) / n)
+-                delta = abs(neighbors - data).max()
+-                g_sig_digits = cbook._g_sig_digits(data, delta)
++                try:
++                    neighbors = self.norm.inverse(
++                        (int(normed * n) + np.array([0, 1])) / n)
++                    delta = abs(neighbors - data).max()
++                    g_sig_digits = cbook._g_sig_digits(data, delta)
++                except ValueError:
++                    # Handle non-invertible norms (e.g., BoundaryNorm) by
++                    # falling back to adjacent boundaries when available.
++                    if isinstance(self.norm, mpl.colors.BoundaryNorm):
++                        bounds = getattr(self.norm, "boundaries", None)
++                        if bounds is None or len(bounds) == 0:
++                            g_sig_digits = 3
++                        else:
++                            # find interval containing data
++                            idx = np.searchsorted(bounds, data, side='right') - 1
++                            if idx < 0:
++                                neigh = bounds[:2] if len(bounds) >= 2 else bounds
++                            elif idx >= len(bounds) - 1:
++                                neigh = bounds[-2:] if len(bounds) >= 2 else bounds
++                            else:
++                                neigh = bounds[idx:idx+2]
++                            neigh = np.asarray(neigh)
++                            delta = abs(neigh - data).max()
++                            g_sig_digits = cbook._g_sig_digits(data, delta)
++                    else:
++                        # Unknown non-invertible norm: fall back to a sensible
++                        # default to avoid crashing.
++                        g_sig_digits = 3
+             else:
+                 g_sig_digits = 3  # Consistent with default below.
+             return "[{:-#.{}g}]".format(data, g_sig_digits)
+2026-06-22 16:21:09,298 - INFO - Eval script for matplotlib__matplotlib-22835 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-22835/eval.sh; copying to container...
+2026-06-22 16:21:15,885 - INFO - Test runtime: 6.55 seconds
+2026-06-22 16:21:15,886 - INFO - Test output for matplotlib__matplotlib-22835 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-22835/test_output.txt
+2026-06-22 16:21:15,917 - INFO - Git diff after:
+diff --git a/lib/matplotlib/artist.py b/lib/matplotlib/artist.py
+index 1f33b9d3ec..67fc97cff5 100644
+--- a/lib/matplotlib/artist.py
++++ b/lib/matplotlib/artist.py
+@@ -1304,10 +1304,34 @@ class Artist:
+             normed = self.norm(data)
+             if np.isfinite(normed):
+                 # Midpoints of neighboring color intervals.
+-                neighbors = self.norm.inverse(
+-                    (int(self.norm(data) * n) + np.array([0, 1])) / n)
+-                delta = abs(neighbors - data).max()
+-                g_sig_digits = cbook._g_sig_digits(data, delta)
++                try:
++                    neighbors = self.norm.inverse(
++                        (int(normed * n) + np.array([0, 1])) / n)
++                    delta = abs(neighbors - data).max()
++                    g_sig_digits = cbook._g_sig_digits(data, delta)
++                except ValueError:
++                    # Handle non-invertible norms (e.g., BoundaryNorm) by
++                    # falling back to adjacent boundaries when available.
++                    if isinstance(self.norm, mpl.colors.BoundaryNorm):
++                        bounds = getattr(self.norm, "boundaries", None)
++                        if bounds is None or len(bounds) == 0:
++                            g_sig_digits = 3
++                        else:
++                            # find interval containing data
++                            idx = np.searchsorted(bounds, data, side='right') - 1
++                            if idx < 0:
++                                neigh = bounds[:2] if len(bounds) >= 2 else bounds
++                            elif idx >= len(bounds) - 1:
++                                neigh = bounds[-2:] if len(bounds) >= 2 else bounds
++                            else:
++                                neigh = bounds[idx:idx+2]
++                            neigh = np.asarray(neigh)
++                            delta = abs(neigh - data).max()
++                            g_sig_digits = cbook._g_sig_digits(data, delta)
++                    else:
++                        # Unknown non-invertible norm: fall back to a sensible
++                        # default to avoid crashing.
++                        g_sig_digits = 3
+             else:
+                 g_sig_digits = 3  # Consistent with default below.
+             return "[{:-#.{}g}]".format(data, g_sig_digits)
+2026-06-22 16:21:15,917 - INFO - Grading answer for matplotlib__matplotlib-22835...
+2026-06-22 16:21:15,918 - INFO - report: {'matplotlib__matplotlib-22835': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['lib/matplotlib/tests/test_artist.py::test_format_cursor_data_BoundaryNorm']}, 'PASS_TO_PASS': {'success': ['lib/matplotlib/tests/test_artist.py::test_patch_transform_of_none', 'lib/matplotlib/tests/test_artist.py::test_collection_transform_of_none', 'lib/matplotlib/tests/test_artist.py::test_clipping[png]', 'lib/matplotlib/tests/test_artist.py::test_clipping[pdf]', 'lib/matplotlib/tests/test_artist.py::test_clipping_zoom[png]', 'lib/matplotlib/tests/test_artist.py::test_cull_markers', 'lib/matplotlib/tests/test_artist.py::test_hatching[png]', 'lib/matplotlib/tests/test_artist.py::test_hatching[pdf]', 'lib/matplotlib/tests/test_artist.py::test_remove', 'lib/matplotlib/tests/test_artist.py::test_default_edges[png]', 'lib/matplotlib/tests/test_artist.py::test_properties', 'lib/matplotlib/tests/test_artist.py::test_setp', 'lib/matplotlib/tests/test_artist.py::test_None_zorder', 'lib/matplotlib/tests/test_artist.py::test_artist_inspector_get_valid_values[-unknown]', 'lib/matplotlib/tests/test_artist.py::test_artist_inspector_get_valid_values[ACCEPTS:', 'lib/matplotlib/tests/test_artist.py::test_artist_inspector_get_valid_values[..', 'lib/matplotlib/tests/test_artist.py::test_artist_inspector_get_valid_values[arg', 'lib/matplotlib/tests/test_artist.py::test_artist_inspector_get_valid_values[*arg', 'lib/matplotlib/tests/test_artist.py::test_artist_inspector_get_aliases', 'lib/matplotlib/tests/test_artist.py::test_set_alpha', 'lib/matplotlib/tests/test_artist.py::test_set_alpha_for_array', 'lib/matplotlib/tests/test_artist.py::test_callbacks', 'lib/matplotlib/tests/test_artist.py::test_set_signature', 'lib/matplotlib/tests/test_artist.py::test_set_is_overwritten'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for matplotlib__matplotlib-22835: resolved: False
+2026-06-22 16:21:15,918 - INFO - Attempting to stop container sweb.eval.matplotlib__matplotlib-22835.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:21:31,262 - INFO - Attempting to remove container sweb.eval.matplotlib__matplotlib-22835.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:21:31,284 - INFO - Container sweb.eval.matplotlib__matplotlib-22835.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:21:31,284 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-22835:latest...
+2026-06-22 16:21:32,161 - INFO - Image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-22835:latest removed.

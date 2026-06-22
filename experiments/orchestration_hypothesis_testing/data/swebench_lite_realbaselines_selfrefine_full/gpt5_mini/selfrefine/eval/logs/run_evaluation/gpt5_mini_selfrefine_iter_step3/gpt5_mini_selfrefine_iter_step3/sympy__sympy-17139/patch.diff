@@ -1,0 +1,22 @@
+--- a/sympy/simplify/fu.py
++++ b/sympy/simplify/fu.py
+@@ -501,9 +501,16 @@
+         if not (rv.is_Pow and rv.base.func == f):
+             return rv
+ 
+-        if (rv.exp < 0) == True:
+-            return rv
+-        if (rv.exp > max) == True:
++        # Avoid comparisons that can raise on non-real or otherwise
++        # non-numeric exponents (for example cos(x)**I where exp is I).
++        # If the exponent is explicitly non-real then do not attempt the
++        # transformation. If it is known to be negative, or a numeric value
++        # greater than `max`, also skip.
++        if rv.exp.is_real is False:
++            return rv
++        if rv.exp.is_negative is True:
++            return rv
++        if rv.exp.is_number and rv.exp > max:
+             return rv
+         if rv.exp == 2:
+             return h(g(rv.base.args[0])**2)

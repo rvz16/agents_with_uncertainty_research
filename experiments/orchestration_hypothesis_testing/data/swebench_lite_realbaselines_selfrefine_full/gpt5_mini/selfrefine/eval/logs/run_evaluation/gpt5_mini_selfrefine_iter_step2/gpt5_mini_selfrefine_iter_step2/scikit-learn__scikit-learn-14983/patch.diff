@@ -1,0 +1,37 @@
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -1162,6 +1162,9 @@
+         cv = self.cv(random_state=rng, shuffle=True,
+                      **self.cvargs)
+         return cv.get_n_splits(X, y, groups) * self.n_repeats
++
++    def __repr__(self):
++        return _build_repr(self)
+ 
+ 
+ class RepeatedKFold(_RepeatedSplits):
+@@ -2146,23 +2149,4 @@
+         args = []
+     else:
+         args = sorted([p.name for p in init_signature.parameters.values()
+-                       if p.name != 'self' and p.kind != p.VAR_KEYWORD])
+-    class_name = self.__class__.__name__
+-    params = dict()
+-    for key in args:
+-        # We need deprecation warnings to always be on in order to
+-        # catch deprecated param values.
+-        # This is set in utils/__init__.py but it gets overwritten
+-        # when running under python3 somehow.
+-        warnings.simplefilter("always", DeprecationWarning)
+-        try:
+-            with warnings.catch_warnings(record=True) as w:
+-                value = getattr(self, key, None)
+-            if len(w) and w[0].category == DeprecationWarning:
+-                # if the parameter is deprecated, don't show it
+-                continue
+-        finally:
+-            warnings.filters.pop(0)
+-        params[key] = value
+-
+-    return '%s(%s)' % (class_name, _pprint(params, offset=len(class_name)))
++                       if p.name != '

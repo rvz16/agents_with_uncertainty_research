@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T10:19:11.416210+00:00",
+  "instance_id": "sympy__sympy-14317",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nLaTeX printer does not use the same order of monomials as pretty and str \nWhen printing a Poly, the str and pretty printers use the logical order of monomials, from highest to lowest degrees. But latex printer does not. \r\n```\r\n>>> var('a b c x')\r\n>>> p = Poly([a, 1, b, 2, c, 3], x)\r\n>>> p\r\nPoly(a*x**5 + x**4 + b*x**3 + 2*x**2 + c*x + 3, x, domain='ZZ[a,b,c]')\r\n>>> pretty(p)\r\n\"Poly(a*x**5 + x**4 + b*x**3 + 2*x**2 + c*x + 3, x, domain='ZZ[a,b,c]')\"\r\n>>> latex(p)\r\n'\\\\operatorname{Poly}{\\\\left( a x^{5} + b x^{3} + c x + x^{4} + 2 x^{2} + 3, x, domain=\\\\mathbb{Z}\\\\left[a, b, c\\\\right] \\\\right)}'\r\n```\n\n\n## Your previous patch (diff format)\n```\n--- a/sympy/printing/latex.py\n+++ b/sympy/printing/latex.py\n@@ -1854,7 +1854,14 @@\n \n     def _print_Poly(self, poly):\n         cls = poly.__class__.__name__\n-        expr = self._print(poly.as_expr())\n+        # When printing a Poly, preserve the monomial ordering used by the\n+        # pretty/str printers. Respect the 'order' setting if provided;\n+        # otherwise default to the legacy 'old' ordering which prints\n+        # monomials from highest to lowest degree.\n+        order = self._settings.get('order', None)\n+        if order is None:\n+            order = 'old'\n+        expr = self._print(poly.as_expr(), order=order)\n         gens = list(map(self._print, poly.gens))\n         domain = \"domain=%s\" % self._print(poly.get_domain())\n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 566,
+  "completion_tokens": 1472,
+  "cost_usd": 0.0030855
+}

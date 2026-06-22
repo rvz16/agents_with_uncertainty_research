@@ -1,0 +1,37 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -776,10 +776,31 @@
+         if select_mask is None:
+             select_mask = {}
+         select_mask[opts.pk] = {}
+-        # Only include fields mentioned in the mask.
++        # Only include fields mentioned in the mask. Handle reverse relations
++        # (including filtered relations) similarly to _get_defer_select_mask so
++        # that 'only' with select_related on reverse OneToOne/ForeignKey works
++        # correctly.
+         for field_name, field_mask in mask.items():
+-            field = opts.get_field(field_name)
+-            field_select_mask = select_mask.setdefault(field, {})
++            if filtered_relation := self._filtered_relations.get(field_name):
++                relation = opts.get_field(filtered_relation.relation_name)
++                field_select_mask = select_mask.setdefault((field_name, relation), {})
++                field = relation.field
++            else:
++                reverse_rel = opts.get_field(field_name)
++                # While virtual fields such as many-to-many and generic foreign
++                # keys cannot be effectively limited we've historically allowed
++                # them to be passed to QuerySet.only(). Ignore such field
++                # references until a layer of validation at mask alteration time
++                # will be implemented eventually.
++                if not hasattr(reverse_rel, "field"):
++                    # Local non-relational field.
++                    field = reverse_rel
++                    field_select_mask = select_mask.setdefault(field, {})
++                else:
++                    # Reverse relation; use the actual field on the related
++                    # model that references this model.
++                    field = reverse_rel.field
++                    field_select_mask = select_mask.setdefault(field, {})
+             if field_mask:
+                 if not field.is_relation:
+                     raise FieldError(next(iter(field_mask)))

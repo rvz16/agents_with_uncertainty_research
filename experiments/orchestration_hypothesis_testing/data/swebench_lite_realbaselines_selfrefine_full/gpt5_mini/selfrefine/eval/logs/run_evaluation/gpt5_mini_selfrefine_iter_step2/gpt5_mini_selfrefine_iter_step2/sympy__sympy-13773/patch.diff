@@ -1,0 +1,40 @@
+--- a/sympy/matrices/common.py
++++ b/sympy/matrices/common.py
+@@ -1973,7 +1973,18 @@
+ 
+     @call_highest_priority('__rmatmul__')
+     def __matmul__(self, other):
+-        return self.__mul__(other)
++        """
++        Matrix multiplication using the `@` operator. Only matrix-like (2D)
++        operands are accepted. If `other` is not a Matrix or matrix-like,
++        return NotImplemented so that Python will raise the appropriate
++        TypeError for unsupported operands (rather than performing scalar
++        multiplication).
++        """
++        other = _matrixify(other)
++        # Accept only Matrix or matrix-like (2D) objects for matmul
++        if getattr(other, 'is_Matrix', False) or getattr(other, 'is_MatrixLike', False):
++            return self.__mul__(other)
++        return NotImplemented
+ 
+     @call_highest_priority('__rmul__')
+     def __mul__(self, other):
+@@ -2068,7 +2079,16 @@
+ 
+     @call_highest_priority('__matmul__')
+     def __rmatmul__(self, other):
+-        return self.__rmul__(other)
++        """
++        Reflected matrix multiplication for `@`. Only accept matrix-like (2D)
++        left-hand operands. If `other` is not a Matrix or matrix-like,
++        return NotImplemented so that Python will raise TypeError for unsupported
++        operands.
++        """
++        other = _matrixify(other)
++        if getattr(other, 'is_Matrix', False) or getattr(other, 'is_MatrixLike', False):
++            return self.__rmul__(other)
++        return NotImplemented
+ 
+     @call_highest_priority('__mul__')
+     def __rmul__(self, other):

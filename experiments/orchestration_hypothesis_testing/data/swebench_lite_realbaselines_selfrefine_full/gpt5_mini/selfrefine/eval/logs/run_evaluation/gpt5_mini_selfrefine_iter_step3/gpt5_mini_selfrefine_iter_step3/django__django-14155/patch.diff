@@ -1,0 +1,25 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -31,6 +31,22 @@
+ 
+ class ResolverMatch:
+     def __init__(self, func, args, kwargs, url_name=None, app_names=None, namespaces=None, route=None, tried=None):
++        # Unwrap functools.partial so that the ResolverMatch shows the
++        # underlying callable and any preset arguments. Merge partial args
++        # and keywords with the args/kwargs provided by the URL resolver.
++        if isinstance(func, functools.partial):
++            partial_func = func.func
++            partial_args = getattr(func, 'args', ()) or ()
++            partial_kwargs = getattr(func, 'keywords', None) or {}
++            # Call-time args come after partial args.
++            args = tuple(partial_args) + tuple(args)
++            # For kwargs, call-time kwargs override partial kwargs.
++            merged_kwargs = {}
++            merged_kwargs.update(partial_kwargs)
++            merged_kwargs.update(kwargs or {})
++            kwargs = merged_kwargs
++            func = partial_func
++
+         self.func = func
+         self.args = args
+         self.kwargs = kwargs

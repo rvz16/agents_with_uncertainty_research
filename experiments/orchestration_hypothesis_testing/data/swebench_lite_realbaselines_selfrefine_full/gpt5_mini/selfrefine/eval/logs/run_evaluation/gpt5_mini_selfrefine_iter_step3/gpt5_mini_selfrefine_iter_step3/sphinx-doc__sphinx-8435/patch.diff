@@ -1,0 +1,50 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -11,6 +11,7 @@
+ """
+ 
+ import importlib
++import sys
+ import re
+ import warnings
+ from inspect import Parameter, Signature
+@@ -2293,6 +2294,39 @@
+     return safe_getattr(obj, name, *defargs)
+ 
+ 
++def _resolve_alias_target(target: Any) -> Any:
++    """
++    Resolve a configured autodoc_type_aliases target to an object if possible.
++
++    The config value may already be an object (in which case it's returned),
++    or a string like 'module.Name'. For string targets, attempt to import
++    the module and traverse attributes to get the object. On failure, return
++    None so that the alias isn't added to the namespace.
++    """
++    if not isinstance(target, str):
++        return target
++    mod_name, sep, attr = target.rpartition('.')
++    if not sep:
++        return None
++    try:
++        module = importlib.import_module(mod_name)
++        obj = module
++        for part in attr.split('.'):
++            obj = getattr(obj, part)
++        return obj
++    except Exception:
++        return None
++
++
++def _build_alias_namespace(config: Config, base_globals: Optional[Dict[str, Any]] = None
++                          ) -> Dict[str, Any]:
++    """
++    Build a globals mapping to be passed to typing.get_type_hints that
++    includes resolved objects for names configured in autodoc_type_aliases.
++
++    base_globals should be the module globals
++
++
+ def migrate_autodoc_member_order(app: Sphinx, config: Config) -> None:
+     if config.autodoc_member_order == 'alphabetic':
+         # RemovedInSphinx50Warning

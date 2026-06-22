@@ -1,0 +1,75 @@
+2026-06-22 16:25:41,939 - INFO - Creating container for matplotlib__matplotlib-23964...
+2026-06-22 16:25:43,563 - INFO - Container for matplotlib__matplotlib-23964 created: 0c9dd1812095106bbb20af3e74ca3991eec1a057ce12581eb1925e7d7774181a
+2026-06-22 16:25:43,914 - INFO - Container for matplotlib__matplotlib-23964 started: 0c9dd1812095106bbb20af3e74ca3991eec1a057ce12581eb1925e7d7774181a
+2026-06-22 16:25:43,915 - INFO - Intermediate patch for matplotlib__matplotlib-23964 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-23964/patch.diff, now applying to container...
+2026-06-22 16:25:44,063 - INFO - >>>>> Applied Patch:
+Checking patch lib/matplotlib/backends/backend_ps.py...
+Applied patch lib/matplotlib/backends/backend_ps.py cleanly.
+
+2026-06-22 16:25:45,218 - INFO - Git diff before:
+diff --git a/lib/matplotlib/backends/backend_ps.py b/lib/matplotlib/backends/backend_ps.py
+index f209e811f1..571fe5fc22 100644
+--- a/lib/matplotlib/backends/backend_ps.py
++++ b/lib/matplotlib/backends/backend_ps.py
+@@ -658,15 +658,20 @@ grestore
+                 ps_name = (item.ft_object.postscript_name
+                            .encode("ascii", "replace").decode("ascii"))
+                 if item.ft_object is not prev_font:
+-                    if curr_stream:
++                    # Only append a previously collected stream if we have one.
++                    # Use an explicit None check to allow appending valid but
++                    # falsey streams (e.g. empty lists) while avoiding appending
++                    # a literal None which would later cause unpacking errors.
++                    if curr_stream is not None:
+                         stream.append(curr_stream)
+                     prev_font = item.ft_object
+                     curr_stream = [ps_name, []]
+                 curr_stream[1].append(
+                     (item.x, item.ft_object.get_glyph_name(item.glyph_idx))
+                 )
+-            # append the last entry
+-            stream.append(curr_stream)
++            # append the last entry if it exists
++            if curr_stream is not None:
++                stream.append(curr_stream)
+ 
+         self.set_color(*gc.get_rgb())
+2026-06-22 16:25:45,218 - INFO - Eval script for matplotlib__matplotlib-23964 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-23964/eval.sh; copying to container...
+2026-06-22 16:26:06,557 - INFO - Test runtime: 21.30 seconds
+2026-06-22 16:26:06,558 - INFO - Test output for matplotlib__matplotlib-23964 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/matplotlib__matplotlib-23964/test_output.txt
+2026-06-22 16:26:06,612 - INFO - Git diff after:
+diff --git a/lib/matplotlib/backends/backend_ps.py b/lib/matplotlib/backends/backend_ps.py
+index f209e811f1..571fe5fc22 100644
+--- a/lib/matplotlib/backends/backend_ps.py
++++ b/lib/matplotlib/backends/backend_ps.py
+@@ -658,15 +658,20 @@ grestore
+                 ps_name = (item.ft_object.postscript_name
+                            .encode("ascii", "replace").decode("ascii"))
+                 if item.ft_object is not prev_font:
+-                    if curr_stream:
++                    # Only append a previously collected stream if we have one.
++                    # Use an explicit None check to allow appending valid but
++                    # falsey streams (e.g. empty lists) while avoiding appending
++                    # a literal None which would later cause unpacking errors.
++                    if curr_stream is not None:
+                         stream.append(curr_stream)
+                     prev_font = item.ft_object
+                     curr_stream = [ps_name, []]
+                 curr_stream[1].append(
+                     (item.x, item.ft_object.get_glyph_name(item.glyph_idx))
+                 )
+-            # append the last entry
+-            stream.append(curr_stream)
++            # append the last entry if it exists
++            if curr_stream is not None:
++                stream.append(curr_stream)
+ 
+         self.set_color(*gc.get_rgb())
+2026-06-22 16:26:06,612 - INFO - Grading answer for matplotlib__matplotlib-23964...
+2026-06-22 16:26:06,613 - INFO - report: {'matplotlib__matplotlib-23964': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['lib/matplotlib/tests/test_backend_ps.py::test_empty_line'], 'failure': []}, 'PASS_TO_PASS': {'success': ['lib/matplotlib/tests/test_backend_ps.py::test_savefig_to_stringio[ps-portrait]', 'lib/matplotlib/tests/test_backend_ps.py::test_savefig_to_stringio[ps-landscape]', 'lib/matplotlib/tests/test_backend_ps.py::test_savefig_to_stringio[ps', 'lib/matplotlib/tests/test_backend_ps.py::test_savefig_to_stringio[eps-portrait]', 'lib/matplotlib/tests/test_backend_ps.py::test_savefig_to_stringio[eps-landscape]', 'lib/matplotlib/tests/test_backend_ps.py::test_savefig_to_stringio[eps', 'lib/matplotlib/tests/test_backend_ps.py::test_patheffects', 'lib/matplotlib/tests/test_backend_ps.py::test_transparency[eps]', 'lib/matplotlib/tests/test_backend_ps.py::test_bbox', 'lib/matplotlib/tests/test_backend_ps.py::test_failing_latex', 'lib/matplotlib/tests/test_backend_ps.py::test_text_clip[eps]', 'lib/matplotlib/tests/test_backend_ps.py::test_d_glyph', 'lib/matplotlib/tests/test_backend_ps.py::test_fonttype[3]', 'lib/matplotlib/tests/test_backend_ps.py::test_fonttype[42]', 'lib/matplotlib/tests/test_backend_ps.py::test_linedash', 'lib/matplotlib/tests/test_backend_ps.py::test_no_duplicate_definition'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for matplotlib__matplotlib-23964: resolved: True
+2026-06-22 16:26:06,613 - INFO - Attempting to stop container sweb.eval.matplotlib__matplotlib-23964.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:26:21,968 - INFO - Attempting to remove container sweb.eval.matplotlib__matplotlib-23964.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:26:21,994 - INFO - Container sweb.eval.matplotlib__matplotlib-23964.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:26:21,994 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-23964:latest...
+2026-06-22 16:26:22,878 - INFO - Image swebench/sweb.eval.x86_64.matplotlib_1776_matplotlib-23964:latest removed.

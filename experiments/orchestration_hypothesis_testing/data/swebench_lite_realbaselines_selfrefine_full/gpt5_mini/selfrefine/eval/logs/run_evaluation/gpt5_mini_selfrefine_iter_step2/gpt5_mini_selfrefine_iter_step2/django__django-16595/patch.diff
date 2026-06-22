@@ -1,0 +1,15 @@
+--- a/django/db/migrations/operations/fields.py
++++ b/django/db/migrations/operations/fields.py
+@@ -247,6 +247,12 @@
+         return "alter_%s_%s" % (self.model_name_lower, self.name_lower)
+ 
+     def reduce(self, operation, app_label):
++        if isinstance(operation, AlterField) and self.is_same_field_operation(
++            operation
++        ):
++            # A later AlterField on the same field supersedes this one,
++            # so drop the earlier AlterField and keep the later one.
++            return [operation]
+         if isinstance(operation, RemoveField) and self.is_same_field_operation(
+             operation
+         ):

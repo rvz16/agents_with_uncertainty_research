@@ -1,0 +1,57 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -867,10 +867,52 @@
+         self.stale = True
+ 
+     def get_facecolor(self):
+-        return self._facecolors2d
++        """
++        Return the 2D facecolors for the projected polygons.
++
++        The usual code-path populates _facecolors2d during the draw/projection
++        step. If the user requests the facecolors earlier (e.g. immediately
++        after creating a 3D PolyCollection), try to initialize the relevant
++        3D state and perform a projection to compute the 2D colors. If that
++        fails, fall back to the base PolyCollection's facecolor getter.
++        """
++        if not hasattr(self, "_facecolors2d"):
++            # Ensure scalar mappables compute their mapped colors.
++            try:
++                self.set_3d_properties()
++            except Exception:
++                # set_3d_properties may require state that is not available;
++                # fall through to base-class fallback.
++                pass
++            # Attempt to perform a projection to build the 2D color arrays.
++            try:
++                if getattr(self, "axes", None) is not None:
++                    # do_3d_projection populates _facecolors2d/_edgecolors2d.
++                    self.do_3d_projection()
++            except Exception:
++                # If projection fails for any reason, ignore and fallback.
++                pass
++
++        return getattr(self, "_facecolors2d", PolyCollection.get_facecolor(self))
+ 
+     def get_edgecolor(self):
+-        return self._edgecolors2d
++        """
++        Return the 2D edgecolors for the projected polygons.
++
++        See notes in get_facecolor regarding initialization and fallback.
++        """
++        if not hasattr(self, "_edgecolors2d"):
++            try:
++                self.set_3d_properties()
++            except Exception:
++                pass
++            try:
++                if getattr(self, "axes", None) is not None:
++                    self.do_3d_projection()
++            except Exception:
++                pass
++
++        return getattr(self, "_edgecolors2d", PolyCollection.get_edgecolor(self))
+ 
+ 
+ def poly_collection_2d_to_3d(col, zs=0, zdir='z'):

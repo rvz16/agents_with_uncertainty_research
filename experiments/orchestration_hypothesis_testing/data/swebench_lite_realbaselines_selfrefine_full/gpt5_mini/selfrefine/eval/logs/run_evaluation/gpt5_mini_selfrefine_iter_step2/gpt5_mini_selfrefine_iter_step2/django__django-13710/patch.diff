@@ -1,0 +1,30 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -46,7 +46,7 @@
+ from django.utils.text import (
+     capfirst, format_lazy, get_text_list, smart_split, unescape_string_literal,
+ )
+-from django.utils.translation import gettext as _, ngettext
++from django.utils.translation import gettext as _, ngettext, ngettext_lazy
+ from django.views.decorators.csrf import csrf_protect
+ from django.views.generic import RedirectView
+ 
+@@ -2040,7 +2040,17 @@
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # If the Inline class explicitly defines a verbose_name on the class,
++            # derive the plural from that verbose_name (consistent with
++            # how a model's Meta.verbose_name_plural is derived from
++            # Meta.verbose_name). Otherwise fall back to the model's
++            # verbose_name_plural.
++            if self.__class__.__dict__.get('verbose_name', None) is not None:
++                self.verbose_name_plural = ngettext_lazy(
++                    '%(verbose_name)s', '%(verbose_name)s', 2
++                ) % {'verbose_name': self.verbose_name}
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

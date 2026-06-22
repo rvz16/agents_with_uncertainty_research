@@ -1,0 +1,29 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -84,12 +84,26 @@
+         """
+         Cleanse an individual setting key/value of sensitive content. If the
+         value is a dictionary, recursively cleanse the keys in that dictionary.
++        Also recursively cleanse common iterable containers (list, tuple, set,
++        frozenset) so that sensitive values nested inside lists/tuples/etc.
++        are not left unredacted.
+         """
+         try:
+             if self.hidden_settings.search(key):
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple, set, frozenset)):
++                # Recursively cleanse elements of common iterable containers.
++                cleansed_iter = [self.cleanse_setting('', v) for v in value]
++                if isinstance(value, list):
++                    cleansed = cleansed_iter
++                elif isinstance(value, tuple):
++                    cleansed = tuple(cleansed_iter)
++                elif isinstance(value, set):
++                    cleansed = set(cleansed_iter)
++                else:  # frozenset
++                    cleansed = frozenset(cleansed_iter)
+             else:
+                 cleansed = value
+         except TypeError:

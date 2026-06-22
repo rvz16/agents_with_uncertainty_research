@@ -1,0 +1,44 @@
+--- a/src/flask/cli.py
++++ b/src/flask/cli.py
+@@ -1018,20 +1018,37 @@
+         for rule in rules
+     ]
+ 
+-    headers = ("Endpoint", "Methods", "Rule")
++    # Build a column for the domain the rule applies to. If SERVER_NAME is
++    # configured and a rule has a subdomain (set when registering a blueprint
++    # or using @app.route(..., subdomain=...)), display the full domain
++    # (e.g. "admin.example.com"). Otherwise show the SERVER_NAME for
++    # non-subdomain routes or an empty string if not configured.
++    server_name = current_app.config.get("SERVER_NAME") or ""
++    domains = []
++    for rule in rules:
++        subdomain = getattr(rule, "subdomain", None)
++        if subdomain:
++            # If SERVER_NAME is set, combine subdomain and server name.
++            domain = f"{subdomain}.{server_name}" if server_name else subdomain
++        else:
++            domain = server_name
++        domains.append(domain or "")
++
++    headers = ("Domain", "Endpoint", "Methods", "Rule")
+     widths = (
++        max(len(d) for d in domains),
+         max(len(rule.endpoint) for rule in rules),
+         max(len(methods) for methods in rule_methods),
+         max(len(rule.rule) for rule in rules),
+     )
+     widths = [max(len(h), w) for h, w in zip(headers, widths)]
+-    row = "{{0:<{0}}}  {{1:<{1}}}  {{2:<{2}}}".format(*widths)
++    row = "{{0:<{0}}}  {{1:<{1}}}  {{2:<{2}}}  {{3:<{3}}}".format(*widths)
+ 
+     click.echo(row.format(*headers).strip())
+     click.echo(row.format(*("-" * width for width in widths)))
+ 
+-    for rule, methods in zip(rules, rule_methods):
+-        click.echo(row.format(rule.endpoint, methods, rule.rule).rstrip())
++    for domain, (rule, methods) in zip(domains, zip(rules, rule_methods)):
++        click.echo(row.format(domain, rule.endpoint, methods, rule.rule).rstrip())
+ 
+ 
+ cli = FlaskGroup(

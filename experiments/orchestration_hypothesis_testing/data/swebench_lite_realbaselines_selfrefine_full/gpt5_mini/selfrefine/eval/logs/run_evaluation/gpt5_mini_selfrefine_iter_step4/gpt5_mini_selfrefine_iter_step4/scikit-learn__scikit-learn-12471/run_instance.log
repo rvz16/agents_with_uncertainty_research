@@ -1,0 +1,123 @@
+2026-06-22 21:12:55,364 - INFO - Creating container for scikit-learn__scikit-learn-12471...
+2026-06-22 21:12:55,600 - INFO - Container for scikit-learn__scikit-learn-12471 created: 1410ee11e7933221a2cf44662e3f505ed6eda3995fbad9265c5d1e5c600b6d07
+2026-06-22 21:12:55,928 - INFO - Container for scikit-learn__scikit-learn-12471 started: 1410ee11e7933221a2cf44662e3f505ed6eda3995fbad9265c5d1e5c600b6d07
+2026-06-22 21:12:55,928 - INFO - Intermediate patch for scikit-learn__scikit-learn-12471 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/scikit-learn__scikit-learn-12471/patch.diff, now applying to container...
+2026-06-22 21:12:56,004 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/preprocessing/_encoders.py...
+Applied patch sklearn/preprocessing/_encoders.py cleanly.
+
+2026-06-22 21:12:56,182 - INFO - Git diff before:
+diff --git a/sklearn/preprocessing/_encoders.py b/sklearn/preprocessing/_encoders.py
+index 1e05aba59..7389e2d57 100644
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -111,7 +111,46 @@ class _BaseEncoder(BaseEstimator, TransformerMixin):
+                     # removed later.
+                     X_mask[:, i] = valid_mask
+                     Xi = Xi.copy()
+-                    Xi[~valid_mask] = self.categories_[i][0]
++                    # Avoid assigning a potentially longer category string into
++                    # a fixed-size numpy string array which would cause
++                    # truncation / memory issues. If the categories contain
++                    # string-like entries that are longer than the number of
++                    # characters the current Xi dtype can hold, upcast to
++                    # object dtype before assignment.
++                    cats = self.categories_[i]
++                    need_object = False
++                    # Only consider string-like numpy dtypes for Xi here.
++                    if (np.issubdtype(Xi.dtype, np.str_) or
++                            np.issubdtype(Xi.dtype, np.bytes_)):
++                        # If categories ndarray has a string/bytes dtype we can
++                        # inspect its itemsize/kind directly.
++                        if (np.issubdtype(getattr(cats, "dtype", np.dtype("O")),
++                                          np.str_) or
++                                np.issubdtype(getattr(cats, "dtype", np.dtype("O")),
++                                              np.bytes_)):
++                            # Determine how many characters Xi can hold.
++                            if Xi.dtype.kind == 'U':
++                                xi_maxchars = Xi.dtype.itemsize // 4
++                            else:
++                                xi_maxchars = Xi.dtype.itemsize
++                            # Compute the maximum length (in characters) of the
++                            # categories. Use text conversion for unicode safety.
++                            cats_maxchars = max(len(six.text_type(cat)) for cat in cats)
++                            if cats_maxchars > xi_maxchars:
++                                need_object = True
++                        else:
++                            # cats may be of object dtype: check elements.
++                            if any(isinstance(cat, six.string_types) for cat in cats):
++                                if Xi.dtype.kind == 'U':
++                                    xi_maxchars = Xi.dtype.itemsize // 4
++                                else:
++                                    xi_maxchars = Xi.dtype.itemsize
++                                cats_maxchars = max(len(six.text_type(cat)) for cat in cats)
++                                if cats_maxchars > xi_maxchars:
++                                    need_object = True
++                    if need_object:
++                        Xi = Xi.astype(object)
++                    Xi[~valid_mask] = cats[0]
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded
+2026-06-22 21:12:56,184 - INFO - Eval script for scikit-learn__scikit-learn-12471 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/scikit-learn__scikit-learn-12471/eval.sh; copying to container...
+2026-06-22 21:12:59,215 - INFO - Test runtime: 3.00 seconds
+2026-06-22 21:12:59,215 - INFO - Test output for scikit-learn__scikit-learn-12471 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/scikit-learn__scikit-learn-12471/test_output.txt
+2026-06-22 21:12:59,260 - INFO - Git diff after:
+diff --git a/sklearn/preprocessing/_encoders.py b/sklearn/preprocessing/_encoders.py
+index 1e05aba59..7389e2d57 100644
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -111,7 +111,46 @@ class _BaseEncoder(BaseEstimator, TransformerMixin):
+                     # removed later.
+                     X_mask[:, i] = valid_mask
+                     Xi = Xi.copy()
+-                    Xi[~valid_mask] = self.categories_[i][0]
++                    # Avoid assigning a potentially longer category string into
++                    # a fixed-size numpy string array which would cause
++                    # truncation / memory issues. If the categories contain
++                    # string-like entries that are longer than the number of
++                    # characters the current Xi dtype can hold, upcast to
++                    # object dtype before assignment.
++                    cats = self.categories_[i]
++                    need_object = False
++                    # Only consider string-like numpy dtypes for Xi here.
++                    if (np.issubdtype(Xi.dtype, np.str_) or
++                            np.issubdtype(Xi.dtype, np.bytes_)):
++                        # If categories ndarray has a string/bytes dtype we can
++                        # inspect its itemsize/kind directly.
++                        if (np.issubdtype(getattr(cats, "dtype", np.dtype("O")),
++                                          np.str_) or
++                                np.issubdtype(getattr(cats, "dtype", np.dtype("O")),
++                                              np.bytes_)):
++                            # Determine how many characters Xi can hold.
++                            if Xi.dtype.kind == 'U':
++                                xi_maxchars = Xi.dtype.itemsize // 4
++                            else:
++                                xi_maxchars = Xi.dtype.itemsize
++                            # Compute the maximum length (in characters) of the
++                            # categories. Use text conversion for unicode safety.
++                            cats_maxchars = max(len(six.text_type(cat)) for cat in cats)
++                            if cats_maxchars > xi_maxchars:
++                                need_object = True
++                        else:
++                            # cats may be of object dtype: check elements.
++                            if any(isinstance(cat, six.string_types) for cat in cats):
++                                if Xi.dtype.kind == 'U':
++                                    xi_maxchars = Xi.dtype.itemsize // 4
++                                else:
++                                    xi_maxchars = Xi.dtype.itemsize
++                                cats_maxchars = max(len(six.text_type(cat)) for cat in cats)
++                                if cats_maxchars > xi_maxchars:
++                                    need_object = True
++                    if need_object:
++                        Xi = Xi.astype(object)
++                    Xi[~valid_mask] = cats[0]
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded
+2026-06-22 21:12:59,260 - INFO - Grading answer for scikit-learn__scikit-learn-12471...
+2026-06-22 21:12:59,261 - INFO - report: {'scikit-learn__scikit-learn-12471': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_handle_unknown_strings'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_sparse', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dense', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_deprecationwarnings', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_force_new_behaviour', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_categorical_features', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_handle_unknown', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_not_fitted', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_no_categorical_features', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[int32-int32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[int32-float32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[int32-float64]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[float32-int32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[float32-float32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[float32-float64]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[float64-int32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[float64-float32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype[float64-float64]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype_pandas[int32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype_pandas[float32]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_dtype_pandas[float64]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_set_params', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder[mixed]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder[numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder[object]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_inverse', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_categories[mixed]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_categories[numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_categories[object]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_categories[string]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_specified_categories[object]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_specified_categories[numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_specified_categories[object-string-cat]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_unsorted_categories', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_specified_categories_mixed_columns', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_pandas', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_feature_names', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_feature_names_unicode', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_raise_missing[error-numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_raise_missing[error-object]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_raise_missing[ignore-numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_raise_missing[ignore-object]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder[mixed]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder[numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder[object]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder_specified_categories[object]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder_specified_categories[numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder_specified_categories[object-string-cat]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder_inverse', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder_raise_missing[numeric]', 'sklearn/preprocessing/tests/test_encoders.py::test_ordinal_encoder_raise_missing[object]', 'sklearn/preprocessing/tests/test_encoders.py::test_encoder_dtypes', 'sklearn/preprocessing/tests/test_encoders.py::test_encoder_dtypes_pandas', 'sklearn/preprocessing/tests/test_encoders.py::test_one_hot_encoder_warning'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-12471: resolved: True
+2026-06-22 21:12:59,261 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-12471.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:13:14,534 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-12471.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:13:14,550 - INFO - Container sweb.eval.scikit-learn__scikit-learn-12471.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:13:14,550 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-12471:latest...
+2026-06-22 21:13:14,623 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-12471:latest removed.

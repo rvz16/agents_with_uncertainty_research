@@ -1,0 +1,39 @@
+--- a/requests/utils.py
++++ b/requests/utils.py
+@@ -357,14 +357,28 @@
+ 
+ 
+ def stream_decode_response_unicode(iterator, r):
+-    """Stream decodes a iterator."""
+-
+-    if r.encoding is None:
+-        for item in iterator:
+-            yield item
+-        return
+-
+-    decoder = codecs.getincrementaldecoder(r.encoding)(errors='replace')
++    """Stream decodes an iterator to unicode.
++
++    This mirrors the decoding behaviour used by Response.text: if a specific
++    encoding is set on the response it is used; otherwise we try to determine
++    the encoding from the response headers, then fall back to the response's
++    apparent_encoding. If no encoding can be determined, fall back to UTF-8
++    with replacement to ensure we yield text rather than bytes.
++    """
++    # Determine encoding in the same manner as Response.text: prefer explicit
++    # response.encoding, then the Content-Type header, then apparent_encoding.
++    encoding = r.encoding
++    if encoding is None:
++        encoding = get_encoding_from_headers(r.headers)
++    if encoding is None:
++        encoding = getattr(r, 'apparent_encoding', None)
++
++    # If we still don't have an encoding, fall back to UTF-8 with replacement
++    # so that decode_unicode=True yields text instead of raw bytes.
++    if encoding is None:
++        encoding = 'utf-8'
++
++    decoder = codecs.getincrementaldecoder(encoding)(errors='replace')
+     for chunk in iterator:
+         rv = decoder.decode(chunk)
+         if rv:

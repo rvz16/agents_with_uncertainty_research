@@ -1,0 +1,18 @@
+--- a/requests/sessions.py
++++ b/requests/sessions.py
+@@ -425,7 +425,14 @@
+             If Tuple, ('cert', 'key') pair.
+         """
+ 
+-        method = builtin_str(method)
++        # Ensure method is a native (text) string. On Python 3, builtin_str()
++        # on a bytes object produces the representation "b'GET'", which is not a
++        # valid HTTP method. If method is bytes, decode it to a native string;
++        # otherwise fall back to builtin_str for compatibility.
++        if isinstance(method, bytes):
++            method = to_native_string(method)
++        else:
++            method = builtin_str(method)
+ 
+         # Create the Request.
+         req = Request(

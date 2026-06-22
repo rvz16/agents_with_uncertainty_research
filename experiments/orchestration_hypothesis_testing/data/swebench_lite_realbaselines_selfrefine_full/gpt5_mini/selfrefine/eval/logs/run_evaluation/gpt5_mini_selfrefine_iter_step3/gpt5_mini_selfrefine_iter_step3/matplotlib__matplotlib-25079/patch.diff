@@ -1,0 +1,27 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1691,14 +1691,16 @@
+                 clip = self.clip
+             if clip:
+                 value = np.clip(value, self.vmin, self.vmax)
+-            t_value = self._trf.transform(value).reshape(np.shape(value))
+-            t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
+-            if not np.isfinite([t_vmin, t_vmax]).all():
+-                raise ValueError("Invalid vmin or vmax")
+-            t_value -= t_vmin
+-            t_value /= (t_vmax - t_vmin)
+-            t_value = np.ma.masked_invalid(t_value, copy=False)
+-            return t_value[0] if is_scalar else t_value
++            # Transform the input values and vmin/vmax using the scale's
++            # transform.  To be robust to transforms that expect 1-D or 2-D
++            # inputs we explicitly flatten and reshape the arrays.
++            arr = np.asarray(value)
++            flat = arr.reshape(-1)
++            t_flat = self._trf.transform(flat)
++            t_value = np.reshape(t_flat, arr.shape)
++            t_vmins = np.asarray(
++                self._trf.transform(
++                    np.asarray([self.vmin, self.vmax]).reshape(-1, 1
+ 
+         def inverse(self, value):
+             if not self.scaled():

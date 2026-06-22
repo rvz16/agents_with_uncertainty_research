@@ -1,0 +1,16 @@
+--- a/sphinx/ext/viewcode.py
++++ b/sphinx/ext/viewcode.py
+@@ -180,6 +180,13 @@
+ 
+ def collect_pages(app: Sphinx) -> Generator[Tuple[str, Dict[str, Any], str], None, None]:
+     env = app.builder.env
++    # Don't generate viewcode pages for epub builders unless explicitly enabled.
++    # doctree_read already avoids collecting tags for epub when viewcode_enable_epub
++    # is False, but env._viewcode_modules may be populated from a previous HTML
++    # build when running multiple builders (e.g. "make html epub"). In that case
++    # skip page generation here as well.
++    if app.builder.name.startswith("epub") and not env.config.viewcode_enable_epub:
++        return
+     if not hasattr(env, '_viewcode_modules'):
+         return
+     highlighter = app.builder.highlighter  # type: ignore

@@ -1,0 +1,31 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -479,9 +479,10 @@
+         vertical_chr = xobj('|', 1)
+ 
+         if self._use_unicode:
+-            # use unicode corners
++            # use unicode corners and a slimmer vertical bar
+             horizontal_chr = xobj('-', 1)
+             corner_chr = u'\N{BOX DRAWINGS LIGHT DOWN AND HORIZONTAL}'
++            vertical_chr = u'\N{BOX DRAWINGS LIGHT VERTICAL}'
+ 
+         func_height = pretty_func.height()
+ 
+@@ -490,10 +491,14 @@
+         sign_height = 0
+ 
+         for lim in expr.limits:
+-            width = (func_height + 2) * 5 // 3 - 2
++            # Make the product sign a bit narrower than before so it
++            # doesn't dominate the printed expression.
++            width = max(1, (func_height + 1) * 4 // 3 - 1)
+             sign_lines = []
++            # top border
+             sign_lines.append(corner_chr + (horizontal_chr*width) + corner_chr)
+-            for i in range(func_height + 1):
++            # vertical body: match the function height (avoid extra bottom empty line)
++            for i in range(func_height):
+                 sign_lines.append(vertical_chr + (' '*width) + vertical_chr)
+ 
+             pretty_sign = stringPict('')

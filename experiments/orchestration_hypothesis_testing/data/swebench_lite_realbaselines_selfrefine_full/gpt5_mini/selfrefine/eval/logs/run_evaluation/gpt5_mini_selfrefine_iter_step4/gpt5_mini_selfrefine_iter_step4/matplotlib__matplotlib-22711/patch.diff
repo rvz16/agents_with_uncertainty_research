@@ -1,0 +1,63 @@
+--- a/lib/matplotlib/widgets.py
++++ b/lib/matplotlib/widgets.py
+@@ -897,20 +897,47 @@
+         _api.check_shape((2,), val=val)
+         val[0] = self._min_in_bounds(val[0])
+         val[1] = self._max_in_bounds(val[1])
+-        xy = self.poly.xy
++
++        # Construct the polygon vertices explicitly.  Historically we relied on
++        # mutating self.poly.xy in-place and assumed it had 5 vertices (closed
++        # polygon).  However, axvspan/axhspan may create a 4-vertex polygon
++        # when the span has zero width, which leads to an IndexError when
++        # attempting to assign xy[4].  To avoid that, always build a 5-vertex
++        # (closed) polygon here.
+         if self.orientation == "vertical":
+-            xy[0] = .25, val[0]
+-            xy[1] = .25, val[1]
+-            xy[2] = .75, val[1]
+-            xy[3] = .75, val[0]
+-            xy[4] = .25, val[0]
+-        else:
+-            xy[0] = val[0], .25
+-            xy[1] = val[0], .75
+-            xy[2] = val[1], .75
+-            xy[3] = val[1], .25
+-            xy[4] = val[0], .25
+-        self.poly.xy = xy
++            new_xy = np.array([
++                (.25, val[0]),
++                (.25, val[1]),
++                (.75, val[1]),
++                (.75, val[0]),
++                (.25, val[0]),
++            ])
++            # Update handle marker positions (ydata for vertical slider).
++            try:
++                self._handles[0].set_ydata([val[0]])
++                self._handles[1].set_ydata([val[1]])
++            except Exception:
++                # Be defensive: if handles are not available for some reason,
++                # don't let this break setting the value.
++                pass
++        else:
++            new_xy = np.array([
++                (val[0], .25),
++                (val[0], .75),
++                (val[1], .75),
++                (val[1], .25),
++                (val[0], .25),
++            ])
++            # Update handle marker positions (xdata for horizontal slider).
++            try:
++                self._handles[0].set_xdata([val[0]])
++                self._handles[1].set_xdata([val[1]])
++            except Exception:
++                # Be defensive: if handles are not available for some reason,
++                # don't let this break setting the value.
++                pass
++
++        self.poly.xy = new_xy
+         self.valtext.set_text(self._format(val))
+         if self.drawon:
+             self.ax.figure.canvas.draw_idle()

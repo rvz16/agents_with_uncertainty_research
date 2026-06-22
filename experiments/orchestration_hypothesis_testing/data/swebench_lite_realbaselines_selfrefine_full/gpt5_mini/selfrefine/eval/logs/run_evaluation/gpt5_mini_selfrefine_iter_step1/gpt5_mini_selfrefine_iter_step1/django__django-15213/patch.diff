@@ -1,0 +1,22 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -957,6 +957,19 @@
+     }
+     description = _("Boolean (Either True or False)")
+ 
++    def select_format(self, compiler, sql, params):
++        """
++        Ensure that an empty SQL fragment (which may occur when wrapping
++        Q objects, especially negated ones) is represented as a boolean
++        SQL literal so the SELECT clause remains valid.
++        """
++        if not sql or not sql.strip():
++            # Use a SQL boolean literal compatible with most backends.
++            # SQLite represents booleans as integers 0/1.
++            # Use '1' as the default truthy literal for empty fragments.
++            return '1', params
++        return sql, params
++
+     def get_internal_type(self):
+         return "BooleanField"
+ 

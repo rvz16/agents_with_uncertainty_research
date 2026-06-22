@@ -1,0 +1,18 @@
+--- a/sympy/sets/sets.py
++++ b/sympy/sets/sets.py
+@@ -1265,9 +1265,14 @@
+         # Reduce sets using known rules
+         if evaluate:
+             args = list(cls._new_args_filter(args))
++            # remove duplicate arguments so that repeated identical sets
++            # don't change the result (e.g. Intersection(A, A, B) == Intersection(A, B))
++            # and produce a canonical ordering for processing
++            args = list(ordered(set(args), Set._infimum_key))
+             return simplify_intersection(args)
+ 
+-        args = list(ordered(args, Set._infimum_key))
++        # For unevaluated constructions also remove duplicates and order
++        args = list(ordered(set(args), Set._infimum_key))
+ 
+         obj = Basic.__new__(cls, *args)
+         obj._argset = frozenset(args)

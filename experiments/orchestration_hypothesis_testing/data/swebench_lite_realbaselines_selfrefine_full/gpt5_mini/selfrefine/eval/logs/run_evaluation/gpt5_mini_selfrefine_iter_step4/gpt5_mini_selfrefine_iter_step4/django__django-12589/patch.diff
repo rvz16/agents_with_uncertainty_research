@@ -1,0 +1,64 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1926,9 +1926,44 @@
+         return data. If the database backend supports grouping by the
+         primary key, and the query would be equivalent, the optimization
+         will be made automatically.
++
++        Note: To avoid ambiguous column references when using annotation
++        aliases that collide with real table column names involved in the
++        query, we detect such collisions and disable aliasing for the
++        get_group_by_cols() call for that annotation (i.e. pass alias=None).
+         """
+         group_by = list(self.select)
+         if self.annotation_select:
++            # Build a set of column names from the tables involved in the query
++            # so we can detect collisions with annotation aliases.
++            table_column_names = set()
++            try:
++                conn = connections[DEFAULT_DB_ALIAS]
++                cursor = conn.cursor()
++                identifier_converter = conn.introspection.identifier_converter
++                # Collect unique table names from alias_map values where available.
++                table_names = {
++                    getattr(alias_data, 'table_name', None)
++                    for alias_data in self.alias_map.values()
++                }
++                for table_name in {t for t in table_names if t}:
++                    try:
++                        description = conn.introspection.get_table_description(cursor, table_name)
++                    except Exception:
++                        # If introspection for a table fails, skip it.
++                        continue
++                    for col in description:
++                        # description entries are sequences; the first element is the column name
++                        try:
++                            col_name = identifier_converter(col[0])
++                        except Exception:
++                            col_name = str(col[0])
++                        table_column_names.add(col_name)
++            except Exception:
++                # If anything goes wrong (e.g. no DB available), fall back to
++                # an empty set which means no collisions will be detected.
++                table_column_names = set()
++
+             for alias, annotation in self.annotation_select.items():
+                 signature = inspect.signature(annotation.get_group_by_cols)
+                 if 'alias' not in signature.parameters:
+@@ -1940,9 +1975,13 @@
+                     warnings.warn(msg, category=RemovedInDjango40Warning)
+                     group_by_cols = annotation.get_group_by_cols()
+                 else:
+-                    if not allow_aliases:
+-                        alias = None
+-                    group_by_cols = annotation.get_group_by_cols(alias=alias)
++                    # If aliases are globally disabled, pass None. Otherwise,
++                    # disable alias for this annotation if it would collide
++                    # with any real table column name in the query.
++                    use_alias = alias if allow_aliases else None
++                    if use_alias is not None and use_alias in table_column_names:
++                        use_alias = None
++                    group_by_cols = annotation.get_group_by_cols(alias=use_alias)
+                 group_by.extend(group_by_cols)
+         self.group_by = tuple(group_by)
+ 

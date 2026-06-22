@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T08:52:33.205365+00:00",
+  "instance_id": "django__django-12308",
+  "step": 4,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nJSONField are not properly displayed in admin when they are readonly.\nDescription\n\t\nJSONField values are displayed as dict when readonly in the admin.\nFor example, {\"foo\": \"bar\"} would be displayed as {'foo': 'bar'}, which is not valid JSON.\nI believe the fix would be to add a special case in django.contrib.admin.utils.display_for_field to call the prepare_value of the JSONField (not calling json.dumps directly to take care of the InvalidJSONInput case).\n\n\n## Your previous patch (diff format)\n```\n--- a/django/contrib/admin/utils.py\n+++ b/django/contrib/admin/utils.py\n@@ -398,6 +398,12 @@\n         return formats.number_format(value)\n     elif isinstance(field, models.FileField) and value:\n         return format_html('<a href=\"{}\">{}</a>', value.url, value)\n+    # JSONField: use the field's prepare_value to render JSON safely (handles\n+    # InvalidJSONInput from contrib.postgres and any DB-specific JSONField\n+    # implementations). Use get_internal_type() so this works for both the\n+    # built-in and contrib.postgres JSONField variants.\n+    elif field is not None and hasattr(field, 'get_internal_type') and field.get_internal_type() == 'JSONField' and hasattr(field, 'prepare_value'):\n+        return field.prepare_value(value)\n     else:\n         return display_for_value(value, empty_value_display)\n \n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 421,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00304925
+}

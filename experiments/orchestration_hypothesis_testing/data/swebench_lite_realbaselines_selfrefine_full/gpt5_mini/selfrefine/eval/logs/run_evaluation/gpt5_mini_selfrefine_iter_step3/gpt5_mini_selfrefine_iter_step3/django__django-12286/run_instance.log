@@ -1,0 +1,69 @@
+2026-06-22 18:04:23,250 - INFO - Creating container for django__django-12286...
+2026-06-22 18:04:23,436 - INFO - Container for django__django-12286 created: 02b2915afed8029fa54419b9fd0eb7d195b40529090be247f82cc4bb2c7abc08
+2026-06-22 18:04:23,627 - INFO - Container for django__django-12286 started: 02b2915afed8029fa54419b9fd0eb7d195b40529090be247f82cc4bb2c7abc08
+2026-06-22 18:04:23,627 - INFO - Intermediate patch for django__django-12286 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-12286/patch.diff, now applying to container...
+2026-06-22 18:04:23,745 - INFO - >>>>> Applied Patch:
+Checking patch django/core/checks/translation.py...
+Applied patch django/core/checks/translation.py cleanly.
+
+2026-06-22 18:04:24,268 - INFO - Git diff before:
+diff --git a/django/core/checks/translation.py b/django/core/checks/translation.py
+index 138ed07ff8..1a352d9273 100644
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -55,7 +55,17 @@ def check_setting_languages_bidi(app_configs, **kwargs):
+ @register(Tags.translation)
+ def check_language_settings_consistent(app_configs, **kwargs):
+     """Error if language settings are not consistent with each other."""
+-    available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+-    if settings.LANGUAGE_CODE not in available_tags:
++    # Normalize available language tags to lowercase with '-' separators.
++    available_tags = {str(i).lower().replace('_', '-') for i, _ in settings.LANGUAGES} | {'en-us'}
++    code = settings.LANGUAGE_CODE
++    if isinstance(code, str):
++        code = code.lower().replace('_', '-')
++    # Allow sublanguage fallback: if a specific variant (e.g. 'de-at') is not available
++    # but its base language ('de') is, treat it as available.
++    if code not in available_tags:
++        if isinstance(code, str) and '-' in code:
++            base = code.split('-', 1)[0]
++            if base in available_tags:
++                return []
+         return [E004]
+     return []
+2026-06-22 18:04:24,268 - INFO - Eval script for django__django-12286 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-12286/eval.sh; copying to container...
+2026-06-22 18:04:35,381 - INFO - Test runtime: 11.06 seconds
+2026-06-22 18:04:35,381 - INFO - Test output for django__django-12286 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step3/gpt5_mini_selfrefine_iter_step3/django__django-12286/test_output.txt
+2026-06-22 18:04:35,438 - INFO - Git diff after:
+diff --git a/django/core/checks/translation.py b/django/core/checks/translation.py
+index 138ed07ff8..1a352d9273 100644
+--- a/django/core/checks/translation.py
++++ b/django/core/checks/translation.py
+@@ -55,7 +55,17 @@ def check_setting_languages_bidi(app_configs, **kwargs):
+ @register(Tags.translation)
+ def check_language_settings_consistent(app_configs, **kwargs):
+     """Error if language settings are not consistent with each other."""
+-    available_tags = {i for i, _ in settings.LANGUAGES} | {'en-us'}
+-    if settings.LANGUAGE_CODE not in available_tags:
++    # Normalize available language tags to lowercase with '-' separators.
++    available_tags = {str(i).lower().replace('_', '-') for i, _ in settings.LANGUAGES} | {'en-us'}
++    code = settings.LANGUAGE_CODE
++    if isinstance(code, str):
++        code = code.lower().replace('_', '-')
++    # Allow sublanguage fallback: if a specific variant (e.g. 'de-at') is not available
++    # but its base language ('de') is, treat it as available.
++    if code not in available_tags:
++        if isinstance(code, str) and '-' in code:
++            base = code.split('-', 1)[0]
++            if base in available_tags:
++                return []
+         return [E004]
+     return []
+2026-06-22 18:04:35,439 - INFO - Grading answer for django__django-12286...
+2026-06-22 18:04:35,439 - INFO - report: {'django__django-12286': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_valid_variant_consistent_language_settings (check_framework.test_translation.TranslationCheckTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_inconsistent_language_settings (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_language_code (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_languages (check_framework.test_translation.TranslationCheckTests)', 'test_invalid_languages_bidi (check_framework.test_translation.TranslationCheckTests)', 'test_valid_language_code (check_framework.test_translation.TranslationCheckTests)', 'test_valid_languages (check_framework.test_translation.TranslationCheckTests)', 'test_valid_languages_bidi (check_framework.test_translation.TranslationCheckTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12286: resolved: True
+2026-06-22 18:04:35,439 - INFO - Attempting to stop container sweb.eval.django__django-12286.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:04:50,698 - INFO - Attempting to remove container sweb.eval.django__django-12286.gpt5_mini_selfrefine_iter_step3...
+2026-06-22 18:04:50,719 - INFO - Container sweb.eval.django__django-12286.gpt5_mini_selfrefine_iter_step3 removed.
+2026-06-22 18:04:50,719 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12286:latest...
+2026-06-22 18:04:50,828 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12286:latest removed.

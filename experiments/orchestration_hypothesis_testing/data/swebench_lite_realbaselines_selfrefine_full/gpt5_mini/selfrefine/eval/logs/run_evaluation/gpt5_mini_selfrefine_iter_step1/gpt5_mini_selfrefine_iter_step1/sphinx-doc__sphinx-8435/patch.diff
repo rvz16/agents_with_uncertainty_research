@@ -1,0 +1,113 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1702,7 +1702,56 @@
+         if not self.options.annotation:
+             # obtain annotation for this data
+             try:
+-                annotations = get_type_hints(self.parent)
++                # Try to resolve annotations, but provide autodoc_type_aliases entries
++                # in globals so ForwardRefs that refer to configured aliases can be
++                # evaluated. This makes autodoc_type_aliases affect variable/data
++                # annotations and attributes that use forward references or string
++                # annotations (see issue).
++                globalns = {}
++                # Prefer the parent's module/class globals if available
++                try:
++                    if hasattr(self.parent, '__dict__'):
++                        # for modules/classes, use their dict as a base
++                        globalns = dict(self.parent.__dict__)
++                    else:
++                        # fallback: try to import module of the parent
++                        modname = getattr(self.parent, '__module__', None)
++                        if modname:
++                            module = importlib.import_module(modname)
++                            globalns = dict(module.__dict__)
++                except Exception:
++                    globalns = {}
++
++                # Ensure common typing names are present to help evaluation
++                try:
++                    import typing as _typing
++                    for _k, _v in _typing.__dict__.items():
++                        if _k not in globalns:
++                            globalns[_k] = _v
++                except Exception:
++                    pass
++
++                # Inject autodoc_type_aliases into the globals so that
++                # forward-referenced or string annotations referring to alias
++                # names can be evaluated by get_type_hints().
++                for alias, target in self.config.autodoc_type_aliases.items():
++                    if alias in globalns:
++                        continue
++                    obj = target
++                    if isinstance(target, str):
++                        # try to import the target specified as a string path
++                        try:
++                            modname, _, attr = target.rpartition('.')
++                            if modname:
++                                _mod = importlib.import_module(modname)
++                                obj = getattr(_mod, attr) if attr else _mod
++                        except Exception:
++                            # leave as string if import fails; get_type_hints may still
++                            # succeed for simple names or raise NameError which we handle
++                            obj = target
++                    globalns[alias] = obj
++
++                annotations = get_type_hints(self.parent, globalns=globalns)
+             except NameError:
+                 # Failed to evaluate ForwardRef (maybe TYPE_CHECKING)
+                 annotations = safe_getattr(self.parent, '__annotations__', {})
+@@ -2093,18 +2142,40 @@
+         if not self.options.annotation:
+             # obtain type annotation for this attribute
+             try:
+-                annotations = get_type_hints(self.parent)
+-            except NameError:
+-                # Failed to evaluate ForwardRef (maybe TYPE_CHECKING)
+-                annotations = safe_getattr(self.parent, '__annotations__', {})
+-            except TypeError:
+-                annotations = {}
+-            except KeyError:
+-                # a broken class found (refs: https://github.com/sphinx-doc/sphinx/issues/8084)
+-                annotations = {}
+-            except AttributeError:
+-                # AttributeError is raised on 3.5.2 (fixed by 3.5.3)
+-                annotations = {}
++                # Try to resolve annotations with support for autodoc_type_aliases.
++                # For class attributes, evaluation needs module globals and class
++                # locals so prepare both and inject aliases to help resolve ForwardRefs.
++                globalns = {}
++                localsns = {}
++                try:
++                    # module globals from the class's module, if available
++                    modname = getattr(self.parent, '__module__', None)
++                    if modname:
++                        module = importlib.import_module(modname)
++                        globalns = dict(module.__dict__)
++                except Exception:
++                    globalns = {}
++
++                try:
++                    # class locals
++                    if hasattr(self.parent, '__dict__'):
++                        localsns = dict(self.parent.__dict__)
++                except Exception:
++                    localsns = {}
++
++                # Ensure common typing names are present to help evaluation
++                try:
++                    import typing as _typing
++                    for _k, _v in _typing.__dict__.items():
++                        if _k not in globalns:
++                            globalns[_k] = _v
++                except Exception:
++                    pass
++
++                # Inject autodoc_type_aliases into the globals so that
++                # forward-referenced or string annotations referring to alias
++                # names can be evaluated by get_type_hints().
++                for alias
+ 
+             if self.objpath[-1] in annotations:
+                 objrepr = stringify_typehint(annotations.get(self.objpath[-1]))

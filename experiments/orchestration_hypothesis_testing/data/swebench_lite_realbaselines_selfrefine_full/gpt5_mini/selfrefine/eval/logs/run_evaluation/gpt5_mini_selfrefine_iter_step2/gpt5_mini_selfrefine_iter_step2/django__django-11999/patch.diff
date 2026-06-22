@@ -1,0 +1,17 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -763,8 +763,12 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            setattr(cls, 'get_%s_display' % self.name,
+-                    partialmethod(cls._get_FIELD_display, field=self))
++            # Only add get_FOO_display if one isn't already present on the
++            # class (or its bases). Don't clobber a user-defined method.
++            method_name = 'get_%s_display' % self.name
++            if not hasattr(cls, method_name):
++                setattr(cls, method_name,
++                        partialmethod(cls._get_FIELD_display, field=self))
+ 
+     def get_filter_kwargs_for_object(self, obj):
+         """

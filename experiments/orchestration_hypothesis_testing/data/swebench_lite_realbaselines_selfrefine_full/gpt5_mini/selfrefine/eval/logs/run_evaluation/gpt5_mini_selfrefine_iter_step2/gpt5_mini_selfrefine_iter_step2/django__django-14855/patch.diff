@@ -1,0 +1,22 @@
+--- a/django/contrib/admin/helpers.py
++++ b/django/contrib/admin/helpers.py
+@@ -209,7 +209,18 @@
+             remote_field.model._meta.model_name,
+         )
+         try:
+-            url = reverse(url_name, args=[quote(remote_obj.pk)])
++            # Use the current_app from the ModelAdmin's AdminSite so that
++            # custom admin sites (with a different root URL/name) are used
++            # when reversing admin URLs for readonly related fields.
++            current_app = None
++            if self.model_admin is not None:
++                admin_site = getattr(self.model_admin, 'admin_site', None)
++                if admin_site is not None:
++                    current_app = admin_site.name
++            if current_app:
++                url = reverse(url_name, args=[quote(remote_obj.pk)], current_app=current_app)
++            else:
++                url = reverse(url_name, args=[quote(remote_obj.pk)])
+             return format_html('<a href="{}">{}</a>', url, remote_obj)
+         except NoReverseMatch:
+             return str(remote_obj)

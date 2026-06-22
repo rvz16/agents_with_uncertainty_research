@@ -1,0 +1,17 @@
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -261,7 +261,13 @@
+ def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+     outcome = yield
+     rep = outcome.get_result()
+-    xfailed = item._store.get(xfailed_key, None)
++    # Re-evaluate xfail marks for the call phase to catch xfail markers that
++    # may have been added dynamically during the test execution.
++    if rep.when == "call" and not item.config.option.runxfail:
++        # Refresh the stored xfailed value so dynamic additions are considered.
++        item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
++    else:
++        xfailed = item._store.get(xfailed_key, None)
+     # unittest special case, see setting of unexpectedsuccess_key
+     if unexpectedsuccess_key in item._store and rep.when == "call":
+         reason = item._store[unexpectedsuccess_key]

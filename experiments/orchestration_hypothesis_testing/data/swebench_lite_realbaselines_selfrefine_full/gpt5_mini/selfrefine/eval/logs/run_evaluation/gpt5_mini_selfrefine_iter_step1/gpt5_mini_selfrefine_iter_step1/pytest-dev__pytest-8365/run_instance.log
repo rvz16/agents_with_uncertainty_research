@@ -1,0 +1,201 @@
+2026-06-22 15:15:06,382 - INFO - Creating container for pytest-dev__pytest-8365...
+2026-06-22 15:15:06,646 - INFO - Container for pytest-dev__pytest-8365 created: 8a1f3f2cd69f8162de0167556df56892ccffa4f1293618795920a4a2897d4c80
+2026-06-22 15:15:06,805 - INFO - Container for pytest-dev__pytest-8365 started: 8a1f3f2cd69f8162de0167556df56892ccffa4f1293618795920a4a2897d4c80
+2026-06-22 15:15:06,805 - INFO - Intermediate patch for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/pytest-dev__pytest-8365/patch.diff, now applying to container...
+2026-06-22 15:15:06,912 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/tmpdir.py...
+Applied patch src/_pytest/tmpdir.py cleanly.
+
+2026-06-22 15:15:07,018 - INFO - Git diff before:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..eef8f4e4f 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -2,6 +2,8 @@
+ import os
+ import re
+ import tempfile
++import hashlib
++import unicodedata
+ from pathlib import Path
+ from typing import Optional
+ 
+@@ -149,15 +151,73 @@ class TempdirFactory:
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return the current user name sanitized for use in filesystem paths,
++    or None if getuser() does not work in the current environment (see #1010).
++
++    The returned name is safe to use as a single path component on Windows and
++    POSIX (path separators and characters illegal on Windows are replaced or
++    removed). If sanitization results in an empty name, a stable hash-based
++    fallback is returned. Reserved Windows names are avoided by appending a
++    short hash suffix when necessary.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not isinstance(user, str):
++        try:
++            user = str(user)
++        except Exception:
++            return None
++
++    # Normalize unicode to a stable form
++    user_norm = unicodedata.normalize("NFKD", user)
++
++    # Characters that should not appear in a single path component on Windows.
++    forbidden = set('<>:"/\\|?*\0')
++    # Add the OS-specific separators just in case
++    if os.sep:
++        forbidden.add(os.sep)
++    if os.altsep:
++        forbidden.add(os.altsep)
++
++    # Replace forbidden/control/whitespace characters with underscore; keep others.
++    sanitized_chars = []
++    for ch in user_norm:
++        cp = ord(ch)
++        if ch in forbidden or cp < 32 or cp == 127 or ch.isspace():
++            sanitized_chars.append("_")
++        else:
++            sanitized_chars.append(ch)
++
++    sanitized = "".join(sanitized_chars)
++    # Collapse repeated underscores
++    sanitized = re.sub(r"_+", "_", sanitized)
++    # Strip leading/trailing underscores, dots and spaces (Windows disallows trailing dots/spaces)
++    sanitized = sanitized.strip(" _.")
++    # If empty after sanitization, fall back to a stable hash-based name
++    if not sanitized:
++        h = hashlib.sha1(user.encode("utf-8", "ignore")).hexdigest()[:8]
++        sanitized = f"user-{h}"
++
++    # Avoid reserved Windows names (case-insensitive)
++    reserved = {
++        "CON",
++        "PRN",
++        "AUX",
++        "NUL",
++        *(f"COM{i}" for i in range(1, 10)),
++        *(f"LPT{i}" for i in range(1, 10)),
++    }
++    if sanitized.upper() in reserved:
++        h = hashlib.sha1(user.encode("utf-8", "ignore")).hexdigest()[:8]
++        sanitized = f"{sanitized}_{h}"
++
++    return sanitized
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 15:15:07,018 - INFO - Eval script for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/pytest-dev__pytest-8365/eval.sh; copying to container...
+2026-06-22 15:15:10,827 - INFO - Test runtime: 3.77 seconds
+2026-06-22 15:15:10,827 - INFO - Test output for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/pytest-dev__pytest-8365/test_output.txt
+2026-06-22 15:15:10,877 - INFO - Git diff after:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..eef8f4e4f 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -2,6 +2,8 @@
+ import os
+ import re
+ import tempfile
++import hashlib
++import unicodedata
+ from pathlib import Path
+ from typing import Optional
+ 
+@@ -149,15 +151,73 @@ class TempdirFactory:
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return the current user name sanitized for use in filesystem paths,
++    or None if getuser() does not work in the current environment (see #1010).
++
++    The returned name is safe to use as a single path component on Windows and
++    POSIX (path separators and characters illegal on Windows are replaced or
++    removed). If sanitization results in an empty name, a stable hash-based
++    fallback is returned. Reserved Windows names are avoided by appending a
++    short hash suffix when necessary.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not isinstance(user, str):
++        try:
++            user = str(user)
++        except Exception:
++            return None
++
++    # Normalize unicode to a stable form
++    user_norm = unicodedata.normalize("NFKD", user)
++
++    # Characters that should not appear in a single path component on Windows.
++    forbidden = set('<>:"/\\|?*\0')
++    # Add the OS-specific separators just in case
++    if os.sep:
++        forbidden.add(os.sep)
++    if os.altsep:
++        forbidden.add(os.altsep)
++
++    # Replace forbidden/control/whitespace characters with underscore; keep others.
++    sanitized_chars = []
++    for ch in user_norm:
++        cp = ord(ch)
++        if ch in forbidden or cp < 32 or cp == 127 or ch.isspace():
++            sanitized_chars.append("_")
++        else:
++            sanitized_chars.append(ch)
++
++    sanitized = "".join(sanitized_chars)
++    # Collapse repeated underscores
++    sanitized = re.sub(r"_+", "_", sanitized)
++    # Strip leading/trailing underscores, dots and spaces (Windows disallows trailing dots/spaces)
++    sanitized = sanitized.strip(" _.")
++    # If empty after sanitization, fall back to a stable hash-based name
++    if not sanitized:
++        h = hashlib.sha1(user.encode("utf-8", "ignore")).hexdigest()[:8]
++        sanitized = f"user-{h}"
++
++    # Avoid reserved Windows names (case-insensitive)
++    reserved = {
++        "CON",
++        "PRN",
++        "AUX",
++        "NUL",
++        *(f"COM{i}" for i in range(1, 10)),
++        *(f"LPT{i}" for i in range(1, 10)),
++    }
++    if sanitized.upper() in reserved:
++        h = hashlib.sha1(user.encode("utf-8", "ignore")).hexdigest()[:8]
++        sanitized = f"{sanitized}_{h}"
++
++    return sanitized
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 15:15:10,877 - INFO - Grading answer for pytest-dev__pytest-8365...
+2026-06-22 15:15:10,878 - INFO - report: {'pytest-dev__pytest-8365': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_tmpdir.py::test_tmp_path_factory_handles_invalid_dir_characters']}, 'PASS_TO_PASS': {'success': ['testing/test_tmpdir.py::TestTempdirHandler::test_mktemp', 'testing/test_tmpdir.py::TestTempdirHandler::test_tmppath_relative_basetemp_absolute', 'testing/test_tmpdir.py::test_get_user_uid_not_found', 'testing/test_tmpdir.py::TestNumberedDir::test_make', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_lock_create', 'testing/test_tmpdir.py::TestNumberedDir::test_lock_register_cleanup_removal', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_keep', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_locked', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_ignores_symlink', 'testing/test_tmpdir.py::TestNumberedDir::test_removal_accepts_lock', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_file', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_directory', 'testing/test_tmpdir.py::TestRmRf::test_on_rm_rf_error', 'testing/test_tmpdir.py::test_tmpdir_equals_tmp_path', 'testing/test_tmpdir.py::test_tmpdir_fixture', 'testing/test_tmpdir.py::TestConfigTmpdir::test_getbasetemp_custom_removes_old', 'testing/test_tmpdir.py::test_mktemp[mypath-True]', 'testing/test_tmpdir.py::test_mktemp[/mypath1-False]', 'testing/test_tmpdir.py::test_mktemp[./mypath1-True]', 'testing/test_tmpdir.py::test_mktemp[../mypath3-False]', 'testing/test_tmpdir.py::test_mktemp[../../mypath4-False]', 'testing/test_tmpdir.py::test_mktemp[mypath5/..-False]', 'testing/test_tmpdir.py::test_mktemp[mypath6/../mypath6-True]', 'testing/test_tmpdir.py::test_mktemp[mypath7/../mypath7/..-False]', 'testing/test_tmpdir.py::test_tmpdir_always_is_realpath', 'testing/test_tmpdir.py::test_tmp_path_always_is_realpath', 'testing/test_tmpdir.py::test_tmpdir_too_long_on_parametrization', 'testing/test_tmpdir.py::test_tmpdir_factory', 'testing/test_tmpdir.py::test_tmpdir_fallback_tox_env', 'testing/test_tmpdir.py::test_tmpdir_fallback_uid_not_found', 'testing/test_tmpdir.py::test_basetemp_with_read_only_files'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-8365: resolved: False
+2026-06-22 15:15:10,878 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:15:26,213 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 15:15:26,237 - INFO - Container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 15:15:26,237 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest...
+2026-06-22 15:15:26,509 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest removed.

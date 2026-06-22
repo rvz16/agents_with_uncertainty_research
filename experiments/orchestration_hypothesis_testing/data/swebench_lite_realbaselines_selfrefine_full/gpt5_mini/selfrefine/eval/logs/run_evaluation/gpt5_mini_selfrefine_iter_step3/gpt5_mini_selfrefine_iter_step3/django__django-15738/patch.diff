@@ -1,0 +1,33 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -395,6 +395,30 @@
+                             if self.check_dependency(op2, dep):
+                                 dependency_graph[op].add(op2)
+ 
++            # Ensure AlterUniqueTogether/AlterIndexTogether operations are
++            # ordered before RemoveField operations for the same model. There
++            # are cases (for example when a field is removed and a new field
++            # with the same name is added as a different type) where the
++            # generated auto-dependencies don't capture this ordering robustly,
++            # so add an explicit intra-app ordering edge here to avoid
++            # generating migrations that try to remove a field before the
++            # corresponding unique/index-together option changes have been
++            # applied.
++            for op in ops:
++                # Avoid importing concrete classes at module level; use the
++                # operations module imported at the top of this file.
++                if isinstance(op, operations.RemoveField):
++                    for op2 in ops:
++                        if isinstance(
++                            op2,
++                            (operations.AlterUniqueTogether, operations.AlterIndexTogether),
++                        ):
++                            # Match on model name.
++                            if getattr(op, "model_name_lower", "") == getattr(
++                                op2, "name_lower", ""
++                            ):
++                                dependency_graph[op].add(op2)
++
+             # we use a stable sort for deterministic tests & general behavior
+             self.generated_operations[app_label] = stable_topological_sort(
+                 ops, dependency_graph

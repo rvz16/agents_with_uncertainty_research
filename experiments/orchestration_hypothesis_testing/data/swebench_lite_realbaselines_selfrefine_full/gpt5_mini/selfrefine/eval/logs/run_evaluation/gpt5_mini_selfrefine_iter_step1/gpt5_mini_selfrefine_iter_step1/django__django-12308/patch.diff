@@ -1,0 +1,20 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -398,6 +398,17 @@
+         return formats.number_format(value)
+     elif isinstance(field, models.FileField) and value:
+         return format_html('<a href="{}">{}</a>', value.url, value)
++    # Allow model fields (for example, JSONField) to customize how values are
++    # displayed by providing a prepare_value() method. This ensures JSONField
++    # values are rendered as valid JSON rather than Python dict repr while
++    # still falling back to the default display on errors.
++    elif field is not None and getattr(field, 'prepare_value', None):
++        try:
++            prepared = field.prepare_value(value)
++        except Exception:
++            return display_for_value(value, empty_value_display)
++        else:
++            return display_for_value(prepared, empty_value_display)
+     else:
+         return display_for_value(value, empty_value_display)
+ 

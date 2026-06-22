@@ -1,0 +1,21 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -184,12 +184,15 @@
+         # Generate index removal operations before field is removed
+         self.generate_removed_constraints()
+         self.generate_removed_indexes()
++        # Generate removal of foo together.  Run these before rename handling
++        # so unique/index together removals are generated prior to any
++        # RemoveField/AddField churn for fields that are replaced with a new
++        # field using the same name (e.g. ForeignKey -> ManyToManyField).
++        self.generate_removed_altered_unique_together()
++        self.generate_removed_altered_index_together()
+         # Generate field renaming operations.
+         self.generate_renamed_fields()
+         self.generate_renamed_indexes()
+-        # Generate removal of foo together.
+-        self.generate_removed_altered_unique_together()
+-        self.generate_removed_altered_index_together()
+         # Generate field operations.
+         self.generate_removed_fields()
+         self.generate_added_fields()

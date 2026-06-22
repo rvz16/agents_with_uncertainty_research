@@ -1,0 +1,38 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -164,7 +164,7 @@
+ 
+ @doctest_depends_on(modules=('numpy'))
+ def lambdify(args, expr, modules=None, printer=None, use_imps=True,
+-             dummify=False):
++             dummify=True):
+     """
+     Returns an anonymous function for fast calculation of numerical values.
+ 
+@@ -709,6 +709,8 @@
+         """
+         from sympy import Dummy, Symbol, Function, flatten
+         from sympy.matrices import DeferredVector
++        # MatrixSymbol lives in sympy.matrices.expressions.matexpr
++        from sympy.matrices.expressions.matexpr import MatrixSymbol
+ 
+         dummify = self._dummify
+ 
+@@ -728,6 +730,17 @@
+             elif isinstance(arg, Symbol):
+                 argrep = self._argrepr(arg)
+ 
++                if dummify or not self._is_safe_ident(argrep):
++                    dummy = Dummy()
++                    argstrs.append(self._argrepr(dummy))
++                    expr = self._subexpr(expr, {arg: dummy})
++                else:
++                    argstrs.append(argrep)
++            elif isinstance(arg, MatrixSymbol):
++                # Use the symbolic name for MatrixSymbol when possible.
++                # If the name is not a safe Python identifier or dummify is
++                # requested, replace with a Dummy and xreplace in the expr.
++                argrep = getattr(arg, 'name', str(arg))
+                 if dummify or not self._is_safe_ident(argrep):
+                     dummy = Dummy()
+                     argstrs.append(self._argrepr(dummy))

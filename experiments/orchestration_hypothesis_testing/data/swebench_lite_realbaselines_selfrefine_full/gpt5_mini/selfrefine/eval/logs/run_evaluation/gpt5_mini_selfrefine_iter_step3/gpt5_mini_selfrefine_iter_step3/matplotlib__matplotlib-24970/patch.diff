@@ -1,0 +1,17 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -725,6 +725,14 @@
+                 # Avoid converting large positive values to negative integers.
+                 np.clip(xa, -1, self.N, out=xa)
+                 xa = xa.astype(int)
++        elif xa.dtype.kind in "iu":
++            # Promote integer dtypes so we can safely write sentinel values
++            # (self._i_over/_i_under/_i_bad) without triggering NumPy 1.24+
++            # DeprecationWarnings about out-of-bounds implicit casting.
++            # Use the platform integer (np.intp) which can hold negative
++            # sentinels and values larger than small unsigned dtypes.
++            xa = xa.astype(np.intp)
++
+         # Set the over-range indices before the under-range;
+         # otherwise the under-range values get converted to over-range.
+         xa[xa > self.N - 1] = self._i_over

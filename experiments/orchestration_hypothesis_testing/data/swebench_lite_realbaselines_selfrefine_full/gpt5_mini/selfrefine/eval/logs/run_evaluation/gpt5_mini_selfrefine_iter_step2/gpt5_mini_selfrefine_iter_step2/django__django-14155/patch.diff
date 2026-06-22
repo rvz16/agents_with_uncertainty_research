@@ -1,0 +1,60 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -31,6 +31,48 @@
+ 
+ class ResolverMatch:
+     def __init__(self, func, args, kwargs, url_name=None, app_names=None, namespaces=None, route=None, tried=None):
++        """
++        Create a ResolverMatch.
++
++        If the provided func is a functools.partial, unwrap it to expose the
++        underlying callable and merge the partial-specified args/kwargs with
++        the args/kwargs coming from URL matching. This handles nested partials
++        correctly, preserving the ordering semantics of functools.partial
++        (inner partial args come before outer partial args) and ensuring that
++        call-time kwargs (from URL matching) override partial-provided kwargs.
++        """
++        # Unwrap functools.partial objects (including nested partials) so that
++        # the representation and lookup strings reflect the underlying callable.
++        # Collect partial args/kwargs in the correct order (inner -> outer).
++        if isinstance(func, functools.partial):
++            partials = []
++            f = func
++            while isinstance(f, functools.partial):
++                partials.append(f)
++                f = f.func
++            # Combine partial args/kwargs: inner partial first, outer partials afterwards.
++            combined_partial_args = []
++            combined_partial_kwargs = {}
++            for p in reversed(partials):
++                if p.args:
++                    combined_partial_args.extend(p.args)
++                if getattr(p, 'keywords', None):
++                    combined_partial_kwargs.update(p.keywords)
++            # Resolver-provided args/kwargs should come after partial args, and
++            # should override partial kwargs.
++            resolver_args = tuple(args) if args else ()
++            resolver_kwargs = dict(kwargs) if kwargs else {}
++            args = tuple(combined_partial_args) + resolver_args
++            kwargs = {**combined_partial_kwargs, **resolver_kwargs}
++            # Replace func with the underlying callable.
++            func = f
++            # Keep a reference to the original outermost partial for debugging if needed.
++            self._original_partial = partials[0]
++        else:
++            # No partial involved.
++            args = tuple(args) if args else tuple()
++            kwargs = dict(kwargs) if kwargs else {}
++
+         self.func = func
+         self.args = args
+         self.kwargs = kwargs
+@@ -46,7 +88,7 @@
+         self.namespace = ':'.join(self.namespaces)
+ 
+         if not hasattr(func, '__name__'):
+-            # A class-based view
++            # A class-based view or callable object instance.
+             self._func_path = func.__class__.__module__ + '.' + func.__class__.__name__
+         else:
+             # A function-based view

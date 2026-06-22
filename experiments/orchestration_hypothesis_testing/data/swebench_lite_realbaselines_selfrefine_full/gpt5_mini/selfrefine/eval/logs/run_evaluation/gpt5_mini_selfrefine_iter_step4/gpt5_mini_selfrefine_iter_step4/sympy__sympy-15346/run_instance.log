@@ -1,0 +1,59 @@
+2026-06-22 21:31:19,828 - INFO - Creating container for sympy__sympy-15346...
+2026-06-22 21:31:19,946 - INFO - Container for sympy__sympy-15346 created: a84d028b9c64e7d955d4661386a6a69108560975667f9db9e4f69446bd1c8786
+2026-06-22 21:31:20,100 - INFO - Container for sympy__sympy-15346 started: a84d028b9c64e7d955d4661386a6a69108560975667f9db9e4f69446bd1c8786
+2026-06-22 21:31:20,101 - INFO - Intermediate patch for sympy__sympy-15346 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-15346/patch.diff, now applying to container...
+2026-06-22 21:31:20,232 - INFO - >>>>> Applied Patch:
+Checking patch sympy/simplify/trigsimp.py...
+Applied patch sympy/simplify/trigsimp.py cleanly.
+
+2026-06-22 21:31:20,475 - INFO - Git diff before:
+diff --git a/sympy/simplify/trigsimp.py b/sympy/simplify/trigsimp.py
+index 8ba346adbe..89a74f6f97 100644
+--- a/sympy/simplify/trigsimp.py
++++ b/sympy/simplify/trigsimp.py
+@@ -1143,6 +1143,14 @@ def _futrig(e, **kwargs):
+         lambda x: _eapply(factor, x, trigs),
+         TR14,  # factored powers of identities
+         [identity, lambda x: _eapply(_mexpand, x, trigs)],
++        # Apply TR10i before TRmorrie as well as after it. TRmorrie can
++        # transform certain sin/cos products into forms that TR10i no
++        # longer recognizes (e.g. using multiple-angle sine/cosine identities).
++        # Running TR10i first allows recognition of angle-sum patterns like
++        # cos(a)*cos(b) + sin(a)*sin(b) -> cos(a - b) even when arguments
++        # are e.g. Rationals; keeping the later TR10i preserves previous
++        # behavior for other cases.
++        TR10i,
+         TRmorrie,
+         TR10i,  # sin-cos products > sin-cos of sums
+         [identity, TR8],  # sin-cos products -> sin-cos of sums
+2026-06-22 21:31:20,475 - INFO - Eval script for sympy__sympy-15346 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-15346/eval.sh; copying to container...
+2026-06-22 21:31:46,312 - INFO - Test runtime: 25.80 seconds
+2026-06-22 21:31:46,312 - INFO - Test output for sympy__sympy-15346 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step4/gpt5_mini_selfrefine_iter_step4/sympy__sympy-15346/test_output.txt
+2026-06-22 21:31:46,364 - INFO - Git diff after:
+diff --git a/sympy/simplify/trigsimp.py b/sympy/simplify/trigsimp.py
+index 8ba346adbe..89a74f6f97 100644
+--- a/sympy/simplify/trigsimp.py
++++ b/sympy/simplify/trigsimp.py
+@@ -1143,6 +1143,14 @@ def _futrig(e, **kwargs):
+         lambda x: _eapply(factor, x, trigs),
+         TR14,  # factored powers of identities
+         [identity, lambda x: _eapply(_mexpand, x, trigs)],
++        # Apply TR10i before TRmorrie as well as after it. TRmorrie can
++        # transform certain sin/cos products into forms that TR10i no
++        # longer recognizes (e.g. using multiple-angle sine/cosine identities).
++        # Running TR10i first allows recognition of angle-sum patterns like
++        # cos(a)*cos(b) + sin(a)*sin(b) -> cos(a - b) even when arguments
++        # are e.g. Rationals; keeping the later TR10i preserves previous
++        # behavior for other cases.
++        TR10i,
+         TRmorrie,
+         TR10i,  # sin-cos products > sin-cos of sums
+         [identity, TR8],  # sin-cos products -> sin-cos of sums
+2026-06-22 21:31:46,364 - INFO - Grading answer for sympy__sympy-15346...
+2026-06-22 21:31:46,364 - INFO - report: {'sympy__sympy-15346': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_15129_trigsimp_methods'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_trigsimp1', 'test_trigsimp1a', 'test_trigsimp2', 'test_issue_4373', 'test_trigsimp3', 'test_issue_4661', 'test_issue_4494', 'test_issue_5948', 'test_issue_4775', 'test_issue_4280', 'test_issue_3210', 'test_trigsimp_issues', 'test_trigsimp_issue_2515', 'test_trigsimp_issue_3826', 'test_trigsimp_issue_4032', 'test_trigsimp_issue_7761', 'test_trigsimp_noncommutative', 'test_hyperbolic_simp', 'test_trigsimp_groebner', 'test_issue_2827_trigsimp_methods', 'test_exptrigsimp', 'test_powsimp_on_numbers'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-15346: resolved: True
+2026-06-22 21:31:46,364 - INFO - Attempting to stop container sweb.eval.sympy__sympy-15346.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:32:01,613 - INFO - Attempting to remove container sweb.eval.sympy__sympy-15346.gpt5_mini_selfrefine_iter_step4...
+2026-06-22 21:32:01,633 - INFO - Container sweb.eval.sympy__sympy-15346.gpt5_mini_selfrefine_iter_step4 removed.
+2026-06-22 21:32:01,633 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-15346:latest...
+2026-06-22 21:32:01,697 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-15346:latest removed.

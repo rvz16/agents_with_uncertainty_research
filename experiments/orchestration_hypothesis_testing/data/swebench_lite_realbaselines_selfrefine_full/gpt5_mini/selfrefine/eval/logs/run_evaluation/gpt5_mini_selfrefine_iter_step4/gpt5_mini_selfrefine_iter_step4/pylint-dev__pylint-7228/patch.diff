@@ -1,0 +1,58 @@
+--- a/pylint/config/argument.py
++++ b/pylint/config/argument.py
+@@ -99,11 +99,26 @@
+     return version
+ 
+ 
++def _regexp_transformer(value: str) -> Pattern[str]:
++    """Transforms a single regular expression.
++
++    Provides a friendly argparse.ArgumentTypeError on invalid regex patterns
++    instead of letting re.error bubble up.
++    """
++    try:
++        return re.compile(value)
++    except re.error as exc:
++        raise argparse.ArgumentTypeError(f"Invalid regular expression '{value}': {exc}") from None
++
++
+ def _regexp_csv_transfomer(value: str) -> Sequence[Pattern[str]]:
+     """Transforms a comma separated list of regular expressions."""
+     patterns: list[Pattern[str]] = []
+     for pattern in _csv_transformer(value):
+-        patterns.append(re.compile(pattern))
++        try:
++            patterns.append(re.compile(pattern))
++        except re.error as exc:
++            raise argparse.ArgumentTypeError(f"Invalid regular expression '{pattern}': {exc}") from None
+     return patterns
+ 
+ 
+@@ -111,13 +126,15 @@
+     """Transforms a comma separated list of regular expressions paths."""
+     patterns: list[Pattern[str]] = []
+     for pattern in _csv_transformer(value):
+-        patterns.append(
+-            re.compile(
++        try:
++            compiled = re.compile(
+                 str(pathlib.PureWindowsPath(pattern)).replace("\\", "\\\\")
+                 + "|"
+                 + pathlib.PureWindowsPath(pattern).as_posix()
+             )
+-        )
++        except re.error as exc:
++            raise argparse.ArgumentTypeError(f"Invalid regular expression for path '{pattern}': {exc}") from None
++        patterns.append(compiled)
+     return patterns
+ 
+ 
+@@ -130,7 +147,7 @@
+     "non_empty_string": _non_empty_string_transformer,
+     "path": _path_transformer,
+     "py_version": _py_version_transformer,
+-    "regexp": re.compile,
++    "regexp": _regexp_transformer,
+     "regexp_csv": _regexp_csv_transfomer,
+     "regexp_paths_csv": _regexp_paths_csv_transfomer,
+     "string": pylint_utils._unquote,

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:36:17.883300+00:00",
+  "instance_id": "psf__requests-1963",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\n`Session.resolve_redirects` copies the original request for all subsequent requests, can cause incorrect method selection\nConsider the following redirection chain:\n\n```\nPOST /do_something HTTP/1.1\nHost: server.example.com\n...\n\nHTTP/1.1 303 See Other\nLocation: /new_thing_1513\n\nGET /new_thing_1513\nHost: server.example.com\n...\n\nHTTP/1.1 307 Temporary Redirect\nLocation: //failover.example.com/new_thing_1513\n```\n\nThe intermediate 303 See Other has caused the POST to be converted to\na GET.  The subsequent 307 should preserve the GET.  However, because\n`Session.resolve_redirects` starts each iteration by copying the _original_\nrequest object, Requests will issue a POST!\n\n\n\n## Your previous patch (diff format)\n```\n--- a/requests/sessions.py\n+++ b/requests/sessions.py\n@@ -88,7 +88,7 @@\n         i = 0\n \n         while resp.is_redirect:\n-            prepared_request = req.copy()\n+            prepared_request = resp.request.copy()\n \n             resp.content  # Consume socket so it can be released\n \n@@ -99,7 +99,7 @@\n             resp.close()\n \n             url = resp.headers['location']\n-            method = req.method\n+            method = prepared_request.method\n \n             # Handle redirection without scheme (see: RFC 1808 Section 4)\n             if url.startswith('//'):\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 433,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00305225
+}

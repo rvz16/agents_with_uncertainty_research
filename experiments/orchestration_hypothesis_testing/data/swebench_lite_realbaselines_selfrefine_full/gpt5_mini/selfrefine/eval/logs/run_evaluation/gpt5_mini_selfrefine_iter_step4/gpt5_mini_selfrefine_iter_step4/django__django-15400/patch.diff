@@ -1,0 +1,16 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -372,6 +372,13 @@
+     __iter__ = new_method_proxy(iter)
+     __len__ = new_method_proxy(len)
+     __contains__ = new_method_proxy(operator.contains)
++    # Numeric and sequence addition support
++    __add__ = new_method_proxy(operator.add)
++
++    def __radd__(self, other):
++        if self._wrapped is empty:
++            self._setup()
++        return other + self._wrapped
+ 
+ 
+ def unpickle_lazyobject(wrapped):

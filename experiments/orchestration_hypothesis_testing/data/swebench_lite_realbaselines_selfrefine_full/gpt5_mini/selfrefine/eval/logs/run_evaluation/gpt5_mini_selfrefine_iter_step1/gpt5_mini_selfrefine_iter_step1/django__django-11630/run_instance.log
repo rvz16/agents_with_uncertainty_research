@@ -1,0 +1,93 @@
+2026-06-22 14:26:07,545 - INFO - Creating container for django__django-11630...
+2026-06-22 14:26:07,667 - INFO - Container for django__django-11630 created: 21b79b7ad6ff38afbe1fa85b5d6e9acb451f28f20502eb605a8fdfa9875d270d
+2026-06-22 14:26:07,831 - INFO - Container for django__django-11630 started: 21b79b7ad6ff38afbe1fa85b5d6e9acb451f28f20502eb605a8fdfa9875d270d
+2026-06-22 14:26:07,831 - INFO - Intermediate patch for django__django-11630 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11630/patch.diff, now applying to container...
+2026-06-22 14:26:07,950 - INFO - >>>>> Applied Patch:
+Checking patch django/core/checks/model_checks.py...
+Applied patch django/core/checks/model_checks.py cleanly.
+
+2026-06-22 14:26:08,364 - INFO - Git diff before:
+diff --git a/django/core/checks/model_checks.py b/django/core/checks/model_checks.py
+index 5c2266ca1d..c047159d58 100644
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,8 @@ from collections import defaultdict
+ from itertools import chain
+ 
+ from django.apps import apps
+-from django.core.checks import Error, Tags, register
++from django.core.checks import Error, Warning, Tags, register
++from django.conf import settings
+ 
+ 
+ @register(Tags.models)
+@@ -37,12 +38,19 @@ def check_all_models(app_configs=None, **kwargs):
+             constraints[model_constraint.name].append(model._meta.label)
+     for db_table, model_labels in db_table_models.items():
+         if len(model_labels) != 1:
++            # If DATABASE_ROUTERS is configured, multiple models using the same
++            # db_table may be intentional (different apps routed to different
++            # databases). In that case emit a warning instead of an error so
++            # projects can silence it via SILENCED_SYSTEM_CHECKS if desired.
++            use_warning = bool(getattr(settings, 'DATABASE_ROUTERS', None))
++            check_class = Warning if use_warning else Error
++            check_id = 'models.W028' if use_warning else 'models.E028'
+             errors.append(
+-                Error(
++                check_class(
+                     "db_table '%s' is used by multiple models: %s."
+                     % (db_table, ', '.join(db_table_models[db_table])),
+                     obj=db_table,
+-                    id='models.E028',
++                    id=check_id,
+                 )
+             )
+     for index_name, model_labels in indexes.items():
+2026-06-22 14:26:08,365 - INFO - Eval script for django__django-11630 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11630/eval.sh; copying to container...
+2026-06-22 14:26:17,448 - INFO - Test runtime: 9.05 seconds
+2026-06-22 14:26:17,448 - INFO - Test output for django__django-11630 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-11630/test_output.txt
+2026-06-22 14:26:17,498 - INFO - Git diff after:
+diff --git a/django/core/checks/model_checks.py b/django/core/checks/model_checks.py
+index 5c2266ca1d..c047159d58 100644
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,8 @@ from collections import defaultdict
+ from itertools import chain
+ 
+ from django.apps import apps
+-from django.core.checks import Error, Tags, register
++from django.core.checks import Error, Warning, Tags, register
++from django.conf import settings
+ 
+ 
+ @register(Tags.models)
+@@ -37,12 +38,19 @@ def check_all_models(app_configs=None, **kwargs):
+             constraints[model_constraint.name].append(model._meta.label)
+     for db_table, model_labels in db_table_models.items():
+         if len(model_labels) != 1:
++            # If DATABASE_ROUTERS is configured, multiple models using the same
++            # db_table may be intentional (different apps routed to different
++            # databases). In that case emit a warning instead of an error so
++            # projects can silence it via SILENCED_SYSTEM_CHECKS if desired.
++            use_warning = bool(getattr(settings, 'DATABASE_ROUTERS', None))
++            check_class = Warning if use_warning else Error
++            check_id = 'models.W028' if use_warning else 'models.E028'
+             errors.append(
+-                Error(
++                check_class(
+                     "db_table '%s' is used by multiple models: %s."
+                     % (db_table, ', '.join(db_table_models[db_table])),
+                     obj=db_table,
+-                    id='models.E028',
++                    id=check_id,
+                 )
+             )
+     for index_name, model_labels in indexes.items():
+2026-06-22 14:26:17,499 - INFO - Grading answer for django__django-11630...
+2026-06-22 14:26:17,499 - INFO - report: {'django__django-11630': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_collision_across_apps_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app_database_routers_installed (check_framework.test_model_checks.DuplicateDBTableTests)']}, 'PASS_TO_PASS': {'success': ['test_collision_abstract_model (check_framework.test_model_checks.IndexNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.IndexNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.IndexNameTests)', 'test_collision_abstract_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_different_models (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_in_same_model (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_abstract_model_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_no_collision_across_apps_interpolation (check_framework.test_model_checks.ConstraintNameTests)', 'test_collision_across_apps (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_collision_in_same_app (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_proxy_models (check_framework.test_model_checks.DuplicateDBTableTests)', 'test_no_collision_for_unmanaged_models (check_framework.test_model_checks.DuplicateDBTableTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-11630: resolved: False
+2026-06-22 14:26:17,499 - INFO - Attempting to stop container sweb.eval.django__django-11630.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:26:32,758 - INFO - Attempting to remove container sweb.eval.django__django-11630.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:26:32,780 - INFO - Container sweb.eval.django__django-11630.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 14:26:32,780 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-11630:latest...
+2026-06-22 14:26:33,189 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-11630:latest removed.

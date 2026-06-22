@@ -1,0 +1,19 @@
+--- a/sympy/ntheory/residue_ntheory.py
++++ b/sympy/ntheory/residue_ntheory.py
+@@ -768,6 +768,16 @@
+     """
+     from sympy.core.numbers import igcdex
+     a, n, p = as_int(a), as_int(n), as_int(p)
++
++    # If modulus p divides a and n > 0 then x = 0 (mod p) is always a root.
++    # For prime p the only solution of x**n == 0 (mod p) is x == 0.
++    # Handle this case early to avoid algorithms that assume a is invertible.
++    if n > 0 and p > 1 and a % p == 0:
++        if all_roots:
++            return [0]
++        else:
++            return 0
++
+     if n == 2:
+         return sqrt_mod(a, p, all_roots)
+     # see Hackman "Elementary Number Theory" (2009), page 76

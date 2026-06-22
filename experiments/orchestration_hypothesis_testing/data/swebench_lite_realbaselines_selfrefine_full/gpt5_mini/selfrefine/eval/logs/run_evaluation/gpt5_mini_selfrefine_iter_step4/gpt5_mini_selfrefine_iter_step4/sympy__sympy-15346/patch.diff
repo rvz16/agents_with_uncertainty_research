@@ -1,0 +1,17 @@
+--- a/sympy/simplify/trigsimp.py
++++ b/sympy/simplify/trigsimp.py
+@@ -1143,6 +1143,14 @@
+         lambda x: _eapply(factor, x, trigs),
+         TR14,  # factored powers of identities
+         [identity, lambda x: _eapply(_mexpand, x, trigs)],
++        # Apply TR10i before TRmorrie as well as after it. TRmorrie can
++        # transform certain sin/cos products into forms that TR10i no
++        # longer recognizes (e.g. using multiple-angle sine/cosine identities).
++        # Running TR10i first allows recognition of angle-sum patterns like
++        # cos(a)*cos(b) + sin(a)*sin(b) -> cos(a - b) even when arguments
++        # are e.g. Rationals; keeping the later TR10i preserves previous
++        # behavior for other cases.
++        TR10i,
+         TRmorrie,
+         TR10i,  # sin-cos products > sin-cos of sums
+         [identity, TR8],  # sin-cos products -> sin-cos of sums

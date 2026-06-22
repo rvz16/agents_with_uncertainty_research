@@ -1,0 +1,48 @@
+--- a/sympy/polys/polyoptions.py
++++ b/sympy/polys/polyoptions.py
+@@ -405,7 +405,7 @@
+     _re_realfield = re.compile(r"^(R|RR)(_(\d+))?$")
+     _re_complexfield = re.compile(r"^(C|CC)(_(\d+))?$")
+     _re_finitefield = re.compile(r"^(FF|GF)\((\d+)\)$")
+-    _re_polynomial = re.compile(r"^(Z|ZZ|Q|QQ)\[(.+)\]$")
++    _re_polynomial = re.compile(r"^(.+)\[(.+)\]$")
+     _re_fraction = re.compile(r"^(Z|ZZ|Q|QQ)\((.+)\)$")
+     _re_algebraic = re.compile(r"^(Q|QQ)\<(.+)\>$")
+ 
+@@ -453,14 +453,19 @@
+             r = cls._re_polynomial.match(domain)
+ 
+             if r is not None:
+-                ground, gens = r.groups()
+-
+-                gens = list(map(sympify, gens.split(',')))
+-
+-                if ground in ['Z', 'ZZ']:
+-                    return sympy.polys.domains.ZZ.poly_ring(*gens)
+-                else:
+-                    return sympy.polys.domains.QQ.poly_ring(*gens)
++                ground_str, gens_str = r.groups()
++
++                # try to interpret the left-hand side (ground) using the same
++                # preprocessing logic; this allows constructions such as
++                # 'RR[y,z]' or 'FF(5)[x]' to be recognized.
++                ground_domain = cls.preprocess(ground_str)
++
++                gens = list(map(sympify, gens_str.split(',')))
++
++                if not isinstance(ground_domain, sympy.polys.domains.Domain):
++                    raise OptionError("invalid ground domain specification in %r" % (domain,))
++
++                return ground_domain.poly_ring(*gens)
+ 
+             r = cls._re_fraction.match(domain)
+ 
+@@ -480,7 +485,7 @@
+                 gens = list(map(sympify, r.groups()[1].split(',')))
+                 return sympy.polys.domains.QQ.algebraic_field(*gens)
+ 
+-        raise OptionError('expected a valid domain specification, got %s' % domain)
++        raise OptionError("expected a valid domain specification, got %r" % (domain,))
+ 
+     @classmethod
+     def postprocess(cls, options):

@@ -1,0 +1,69 @@
+--- a/sklearn/utils/_pprint.py
++++ b/sklearn/utils/_pprint.py
+@@ -87,16 +87,63 @@
+ def _changed_params(estimator):
+     """Return dict (param_name: value) of parameters that were given to
+     estimator with non-default values."""
+-
+     params = estimator.get_params(deep=False)
+     filtered_params = {}
+     init_func = getattr(estimator.__init__, 'deprecated_original',
+                         estimator.__init__)
+     init_params = signature(init_func).parameters
+     init_params = {name: param.default for name, param in init_params.items()}
++
++    # local import to avoid adding a hard dependency at module import time in
++    # environments where numpy might not be available during import.
++    try:
++        import numpy as _np
++    except Exception:
++        _np = None
++
++    def _equal(a, b):
++        """Robust equality test that handles numpy arrays and iterables.
++
++        Returns True if a and b should be considered equal.
++        - For numpy arrays (if numpy is available), perform element-wise
++          comparison and treat NaNs as equal.
++        - For other iterables, return True if all elements compare equal.
++        - Fallback to using == and, if it yields an iterable, require all()
++          to be True.
++        """
++        # Handle numpy arrays explicitly if numpy is available.
++        if _np is not None:
++            try:
++                if isinstance(a, _np.ndarray) or isinstance(b, _np.ndarray):
++                    # treat NaNs as equal
++                    return _np.array_equal(a, b, equal_nan=True)
++            except Exception:
++                # Fall through to generic handling below.
++                pass
++
++        try:
++            res = a == b
++        except Exception:
++            return False
++
++        # If res is a boolean, return it directly.
++        if isinstance(res, bool):
++            return res
++
++        # If res is an iterable (e.g., list of booleans or numpy boolean array),
++        # consider the objects equal only if all element-wise comparisons are True.
++        try:
++            # For numpy boolean arrays, using all() from numpy would also work,
++            # but Python's all() handles general iterables.
++            return all(res)
++        except Exception:
++            return False
++
+     for k, v in params.items():
+-        if (v != init_params[k] and
+-                not (is_scalar_nan(init_params[k]) and is_scalar_nan(v))):
++        default = init_params[k]
++        # Consider values as changed only if they are not equal and not both NaN.
++        if (not _equal(v, default) and
++                not (is_scalar_nan(default) and is_scalar_nan(v))):
+             filtered_params[k] = v
+     return filtered_params
+ 

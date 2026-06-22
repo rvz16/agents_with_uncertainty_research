@@ -1,0 +1,23 @@
+--- a/sklearn/utils/_set_output.py
++++ b/sklearn/utils/_set_output.py
+@@ -56,7 +56,19 @@
+         if columns is not None:
+             data_to_wrap.columns = columns
+         if index is not None:
+-            data_to_wrap.index = index
++            # Only set the index when its length matches the DataFrame's number
++            # of rows. Aggregating transformers may legitimately return a
++            # DataFrame with fewer (or more) rows than the original input, and
++            # forcibly restoring the original input index raises a
++            # Length mismatch error. In that case we preserve the returned
++            # DataFrame's index.
++            try:
++                if len(index) == len(data_to_wrap):
++                    data_to_wrap.index = index
++            except Exception:
++                # If determining lengths fails for some reason, do not attempt
++                # to set the index to avoid raising here.
++                pass
+         return data_to_wrap
+ 
+     return pd.DataFrame(data_to_wrap, index=index, columns=columns)

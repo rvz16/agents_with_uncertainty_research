@@ -1,0 +1,46 @@
+--- a/src/flask/config.py
++++ b/src/flask/config.py
+@@ -234,6 +234,7 @@
+         filename: str,
+         load: t.Callable[[t.IO[t.Any]], t.Mapping],
+         silent: bool = False,
++        mode: str = "r",
+     ) -> bool:
+         """Update the values in the config from a file that is loaded
+         using the ``load`` parameter. The loaded data is passed to the
+@@ -246,6 +247,8 @@
+ 
+             import toml
+             app.config.from_file("config.toml", load=toml.load)
++            # or for binary loaders such as tomllib on Python 3.11:
++            # app.config.from_file("config.toml", load=tomllib.load, mode="rb")
+ 
+         :param filename: The path to the data file. This can be an
+             absolute path or relative to the config root path.
+@@ -254,14 +257,25 @@
+         :type load: ``Callable[[Reader], Mapping]`` where ``Reader``
+             implements a ``read`` method.
+         :param silent: Ignore the file if it doesn't exist.
++        :param mode: The file mode to use when opening the file. Defaults
++            to text mode ``"r"``. Pass ``"rb"`` for binary mode, or the
++            single-character shorthand ``"b"``/``"t"``.
+         :return: ``True`` if the file was loaded successfully.
+ 
+         .. versionadded:: 2.0
+         """
+         filename = os.path.join(self.root_path, filename)
+ 
++        # Normalize common shorthand modes
++        if not isinstance(mode, str):
++            raise TypeError("mode must be a string")
++        if mode == "b":
++            mode = "rb"
++        elif mode == "t":
++            mode = "r"
++
+         try:
+-            with open(filename) as f:
++            with open(filename, mode=mode) as f:
+                 obj = load(f)
+         except OSError as e:
+             if silent and e.errno in (errno.ENOENT, errno.EISDIR):

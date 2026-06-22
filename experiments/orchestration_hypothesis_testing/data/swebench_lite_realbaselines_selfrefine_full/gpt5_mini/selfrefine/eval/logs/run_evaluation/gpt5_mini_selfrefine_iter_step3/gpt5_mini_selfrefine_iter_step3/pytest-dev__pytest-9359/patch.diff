@@ -1,0 +1,32 @@
+--- a/src/_pytest/_code/source.py
++++ b/src/_pytest/_code/source.py
+@@ -4,6 +4,7 @@
+ import tokenize
+ import types
+ import warnings
++import sys
+ from bisect import bisect_right
+ from typing import Iterable
+ from typing import Iterator
+@@ -147,6 +148,12 @@
+     # Flatten all statements and except handlers into one lineno-list.
+     # AST's line numbers start indexing at 1.
+     values: List[int] = []
++    # The AST behavior around orelse/finalbody lineno changed in Python 3.9.
++    # To remain compatible across Python versions, pick an offset that
++    # preserves the historical behavior on older Pythons while fixing the
++    # off-by-one that caused additional lines (such as decorators) to be
++    # included on Python 3.9+.
++    final_orelse_offset = 1 if sys.version_info >= (3, 9) else 2
+     for x in ast.walk(node):
+         if isinstance(x, (ast.stmt, ast.ExceptHandler)):
+             values.append(x.lineno - 1)
+@@ -154,7 +161,7 @@
+                 val: Optional[List[ast.stmt]] = getattr(x, name, None)
+                 if val:
+                     # Treat the finally/orelse part as its own statement.
+-                    values.append(val[0].lineno - 1 - 1)
++                    values.append(val[0].lineno - final_orelse_offset)
+     values.sort()
+     insert_index = bisect_right(values, lineno)
+     start = values[insert_index - 1]

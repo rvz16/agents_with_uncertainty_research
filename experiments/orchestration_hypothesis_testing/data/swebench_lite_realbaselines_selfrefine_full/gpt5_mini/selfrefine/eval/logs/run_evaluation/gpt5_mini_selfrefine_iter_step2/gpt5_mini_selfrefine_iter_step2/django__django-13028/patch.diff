@@ -1,0 +1,16 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1124,7 +1124,12 @@
+ 
+     def check_filterable(self, expression):
+         """Raise an error if expression cannot be used in a WHERE clause."""
+-        if not getattr(expression, 'filterable', True):
++        # Only enforce the 'filterable' flag for expressions that will be
++        # resolved into SQL (i.e. those that implement resolve_expression).
++        # Plain Python objects may happen to have an attribute named
++        # "filterable" (for example model instances with a field called
++        # 'filterable') and should not be rejected here.
++        if hasattr(expression, 'resolve_expression') and not getattr(expression, 'filterable', True):
+             raise NotSupportedError(
+                 expression.__class__.__name__ + ' is disallowed in the filter '
+                 'clause.'

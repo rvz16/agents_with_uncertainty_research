@@ -1,0 +1,26 @@
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -602,6 +602,22 @@
+             fspath = location[0]
+         else:
+             fspath = py.path.local(location[0])
+-        relfspath = self.session._node_location_to_relpath(fspath)
++        # Compute a path relative to the original collection root (not the current
++        # working directory). This ensures that reported file locations remain
++        # stable and jumpable even if a test or fixture changes the CWD.
++        relfspath = None
++        try:
++            # Prefer a path relative to the configured rootdir.
++            relfspath = fspath.relto(self.session.config.rootdir)
++            if not relfspath:
++                # Fall back to matching any of the initial paths (see FSCollector).
++                relfspath = _check_initialpaths_for_relpath(self.session, fspath)
++            if relfspath and os.sep != SEP:
++                relfspath = relfspath.replace(os.sep, SEP)
++        except Exception:
++            # If anything unexpected happens, fall back to the session helper.
++            relfspath = None
++        if not relfspath:
++            relfspath = self.session._node_location_to_relpath(fspath)
+         assert type(location[2]) is str
+         return (relfspath, location[1], location[2])

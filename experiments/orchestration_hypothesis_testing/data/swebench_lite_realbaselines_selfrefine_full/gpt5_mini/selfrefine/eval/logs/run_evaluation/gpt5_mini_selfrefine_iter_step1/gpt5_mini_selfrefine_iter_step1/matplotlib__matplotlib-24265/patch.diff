@@ -1,0 +1,18 @@
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,15 @@
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++    # Provide backward-compatible aliases for seaborn styles that were
++    # renamed to 'seaborn-v0_8-...' in 3.6.  Users (and third-party code)
++    # may still reference the original 'seaborn-...' names (for example
++    # "seaborn-colorblind"); ensure those legacy names are present in the
++    # library to avoid KeyError while keeping a single source of truth.
++    for key in list(library.keys()):
++        if key.startswith("seaborn-v0_8-"):
++            legacy = key.replace("seaborn-v0_8-", "seaborn-")
++            library.setdefault(legacy, library[key])
+     available[:] = sorted(library.keys())
+ 
+ 

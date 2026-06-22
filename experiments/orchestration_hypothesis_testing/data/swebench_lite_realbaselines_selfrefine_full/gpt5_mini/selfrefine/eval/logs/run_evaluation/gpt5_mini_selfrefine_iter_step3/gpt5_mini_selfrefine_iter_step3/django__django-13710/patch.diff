@@ -1,0 +1,57 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2037,10 +2037,53 @@
+         self.opts = self.model._meta
+         self.has_registered_model = admin_site.is_registered(self.model)
+         super().__init__()
++        # Detect whether the inline class itself provided verbose_name /
++        # verbose_name_plural at class definition time. Checking the class
++        # __dict__ allows us to distinguish between a user explicitly setting
++        # verbose_name on the Inline subclass and inheriting the default
++        # None from InlineModelAdmin.
++        class_verbose = self.__class__.__dict__.get('verbose_name', None)
++        class_verbose_plural = self.__class__.__dict__.get('verbose_name_plural', None)
++
+         if self.verbose_name is None:
++            # Default to the model's verbose_name if not provided on the inline.
+             self.verbose_name = self.model._meta.verbose_name
++
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # If the Inline class explicitly provided a verbose_name, base the
++            # plural on that. Otherwise fall back to the model's verbose_name_plural.
++            if class_verbose is not None:
++                def _simple_pluralize(name):
++                    """
++                    A lightweight English pluralization fallback for inline
++                    verbose_name values. This covers common cases:
++                    - words ending with s, x, z, ch, sh -> add "es"
++                    - words ending with consonant + y -> replace "y" with "ies"
++                    - otherwise add "s"
++
++                    For multi-word verbose names, only the last word is pluralized.
++                    This is a pragmatic approach mirroring Django's behaviour of
++                    deriving plural names when an explicit plural isn't provided.
++                    """
++                    name = str(name)
++                    parts = name.rsplit(' ', 1)
++                    if len(parts) == 1:
++                        prefix = ''
++                        word = parts[0]
++                    else:
++                        prefix, word = parts[0], parts[1]
++                    lower = word.lower()
++                    if lower.endswith(('ch', 'sh')) or lower.endswith(('s', 'x', 'z')):
++                        plural = word + 'es'
++                    elif len(word) > 1 and lower.endswith('y') and lower[-2] not in 'aeiou':
++                        plural = word[:-1] + 'ies'
++                    else:
++                        plural = word + 's'
++                    return (prefix + ' ' + plural).strip() if prefix else plural
++
++                self.verbose_name_plural = _simple_pluralize(self.verbose_name)
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

@@ -1,0 +1,49 @@
+--- a/pylint/reporters/text.py
++++ b/pylint/reporters/text.py
+@@ -12,6 +12,7 @@
+ 
+ import os
+ import re
++from string import Formatter
+ import sys
+ import warnings
+ from dataclasses import asdict, fields
+@@ -174,16 +175,31 @@
+         # Set template to the currently selected template
+         self._template = template
+ 
+-        # Check to see if all parameters in the template are attributes of the Message
+-        arguments = re.findall(r"\{(.+?)(:.*)?\}", template)
+-        for argument in arguments:
+-            if argument[0] not in MESSAGE_FIELDS:
++        # Use Formatter.parse to properly handle escaped braces ({{ and }})
++        fmt = Formatter()
++        parts: list[str] = []
++        for literal_text, field_name, format_spec, _ in fmt.parse(template):
++            # Re-escape any braces in literal_text so that format() will treat them as literals
++            esc_literal = literal_text.replace("{", "{{").replace("}", "}}")
++            if not field_name:
++                parts.append(esc_literal)
++                continue
++            # Determine root field name (before attribute/index access)
++            root = field_name.split(".", 1)[0].split("[", 1)[0]
++            if root not in MESSAGE_FIELDS:
+                 warnings.warn(
+-                    f"Don't recognize the argument '{argument[0]}' in the --msg-template. "
++                    f"Don't recognize the argument '{root}' in the --msg-template. "
+                     "Are you sure it is supported on the current version of pylint?"
+                 )
+-                template = re.sub(r"\{" + argument[0] + r"(:.*?)?\}", "", template)
+-        self._fixed_template = template
++                # drop the placeholder but keep the literal text
++                parts.append(esc_literal)
++            else:
++                if format_spec:
++                    placeholder = "{" + field_name + ":" + format_spec + "}"
++                else:
++                    placeholder = "{" + field_name + "}"
++                parts.append(esc_literal + placeholder)
++        self._fixed_template = "".join(parts)
+ 
+     def write_message(self, msg: Message) -> None:
+         """Convenience method to write a formatted message with class default

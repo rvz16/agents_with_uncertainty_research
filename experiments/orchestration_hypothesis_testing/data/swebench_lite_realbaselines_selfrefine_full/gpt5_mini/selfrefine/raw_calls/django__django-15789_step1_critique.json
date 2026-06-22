@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:14:39.973306+00:00",
+  "instance_id": "django__django-15789",
+  "step": 1,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nAdd an encoder parameter to django.utils.html.json_script().\nDescription\n\t\nI have a use case where I want to customize the JSON encoding of some values to output to the template layer. It looks like django.utils.html.json_script is a good utility for that, however the JSON encoder is hardcoded to DjangoJSONEncoder. I think it would be nice to be able to pass a custom encoder class.\nBy the way, django.utils.html.json_script is not documented (only its template filter counterpart is), would it be a good thing to add to the docs?\n\n\n## Your previous patch (diff format)\n```\n--- a/django/utils/html.py\n+++ b/django/utils/html.py\n@@ -59,15 +59,21 @@\n }\n \n \n-def json_script(value, element_id=None):\n+def json_script(value, element_id=None, encoder=None):\n     \"\"\"\n     Escape all the HTML/XML special characters with their unicode escapes, so\n     value is safe to be output anywhere except for inside a tag attribute. Wrap\n     the escaped JSON in a script tag.\n+\n+    encoder\n+        Optional JSON encoder class to pass as ``cls`` to ``json.dumps``.\n+        If ``None``, :class:`django.core.serializers.json.DjangoJSONEncoder`\n+        is used.\n     \"\"\"\n     from django.core.serializers.json import DjangoJSONEncoder\n \n-    json_str = json.dumps(value, cls=DjangoJSONEncoder).translate(_json_script_escapes)\n+    cls = DjangoJSONEncoder if encoder is None else encoder\n+    json_str = json.dumps(value, cls=cls).translate(_json_script_escapes)\n     if element_id:\n         template = '<script id=\"{}\" type=\"application/json\">{}</script>'\n         args = (element_id, mark_safe(json_str))\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "",
+  "prompt_tokens": 491,
+  "completion_tokens": 1472,
+  "cost_usd": 0.00306675
+}

@@ -1,0 +1,25 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2040,7 +2040,21 @@
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            # If the Inline has an explicit verbose_name (i.e. different from
++            # the model's verbose_name), base the default plural on that value.
++            # This mirrors the behavior of a model's Meta, which bases the
++            # plural form on a provided verbose_name when verbose_name_plural
++            # isn't explicitly set.
++            if self.verbose_name is not None and self.verbose_name != self.model._meta.verbose_name:
++                # Use ngettext so translations can provide appropriate plural
++                # forms. Fallback plural is a simple English regular plural.
++                self.verbose_name_plural = ngettext(
++                    self.verbose_name,
++                    '%s%s' % (self.verbose_name, 's'),
++                    2
++                )
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

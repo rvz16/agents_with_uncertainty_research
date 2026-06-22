@@ -1,0 +1,39 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -83,13 +83,35 @@
+     def cleanse_setting(self, key, value):
+         """
+         Cleanse an individual setting key/value of sensitive content. If the
+-        value is a dictionary, recursively cleanse the keys in that dictionary.
++        value is a dictionary or another iterable, recursively cleanse the
++        keys/items in that structure.
+         """
+         try:
+             if self.hidden_settings.search(key):
++                # If the (current) key matches a sensitive pattern, replace the
++                # entire value with the substitute.
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
++                # Recurse into dicts and let each dict key be checked
++                # individually.
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple, set, frozenset)):
++                # Recurse into common iterable containers (but not strings/bytes).
++                if isinstance(value, list):
++                    cleansed = [self.cleanse_setting(key, v) for v in value]
++                elif isinstance(value, tuple):
++                    cleansed = tuple(self.cleanse_setting(key, v) for v in value)
++                elif isinstance(value, set):
++                    try:
++                        cleansed = {self.cleanse_setting(key, v) for v in value}
++                    except TypeError:
++                        # If cleansed items are unhashable, fall back to a list.
++                        cleansed = [self.cleanse_setting(key, v) for v in value]
++                else:  # frozenset
++                    try:
++                        cleansed = frozenset(self.cleanse_setting(key, v) for v in value)
++                    except TypeError:
++                        cleansed = [self.cleanse_setting(key, v) for v in value]
+             else:
+                 cleansed = value
+         except TypeError:

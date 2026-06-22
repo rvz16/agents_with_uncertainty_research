@@ -1,0 +1,14 @@
+--- a/sympy/integrals/intpoly.py
++++ b/sympy/integrals/intpoly.py
+@@ -593,7 +593,10 @@
+         poly_dict[0] = expr
+ 
+     if separate:
+-        return list(poly_dict.values())
++        # Return the constituent monomials in a deterministic order.
++        # Sort by degree (dictionary keys), then by string form to break ties.
++        items = sorted(poly_dict.items(), key=lambda kv: (kv[0], str(kv[1])))
++        return [v for _, v in items]
+     return poly_dict
+ 
+ 

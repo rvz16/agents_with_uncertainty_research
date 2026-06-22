@@ -1,0 +1,45 @@
+--- a/sympy/utilities/iterables.py
++++ b/sympy/utilities/iterables.py
+@@ -2106,16 +2106,41 @@
+     >>> list(uniq([[1], [2, 1], [1]]))
+     [[1], [2, 1]]
+     """
++    # Prepare result list (used in unhashable-element branch)
++    result = result or []
++    # Try to record initial length to detect mutations of the sequence
++    try:
++        initial_len = len(seq)
++    except Exception:
++        initial_len = None
++
+     try:
+         seen = set()
+-        result = result or []
+         for i, s in enumerate(seq):
++            # If we can, detect if the sequence has been mutated (size changed)
++            if initial_len is not None:
++                try:
++                    if len(seq) != initial_len:
++                        raise RuntimeError("%s changed size during iteration" %
++                                           type(seq).__name__)
++                except Exception:
++                    # If len(seq) unexpectedly fails, fall back to normal behavior
++                    pass
+             if not (s in seen or seen.add(s)):
+                 yield s
+     except TypeError:
++        # The element `s` that caused TypeError (unhashable) will be handled here.
+         if s not in result:
+             yield s
+             result.append(s)
++        # Detect size change before proceeding with recursive handling
++        if initial_len is not None and hasattr(seq, '__len__'):
++            try:
++                if len(seq) != initial_len:
++                    raise RuntimeError("%s changed size during iteration" %
++                                       type(seq).__name__)
++            except Exception:
++                pass
+         if hasattr(seq, '__getitem__'):
+             for s in uniq(seq[i + 1:], result):
+                 yield s

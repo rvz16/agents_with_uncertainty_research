@@ -1,0 +1,59 @@
+2026-06-22 16:30:19,158 - INFO - Creating container for mwaskom__seaborn-3010...
+2026-06-22 16:30:19,272 - INFO - Container for mwaskom__seaborn-3010 created: 9356977fabb89cf7a5a69d713be84e52d0ec7da38a82970385a480312c6b1fa1
+2026-06-22 16:30:19,432 - INFO - Container for mwaskom__seaborn-3010 started: 9356977fabb89cf7a5a69d713be84e52d0ec7da38a82970385a480312c6b1fa1
+2026-06-22 16:30:19,432 - INFO - Intermediate patch for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/mwaskom__seaborn-3010/patch.diff, now applying to container...
+2026-06-22 16:30:19,545 - INFO - >>>>> Applied Patch:
+Checking patch seaborn/_stats/regression.py...
+Applied patch seaborn/_stats/regression.py cleanly.
+
+2026-06-22 16:30:19,633 - INFO - Git diff before:
+diff --git a/seaborn/_stats/regression.py b/seaborn/_stats/regression.py
+index 7b7ddc8d..4fd9128c 100644
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,7 +23,13 @@ class PolyFit(Stat):
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++
++        # Drop missing observations so fitting is robust to NaN/None values
++        mask = x.notna() & y.notna()
++        x = x[mask].astype(float)
++        y = y[mask].astype(float)
++
++        if len(x) == 0 or x.nunique() <= self.order:
+             # TODO warn?
+             xx = yy = []
+         else:
+2026-06-22 16:30:19,634 - INFO - Eval script for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/mwaskom__seaborn-3010/eval.sh; copying to container...
+2026-06-22 16:30:22,486 - INFO - Test runtime: 2.80 seconds
+2026-06-22 16:30:22,486 - INFO - Test output for mwaskom__seaborn-3010 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step2/gpt5_mini_selfrefine_iter_step2/mwaskom__seaborn-3010/test_output.txt
+2026-06-22 16:30:22,537 - INFO - Git diff after:
+diff --git a/seaborn/_stats/regression.py b/seaborn/_stats/regression.py
+index 7b7ddc8d..4fd9128c 100644
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,7 +23,13 @@ class PolyFit(Stat):
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++
++        # Drop missing observations so fitting is robust to NaN/None values
++        mask = x.notna() & y.notna()
++        x = x[mask].astype(float)
++        y = y[mask].astype(float)
++
++        if len(x) == 0 or x.nunique() <= self.order:
+             # TODO warn?
+             xx = yy = []
+         else:
+2026-06-22 16:30:22,537 - INFO - Grading answer for mwaskom__seaborn-3010...
+2026-06-22 16:30:22,537 - INFO - report: {'mwaskom__seaborn-3010': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['tests/_stats/test_regression.py::TestPolyFit::test_missing_data'], 'failure': []}, 'PASS_TO_PASS': {'success': ['tests/_stats/test_regression.py::TestPolyFit::test_no_grouper', 'tests/_stats/test_regression.py::TestPolyFit::test_one_grouper'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for mwaskom__seaborn-3010: resolved: True
+2026-06-22 16:30:22,537 - INFO - Attempting to stop container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:30:37,823 - INFO - Attempting to remove container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step2...
+2026-06-22 16:30:37,840 - INFO - Container sweb.eval.mwaskom__seaborn-3010.gpt5_mini_selfrefine_iter_step2 removed.
+2026-06-22 16:30:37,840 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3010:latest...
+2026-06-22 16:30:38,270 - INFO - Image swebench/sweb.eval.x86_64.mwaskom_1776_seaborn-3010:latest removed.

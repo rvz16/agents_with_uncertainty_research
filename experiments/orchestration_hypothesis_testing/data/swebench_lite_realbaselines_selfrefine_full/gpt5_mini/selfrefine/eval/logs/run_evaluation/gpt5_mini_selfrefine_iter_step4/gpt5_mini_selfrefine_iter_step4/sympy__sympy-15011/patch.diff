@@ -1,0 +1,63 @@
+--- a/sympy/utilities/lambdify.py
++++ b/sympy/utilities/lambdify.py
+@@ -164,7 +164,7 @@
+ 
+ @doctest_depends_on(modules=('numpy'))
+ def lambdify(args, expr, modules=None, printer=None, use_imps=True,
+-             dummify=False):
++             dummify=None):
+     """
+     Returns an anonymous function for fast calculation of numerical values.
+ 
+@@ -353,6 +353,13 @@
+     """
+     from sympy.core.symbol import Symbol
+     from sympy.utilities.iterables import flatten
++
++    # If dummify was not explicitly provided, default to True. This makes
++    # lambdify replace non-Python-identifier argument names (e.g. names with
++    # braces) with dummy symbols by default, unless the user explicitly sets
++    # dummify=False.
++    if dummify is None:
++        dummify = True
+ 
+     # If the user hasn't specified any modules, use what is available.
+     module_provided = True
+@@ -734,12 +741,32 @@
+                     expr = self._subexpr(expr, {arg: dummy})
+                 else:
+                     argstrs.append(argrep)
+-            elif isinstance(arg, Function):
+-                dummy = Dummy()
+-                argstrs.append(self._argrepr(dummy))
+-                expr = self._subexpr(expr, {arg: dummy})
+             else:
+-                argstrs.append(str(arg))
++                # Handle MatrixSymbol similarly to Symbol: MatrixSymbol behaves
++                # like a named argument (with a .name attribute) but is not an
++                # instance of Symbol. If its printed representation is not a
++                # safe Python identifier (e.g. contains braces) or if dummify
++                # is requested, replace it with a Dummy to avoid generating
++                # invalid Python code.
++                try:
++                    from sympy.matrices.expressions.matrices import MatrixSymbol
++                except Exception:
++                    MatrixSymbol = None
++
++                if MatrixSymbol is not None and isinstance(arg, MatrixSymbol):
++                    argrep = self._argrepr(arg)
++                    if dummify or not self._is_safe_ident(argrep):
++                        dummy = Dummy()
++                        argstrs.append(self._argrepr(dummy))
++                        expr = self._subexpr(expr, {arg: dummy})
++                    else:
++                        argstrs.append(argrep)
++                elif isinstance(arg, Function):
++                    dummy = Dummy()
++                    argstrs.append(self._argrepr(dummy))
++                    expr = self._subexpr(expr, {arg: dummy})
++                else:
++                    argstrs.append(str(arg))
+ 
+         return argstrs, expr
+ 

@@ -1,0 +1,12 @@
+{
+  "ts": "2026-06-22T09:53:15.647379+00:00",
+  "instance_id": "scikit-learn__scikit-learn-13497",
+  "step": 2,
+  "purpose": "critique",
+  "model": "openai/gpt-5-mini",
+  "prompt": "You are reviewing a code patch you previously generated for a SWE-bench\nissue. Carefully examine the patch and identify any problems.\n\n## Issue\nComparing string to array in _estimate_mi\nIn ``_estimate_mi`` there is ``discrete_features == 'auto'`` but discrete features can be an array of indices or a boolean mask.\r\nThis will error in future versions of numpy.\r\nAlso this means we never test this function with discrete features != 'auto', it seems?\n\n\n## Your previous patch (diff format)\n```\n\n```\n\nIf the patch correctly addresses the issue and handles edge cases, respond\nwith exactly:\nCRITIQUE_OK\n\nOtherwise, list specific issues (one per line). Focus on:\n- Bugs in the changed logic\n- Edge cases the patch doesn't handle\n- Wrong files modified or wrong locations\n- Inconsistencies with the rest of the codebase\n\nDo NOT include a refined patch in this response \u2014 only the critique.\n",
+  "response": "Patch is empty \u2014 no changes were made, so the reported issue is not addressed.\nThe code still performs `discrete_features == 'auto'`, which yields an elementwise comparison for array-like masks/indices and will raise/emit errors in newer NumPy.\nWhen `discrete_features` is a boolean mask or index array the elementwise comparison returns an array, causing ambiguous truth-value or incorrect branching in `_estimate_mi`.\nThe patch does not add or modify tests to cover `discrete_features` being an array of indices or a boolean mask, so regressions would not be detected.\nNo handling was added for the case where `discrete_features` is a string-like vs array-like; the code should explicitly check for the string `'auto'` (e.g., via isinstance or explicit equality only when scalar) but it does not.\nNo other files or call sites were updated to ensure consistent behavior when passing non-`'auto'` discrete_features.",
+  "prompt_tokens": 202,
+  "completion_tokens": 686,
+  "cost_usd": 0.0014225
+}

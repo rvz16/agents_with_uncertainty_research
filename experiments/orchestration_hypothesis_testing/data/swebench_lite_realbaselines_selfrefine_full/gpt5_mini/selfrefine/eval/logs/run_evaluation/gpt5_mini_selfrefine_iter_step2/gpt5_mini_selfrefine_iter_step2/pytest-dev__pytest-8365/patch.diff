@@ -1,0 +1,47 @@
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -149,14 +149,41 @@
+ 
+ 
+ def get_user() -> Optional[str]:
+-    """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    """Return the current user name, sanitized for use in filesystem paths,
++    or None if getuser() does not work in the current environment (see #1010).
++
++    The username may include characters that are not safe for directory names
++    (for example a domain separator '\' on Windows). We normalize path
++    separators and replace any remaining unsafe characters with underscores.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
++
++    if not user:
++        return None
++
++    # Replace OS-specific path separators first (e.g. 'DOMAIN\user' on Windows)
++    try:
++        user = user.replace(os.path.sep, "_")
++    except Exception:
++        # be defensive; if replacement fails just continue to regex sanitize
++        pass
++    if os.path.altsep:
++        user = user.replace(os.path.altsep, "_")
++
++    # Replace any remaining characters that are not word characters, dot or hyphen.
++    # \w includes letters, digits and underscore (and Unicode word chars).
++    user = re.sub(r"[^\w.-]", "_", user)
++
++    # Collapse repeated underscores and strip surrounding punctuation to avoid
++    # awkward names like '___' or '-name-'.
++    user = re.sub(r"_+", "_", user).strip("_.-")
++
++    return user or None
+ 
+ 
+ def pytest_configure(config: Config) -> None:

@@ -1,0 +1,27 @@
+--- a/sphinx/environment/adapters/indexentries.py
++++ b/sphinx/environment/adapters/indexentries.py
+@@ -172,5 +172,22 @@
+                     return _('Symbols')
+             else:
+                 return v[2]
+-        return [(key_, list(group))
+-                for (key_, group) in groupby(newlist, keyfunc3)]
++        grouped = [(key_, list(group))
++                   for (key_, group) in groupby(newlist, keyfunc3)]
++        # Merge multiple 'Symbols' groups into one to avoid duplicate sections
++        # (they would otherwise get the same HTML anchor and appear multiple
++        # times in the index links). Keep the first occurrence position and
++        # preserve the order of entries.
++        sym_label = _('Symbols')
++        sym_indices = [i for i, (k, g) in enumerate(grouped) if k == sym_label]
++        if len(sym_indices) > 1:
++            first = sym_indices[0]
++            merged = []
++            for i in sym_indices:
++                merged.extend(grouped[i][1])
++            # remove the old symbol groups (from the end to keep indices valid)
++            for i in reversed(sym_indices):
++                del grouped[i]
++            # insert the merged symbols group at the position of the first one
++            grouped.insert(first, (sym_label, merged))
++        return grouped

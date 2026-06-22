@@ -1,0 +1,24 @@
+--- a/django/contrib/admin/sites.py
++++ b/django/contrib/admin/sites.py
+@@ -463,6 +463,7 @@
+             model_dict = {
+                 'name': capfirst(model._meta.verbose_name_plural),
+                 'object_name': model._meta.object_name,
++                'model': model,
+                 'perms': perms,
+                 'admin_url': None,
+                 'add_url': None,
+@@ -498,6 +499,13 @@
+             return app_dict.get(label)
+         return app_dict
+ 
++    def build_app_dict(self, request, label=None):
++        """
++        Public wrapper for _build_app_dict. Kept for external callers that
++        want to access the app/model metadata (including the model class).
++        """
++        return self._build_app_dict(request, label)
++
+     def get_app_list(self, request):
+         """
+         Return a sorted list of all the installed apps that have been

@@ -1,0 +1,28 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -403,8 +403,24 @@
+         meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
++        # Build an exclude set containing names of constraints/indexes that are
++        # explicitly declared on the model so we don't attempt to delete them
++        # here. Additionally, when deleting an index (index_together), exclude
++        # the unique_together-generated constraint name for the same columns so
++        # that the unique constraint doesn't get confused with a plain index.
++        exclude = meta_constraint_names | meta_index_names
++        # Only compute and exclude the generated unique_together name when we're
++        # deleting an index (not when deleting a unique). This avoids hiding the
++        # unique constraint when alter_unique_together is trying to delete it.
++        if constraint_kwargs.get('index') and not constraint_kwargs.get('unique'):
++            try:
++                uniq_name = self._create_index_name(model._meta.db_table, columns, suffix='_uniq')
++            except Exception:
++                uniq_name = None
++            if uniq_name:
++                exclude.add(uniq_name)
+         constraint_names = self._constraint_names(
+-            model, columns, exclude=meta_constraint_names | meta_index_names,
++            model, columns, exclude=exclude,
+             **constraint_kwargs
+         )
+         if len(constraint_names) != 1:

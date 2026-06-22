@@ -1,0 +1,99 @@
+2026-06-22 14:36:33,232 - INFO - Creating container for django__django-14016...
+2026-06-22 14:36:33,584 - INFO - Container for django__django-14016 created: 542de68ee38668d88c0f8c1dfd3530b73c75633c8a32e1735ed0aa254dfa5432
+2026-06-22 14:36:33,720 - INFO - Container for django__django-14016 started: 542de68ee38668d88c0f8c1dfd3530b73c75633c8a32e1735ed0aa254dfa5432
+2026-06-22 14:36:33,720 - INFO - Intermediate patch for django__django-14016 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-14016/patch.diff, now applying to container...
+2026-06-22 14:36:33,853 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/query_utils.py...
+Applied patch django/db/models/query_utils.py cleanly.
+
+2026-06-22 14:36:34,372 - INFO - Git diff before:
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index c2623f099f..72ba17f9d2 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -40,16 +40,32 @@ class Q(tree.Node):
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+         super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
+ 
++    def _clone(self):
++        """
++        Create a shallow clone of this Q instance.
++
++        We intentionally perform a shallow copy of the children rather than a
++        deep copy to avoid attempting to pickle/non-pickleable objects (e.g.
++        dict_keys) which would raise during copy.deepcopy(). A shallow copy is
++        sufficient because Q objects are treated immutably in query
++        construction.
++        """
++        obj = type(self)()
++        obj.connector = self.connector
++        obj.negated = self.negated
++        obj.children = list(self.children)
++        return obj
++
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
+             raise TypeError(other)
+ 
+         # If the other Q() is empty, ignore it and just use `self`.
+         if not other:
+-            return copy.deepcopy(self)
++            return self._clone()
+         # Or if this Q is empty, ignore it and just use `other`.
+         elif not self:
+-            return copy.deepcopy(other)
++            return other._clone()
+ 
+         obj = type(self)()
+         obj.connector = conn
+2026-06-22 14:36:34,372 - INFO - Eval script for django__django-14016 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-14016/eval.sh; copying to container...
+2026-06-22 14:36:38,699 - INFO - Test runtime: 4.29 seconds
+2026-06-22 14:36:38,699 - INFO - Test output for django__django-14016 written to logs/run_evaluation/gpt5_mini_selfrefine_iter_step1/gpt5_mini_selfrefine_iter_step1/django__django-14016/test_output.txt
+2026-06-22 14:36:38,776 - INFO - Git diff after:
+diff --git a/django/db/models/query_utils.py b/django/db/models/query_utils.py
+index c2623f099f..72ba17f9d2 100644
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -40,16 +40,32 @@ class Q(tree.Node):
+     def __init__(self, *args, _connector=None, _negated=False, **kwargs):
+         super().__init__(children=[*args, *sorted(kwargs.items())], connector=_connector, negated=_negated)
+ 
++    def _clone(self):
++        """
++        Create a shallow clone of this Q instance.
++
++        We intentionally perform a shallow copy of the children rather than a
++        deep copy to avoid attempting to pickle/non-pickleable objects (e.g.
++        dict_keys) which would raise during copy.deepcopy(). A shallow copy is
++        sufficient because Q objects are treated immutably in query
++        construction.
++        """
++        obj = type(self)()
++        obj.connector = self.connector
++        obj.negated = self.negated
++        obj.children = list(self.children)
++        return obj
++
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
+             raise TypeError(other)
+ 
+         # If the other Q() is empty, ignore it and just use `self`.
+         if not other:
+-            return copy.deepcopy(self)
++            return self._clone()
+         # Or if this Q is empty, ignore it and just use `other`.
+         elif not self:
+-            return copy.deepcopy(other)
++            return other._clone()
+ 
+         obj = type(self)()
+         obj.connector = conn
+2026-06-22 14:36:38,776 - INFO - Grading answer for django__django-14016...
+2026-06-22 14:36:38,776 - INFO - report: {'django__django-14016': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_combine_and_empty (queries.test_q.QTests)', 'test_combine_or_empty (queries.test_q.QTests)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_combine_and_both_empty (queries.test_q.QTests)', 'test_combine_not_q_object (queries.test_q.QTests)', 'test_combine_or_both_empty (queries.test_q.QTests)', 'test_deconstruct (queries.test_q.QTests)', 'test_deconstruct_and (queries.test_q.QTests)', 'test_deconstruct_multiple_kwargs (queries.test_q.QTests)', 'test_deconstruct_negated (queries.test_q.QTests)', 'test_deconstruct_nested (queries.test_q.QTests)', 'test_deconstruct_or (queries.test_q.QTests)', 'test_reconstruct (queries.test_q.QTests)', 'test_reconstruct_and (queries.test_q.QTests)', 'test_reconstruct_negated (queries.test_q.QTests)', 'test_reconstruct_or (queries.test_q.QTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14016: resolved: True
+2026-06-22 14:36:38,776 - INFO - Attempting to stop container sweb.eval.django__django-14016.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:36:53,946 - INFO - Attempting to remove container sweb.eval.django__django-14016.gpt5_mini_selfrefine_iter_step1...
+2026-06-22 14:36:53,962 - INFO - Container sweb.eval.django__django-14016.gpt5_mini_selfrefine_iter_step1 removed.
+2026-06-22 14:36:53,963 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14016:latest...
+2026-06-22 14:36:54,817 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14016:latest removed.

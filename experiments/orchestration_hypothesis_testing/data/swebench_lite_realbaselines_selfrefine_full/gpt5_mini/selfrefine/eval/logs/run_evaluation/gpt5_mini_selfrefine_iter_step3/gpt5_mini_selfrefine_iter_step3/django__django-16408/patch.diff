@@ -1,0 +1,47 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -1277,6 +1277,35 @@
+             def remote_setter(name, obj, from_obj):
+                 setattr(from_obj, name, obj)
+ 
++            def make_filtered_local_setter(joins, select):
++                """
++                Return a local_setter which will only set the cached reverse
++                relation on the parent object if that parent was actually
++                selected in the query. This avoids attempting to cache
++                intermediate objects that were not fetched (e.g. for
++                multi-level FilteredRelation paths where only the terminal
++                model was selected).
++                """
++                parent_alias = joins[-2] if len(joins) > 1 else None
++
++                def filtered_local_setter(final_field, obj, from_obj):
++                    if not from_obj:
++                        return
++                    # If there is no intermediate parent alias, behave as before.
++                    if parent_alias is None:
++                        final_field.remote_field.set_cached_value(from_obj, obj)
++                        return
++                    # Check if any already-selected column references the parent alias.
++                    # Only if such a column exists do we set the cached value on the parent.
++                    for sel_col, *_ in select:
++                        if getattr(sel_col, "alias", None) == parent_alias:
++                            final_field.remote_field.set_cached_value(from_obj, obj)
++                            return
++                    # Parent wasn't selected; do not set cache.
++                    return
++
++                return filtered_local_setter
++
+             for name in list(requested):
+                 # Filtered relations work only on the topmost level.
+                 if cur_depth > 1:
+@@ -1295,7 +1324,7 @@
+                         "model": model,
+                         "field": final_field,
+                         "reverse": True,
+-                        "local_setter": partial(local_setter, final_field),
++                        "local_setter": partial(make_filtered_local_setter(joins, select), final_field),
+                         "remote_setter": partial(remote_setter, name),
+                         "from_parent": from_parent,
+                     }

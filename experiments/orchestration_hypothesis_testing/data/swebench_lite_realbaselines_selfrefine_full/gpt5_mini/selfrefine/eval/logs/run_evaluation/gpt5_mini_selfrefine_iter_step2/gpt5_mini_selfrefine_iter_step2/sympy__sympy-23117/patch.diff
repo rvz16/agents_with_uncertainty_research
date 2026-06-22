@@ -1,0 +1,30 @@
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -191,16 +191,25 @@
+     @classmethod
+     def _scan_iterable_shape(cls, iterable):
+         def f(pointer):
++            # Non-iterable objects are scalars.
+             if not isinstance(pointer, Iterable):
+                 return [pointer], ()
+ 
++            # Ensure we can iterate multiple times by converting to list.
++            # This also allows us to detect empty iterables.
++            pointer_list = list(pointer)
++
++            # Special-case empty iterable: treat as a 1-D array with zero length.
++            if len(pointer_list) == 0:
++                return [], (0,)
++
+             result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
++            elems, shapes = zip(*[f(i) for i in pointer_list])
+             if len(set(shapes)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+             for i in elems:
+                 result.extend(i)
+-            return result, (len(shapes),)+shapes[0]
++            return result, (len(shapes),) + shapes[0]
+ 
+         return f(iterable)
+ 
