@@ -1,0 +1,29 @@
+--- a/sphinx/ext/autodoc/importer.py
++++ b/sphinx/ext/autodoc/importer.py
+@@ -307,9 +307,23 @@
+                 analyzer = ModuleAnalyzer.for_module(modname)
+                 analyzer.analyze()
+                 for (ns, name), docstring in analyzer.attr_docs.items():
+-                    if ns == qualname and name not in members:
+-                        members[name] = ObjectMember(name, INSTANCEATTR, class_=cls,
+-                                                     docstring='\n'.join(docstring))
++                    if ns == qualname:
++                        # If the analyzer knows a docstring for an attribute,
++                        # prefer that docstring. If the attribute was already
++                        # added (for example due to an annotation-only definition),
++                        # replace the entry preserving its value and class_ while
++                        # attaching the docstring. Otherwise create a new entry.
++                        if name in members:
++                            existing = members[name]
++                            members[name] = ObjectMember(
++                                name,
++                                getattr(existing, 'value', INSTANCEATTR),
++                                class_=getattr(existing, 'class_', cls),
++                                docstring='\n'.join(docstring)
++                            )
++                        else:
++                            members[name] = ObjectMember(name, INSTANCEATTR, class_=cls,
++                                                         docstring='\n'.join(docstring))
+             except (AttributeError, PycodeError):
+                 pass
+     except AttributeError:

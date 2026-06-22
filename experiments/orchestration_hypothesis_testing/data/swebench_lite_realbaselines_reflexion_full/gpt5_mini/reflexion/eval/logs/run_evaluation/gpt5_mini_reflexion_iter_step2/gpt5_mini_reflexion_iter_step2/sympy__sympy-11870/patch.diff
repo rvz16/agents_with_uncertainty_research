@@ -1,0 +1,18 @@
+--- a/sympy/functions/elementary/trigonometric.py
++++ b/sympy/functions/elementary/trigonometric.py
+@@ -405,6 +405,15 @@
+     def _eval_rewrite_as_csc(self, arg):
+         return 1/csc(arg)
+ 
++    def _eval_rewrite_as_sinc(self, arg):
++        """
++        Rewrite sin(arg) in terms of sinc.
++
++        sin(x) = x*sinc(x). This allows expressions like sin(x)/x to be
++        rewritten to sinc(x) after a subsequent simplify().
++        """
++        return arg*sinc(arg)
++
+     def _eval_rewrite_as_sec(self, arg):
+         return 1 / sec(arg - S.Pi / 2, evaluate=False)
+ 

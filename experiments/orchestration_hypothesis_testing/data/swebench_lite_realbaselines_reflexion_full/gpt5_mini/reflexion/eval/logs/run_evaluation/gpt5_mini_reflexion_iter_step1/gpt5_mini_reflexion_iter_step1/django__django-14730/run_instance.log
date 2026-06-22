@@ -1,0 +1,105 @@
+2026-06-22 02:28:41,557 - INFO - Creating container for django__django-14730...
+2026-06-22 02:28:41,885 - INFO - Container for django__django-14730 created: db2aecd7f4ed8266d9d02eb0bdbb6d87779fbe13a2fd1087508b00d42101298d
+2026-06-22 02:28:42,028 - INFO - Container for django__django-14730 started: db2aecd7f4ed8266d9d02eb0bdbb6d87779fbe13a2fd1087508b00d42101298d
+2026-06-22 02:28:42,028 - INFO - Intermediate patch for django__django-14730 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-14730/patch.diff, now applying to container...
+2026-06-22 02:28:42,142 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/fields/related.py...
+Applied patch django/db/models/fields/related.py cleanly.
+
+2026-06-22 02:28:42,522 - INFO - Git diff before:
+diff --git a/django/db/models/fields/related.py b/django/db/models/fields/related.py
+index febaadbb5b..1f952dcf64 100644
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1211,6 +1211,7 @@ class ManyToManyField(RelatedField):
+         return [
+             *super().check(**kwargs),
+             *self._check_unique(**kwargs),
++            *self._check_related_name_on_symmetrical(**kwargs),
+             *self._check_relationship_model(**kwargs),
+             *self._check_ignored_options(**kwargs),
+             *self._check_table_uniqueness(**kwargs),
+@@ -1260,6 +1261,29 @@ class ManyToManyField(RelatedField):
+ 
+         return warnings
+ 
++    def _check_related_name_on_symmetrical(self, from_model=None, **kwargs):
++        # If the user didn't pass a related_name explicitly, nothing to check.
++        if self._related_name is None:
++            return []
++        # We need the model where this field is attached to determine whether
++        # the relation is self-referential.
++        if from_model is None:
++            return []
++        if not self.remote_field.symmetrical:
++            return []
++        to_model = resolve_relation(from_model, self.remote_field.model)
++        if self.remote_field.model == RECURSIVE_RELATIONSHIP_CONSTANT or to_model == from_model:
++            return [
++                checks.Warning(
++                    "ManyToManyField '%s' defines a related_name, but the relation is symmetrical so the related_name will be ignored." % self.name,
++                    hint=("Remove the related_name argument for this field, or set "
++                          "symmetrical=False if you expect a reverse relationship."),
++                    obj=self,
++                    id='fields.W345',
++                )
++            ]
++        return []
++
+     def _check_relationship_model(self, from_model=None, **kwargs):
+         if hasattr(self.remote_field.through, '_meta'):
+             qualified_model_name = "%s.%s" % (
+2026-06-22 02:28:42,522 - INFO - Eval script for django__django-14730 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-14730/eval.sh; copying to container...
+2026-06-22 02:28:46,192 - INFO - Test runtime: 3.64 seconds
+2026-06-22 02:28:46,192 - INFO - Test output for django__django-14730 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-14730/test_output.txt
+2026-06-22 02:28:46,228 - INFO - Git diff after:
+diff --git a/django/db/models/fields/related.py b/django/db/models/fields/related.py
+index febaadbb5b..1f952dcf64 100644
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1211,6 +1211,7 @@ class ManyToManyField(RelatedField):
+         return [
+             *super().check(**kwargs),
+             *self._check_unique(**kwargs),
++            *self._check_related_name_on_symmetrical(**kwargs),
+             *self._check_relationship_model(**kwargs),
+             *self._check_ignored_options(**kwargs),
+             *self._check_table_uniqueness(**kwargs),
+@@ -1260,6 +1261,29 @@ class ManyToManyField(RelatedField):
+ 
+         return warnings
+ 
++    def _check_related_name_on_symmetrical(self, from_model=None, **kwargs):
++        # If the user didn't pass a related_name explicitly, nothing to check.
++        if self._related_name is None:
++            return []
++        # We need the model where this field is attached to determine whether
++        # the relation is self-referential.
++        if from_model is None:
++            return []
++        if not self.remote_field.symmetrical:
++            return []
++        to_model = resolve_relation(from_model, self.remote_field.model)
++        if self.remote_field.model == RECURSIVE_RELATIONSHIP_CONSTANT or to_model == from_model:
++            return [
++                checks.Warning(
++                    "ManyToManyField '%s' defines a related_name, but the relation is symmetrical so the related_name will be ignored." % self.name,
++                    hint=("Remove the related_name argument for this field, or set "
++                          "symmetrical=False if you expect a reverse relationship."),
++                    obj=self,
++                    id='fields.W345',
++                )
++            ]
++        return []
++
+     def _check_relationship_model(self, from_model=None, **kwargs):
+         if hasattr(self.remote_field.through, '_meta'):
+             qualified_model_name = "%s.%s" % (
+2026-06-22 02:28:46,229 - INFO - Grading answer for django__django-14730...
+2026-06-22 02:28:46,230 - INFO - report: {'django__django-14730': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_many_to_many_with_useless_related_name (invalid_models_tests.test_relative_fields.RelativeFieldTests)']}, 'PASS_TO_PASS': {'success': ['test_accessor_clash (invalid_models_tests.test_relative_fields.SelfReferentialFKClashTests)', 'test_clash_under_explicit_related_name (invalid_models_tests.test_relative_fields.SelfReferentialFKClashTests)', 'test_reverse_query_name_clash (invalid_models_tests.test_relative_fields.SelfReferentialFKClashTests)', 'test_clash_parent_link (invalid_models_tests.test_relative_fields.ComplexClashTests)', 'test_complex_clash (invalid_models_tests.test_relative_fields.ComplexClashTests)', 'If ``through_fields`` kwarg is given, it must specify both', 'test_intersection_foreign_object (invalid_models_tests.test_relative_fields.M2mThroughFieldsTests)', 'Providing invalid field names to ManyToManyField.through_fields', 'Mixing up the order of link fields to ManyToManyField.through_fields', 'ManyToManyField accepts the ``through_fields`` kwarg', 'test_superset_foreign_object (invalid_models_tests.test_relative_fields.M2mThroughFieldsTests)', 'test_accessor_clash (invalid_models_tests.test_relative_fields.SelfReferentialM2MClashTests)', 'test_clash_between_accessors (invalid_models_tests.test_relative_fields.SelfReferentialM2MClashTests)', 'test_clash_under_explicit_related_name (invalid_models_tests.test_relative_fields.SelfReferentialM2MClashTests)', 'test_reverse_query_name_clash (invalid_models_tests.test_relative_fields.SelfReferentialM2MClashTests)', 'test_valid_model (invalid_models_tests.test_relative_fields.SelfReferentialM2MClashTests)', 'test_fk_to_fk (invalid_models_tests.test_relative_fields.ExplicitRelatedNameClashTests)', 'test_fk_to_integer (invalid_models_tests.test_relative_fields.ExplicitRelatedNameClashTests)', 'test_fk_to_m2m (invalid_models_tests.test_relative_fields.ExplicitRelatedNameClashTests)', 'test_m2m_to_fk (invalid_models_tests.test_relative_fields.ExplicitRelatedNameClashTests)', 'test_m2m_to_integer (invalid_models_tests.test_relative_fields.ExplicitRelatedNameClashTests)', 'test_m2m_to_m2m (invalid_models_tests.test_relative_fields.ExplicitRelatedNameClashTests)', 'test_fk_to_fk (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_fk_to_integer (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_fk_to_m2m (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_hidden_fk_to_fk (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_hidden_fk_to_integer (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_hidden_fk_to_m2m (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_hidden_m2m_to_fk (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_hidden_m2m_to_integer (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_hidden_m2m_to_m2m (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_m2m_to_fk (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_m2m_to_integer (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_m2m_to_m2m (invalid_models_tests.test_relative_fields.ExplicitRelatedQueryNameClashTests)', 'test_clash_between_accessors (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_fk_to_fk (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_fk_to_integer (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_fk_to_m2m (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_m2m_to_fk (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_m2m_to_integer (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_m2m_to_m2m (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'Ref #22047.', 'test_no_clash_for_hidden_related_name (invalid_models_tests.test_relative_fields.AccessorClashTests)', 'test_fk_to_fk (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_fk_to_integer (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_fk_to_m2m (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_m2m_to_fk (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_m2m_to_integer (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_m2m_to_m2m (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_no_clash_across_apps_without_accessor (invalid_models_tests.test_relative_fields.ReverseQueryNameClashTests)', 'test_ambiguous_relationship_model_from (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_ambiguous_relationship_model_to (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_key_to_abstract_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', '#25723 - Referenced model registration lookup should be run against the', 'test_foreign_key_to_missing_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_key_to_non_unique_field (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_key_to_non_unique_field_under_explicit_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_key_to_partially_unique_field (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_key_to_unique_field_with_meta_constraint (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_object_to_non_unique_fields (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_object_to_partially_unique_field (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_foreign_object_to_unique_field_with_meta_constraint (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_invalid_related_query_name (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_m2m_to_abstract_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', '#25723 - Through model registration lookup should be run against the', 'test_many_to_many_to_missing_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_many_to_many_with_limit_choices_auto_created_no_warning (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_many_to_many_with_useless_options (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_missing_relationship_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_missing_relationship_model_on_model_check (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_not_swapped_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_nullable_primary_key (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_on_delete_set_default_without_default_value (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_on_delete_set_null_on_non_nullable_field (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_referencing_to_swapped_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_related_field_has_invalid_related_name (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_related_field_has_valid_related_name (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_relationship_model_missing_foreign_key (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_relationship_model_with_foreign_key_to_wrong_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_to_fields_exist (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_to_fields_not_checked_if_related_model_doesnt_exist (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_too_many_foreign_keys_in_self_referential_model (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_unique_m2m (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_valid_foreign_key_without_accessor (invalid_models_tests.test_relative_fields.RelativeFieldTests)', 'test_auto_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_big_integer_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_binary_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_boolean_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_char_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_char_field_choices (field_deconstruction.tests.FieldDeconstructionTests)', 'test_csi_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_date_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_datetime_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_db_tablespace (field_deconstruction.tests.FieldDeconstructionTests)', 'test_decimal_field (field_deconstruction.tests.FieldDeconstructionTests)', 'A DecimalField with decimal_places=0 should work (#22272).', 'test_email_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_file_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_file_path_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_float_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_foreign_key (field_deconstruction.tests.FieldDeconstructionTests)', 'test_foreign_key_swapped (field_deconstruction.tests.FieldDeconstructionTests)', 'test_generic_ip_address_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_image_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_integer_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_ip_address_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_many_to_many_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_many_to_many_field_related_name (field_deconstruction.tests.FieldDeconstructionTests)', 'test_many_to_many_field_swapped (field_deconstruction.tests.FieldDeconstructionTests)', 'Tests the outputting of the correct name if assigned one.', 'test_one_to_one (field_deconstruction.tests.FieldDeconstructionTests)', 'test_positive_big_integer_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_positive_integer_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_positive_small_integer_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_slug_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_small_integer_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_text_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_time_field (field_deconstruction.tests.FieldDeconstructionTests)', 'test_url_field (field_deconstruction.tests.FieldDeconstructionTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-14730: resolved: False
+2026-06-22 02:28:46,230 - INFO - Attempting to stop container sweb.eval.django__django-14730.gpt5_mini_reflexion_iter_step1...
+2026-06-22 02:29:01,414 - INFO - Attempting to remove container sweb.eval.django__django-14730.gpt5_mini_reflexion_iter_step1...
+2026-06-22 02:29:01,430 - INFO - Container sweb.eval.django__django-14730.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 02:29:01,430 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-14730:latest...
+2026-06-22 02:29:01,745 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-14730:latest removed.

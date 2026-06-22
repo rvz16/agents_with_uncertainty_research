@@ -1,0 +1,16 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -725,6 +725,13 @@
+                 # Avoid converting large positive values to negative integers.
+                 np.clip(xa, -1, self.N, out=xa)
+                 xa = xa.astype(int)
++        # Ensure integer dtype can represent special indices (under/over/bad).
++        # NumPy 1.24+ warns when assigning out-of-bound Python ints to small
++        # integer dtypes (e.g., uint8).  Upcast integer arrays to the native
++        # platform integer to avoid overflow/deprecation warnings and to be
++        # able to represent -1 and self.N+2.
++        if xa.dtype.kind in ("u", "i") and xa.dtype != np.intp:
++            xa = xa.astype(np.intp, copy=False)
+         # Set the over-range indices before the under-range;
+         # otherwise the under-range values get converted to over-range.
+         xa[xa > self.N - 1] = self._i_over

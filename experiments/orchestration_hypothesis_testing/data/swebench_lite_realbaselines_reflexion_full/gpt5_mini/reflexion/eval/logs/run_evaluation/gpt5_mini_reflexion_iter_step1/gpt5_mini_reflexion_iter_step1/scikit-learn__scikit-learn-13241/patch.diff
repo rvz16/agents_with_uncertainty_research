@@ -1,0 +1,23 @@
+--- a/sklearn/decomposition/kernel_pca.py
++++ b/sklearn/decomposition/kernel_pca.py
+@@ -220,6 +220,20 @@
+             self.alphas_ = self.alphas_[:, self.lambdas_ > 0]
+             self.lambdas_ = self.lambdas_[self.lambdas_ > 0]
+ 
++        # Ensure deterministic sign for eigenvectors: flip each column so that
++        # the element with the largest absolute value is positive. This mirrors
++        # the behavior of svd_flip used elsewhere in scikit-learn and avoids
++        # arbitrary sign flips between runs (e.g. when using ARPACK).
++        if self.alphas_.size > 0:
++            # index of max abs value in each column
++            max_abs_rows = np.argmax(np.abs(self.alphas_), axis=0)
++            # sign of the max abs entry for each column
++            signs = np.sign(self.alphas_[max_abs_rows, np.arange(self.alphas_.shape[1])])
++            # treat zero-sign as positive to avoid flipping
++            signs[signs == 0] = 1
++            # broadcast and apply signs to columns
++            self.alphas_ = self.alphas_ * signs[np.newaxis, :]
++
+         return K
+ 
+     def _fit_inverse_transform(self, X_transformed, X):

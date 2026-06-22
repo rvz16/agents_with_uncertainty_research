@@ -1,0 +1,103 @@
+2026-06-22 09:43:55,724 - INFO - Creating container for pytest-dev__pytest-8365...
+2026-06-22 09:43:55,966 - INFO - Container for pytest-dev__pytest-8365 created: 75e7346b9e7f78d59e7f7d1661434f41d9a3a48646d62dd7440aacd331c58caf
+2026-06-22 09:43:56,101 - INFO - Container for pytest-dev__pytest-8365 started: 75e7346b9e7f78d59e7f7d1661434f41d9a3a48646d62dd7440aacd331c58caf
+2026-06-22 09:43:56,101 - INFO - Intermediate patch for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-8365/patch.diff, now applying to container...
+2026-06-22 09:43:56,196 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/tmpdir.py...
+Applied patch src/_pytest/tmpdir.py cleanly.
+
+2026-06-22 09:43:56,291 - INFO - Git diff before:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..5844c6084 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -150,14 +150,34 @@ class TempdirFactory:
+ 
+ def get_user() -> Optional[str]:
+     """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    in the current environment (see #1010).
++
++    The returned username is sanitized to be safe for use in filesystem paths.
++    Some environments (notably certain SSH setups on Windows) can return values
++    like "DOMAIN\\user" or include characters that are invalid in directory
++    names. We strip any domain prefix and replace any character that is not
++    alphanumeric or one of "._-" with an underscore.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not user:
++        return None
++
++    # Strip domain prefix such as "DOMAIN\user" or any accidental path-like
++    # components, taking the last segment.
++    user = user.split("\\")[-1].split("/")[-1]
++
++    # Replace any character that is not alphanumeric, dot, underscore or hyphen
++    # with an underscore to ensure the username is safe for directory names.
++    user = re.sub(r"[^A-Za-z0-9._-]+", "_", user)
++
++    return user
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 09:43:56,291 - INFO - Eval script for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-8365/eval.sh; copying to container...
+2026-06-22 09:43:59,427 - INFO - Test runtime: 3.10 seconds
+2026-06-22 09:43:59,427 - INFO - Test output for pytest-dev__pytest-8365 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-8365/test_output.txt
+2026-06-22 09:43:59,476 - INFO - Git diff after:
+diff --git a/src/_pytest/tmpdir.py b/src/_pytest/tmpdir.py
+index 29c7e19d7..5844c6084 100644
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -150,14 +150,34 @@ class TempdirFactory:
+ 
+ def get_user() -> Optional[str]:
+     """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    in the current environment (see #1010).
++
++    The returned username is sanitized to be safe for use in filesystem paths.
++    Some environments (notably certain SSH setups on Windows) can return values
++    like "DOMAIN\\user" or include characters that are invalid in directory
++    names. We strip any domain prefix and replace any character that is not
++    alphanumeric or one of "._-" with an underscore.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
+ 
++    if not user:
++        return None
++
++    # Strip domain prefix such as "DOMAIN\user" or any accidental path-like
++    # components, taking the last segment.
++    user = user.split("\\")[-1].split("/")[-1]
++
++    # Replace any character that is not alphanumeric, dot, underscore or hyphen
++    # with an underscore to ensure the username is safe for directory names.
++    user = re.sub(r"[^A-Za-z0-9._-]+", "_", user)
++
++    return user
++
+ 
+ def pytest_configure(config: Config) -> None:
+     """Create a TempdirFactory and attach it to the config object.
+2026-06-22 09:43:59,476 - INFO - Grading answer for pytest-dev__pytest-8365...
+2026-06-22 09:43:59,477 - INFO - report: {'pytest-dev__pytest-8365': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_tmpdir.py::test_tmp_path_factory_handles_invalid_dir_characters']}, 'PASS_TO_PASS': {'success': ['testing/test_tmpdir.py::TestTempdirHandler::test_mktemp', 'testing/test_tmpdir.py::TestTempdirHandler::test_tmppath_relative_basetemp_absolute', 'testing/test_tmpdir.py::test_get_user_uid_not_found', 'testing/test_tmpdir.py::TestNumberedDir::test_make', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_lock_create', 'testing/test_tmpdir.py::TestNumberedDir::test_lock_register_cleanup_removal', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_keep', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_locked', 'testing/test_tmpdir.py::TestNumberedDir::test_cleanup_ignores_symlink', 'testing/test_tmpdir.py::TestNumberedDir::test_removal_accepts_lock', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_file', 'testing/test_tmpdir.py::TestRmRf::test_rm_rf_with_read_only_directory', 'testing/test_tmpdir.py::TestRmRf::test_on_rm_rf_error', 'testing/test_tmpdir.py::test_tmpdir_equals_tmp_path', 'testing/test_tmpdir.py::test_tmpdir_fixture', 'testing/test_tmpdir.py::TestConfigTmpdir::test_getbasetemp_custom_removes_old', 'testing/test_tmpdir.py::test_mktemp[mypath-True]', 'testing/test_tmpdir.py::test_mktemp[/mypath1-False]', 'testing/test_tmpdir.py::test_mktemp[./mypath1-True]', 'testing/test_tmpdir.py::test_mktemp[../mypath3-False]', 'testing/test_tmpdir.py::test_mktemp[../../mypath4-False]', 'testing/test_tmpdir.py::test_mktemp[mypath5/..-False]', 'testing/test_tmpdir.py::test_mktemp[mypath6/../mypath6-True]', 'testing/test_tmpdir.py::test_mktemp[mypath7/../mypath7/..-False]', 'testing/test_tmpdir.py::test_tmpdir_always_is_realpath', 'testing/test_tmpdir.py::test_tmp_path_always_is_realpath', 'testing/test_tmpdir.py::test_tmpdir_too_long_on_parametrization', 'testing/test_tmpdir.py::test_tmpdir_factory', 'testing/test_tmpdir.py::test_tmpdir_fallback_tox_env', 'testing/test_tmpdir.py::test_tmpdir_fallback_uid_not_found', 'testing/test_tmpdir.py::test_basetemp_with_read_only_files'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-8365: resolved: False
+2026-06-22 09:43:59,477 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:44:14,655 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:44:14,677 - INFO - Container sweb.eval.pytest-dev__pytest-8365.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 09:44:14,677 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest...
+2026-06-22 09:44:14,850 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8365:latest removed.

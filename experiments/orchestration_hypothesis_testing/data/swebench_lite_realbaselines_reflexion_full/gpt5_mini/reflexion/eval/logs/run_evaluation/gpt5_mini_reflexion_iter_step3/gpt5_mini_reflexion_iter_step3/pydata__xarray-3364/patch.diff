@@ -1,0 +1,48 @@
+--- a/xarray/core/concat.py
++++ b/xarray/core/concat.py
+@@ -1,3 +1,4 @@
++import numpy as np
+ import pandas as pd
+ 
+ from . import dtypes, utils
+@@ -311,16 +312,32 @@
+     if variables_to_merge:
+         to_merge = {var: [] for var in variables_to_merge}
+ 
++        # Build lists of variables to merge. If a variable is missing from
++        # a particular dataset, create a placeholder Variable filled with
++        # `fill_value` matching the expected dimensions/shapes so that
++        # unique_variable can proceed without raising.
+         for ds in datasets:
+-            absent_merge_vars = variables_to_merge - set(ds.variables)
+-            if absent_merge_vars:
+-                raise ValueError(
+-                    "variables %r are present in some datasets but not others. "
+-                    % absent_merge_vars
+-                )
+-
+             for var in variables_to_merge:
+-                to_merge[var].append(ds.variables[var])
++                if var in ds.variables:
++                    to_merge[var].append(ds.variables[var])
++                else:
++                    # Create placeholder based on the template from the first
++                    # dataset. Use dims_sizes to infer the shape for each dim.
++                    template = datasets[0].variables[var]
++                    dims = template.dims
++                    shape = tuple(dims_sizes.get(d, 1) for d in dims)
++                    # try to preserve dtype when possible
++                    dtype = getattr(getattr(template, "data", None), "dtype", None)
++                    try:
++                        if dtype is None:
++                            arr = np.full(shape, fill_value)
++                        else:
++                            arr = np.full(shape, fill_value, dtype=dtype)
++                    except Exception:
++                        # fallback if dtype/fill_value are incompatible with np.full
++                        arr = np.full(shape, fill_value, dtype=object)
++                    placeholder = Variable(dims, arr, template.attrs)
++                    to_merge[var].append(placeholder)
+ 
+         for var in variables_to_merge:
+             result_vars[var] = unique_variable(

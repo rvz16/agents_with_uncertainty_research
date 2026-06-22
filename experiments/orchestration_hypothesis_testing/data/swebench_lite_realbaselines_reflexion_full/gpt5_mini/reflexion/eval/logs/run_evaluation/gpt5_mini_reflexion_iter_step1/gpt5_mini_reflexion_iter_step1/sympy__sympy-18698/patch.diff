@@ -1,0 +1,34 @@
+--- a/sympy/polys/polytools.py
++++ b/sympy/polys/polytools.py
+@@ -5998,6 +5998,31 @@
+         fp = _sorted_factors(fp, method)
+         fq = _sorted_factors(fq, method)
+ 
++        # For square-free factorization combine factors that have the same
++        # multiplicity: e.g. (x - 2, 3), (x - 3, 3) -> ( (x - 2)*(x - 3), 3 ).
++        # Do this while factors are Polys (before converting back to Exprs).
++        if method == 'sqf':
++            from collections import OrderedDict
++            def _combine(factors):
++                if not factors:
++                    return factors
++                groups = OrderedDict()
++                for f, k in factors:
++                    groups.setdefault(k, []).append(f)
++                combined = []
++                for k, flist in groups.items():
++                    if len(flist) == 1:
++                        combined.append((flist[0], k))
++                    else:
++                        prod = flist[0]
++                        for g in flist[1:]:
++                            prod = prod.mul(g)
++                        combined.append((prod, k))
++                return combined
++
++            fp = _combine(fp)
++            fq = _combine(fq)
++
+         if not opt.polys:
+             fp = [(f.as_expr(), k) for f, k in fp]
+             fq = [(f.as_expr(), k) for f, k in fq]

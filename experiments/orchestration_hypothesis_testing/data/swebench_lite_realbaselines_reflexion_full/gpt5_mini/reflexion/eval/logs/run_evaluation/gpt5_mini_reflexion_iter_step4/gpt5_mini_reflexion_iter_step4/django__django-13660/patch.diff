@@ -1,0 +1,25 @@
+--- a/django/core/management/commands/shell.py
++++ b/django/core/management/commands/shell.py
+@@ -84,13 +84,20 @@
+     def handle(self, **options):
+         # Execute the command and exit.
+         if options['command']:
+-            exec(options['command'])
++            # Execute in a fresh globals dictionary so that the executed code
++            # behaves like running "python -c <code>" (functions resolve names
++            # from the module globals and don't accidentally capture the local
++            # scope of this function).  '__builtins__' is left out on purpose:
++            # when missing, Python automatically inserts the builtins mapping.
++            exec(options['command'], {})
+             return
+ 
+         # Execute stdin if it has anything to read and exit.
+         # Not supported on Windows due to select.select() limitations.
+         if sys.platform != 'win32' and not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
+-            exec(sys.stdin.read())
++            # Same reasoning as above: run stdin code in a fresh globals dict to
++            # match the behaviour of "python < file".
++            exec(sys.stdin.read(), {})
+             return
+ 
+         available_shells = [options['interface']] if options['interface'] else self.shells

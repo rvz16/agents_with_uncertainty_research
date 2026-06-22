@@ -1,0 +1,24 @@
+--- a/lib/matplotlib/axis.py
++++ b/lib/matplotlib/axis.py
+@@ -2022,8 +2022,19 @@
+         ticks.
+         """
+         result = self._set_tick_locations(ticks, minor=minor)
+-        if labels is not None:
+-            self.set_ticklabels(labels, minor=minor, **kwargs)
++        # Historically, **kwargs were silently ignored when no *labels* were
++        # passed.  This is surprising and hides typos.  Require explicit use
++        # of set_ticklabels when supplying Text properties for labels.
++        if labels is None:
++            if kwargs:
++                raise ValueError(
++                    "Text properties were supplied to set_ticks but no "
++                    "'labels' were given. Text properties passed via **kwargs "
++                    "only apply when labels are set. Use Axes.tick_params to "
++                    "modify tick appearance, or pass 'labels' to set_ticks."
++                )
++            return result
++        self.set_ticklabels(labels, minor=minor, **kwargs)
+         return result
+ 
+     def _get_tick_boxes_siblings(self, renderer):

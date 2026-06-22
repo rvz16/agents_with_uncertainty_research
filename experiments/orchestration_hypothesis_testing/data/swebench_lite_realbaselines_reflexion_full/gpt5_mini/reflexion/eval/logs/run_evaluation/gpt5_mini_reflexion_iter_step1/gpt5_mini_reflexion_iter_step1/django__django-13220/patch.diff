@@ -1,0 +1,56 @@
+--- a/django/core/exceptions.py
++++ b/django/core/exceptions.py
+@@ -182,6 +182,53 @@
+     def __repr__(self):
+         return 'ValidationError(%s)' % self
+ 
++    def __eq__(self, other):
++        """
++        Compare two ValidationError instances for equality.
++
++        Two ValidationErrors are considered equal when they have the same
++        structure (both are error_dicts or both are error_lists), the same set
++        of fields (for dicts), and the same multiset of individual errors for
++        each field or for the non-field errors. Individual errors are compared
++        by their (message, code, params) tuple; params are canonicalized so
++        that dict/list structures compare correctly.
++        """
++        if not isinstance(other, ValidationError):
++            return NotImplemented
++
++        # They must both be dict-based or both be list-based.
++        if hasattr(self, 'error_dict') != hasattr(other, 'error_dict'):
++            return False
++
++        def _canonicalize_params(params):
++            if params is None:
++                return None
++            if isinstance(params, dict):
++                # Sort items to make dict order-independent.
++                return tuple((k, _canonicalize_params(v)) for k, v in sorted(params.items()))
++            if isinstance(params, (list, tuple)):
++                return tuple(_canonicalize_params(p) for p in params)
++            return params
++
++        def _error_key(err):
++            return (err.message, err.code, _canonicalize_params(err.params))
++
++        from collections import Counter
++
++        if hasattr(self, 'error_dict'):
++            # Compare keys (fields) as a set (order doesn't matter).
++            if set(self.error_dict.keys()) != set(other.error_dict.keys()):
++                return False
++            for field in self.error_dict:
++                self_counter = Counter(_error_key(e) for e in self.error_dict[field])
++                other_counter = Counter(_error_key(e) for e in other.error_dict[field])
++                if self_counter != other_counter:
++                    return False
++            return True
++        else:
++            return Counter(_error_key(e) for e in self.error_list) == Counter(
++                _error_key(e) for e in other.error_list)
++
+ 
+ class EmptyResultSet(Exception):
+     """A database query predicate is impossible."""

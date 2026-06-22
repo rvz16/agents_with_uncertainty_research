@@ -1,0 +1,17 @@
+--- a/src/_pytest/assertion/rewrite.py
++++ b/src/_pytest/assertion/rewrite.py
+@@ -742,8 +742,12 @@
+                     nodes.append(field)
+ 
+     @staticmethod
+-    def is_rewrite_disabled(docstring: str) -> bool:
+-        return "PYTEST_DONT_REWRITE" in docstring
++    def is_rewrite_disabled(docstring: object) -> bool:
++        # Only consider real string docstrings. If the first expression in a
++        # module is a non-string constant (for example a bare number like `0`)
++        # it must not be treated as a docstring. Guarding the membership test
++        # avoids TypeError: argument of type 'int' is not iterable.
++        return isinstance(docstring, str) and "PYTEST_DONT_REWRITE" in docstring
+ 
+     def variable(self) -> str:
+         """Get a new variable."""

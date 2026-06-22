@@ -1,0 +1,26 @@
+--- a/lib/matplotlib/colors.py
++++ b/lib/matplotlib/colors.py
+@@ -1693,6 +1693,13 @@
+                 value = np.clip(value, self.vmin, self.vmax)
+             t_value = self._trf.transform(value).reshape(np.shape(value))
+             t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++            # Coerce transform outputs to a plain float ndarray to avoid getting
++            # masked arrays or other array-likes from the transform that make
++            # np.isfinite return a masked array (which would make the truth
++            # value ambiguous).  This mirrors the intent of checking that the
++            # transformed vmin/vmax are finite while being robust to different
++            # array-like return types from transforms.
++            t_vmin, t_vmax = np.array([t_vmin, t_vmax], dtype=float)
+             if not np.isfinite([t_vmin, t_vmax]).all():
+                 raise ValueError("Invalid vmin or vmax")
+             t_value -= t_vmin
+@@ -1706,6 +1713,9 @@
+             if self.vmin > self.vmax:
+                 raise ValueError("vmin must be less or equal to vmax")
+             t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
++            # See comment above in __call__: coerce to a plain float ndarray to
++            # avoid masked/ambiguous array-likes from transforms.
++            t_vmin, t_vmax = np.array([t_vmin, t_vmax], dtype=float)
+             if not np.isfinite([t_vmin, t_vmax]).all():
+                 raise ValueError("Invalid vmin or vmax")
+             value, is_scalar = self.process_value(value)

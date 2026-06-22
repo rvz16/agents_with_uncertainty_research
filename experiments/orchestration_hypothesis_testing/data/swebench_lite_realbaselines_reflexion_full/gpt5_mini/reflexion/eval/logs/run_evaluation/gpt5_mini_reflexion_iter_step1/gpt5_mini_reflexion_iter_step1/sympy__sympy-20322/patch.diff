@@ -1,0 +1,89 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,70 @@
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+-        from sympy.core.numbers import Float
+-
++        """
++        Try to determine whether a Mul is integer without performing
++        potentially-evaluating operations on unevaluated subexpressions.
++
++        This attempts a conservative decision based only on the direct args:
++        - integers contribute to the numerators
++        - Rational args contribute their numerators and denominators
++        - simple reciprocal integer powers (b**-1) contribute to denominators
++        If any arg is of a form that we cannot analyse without evaluation the
++        routine gives up (returns None).
++        """
++        # Quick rationality check: if we know it's not rational, it's not integer.
+         is_rational = self._eval_is_rational()
+         if is_rational is False:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        numerators = []
++        denominators = []
++
++        for a in self.args:
++            # an integer factor keeps the product integer (so goes to numerators)
++            if a.is_integer:
++                numerators.append(a)
++                continue
++
++            # Rational numbers: pull apart numerator and denominator
++            if a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++                continue
++
++            # simple reciprocal integer powers like b**(-1)
++            if a.is_Pow:
++                b, e = a.as_base_exp()
++                # Only accept exact reciprocal of an integer base.
++                if e is S.NegativeOne and b.is_integer:
++                    denominators.append(b)
++                    continue
++                # Otherwise we cannot decide without further evaluation.
++                return
++
++            # anything else we cannot safely decide about
++            return
++
++        # If there are no denominator contributions then all factors are integer
++        if not denominators:
++            return True
++
++        # helper predicates
++        all_odd = lambda seq: all(bool(x.is_odd) for x in seq)
++        any_even = lambda seq: any(bool(x.is_even) for x in seq)
++
++        # If all numerators are odd but some denominator is even then result
++        # cannot be integer.
++        if numerators and all_odd(numerators) and any_even(denominators):
++            return False
++
++        # A common simple case: even numerator(s) and the sole denominator is 2
++        # gives an integer (e.g. 2 * (1/2) == 1).
++        if any_even(numerators) and denominators == [S(2)]:
++            return True
++
++        # Give up if we can't determine conservatively.
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

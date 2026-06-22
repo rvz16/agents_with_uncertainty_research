@@ -1,0 +1,38 @@
+--- a/django/core/checks/model_checks.py
++++ b/django/core/checks/model_checks.py
+@@ -4,7 +4,8 @@
+ from itertools import chain
+ 
+ from django.apps import apps
+-from django.core.checks import Error, Tags, register
++from django.conf import settings
++from django.core.checks import Error, Warning, Tags, register
+ 
+ 
+ @register(Tags.models)
+@@ -37,12 +38,22 @@
+             constraints[model_constraint.name].append(model._meta.label)
+     for db_table, model_labels in db_table_models.items():
+         if len(model_labels) != 1:
+-            errors.append(
+-                Error(
++            # If the project uses database routers, it's possible that the same
++            # table name is intended to be used across different databases.
++            # In that case, emit a warning instead of an error so projects
++            # relying on DATABASE_ROUTERS aren't blocked by this check.
++            if settings.DATABASE_ROUTERS:
++                msg_cls = Warning
++                msg_id = 'models.W028'
++            else:
++                msg_cls = Error
++                msg_id = 'models.E028'
++            errors.append(
++                msg_cls(
+                     "db_table '%s' is used by multiple models: %s."
+                     % (db_table, ', '.join(db_table_models[db_table])),
+                     obj=db_table,
+-                    id='models.E028',
++                    id=msg_id,
+                 )
+             )
+     for index_name, model_labels in indexes.items():

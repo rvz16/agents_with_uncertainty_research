@@ -1,0 +1,19 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -46,10 +46,14 @@
+ 
+         # If the other Q() is empty, ignore it and just use `self`.
+         if not other:
+-            return copy.deepcopy(self)
++            # Use a shallow copy rather than deepcopy to avoid trying to pickle
++            # non-pickleable objects that may be stored in Q children (e.g.
++            # dict_keys). A shallow copy is sufficient here because Q objects
++            # are treated immutably for combination purposes.
++            return copy.copy(self)
+         # Or if this Q is empty, ignore it and just use `other`.
+         elif not self:
+-            return copy.deepcopy(other)
++            return copy.copy(other)
+ 
+         obj = type(self)()
+         obj.connector = conn

@@ -1,0 +1,39 @@
+--- a/django/forms/formsets.py
++++ b/django/forms/formsets.py
+@@ -333,7 +333,24 @@
+         self._non_form_errors.
+         """
+         self._errors = []
+-        self._non_form_errors = self.error_class()
++        # Use a subclass of the provided error_class so that the HTML
++        # rendering can be adjusted to include a "nonform" CSS class for
++        # formset-wide (non-form) errors. This allows custom ErrorList
++        # implementations to distinguish form field errors, form
++        # non-field errors and formset non-form errors when rendering.
++        ErrorListClass = self.error_class
++
++        class _NonFormErrorList(ErrorListClass):
++            def __str__(self):
++                rendered = super().__str__()
++                # Add the nonform class to the errorlist container if possible.
++                # Use a simple replace so that custom error renderings that
++                # include the standard errorlist class will receive the extra
++                # class. Limit to the first occurrence to avoid accidental
++                # multiple insertions.
++                return rendered.replace('class="errorlist', 'class="errorlist nonform', 1)
++
++        self._non_form_errors = _NonFormErrorList()
+         empty_forms_count = 0
+ 
+         if not self.is_bound:  # Stop further processing.
+@@ -380,7 +397,9 @@
+             # Give self.clean() a chance to do cross-form validation.
+             self.clean()
+         except ValidationError as e:
+-            self._non_form_errors = self.error_class(e.error_list)
++            # Use the specialized ErrorList subclass so rendered HTML for
++            # formset-wide errors includes the "nonform" CSS class.
++            self._non_form_errors = _NonFormErrorList(e.error_list)
+ 
+     def clean(self):
+         """

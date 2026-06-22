@@ -1,0 +1,32 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -378,7 +378,20 @@
+         # gather exponents of common bases...
+         def _gather(c_powers):
+             common_b = {}  # b:e
++            uncombined = []  # bases that should not be combined (e.g. containing infinities)
+             for b, e in c_powers:
++                # Do not combine powers whose base contains any form of infinity.
++                # Combining such bases can lead to incorrect cancellation like
++                # (zoo + a)/(zoo + a) -> 1 instead of NaN.
++                try:
++                    if b.has(S.ComplexInfinity) or b.has(S.Infinity) or b.has(S.NegativeInfinity):
++                        uncombined.append((b, e))
++                        continue
++                except Exception:
++                    # If .has raises for some exotic object, be conservative
++                    # and avoid combining.
++                    uncombined.append((b, e))
++                    continue
+                 co = e.as_coeff_Mul()
+                 common_b.setdefault(b, {}).setdefault(
+                     co[1], []).append(co[0])
+@@ -388,6 +401,8 @@
+             new_c_powers = []
+             for b, e in common_b.items():
+                 new_c_powers.extend([(b, c*t) for t, c in e.items()])
++            # re-attach uncombined bases unchanged
++            new_c_powers.extend(uncombined)
+             return new_c_powers
+ 
+         # in c_powers

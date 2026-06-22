@@ -1,0 +1,117 @@
+2026-06-22 09:42:42,260 - INFO - Creating container for pytest-dev__pytest-7220...
+2026-06-22 09:42:45,432 - INFO - Container for pytest-dev__pytest-7220 created: 16f8918f00f338d97158a2f6df6ea8b1bdaf403220ee32fe0ebc758dc18b73f3
+2026-06-22 09:42:45,606 - INFO - Container for pytest-dev__pytest-7220 started: 16f8918f00f338d97158a2f6df6ea8b1bdaf403220ee32fe0ebc758dc18b73f3
+2026-06-22 09:42:45,606 - INFO - Intermediate patch for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-7220/patch.diff, now applying to container...
+2026-06-22 09:42:45,723 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/nodes.py...
+Applied patch src/_pytest/nodes.py cleanly.
+
+2026-06-22 09:42:45,804 - INFO - Git diff before:
+diff --git a/src/_pytest/nodes.py b/src/_pytest/nodes.py
+index 4a79bc861..347246d86 100644
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -367,7 +367,7 @@ class Node(metaclass=NodeMeta):
+         except OSError:
+             abspath = True
+ 
+-        return excinfo.getrepr(
++        getrepr_kwargs = dict(
+             funcargs=True,
+             abspath=abspath,
+             showlocals=self.config.getoption("showlocals", False),
+@@ -376,6 +376,34 @@ class Node(metaclass=NodeMeta):
+             truncate_locals=truncate_locals,
+         )
+ 
++        # When the current working directory is accessible, pytest's path
++        # relativization (used by getrepr when abspath is False) should be
++        # performed relative to the original invocation directory, not the
++        # possibly changed current working directory (which can happen in
++        # fixtures). Temporarily chdir to config.invocation_dir if available
++        # while computing the representation.
++        if not abspath:
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                try:
++                    old_cwd = os.getcwd()
++                    os.chdir(str(invocation_dir))
++                except OSError:
++                    # If changing directory fails for any reason, fall back to
++                    # calling getrepr with the current cwd.
++                    return excinfo.getrepr(**getrepr_kwargs)
++                try:
++                    return excinfo.getrepr(**getrepr_kwargs)
++                finally:
++                    try:
++                        os.chdir(old_cwd)
++                    except OSError:
++                        # Best effort to restore cwd; if it fails, there's not
++                        # much we can do here.
++                        pass
++
++        return excinfo.getrepr(**getrepr_kwargs)
++
+     def repr_failure(
+         self, excinfo, style=None
+     ) -> Union[str, ReprExceptionInfo, ExceptionChainRepr, FixtureLookupErrorRepr]:
+2026-06-22 09:42:45,804 - INFO - Eval script for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-7220/eval.sh; copying to container...
+2026-06-22 09:42:48,954 - INFO - Test runtime: 3.12 seconds
+2026-06-22 09:42:48,954 - INFO - Test output for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/pytest-dev__pytest-7220/test_output.txt
+2026-06-22 09:42:48,997 - INFO - Git diff after:
+diff --git a/src/_pytest/nodes.py b/src/_pytest/nodes.py
+index 4a79bc861..347246d86 100644
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -367,7 +367,7 @@ class Node(metaclass=NodeMeta):
+         except OSError:
+             abspath = True
+ 
+-        return excinfo.getrepr(
++        getrepr_kwargs = dict(
+             funcargs=True,
+             abspath=abspath,
+             showlocals=self.config.getoption("showlocals", False),
+@@ -376,6 +376,34 @@ class Node(metaclass=NodeMeta):
+             truncate_locals=truncate_locals,
+         )
+ 
++        # When the current working directory is accessible, pytest's path
++        # relativization (used by getrepr when abspath is False) should be
++        # performed relative to the original invocation directory, not the
++        # possibly changed current working directory (which can happen in
++        # fixtures). Temporarily chdir to config.invocation_dir if available
++        # while computing the representation.
++        if not abspath:
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                try:
++                    old_cwd = os.getcwd()
++                    os.chdir(str(invocation_dir))
++                except OSError:
++                    # If changing directory fails for any reason, fall back to
++                    # calling getrepr with the current cwd.
++                    return excinfo.getrepr(**getrepr_kwargs)
++                try:
++                    return excinfo.getrepr(**getrepr_kwargs)
++                finally:
++                    try:
++                        os.chdir(old_cwd)
++                    except OSError:
++                        # Best effort to restore cwd; if it fails, there's not
++                        # much we can do here.
++                        pass
++
++        return excinfo.getrepr(**getrepr_kwargs)
++
+     def repr_failure(
+         self, excinfo, style=None
+     ) -> Union[str, ReprExceptionInfo, ExceptionChainRepr, FixtureLookupErrorRepr]:
+2026-06-22 09:42:48,997 - INFO - Grading answer for pytest-dev__pytest-7220...
+2026-06-22 09:42:48,997 - INFO - report: {'pytest-dev__pytest-7220': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_nodes.py::test_failure_with_changed_cwd']}, 'PASS_TO_PASS': {'success': ['testing/test_nodes.py::test_ischildnode[--True]', 'testing/test_nodes.py::test_ischildnode[-foo-True]', 'testing/test_nodes.py::test_ischildnode[-foo/bar-True]', 'testing/test_nodes.py::test_ischildnode[-foo/bar::TestBaz-True]', 'testing/test_nodes.py::test_ischildnode[foo-food-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar::TestBaz-foo/bar-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar::TestBaz-foo/bar::TestBop-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar-foo/bar::TestBop-True]', 'testing/test_nodes.py::test_node_from_parent_disallowed_arguments', 'testing/test_nodes.py::test__check_initialpaths_for_relpath', 'testing/test_nodes.py::test_std_warn_not_pytestwarning'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-7220: resolved: False
+2026-06-22 09:42:48,997 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:43:04,189 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:43:04,204 - INFO - Container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 09:43:04,205 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7220:latest...
+2026-06-22 09:43:04,766 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7220:latest removed.

@@ -1,0 +1,16 @@
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -535,8 +535,12 @@
+             raise ImportError(f"Can't find module {module_name} at location {path}")
+         mod = importlib.util.module_from_spec(spec)
+         sys.modules[module_name] = mod
++        # Ensure intermediate package modules exist in sys.modules before executing
++        # the module. This prevents duplicate module objects being created when
++        # the executed module imports other modules in the same package (see
++        # issue with import-mode=importlib and doctest-modules).
++        insert_missing_modules(sys.modules, module_name)
+         spec.loader.exec_module(mod)  # type: ignore[union-attr]
+-        insert_missing_modules(sys.modules, module_name)
+         return mod
+ 
+     pkg_path = resolve_package_path(path)

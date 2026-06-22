@@ -1,0 +1,53 @@
+--- a/sklearn/preprocessing/_encoders.py
++++ b/sklearn/preprocessing/_encoders.py
+@@ -6,6 +6,7 @@
+ 
+ import numbers
+ import warnings
++import re
+ 
+ import numpy as np
+ from scipy import sparse
+@@ -110,8 +111,40 @@
+                     # continue `The rows are marked `X_mask` and will be
+                     # removed later.
+                     X_mask[:, i] = valid_mask
+-                    Xi = Xi.copy()
+-                    Xi[~valid_mask] = self.categories_[i][0]
++
++                    # When replacing unknown string entries with a known
++                    # category, assigning into a fixed-width numpy string
++                    # dtype (e.g. '<U3' or '|S4') can lead to truncation
++                    # without warning which may corrupt values. To avoid
++                    # this, upcast to object dtype when the replacement
++                    # string does not fit.
++                    replacement = self.categories_[i][0]
++                    need_object = False
++                    if Xi.dtype != np.dtype('object'):
++                        if isinstance(replacement, six.string_types):
++                            dt = Xi.dtype
++                            # For 'U' / 'S' dtypes parse the max length from
++                            # the dtype string (e.g. '<U10', '|S5').
++                            if dt.kind in ('U', 'S'):
++                                m = re.match(r'.*([0-9]+)$', dt.str)
++                                if m:
++                                    maxlen = int(m.group(1))
++                                    if len(replacement) > maxlen:
++                                        need_object = True
++                                else:
++                                    # If we cannot determine maxlen, be safe.
++                                    need_object = True
++                            else:
++                                # Non-string dtype: assigning a string would
++                                # require object dtype.
++                                need_object = True
++
++                    if need_object:
++                        Xi = Xi.astype(object)
++                    else:
++                        Xi = Xi.copy()
++
++                    Xi[~valid_mask] = replacement
+             _, encoded = _encode(Xi, self.categories_[i], encode=True)
+             X_int[:, i] = encoded
+ 

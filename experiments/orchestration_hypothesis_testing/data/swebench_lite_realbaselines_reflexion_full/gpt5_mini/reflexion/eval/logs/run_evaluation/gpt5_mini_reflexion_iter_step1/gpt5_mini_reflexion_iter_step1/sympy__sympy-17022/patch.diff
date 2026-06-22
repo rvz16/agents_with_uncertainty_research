@@ -1,0 +1,35 @@
+--- a/sympy/printing/pycode.py
++++ b/sympy/printing/pycode.py
+@@ -283,6 +283,16 @@
+     def _print_ImaginaryUnit(self, expr):
+         return '1j'
+ 
++    def _print_Identity(self, expr):
++        # Identity matrices are ambiguous in generic Python code: the
++        # string 'I' can be confused with the imaginary unit.  Refuse
++        # to print Identity here to avoid silently producing incorrect
++        # code. NumPyPrinter overrides this to produce numpy.eye(n) when
++        # n is an explicit integer.
++        n = expr.args[0]
++        raise NotImplementedError("Printing Identity(%s) is not supported for generic Python code; "
++                                  "use the NumPy printer or provide an explicit matrix." % self._print(n))
++
+     def _print_MatrixBase(self, expr):
+         name = expr.__class__.__name__
+         func = self.known_functions.get(name, name)
+@@ -607,6 +617,15 @@
+         if func is None:
+             func = self._module_format('numpy.array')
+         return "%s(%s)" % (func, self._print(expr.tolist()))
++
++    def _print_Identity(self, expr):
++        # If the dimension is an explicit integer, print numpy.eye(n).
++        # For symbolic or unknown dimensions refuse to print to avoid
++        # ambiguous code (e.g. printing 'I' which may be misinterpreted).
++        n = expr.args[0]
++        if getattr(n, 'is_Integer', False):
++            return "{0}({1})".format(self._module_format('numpy.eye'), self._print(n))
++        raise NotImplementedError("Cannot convert Identity(%s) with symbolic dimension to NumPy code" % self._print(n))
+ 
+     def _print_BlockMatrix(self, expr):
+         return '{0}({1})'.format(self._module_format('numpy.block'),

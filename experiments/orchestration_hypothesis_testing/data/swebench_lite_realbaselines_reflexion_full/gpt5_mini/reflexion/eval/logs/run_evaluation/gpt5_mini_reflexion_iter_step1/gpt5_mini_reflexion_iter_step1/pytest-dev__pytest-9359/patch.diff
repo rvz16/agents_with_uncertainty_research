@@ -1,0 +1,28 @@
+--- a/src/_pytest/_code/source.py
++++ b/src/_pytest/_code/source.py
+@@ -202,11 +202,22 @@
+         except Exception:
+             pass
+ 
+-    # The end might still point to a comment or empty line, correct it.
++    # The end might still point to a comment, empty line, or a decorator
++    # that belongs to the following statement. Correct it.
+     while end:
+         line = source.lines[end - 1].lstrip()
++        # strip trailing comments and blank lines
+         if line.startswith("#") or not line:
+             end -= 1
+-        else:
+-            break
++            continue
++        # If we ended on a decorator line that is separated from the current
++        # statement by a blank line, it likely belongs to the following
++        # statement (e.g. a nested function defined after the current one).
++        # In that case, drop the decorator line from the current span.
++        if line.startswith("@"):
++            # Check if the line before the decorator is blank (and exists).
++            if end - 2 >= 0 and not source.lines[end - 2].strip():
++                end -= 1
++                continue
++        break
+     return astnode, start, end

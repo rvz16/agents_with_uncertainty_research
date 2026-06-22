@@ -1,0 +1,31 @@
+--- a/django/forms/formsets.py
++++ b/django/forms/formsets.py
+@@ -334,6 +334,14 @@
+         """
+         self._errors = []
+         self._non_form_errors = self.error_class()
++        # Add the "nonform" CSS class so custom ErrorList renderers can
++        # distinguish formset-level (non-form) errors from form non-field errors.
++        try:
++            self._non_form_errors.error_css_class += ' nonform'
++        except Exception:
++            # Be liberal in what we accept: if the error_class implementation
++            # doesn't have an error_css_class attribute, just ignore it.
++            pass
+         empty_forms_count = 0
+ 
+         if not self.is_bound:  # Stop further processing.
+@@ -381,6 +389,13 @@
+             self.clean()
+         except ValidationError as e:
+             self._non_form_errors = self.error_class(e.error_list)
++            # Ensure the ErrorList for non-form errors contains the
++            # "nonform" CSS class so it can be differentiated from form
++            # non-field errors (which use "nonfield").
++            try:
++                self._non_form_errors.error_css_class += ' nonform'
++            except Exception:
++                pass
+ 
+     def clean(self):
+         """

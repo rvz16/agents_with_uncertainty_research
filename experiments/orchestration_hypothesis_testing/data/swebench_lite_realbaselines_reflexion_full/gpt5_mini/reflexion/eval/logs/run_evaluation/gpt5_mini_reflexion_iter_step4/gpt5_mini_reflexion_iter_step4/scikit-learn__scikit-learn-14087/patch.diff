@@ -1,0 +1,16 @@
+--- a/sklearn/linear_model/logistic.py
++++ b/sklearn/linear_model/logistic.py
+@@ -2170,7 +2170,12 @@
+                 # Take the best scores across every fold and the average of
+                 # all coefficients corresponding to the best scores.
+                 best_indices = np.argmax(scores, axis=1)
+-                if self.multi_class == 'ovr':
++                # Use the resolved `multi_class` value (not the user-provided
++                # `self.multi_class`) to decide on indexing. Using
++                # self.multi_class here can be 'auto' and lead to choosing
++                # the wrong branch and incorrect indexing, causing an
++                # IndexError when coefs_paths has fewer dimensions.
++                if multi_class == 'ovr':
+                     w = np.mean([coefs_paths[i, best_indices[i], :]
+                                  for i in range(len(folds))], axis=0)
+                 else:

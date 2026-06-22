@@ -1,0 +1,32 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -411,7 +411,28 @@
+         Custom format for select clauses. For example, GIS columns need to be
+         selected as AsText(table.col) on MySQL as the table.col data can't be
+         used by Django.
+-        """
++
++        Special-case BooleanField: some expressions (notably wrapped Q objects
++        reduced to a constant) may produce no SQL but leave a boolean-like
++        value in params (e.g. True/False or 1/0). In that situation return a
++        concrete SQL constant ('1' or '0') so the resulting SELECT clause is
++        syntactically valid (avoids "SELECT AS ..." errors).
++        """
++        # If this is a BooleanField and the SQL fragment is empty, try to
++        # recover a concrete SQL constant from the params.
++        if (not sql or (isinstance(sql, str) and not sql.strip())) and params and isinstance(self, BooleanField):
++            # params may be a list/tuple coming from the expression compiler.
++            # If the first param is a boolean or integer-like 0/1, use it.
++            try:
++                first = params[0]
++            except Exception:
++                first = None
++            if isinstance(first, bool):
++                return ('1', [])
++            if isinstance(first, (int,)) and first in (0, 1):
++                return (str(int(first)), [])
++            # No useful param found; fall back to SQL false constant.
++            return ('0', [])
+         return sql, params
+ 
+     def deconstruct(self):

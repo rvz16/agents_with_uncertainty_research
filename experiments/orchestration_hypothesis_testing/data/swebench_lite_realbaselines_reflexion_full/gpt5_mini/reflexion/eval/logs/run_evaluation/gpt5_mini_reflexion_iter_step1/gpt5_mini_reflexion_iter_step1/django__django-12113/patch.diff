@@ -1,0 +1,14 @@
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -95,7 +95,10 @@
+         TEST NAME. See https://www.sqlite.org/inmemorydb.html
+         """
+         test_database_name = self._get_test_db_name()
+-        sig = [self.connection.settings_dict['NAME']]
++        # Use the test database name (TEST.NAME when provided) to identify the
++        # test database. Falling back to the configured NAME for backwards
++        # compatibility when TEST.NAME is falsy.
++        sig = [test_database_name or self.connection.settings_dict['NAME']]
+         if self.is_in_memory_db(test_database_name):
+             sig.append(self.connection.alias)
+         return tuple(sig)

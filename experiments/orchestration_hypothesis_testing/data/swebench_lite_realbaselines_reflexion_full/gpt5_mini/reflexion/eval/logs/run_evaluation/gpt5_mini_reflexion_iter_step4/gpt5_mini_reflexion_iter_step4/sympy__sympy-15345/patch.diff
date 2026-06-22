@@ -1,0 +1,15 @@
+--- a/sympy/printing/mathematica.py
++++ b/sympy/printing/mathematica.py
+@@ -63,7 +63,11 @@
+                 userfuncs[k] = [(lambda *x: True, v)]
+                 self.known_functions.update(userfuncs)
+ 
+-    doprint = StrPrinter.doprint
++    # Use the CodePrinter.doprint implementation rather than StrPrinter.doprint.
++    # StrPrinter produces Python-style function calls with parentheses and can
++    # change argument ordering/formatting. By not overriding doprint here we
++    # ensure Mathematica-style output (square brackets) and the argument order
++    # produced by CodePrinter/_print_Function is used.
+ 
+     def _print_Pow(self, expr):
+         PREC = precedence(expr)

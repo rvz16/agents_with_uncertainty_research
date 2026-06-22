@@ -1,0 +1,113 @@
+2026-06-22 10:02:24,375 - INFO - Creating container for sympy__sympy-13773...
+2026-06-22 10:02:24,482 - INFO - Container for sympy__sympy-13773 created: e21af1373f0ddd56986a3a35fc26186d716be36ef8e3411d18b9cfa03a6872d9
+2026-06-22 10:02:24,640 - INFO - Container for sympy__sympy-13773 started: e21af1373f0ddd56986a3a35fc26186d716be36ef8e3411d18b9cfa03a6872d9
+2026-06-22 10:02:24,640 - INFO - Intermediate patch for sympy__sympy-13773 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-13773/patch.diff, now applying to container...
+2026-06-22 10:02:24,756 - INFO - >>>>> Applied Patch:
+Checking patch sympy/matrices/common.py...
+Applied patch sympy/matrices/common.py cleanly.
+
+2026-06-22 10:02:24,960 - INFO - Git diff before:
+diff --git a/sympy/matrices/common.py b/sympy/matrices/common.py
+index 379a2917aa..23be0ac8ac 100644
+--- a/sympy/matrices/common.py
++++ b/sympy/matrices/common.py
+@@ -1973,7 +1973,19 @@ def __div__(self, other):
+ 
+     @call_highest_priority('__rmatmul__')
+     def __matmul__(self, other):
+-        return self.__mul__(other)
++        other = _matrixify(other)
++        # Only allow true matrix multiplication via @. Scalars or non-matrix
++        # objects should not be accepted; use '*' for scalar multiplication.
++        if getattr(other, 'is_Matrix', False):
++            if self.shape[1] != other.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (self.shape, other.shape))
++            return self._eval_matrix_mul(other)
++        if getattr(other, 'is_MatrixLike', False):
++            if self.shape[1] != other.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (self.shape, other.shape))
++            return MatrixArithmetic._eval_matrix_mul(self, other)
++        # not a matrix-like object
++        raise TypeError("Matrix multiplication is only defined between two matrices. Use '*' for scalar multiplication.")
+ 
+     @call_highest_priority('__rmul__')
+     def __mul__(self, other):
+@@ -2068,7 +2080,19 @@ def __radd__(self, other):
+ 
+     @call_highest_priority('__matmul__')
+     def __rmatmul__(self, other):
+-        return self.__rmul__(other)
++        other = _matrixify(other)
++        # Only allow true matrix multiplication via @. Scalars or non-matrix
++        # objects should not be accepted; use '*' for scalar multiplication.
++        if getattr(other, 'is_Matrix', False):
++            if other.shape[1] != self.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (other.shape, self.shape))
++            return other._eval_matrix_mul(self)
++        if getattr(other, 'is_MatrixLike', False):
++            if other.shape[1] != self.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (other.shape, self.shape))
++            return MatrixArithmetic._eval_matrix_mul(other, self)
++        # not a matrix-like object
++        raise TypeError("Matrix multiplication is only defined between two matrices. Use '*' for scalar multiplication.")
+ 
+     @call_highest_priority('__mul__')
+     def __rmul__(self, other):
+2026-06-22 10:02:24,960 - INFO - Eval script for sympy__sympy-13773 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-13773/eval.sh; copying to container...
+2026-06-22 10:02:28,456 - INFO - Test runtime: 3.47 seconds
+2026-06-22 10:02:28,456 - INFO - Test output for sympy__sympy-13773 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-13773/test_output.txt
+2026-06-22 10:02:28,502 - INFO - Git diff after:
+diff --git a/sympy/matrices/common.py b/sympy/matrices/common.py
+index 379a2917aa..23be0ac8ac 100644
+--- a/sympy/matrices/common.py
++++ b/sympy/matrices/common.py
+@@ -1973,7 +1973,19 @@ def __div__(self, other):
+ 
+     @call_highest_priority('__rmatmul__')
+     def __matmul__(self, other):
+-        return self.__mul__(other)
++        other = _matrixify(other)
++        # Only allow true matrix multiplication via @. Scalars or non-matrix
++        # objects should not be accepted; use '*' for scalar multiplication.
++        if getattr(other, 'is_Matrix', False):
++            if self.shape[1] != other.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (self.shape, other.shape))
++            return self._eval_matrix_mul(other)
++        if getattr(other, 'is_MatrixLike', False):
++            if self.shape[1] != other.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (self.shape, other.shape))
++            return MatrixArithmetic._eval_matrix_mul(self, other)
++        # not a matrix-like object
++        raise TypeError("Matrix multiplication is only defined between two matrices. Use '*' for scalar multiplication.")
+ 
+     @call_highest_priority('__rmul__')
+     def __mul__(self, other):
+@@ -2068,7 +2080,19 @@ def __radd__(self, other):
+ 
+     @call_highest_priority('__matmul__')
+     def __rmatmul__(self, other):
+-        return self.__rmul__(other)
++        other = _matrixify(other)
++        # Only allow true matrix multiplication via @. Scalars or non-matrix
++        # objects should not be accepted; use '*' for scalar multiplication.
++        if getattr(other, 'is_Matrix', False):
++            if other.shape[1] != self.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (other.shape, self.shape))
++            return other._eval_matrix_mul(self)
++        if getattr(other, 'is_MatrixLike', False):
++            if other.shape[1] != self.shape[0]:
++                raise ShapeError("Matrix size mismatch: %s @ %s." % (other.shape, self.shape))
++            return MatrixArithmetic._eval_matrix_mul(other, self)
++        # not a matrix-like object
++        raise TypeError("Matrix multiplication is only defined between two matrices. Use '*' for scalar multiplication.")
+ 
+     @call_highest_priority('__mul__')
+     def __rmul__(self, other):
+2026-06-22 10:02:28,502 - INFO - Grading answer for sympy__sympy-13773...
+2026-06-22 10:02:28,504 - INFO - report: {'sympy__sympy-13773': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_matmul']}, 'PASS_TO_PASS': {'success': ['test__MinimalMatrix', 'test_vec', 'test_tolist', 'test_row_col_del', 'test_get_diag_blocks1', 'test_get_diag_blocks2', 'test_shape', 'test_reshape', 'test_row_col', 'test_row_join', 'test_col_join', 'test_row_insert', 'test_col_insert', 'test_extract', 'test_hstack', 'test_vstack', 'test_atoms', 'test_free_symbols', 'test_has', 'test_is_anti_symmetric', 'test_diagonal_symmetrical', 'test_is_hermitian', 'test_is_Identity', 'test_is_symbolic', 'test_is_upper', 'test_is_lower', 'test_is_square', 'test_is_symmetric', 'test_is_hessenberg', 'test_is_zero', 'test_values', 'test_adjoint', 'test_as_real_imag', 'test_conjugate', 'test_doit', 'test_evalf', 'test_expand', 'test_replace', 'test_replace_map', 'test_simplify', 'test_subs', 'test_trace', 'test_xreplace', 'test_permute', 'test_abs', 'test_add', 'test_power', 'test_neg', 'test_sub', 'test_det', 'test_adjugate', 'test_cofactor_and_minors', 'test_charpoly', 'test_row_op', 'test_col_op', 'test_is_echelon', 'test_echelon_form', 'test_rref', 'test_eye', 'test_ones', 'test_zeros', 'test_diag', 'test_jordan_block', 'test_columnspace', 'test_rowspace', 'test_nullspace', 'test_eigenvals', 'test_singular_values', 'test_integrate'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13773: resolved: False
+2026-06-22 10:02:28,505 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13773.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:02:43,693 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13773.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:02:43,710 - INFO - Container sweb.eval.sympy__sympy-13773.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 10:02:43,710 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-13773:latest...
+2026-06-22 10:02:43,756 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-13773:latest removed.

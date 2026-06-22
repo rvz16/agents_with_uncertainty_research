@@ -1,0 +1,90 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,71 @@
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
+-        from sympy.core.numbers import Float
+-
++        # We attempt a conservative (non-evaluating) check to determine
++        # whether a Mul is integer. If the decision requires evaluating
++        # subexpressions we give up (return None) rather than performing
++        # evaluation which may be surprising for unevaluated expressions.
++        #
++        # Strategy:
++        #  - For each argument:
++        #      * if it is_integer -> treat as numerator factor
++        #      * elif it is_Rational -> add its numer and denom
++        #      * elif it is_Pow with exponent -1 and integer base ->
++        #            treat base as denominator factor
++        #      * else: give up
++        #
++        #  - If there are no denominator factors then the product is integer.
++        #  - Otherwise do a few simple parity-based determinations:
++        #      * if all numerators are odd and some denominator is even -> False
++        #      * if numerators are even and denominators == [2] -> True
++        #
++        # Otherwise return None.
+         is_rational = self._eval_is_rational()
+         if is_rational is False:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        numerators = []
++        denominators = []
++
++        for a in self.args:
++            if a.is_integer:
++                numerators.append(a)
++            elif a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++            elif a.is_Pow:
++                b, e = a.as_base_exp()
++                # only handle simple reciprocal of integer: b**(-1)
++                if e is S.NegativeOne and b.is_integer:
++                    denominators.append(b)
++                else:
++                    # would require deeper analysis/evaluation
++                    return
++            else:
++                # unknown factor: can't decide without evaluating
++                return
++
++        # If there are no denominator factors then the product is integer
++        if not denominators:
++            return True
++
++        # simple helpers for parity-based conclusions
++        odd = lambda ints: all(i.is_odd for i in ints) if ints else False
++        even = lambda ints: any(i.is_even for i in ints)
++
++        # If all numerators are odd and some denominator is even then
++        # the overall product cannot be integer.
++        if numerators and odd(numerators) and even(denominators):
++            return False
++
++        # If all numerators are even and the only denominator is 2 then
++        # the product is integer (e.g. 2*k/2 -> k).
++        if numerators and all(n.is_even for n in numerators) and denominators == [2]:
++            return True
++
++        # Otherwise we cannot decide conservatively
++        return
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

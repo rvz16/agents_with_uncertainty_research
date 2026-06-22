@@ -1,0 +1,97 @@
+2026-06-22 10:07:21,887 - INFO - Creating container for sympy__sympy-18087...
+2026-06-22 10:07:22,004 - INFO - Container for sympy__sympy-18087 created: e2a553bf32f3bcfd5c8b059d4988fc61a41178ec0ee13fe47a9dba64104c2498
+2026-06-22 10:07:22,146 - INFO - Container for sympy__sympy-18087 started: e2a553bf32f3bcfd5c8b059d4988fc61a41178ec0ee13fe47a9dba64104c2498
+2026-06-22 10:07:22,147 - INFO - Intermediate patch for sympy__sympy-18087 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-18087/patch.diff, now applying to container...
+2026-06-22 10:07:22,264 - INFO - >>>>> Applied Patch:
+Checking patch sympy/core/exprtools.py...
+Applied patch sympy/core/exprtools.py cleanly.
+
+2026-06-22 10:07:22,547 - INFO - Git diff before:
+diff --git a/sympy/core/exprtools.py b/sympy/core/exprtools.py
+index 57fad70407..e8cc53fa59 100644
+--- a/sympy/core/exprtools.py
++++ b/sympy/core/exprtools.py
+@@ -448,14 +448,26 @@ def as_expr(self):  # Factors
+         args = []
+         for factor, exp in self.factors.items():
+             if exp != 1:
+-                b, e = factor.as_base_exp()
+-                if isinstance(exp, int):
+-                    e = _keep_coeff(Integer(exp), e)
+-                elif isinstance(exp, Rational):
+-                    e = _keep_coeff(exp, e)
++                # If the factor is itself a power (for example x**2) then
++                # combining exponents by multiplying them (i.e. turning
++                # (x**2)**(1/2) into x) is not generally valid for
++                # non-integer exponents (it can change the principal branch
++                # or remove an absolute value). Only combine exponents when
++                # the outer exponent is an integer; otherwise keep the
++                # nested power form.
++                if factor.is_Pow and not (isinstance(exp, int) or
++                                          getattr(exp, 'is_Integer', False)):
++                    # keep (base**inner_exp)**exp as-is, e.g. (x**2)**(1/2)
++                    args.append(factor**exp)
+                 else:
+-                    e *= exp
+-                args.append(b**e)
++                    b, e = factor.as_base_exp()
++                    if isinstance(exp, int):
++                        e = _keep_coeff(Integer(exp), e)
++                    elif isinstance(exp, Rational):
++                        e = _keep_coeff(exp, e)
++                    else:
++                        e *= exp
++                    args.append(b**e)
+             else:
+                 args.append(factor)
+         return Mul(*args)
+2026-06-22 10:07:22,547 - INFO - Eval script for sympy__sympy-18087 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-18087/eval.sh; copying to container...
+2026-06-22 10:07:35,479 - INFO - Test runtime: 12.88 seconds
+2026-06-22 10:07:35,479 - INFO - Test output for sympy__sympy-18087 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-18087/test_output.txt
+2026-06-22 10:07:35,520 - INFO - Git diff after:
+diff --git a/sympy/core/exprtools.py b/sympy/core/exprtools.py
+index 57fad70407..e8cc53fa59 100644
+--- a/sympy/core/exprtools.py
++++ b/sympy/core/exprtools.py
+@@ -448,14 +448,26 @@ def as_expr(self):  # Factors
+         args = []
+         for factor, exp in self.factors.items():
+             if exp != 1:
+-                b, e = factor.as_base_exp()
+-                if isinstance(exp, int):
+-                    e = _keep_coeff(Integer(exp), e)
+-                elif isinstance(exp, Rational):
+-                    e = _keep_coeff(exp, e)
++                # If the factor is itself a power (for example x**2) then
++                # combining exponents by multiplying them (i.e. turning
++                # (x**2)**(1/2) into x) is not generally valid for
++                # non-integer exponents (it can change the principal branch
++                # or remove an absolute value). Only combine exponents when
++                # the outer exponent is an integer; otherwise keep the
++                # nested power form.
++                if factor.is_Pow and not (isinstance(exp, int) or
++                                          getattr(exp, 'is_Integer', False)):
++                    # keep (base**inner_exp)**exp as-is, e.g. (x**2)**(1/2)
++                    args.append(factor**exp)
+                 else:
+-                    e *= exp
+-                args.append(b**e)
++                    b, e = factor.as_base_exp()
++                    if isinstance(exp, int):
++                        e = _keep_coeff(Integer(exp), e)
++                    elif isinstance(exp, Rational):
++                        e = _keep_coeff(exp, e)
++                    else:
++                        e *= exp
++                    args.append(b**e)
+             else:
+                 args.append(factor)
+         return Mul(*args)
+2026-06-22 10:07:35,520 - INFO - Grading answer for sympy__sympy-18087...
+2026-06-22 10:07:35,520 - INFO - report: {'sympy__sympy-18087': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_Factors', 'test_fu'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_decompose_power', 'test_Term', 'test_gcd_terms', 'test_factor_terms', 'test_xreplace', 'test_factor_nc', 'test_issue_6360', 'test_issue_7903', 'test_issue_8263', 'test_monotonic_sign', 'test_TR1', 'test_TR2', 'test_TR2i', 'test_TR3', 'test__TR56', 'test_TR5', 'test_TR6', 'test_TR7', 'test_TR8', 'test_TR9', 'test_TR10', 'test_TR10i', 'test_TR11', 'test_TR12', 'test_TR13', 'test_L', 'test_objective', 'test_process_common_addends', 'test_trig_split', 'test_TRmorrie', 'test_TRpower', 'test_hyper_as_trig', 'test_TR12i', 'test_TR14', 'test_TR15_16_17'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-18087: resolved: True
+2026-06-22 10:07:35,520 - INFO - Attempting to stop container sweb.eval.sympy__sympy-18087.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:07:50,730 - INFO - Attempting to remove container sweb.eval.sympy__sympy-18087.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:07:50,749 - INFO - Container sweb.eval.sympy__sympy-18087.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 10:07:50,749 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-18087:latest...
+2026-06-22 10:07:50,801 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-18087:latest removed.

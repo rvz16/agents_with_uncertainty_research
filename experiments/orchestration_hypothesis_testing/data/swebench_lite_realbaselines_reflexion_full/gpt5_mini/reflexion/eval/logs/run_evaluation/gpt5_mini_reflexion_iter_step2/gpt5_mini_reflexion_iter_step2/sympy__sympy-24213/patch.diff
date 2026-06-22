@@ -1,0 +1,20 @@
+--- a/sympy/physics/units/unitsystem.py
++++ b/sympy/physics/units/unitsystem.py
+@@ -175,7 +175,16 @@
+             for addend in expr.args[1:]:
+                 addend_factor, addend_dim = \
+                     self._collect_factor_and_dimension(addend)
+-                if dim != addend_dim:
++                # Allow equivalent dimensions (for example,
++                # acceleration * time is equivalent to velocity).
++                # Use the dimension system to check if the ratio is dimensionless.
++                try:
++                    same_dim = self.get_dimension_system().is_dimensionless(
++                        dim / addend_dim)
++                except Exception:
++                    # If for some reason the above fails, fall back to direct equality.
++                    same_dim = (dim == addend_dim)
++                if not same_dim:
+                     raise ValueError(
+                         'Dimension of "{}" is {}, '
+                         'but it should be {}'.format(

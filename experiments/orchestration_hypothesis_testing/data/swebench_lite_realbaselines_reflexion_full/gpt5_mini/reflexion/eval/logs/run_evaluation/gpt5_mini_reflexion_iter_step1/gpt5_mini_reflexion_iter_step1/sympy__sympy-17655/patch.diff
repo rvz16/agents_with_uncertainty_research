@@ -1,0 +1,31 @@
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -213,7 +213,28 @@
+         sympy.geometry.point.Point.translate
+ 
+         """
++        # Handle the case where `other` is a Mul like `2*Point(...)`.
++        # In that case try to extract a single Point factor and treat
++        # the rest as the scalar factor so that scalar*Point behaves
++        # like Point.__mul__.
+         try:
++            if isinstance(other, Expr) and getattr(other, 'is_Mul', False):
++                point_part = None
++                factor = S.One
++                multiple_points = False
++                for a in other.args:
++                    if isinstance(a, Point):
++                        if point_part is None:
++                            point_part = a
++                        else:
++                            multiple_points = True
++                            break
++                    else:
++                        factor = factor * a
++                if (point_part is not None) and (not multiple_points):
++                    # Rebuild `other` as a Point scaled by factor
++                    other = point_part * factor
++
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:
+             raise GeometryError("Don't know how to add {} and a Point object".format(other))

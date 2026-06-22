@@ -1,0 +1,24 @@
+--- a/sphinx/environment/adapters/indexentries.py
++++ b/sphinx/environment/adapters/indexentries.py
+@@ -172,5 +172,19 @@
+                     return _('Symbols')
+             else:
+                 return v[2]
+-        return [(key_, list(group))
+-                for (key_, group) in groupby(newlist, keyfunc3)]
++        groups = [(key_, list(group))
++                  for (key_, group) in groupby(newlist, keyfunc3)]
++        # Merge groups that ended up with the same label (for example multiple
++        # "Symbols" groups separated by letter groups). This can happen when
++        # different entries that map to the same displayed key are not
++        # contiguous in the sorted list; merging ensures a single section per
++        # displayed key and avoids duplicate anchors in the HTML output.
++        merged = []
++        seen = {}  # type: Dict[str, List]
++        for key_, group_items in groups:
++            if key_ in seen:
++                seen[key_].extend(group_items)
++            else:
++                seen[key_] = list(group_items)
++                merged.append((key_, seen[key_]))
++        return merged

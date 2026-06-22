@@ -1,0 +1,22 @@
+--- a/sympy/utilities/iterables.py
++++ b/sympy/utilities/iterables.py
+@@ -2109,7 +2109,19 @@
+     try:
+         seen = set()
+         result = result or []
++        # Record sequence length at start if available so we can detect
++        # mutations that change size during iteration (like list.pop/remove).
++        try:
++            orig_len = len(seq)
++            check_len = True
++        except Exception:
++            check_len = False
++
+         for i, s in enumerate(seq):
++            if check_len and len(seq) != orig_len:
++                # Mirror Python's runtime error for mutated containers
++                raise RuntimeError("%s changed size during iteration" %
++                                   type(seq).__name__)
+             if not (s in seen or seen.add(s)):
+                 yield s
+     except TypeError:

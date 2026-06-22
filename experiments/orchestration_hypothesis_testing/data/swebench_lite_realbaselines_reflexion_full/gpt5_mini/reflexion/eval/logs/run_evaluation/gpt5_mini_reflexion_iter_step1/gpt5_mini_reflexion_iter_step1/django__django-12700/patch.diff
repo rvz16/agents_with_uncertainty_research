@@ -1,0 +1,50 @@
+--- a/django/views/debug.py
++++ b/django/views/debug.py
+@@ -80,16 +80,46 @@
+     cleansed_substitute = '********************'
+     hidden_settings = _lazy_re_compile('API|TOKEN|KEY|SECRET|PASS|SIGNATURE', flags=re.I)
+ 
++    def _cleanse_iterable(self, value):
++        """
++        Recursively cleanse iterables (lists, tuples, sets) by cleansing any
++        dictionaries or nested iterables they contain.
++        """
++        if isinstance(value, dict):
++            return {k: self.cleanse_setting(k, v) for k, v in value.items()}
++        if isinstance(value, (list, tuple, set)):
++            cleaned = []
++            for item in value:
++                if isinstance(item, dict):
++                    cleaned.append({k: self.cleanse_setting(k, v) for k, v in item.items()})
++                elif isinstance(item, (list, tuple, set)):
++                    cleaned.append(self._cleanse_iterable(item))
++                else:
++                    cleaned.append(item)
++            if isinstance(value, tuple):
++                return tuple(cleaned)
++            if isinstance(value, set):
++                try:
++                    return set(cleaned)
++                except TypeError:
++                    # If elements are unhashable, fall back to list
++                    return cleaned
++            return cleaned
++        return value
++
+     def cleanse_setting(self, key, value):
+         """
+         Cleanse an individual setting key/value of sensitive content. If the
+-        value is a dictionary, recursively cleanse the keys in that dictionary.
++        value is a dictionary or an iterable, recursively cleanse the keys in
++        those structures.
+         """
+         try:
+             if self.hidden_settings.search(key):
+                 cleansed = self.cleansed_substitute
+             elif isinstance(value, dict):
+                 cleansed = {k: self.cleanse_setting(k, v) for k, v in value.items()}
++            elif isinstance(value, (list, tuple, set)):
++                cleansed = self._cleanse_iterable(value)
+             else:
+                 cleansed = value
+         except TypeError:

@@ -1,0 +1,16 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -1698,6 +1698,13 @@
+                 return Rational(self.p**expt.p, self.q**expt.p, 1)
+             if isinstance(expt, Rational):
+                 if self.p != 1:
++                    # Avoid splitting a negative base into numerator and
++                    # denominator factors when the exponent is a non-integer
++                    # rational. Doing so can change the branch chosen for
++                    # fractional powers of negative numbers (complex vs real),
++                    # leading to inconsistent results after simplification.
++                    if self.p < 0 and expt.q != 1:
++                        return
+                     # (4/3)**(5/6) -> 4**(5/6)*3**(-5/6)
+                     return Integer(self.p)**expt*Integer(self.q)**(-expt)
+                 # as the above caught negative self.p, now self is positive

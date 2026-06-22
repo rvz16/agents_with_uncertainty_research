@@ -1,0 +1,46 @@
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -367,7 +367,7 @@
+         except OSError:
+             abspath = True
+ 
+-        return excinfo.getrepr(
++        getrepr_kwargs = dict(
+             funcargs=True,
+             abspath=abspath,
+             showlocals=self.config.getoption("showlocals", False),
+@@ -375,6 +375,34 @@
+             tbfilter=False,  # pruned already, or in --fulltrace mode.
+             truncate_locals=truncate_locals,
+         )
++
++        # When the current working directory is accessible, pytest's path
++        # relativization (used by getrepr when abspath is False) should be
++        # performed relative to the original invocation directory, not the
++        # possibly changed current working directory (which can happen in
++        # fixtures). Temporarily chdir to config.invocation_dir if available
++        # while computing the representation.
++        if not abspath:
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                try:
++                    old_cwd = os.getcwd()
++                    os.chdir(str(invocation_dir))
++                except OSError:
++                    # If changing directory fails for any reason, fall back to
++                    # calling getrepr with the current cwd.
++                    return excinfo.getrepr(**getrepr_kwargs)
++                try:
++                    return excinfo.getrepr(**getrepr_kwargs)
++                finally:
++                    try:
++                        os.chdir(old_cwd)
++                    except OSError:
++                        # Best effort to restore cwd; if it fails, there's not
++                        # much we can do here.
++                        pass
++
++        return excinfo.getrepr(**getrepr_kwargs)
+ 
+     def repr_failure(
+         self, excinfo, style=None

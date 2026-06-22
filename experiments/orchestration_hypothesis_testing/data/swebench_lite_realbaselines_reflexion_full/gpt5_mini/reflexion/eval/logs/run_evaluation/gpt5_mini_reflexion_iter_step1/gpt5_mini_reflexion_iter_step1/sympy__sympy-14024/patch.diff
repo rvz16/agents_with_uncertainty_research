@@ -1,0 +1,16 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -2224,7 +2224,12 @@
+             ne = -expt
+             if self.is_negative:
+                 if expt.q != 1:
+-                    return -(S.NegativeOne)**((expt.p % expt.q) /
++                    # Use the principal branch for (-1)**(p/q) rather than
++                    # introducing an extra negation.  The previous leading
++                    # minus produced the wrong complex argument for cases
++                    # like (-2)**(-10/3).  Return (-1)**(r)* (1/(-self))**ne
++                    # where r = (expt.p % expt.q)/expt.q.
++                    return (S.NegativeOne)**((expt.p % expt.q) /
+                             S(expt.q))*Rational(1, -self)**ne
+                 else:
+                     return (S.NegativeOne)**ne*Rational(1, -self)**ne

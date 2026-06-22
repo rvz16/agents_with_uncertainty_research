@@ -1,0 +1,47 @@
+--- a/lib/matplotlib/widgets.py
++++ b/lib/matplotlib/widgets.py
+@@ -898,19 +898,33 @@
+         val[0] = self._min_in_bounds(val[0])
+         val[1] = self._max_in_bounds(val[1])
+         xy = self.poly.xy
++        # axvspan/axhspan may return a polygon with 4 or 5 vertices depending
++        # on whether the span has zero width/height. Handle both cases.
+         if self.orientation == "vertical":
+-            xy[0] = .25, val[0]
+-            xy[1] = .25, val[1]
+-            xy[2] = .75, val[1]
+-            xy[3] = .75, val[0]
+-            xy[4] = .25, val[0]
+-        else:
+-            xy[0] = val[0], .25
+-            xy[1] = val[0], .75
+-            xy[2] = val[1], .75
+-            xy[3] = val[1], .25
+-            xy[4] = val[0], .25
++            xy[0] = (.25, val[0])
++            xy[1] = (.25, val[1])
++            xy[2] = (.75, val[1])
++            xy[3] = (.75, val[0])
++            if xy.shape[0] > 4:
++                xy[4] = (.25, val[0])
++        else:
++            xy[0] = (val[0], .25)
++            xy[1] = (val[0], .75)
++            xy[2] = (val[1], .75)
++            xy[3] = (val[1], .25)
++            if xy.shape[0] > 4:
++                xy[4] = (val[0], .25)
+         self.poly.xy = xy
++        # Also update the handle marker positions so the visible handles match
++        # the displayed span.
++        handles = getattr(self, "_handles", None)
++        if handles is not None:
++            if self.orientation == "vertical":
++                handles[0].set_ydata([val[0]])
++                handles[1].set_ydata([val[1]])
++            else:
++                handles[0].set_xdata([val[0]])
++                handles[1].set_xdata([val[1]])
+         self.valtext.set_text(self._format(val))
+         if self.drawon:
+             self.ax.figure.canvas.draw_idle()

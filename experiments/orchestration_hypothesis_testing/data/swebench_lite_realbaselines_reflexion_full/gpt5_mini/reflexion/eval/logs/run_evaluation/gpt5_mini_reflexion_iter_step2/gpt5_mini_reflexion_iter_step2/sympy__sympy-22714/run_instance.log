@@ -1,0 +1,75 @@
+2026-06-22 10:12:00,698 - INFO - Creating container for sympy__sympy-22714...
+2026-06-22 10:12:00,790 - INFO - Container for sympy__sympy-22714 created: 8821a56910c087fd4e16f584ad9c0fb6968bae053ca7e51e30ec09af0ee7816f
+2026-06-22 10:12:00,928 - INFO - Container for sympy__sympy-22714 started: 8821a56910c087fd4e16f584ad9c0fb6968bae053ca7e51e30ec09af0ee7816f
+2026-06-22 10:12:00,928 - INFO - Intermediate patch for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-22714/patch.diff, now applying to container...
+2026-06-22 10:12:01,042 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-22 10:12:01,315 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 73c20334d0..1f5a88d22a 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,8 +152,21 @@ def __new__(cls, *args, **kwargs):
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
+-            raise ValueError('Imaginary coordinates are not permitted.')
++        # Safely check for imaginary numeric coordinates. Using a direct
++        # truth-value test on im(a) can force evaluation and may raise
++        # under contexts where evaluation is disabled (evaluate=False).
++        # We therefore inspect the .is_zero attribute where possible.
++        for a in coords:
++            if a.is_number:
++                imag = im(a)
++                # If the imaginary part is exactly zero, continue.
++                if imag is S.Zero:
++                    continue
++                # If we can determine the imaginary part is non-zero, raise.
++                if imag.is_zero is False:
++                    raise ValueError('Imaginary coordinates are not permitted.')
++                # Otherwise (imag.is_zero is None) we cannot determine;
++                # be permissive and do not raise.
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+2026-06-22 10:12:01,315 - INFO - Eval script for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-22714/eval.sh; copying to container...
+2026-06-22 10:12:06,553 - INFO - Test runtime: 5.20 seconds
+2026-06-22 10:12:06,553 - INFO - Test output for sympy__sympy-22714 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-22714/test_output.txt
+2026-06-22 10:12:06,602 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 73c20334d0..1f5a88d22a 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -152,8 +152,21 @@ def __new__(cls, *args, **kwargs):
+                         'warn' or 'ignore'.'''))
+         if any(coords[dim:]):
+             raise ValueError('Nonzero coordinates cannot be removed.')
+-        if any(a.is_number and im(a) for a in coords):
+-            raise ValueError('Imaginary coordinates are not permitted.')
++        # Safely check for imaginary numeric coordinates. Using a direct
++        # truth-value test on im(a) can force evaluation and may raise
++        # under contexts where evaluation is disabled (evaluate=False).
++        # We therefore inspect the .is_zero attribute where possible.
++        for a in coords:
++            if a.is_number:
++                imag = im(a)
++                # If the imaginary part is exactly zero, continue.
++                if imag is S.Zero:
++                    continue
++                # If we can determine the imaginary part is non-zero, raise.
++                if imag.is_zero is False:
++                    raise ValueError('Imaginary coordinates are not permitted.')
++                # Otherwise (imag.is_zero is None) we cannot determine;
++                # be permissive and do not raise.
+         if not all(isinstance(a, Expr) for a in coords):
+             raise TypeError('Coordinates must be valid SymPy expressions.')
+2026-06-22 10:12:06,602 - INFO - Grading answer for sympy__sympy-22714...
+2026-06-22 10:12:06,602 - INFO - report: {'sympy__sympy-22714': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_22684'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_point', 'test_point3D', 'test_Point2D', 'test_issue_9214', 'test_issue_11617', 'test_transform', 'test_concyclic_doctest_bug', 'test_arguments', 'test_unit', 'test_dot', 'test__normalize_dimension'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-22714: resolved: True
+2026-06-22 10:12:06,603 - INFO - Attempting to stop container sweb.eval.sympy__sympy-22714.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:12:21,831 - INFO - Attempting to remove container sweb.eval.sympy__sympy-22714.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:12:21,852 - INFO - Container sweb.eval.sympy__sympy-22714.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 10:12:21,852 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest...
+2026-06-22 10:12:21,894 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-22714:latest removed.

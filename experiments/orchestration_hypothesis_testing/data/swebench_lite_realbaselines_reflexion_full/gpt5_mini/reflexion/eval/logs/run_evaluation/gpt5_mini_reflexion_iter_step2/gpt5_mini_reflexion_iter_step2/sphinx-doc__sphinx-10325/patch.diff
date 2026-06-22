@@ -1,0 +1,84 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -110,11 +110,29 @@
+ 
+ 
+ def inherited_members_option(arg: Any) -> Union[object, Set[str]]:
+-    """Used to convert the :members: option to auto directives."""
++    """Used to convert the :inherited-members: option to autodoc directives.
++
++    Accepts:
++    - no argument / True -> returns the special string 'object' (old behavior)
++    - a comma-separated string of class names (e.g. "list, set" or
++      "collections.abc.Sequence,tuple") -> returns a set of names to match
++      against either class.__name__ or the fully-qualified "module.Class" name
++    - a False -> returns None
++    """
+     if arg in (None, True):
+         return 'object'
++    elif arg is False:
++        return None
+     else:
+-        return arg
++        # Normalize comma-separated names into a set of stripped strings.
++        # If arg is already a non-string iterable, try to convert to set.
++        if isinstance(arg, str):
++            names = {x.strip() for x in arg.split(',') if x.strip()}
++            return names if names else 'object'
++        try:
++            return set(arg)
++        except Exception:
++            return arg
+ 
+ 
+ def member_order_option(arg: Any) -> Optional[str]:
+@@ -680,17 +698,38 @@
+         ``autodoc-skip-member`` event.
+         """
+         def is_filtered_inherited_member(name: str, obj: Any) -> bool:
+-            if inspect.isclass(self.object):
+-                for cls in self.object.__mro__:
+-                    if cls.__name__ == self.options.inherited_members and cls != self.object:
+-                        # given member is a member of specified *super class*
+-                        return True
+-                    elif name in cls.__dict__:
+-                        return False
+-                    elif name in self.get_attr(cls, '__annotations__', {}):
+-                        return False
+-                    elif isinstance(obj, ObjectMember) and obj.class_ is cls:
+-                        return False
++            if not inspect.isclass(self.object):
++                return False
++
++            inherited = self.options.inherited_members
++
++            def _matches_ignored(cls: Any) -> bool:
++                # If inherited is a single string, keep old behavior: compare by name.
++                if isinstance(inherited, str):
++                    return cls.__name__ == inherited
++                # Otherwise treat inherited as an iterable of names.  Match either
++                # simple class name or fully qualified module.Class name.
++                try:
++                    for ign in inherited:
++                        if ign == cls.__name__:
++                            return True
++                        fq = '%s.%s' % (getattr(cls, '__module__', ''), getattr(cls, '__name__', ''))
++                        if ign == fq:
++                            return True
++                    return False
++                except Exception:
++                    return False
++
++            for cls in self.object.__mro__:
++                if cls != self.object and _matches_ignored(cls):
++                    # given member is a member of specified *super class*
++                    return True
++                elif name in cls.__dict__:
++                    return False
++                elif name in self.get_attr(cls, '__annotations__', {}):
++                    return False
++                elif isinstance(obj, ObjectMember) and obj.class_ is cls:
++                    return False
+ 
+             return False
+ 

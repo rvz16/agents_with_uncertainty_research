@@ -1,0 +1,75 @@
+2026-06-22 09:27:45,916 - INFO - Creating container for django__django-12470...
+2026-06-22 09:27:46,201 - INFO - Container for django__django-12470 created: 5a5fb3edfc9fc07895e4c8008b340802ebed2168b45b53f3b40d5043257e31d7
+2026-06-22 09:27:46,342 - INFO - Container for django__django-12470 started: 5a5fb3edfc9fc07895e4c8008b340802ebed2168b45b53f3b40d5043257e31d7
+2026-06-22 09:27:46,342 - INFO - Intermediate patch for django__django-12470 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/django__django-12470/patch.diff, now applying to container...
+2026-06-22 09:27:46,455 - INFO - >>>>> Applied Patch:
+Checking patch django/db/models/sql/compiler.py...
+Applied patch django/db/models/sql/compiler.py cleanly.
+
+2026-06-22 09:27:46,823 - INFO - Git diff before:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 92213a4e67..eedef92e89 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -374,15 +374,16 @@ class SQLCompiler:
+                     self.query.add_select_col(src)
+                     resolved.set_source_expressions([RawSQL('%d' % len(self.query.select), ())])
+             sql, params = self.compile(resolved)
+-            # Don't add the same column twice, but the order direction is
+-            # not taken into account so we strip it. When this entire method
+-            # is refactored into expressions, then we can check each part as we
+-            # generate it.
+-            without_ordering = self.ordering_parts.search(sql).group(1)
++            # Don't add the same column twice. Previously, the order direction
++            # was stripped when checking for duplicates which could cause an
++            # ordering specified as descending (e.g. "-pk") on a parent model to
++            # be lost in favor of an earlier ascending ordering for the same
++            # column. Preserve the ordering direction by including the full SQL
++            # (including ASC/DESC) in the seen check.
+             params_hash = make_hashable(params)
+-            if (without_ordering, params_hash) in seen:
++            if (sql, params_hash) in seen:
+                 continue
+-            seen.add((without_ordering, params_hash))
++            seen.add((sql, params_hash))
+             result.append((resolved, (sql, params, is_ref)))
+         return result
+2026-06-22 09:27:46,823 - INFO - Eval script for django__django-12470 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/django__django-12470/eval.sh; copying to container...
+2026-06-22 09:28:03,222 - INFO - Test runtime: 16.37 seconds
+2026-06-22 09:28:03,223 - INFO - Test output for django__django-12470 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/django__django-12470/test_output.txt
+2026-06-22 09:28:03,270 - INFO - Git diff after:
+diff --git a/django/db/models/sql/compiler.py b/django/db/models/sql/compiler.py
+index 92213a4e67..eedef92e89 100644
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -374,15 +374,16 @@ class SQLCompiler:
+                     self.query.add_select_col(src)
+                     resolved.set_source_expressions([RawSQL('%d' % len(self.query.select), ())])
+             sql, params = self.compile(resolved)
+-            # Don't add the same column twice, but the order direction is
+-            # not taken into account so we strip it. When this entire method
+-            # is refactored into expressions, then we can check each part as we
+-            # generate it.
+-            without_ordering = self.ordering_parts.search(sql).group(1)
++            # Don't add the same column twice. Previously, the order direction
++            # was stripped when checking for duplicates which could cause an
++            # ordering specified as descending (e.g. "-pk") on a parent model to
++            # be lost in favor of an earlier ascending ordering for the same
++            # column. Preserve the ordering direction by including the full SQL
++            # (including ASC/DESC) in the seen check.
+             params_hash = make_hashable(params)
+-            if (without_ordering, params_hash) in seen:
++            if (sql, params_hash) in seen:
+                 continue
+-            seen.add((without_ordering, params_hash))
++            seen.add((sql, params_hash))
+             result.append((resolved, (sql, params, is_ref)))
+         return result
+2026-06-22 09:28:03,270 - INFO - Grading answer for django__django-12470...
+2026-06-22 09:28:03,270 - INFO - report: {'django__django-12470': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_inherited_ordering_pk_desc (model_inheritance.tests.ModelInheritanceTests)']}, 'PASS_TO_PASS': {'success': ['test_abstract_fk_related_name (model_inheritance.tests.InheritanceSameModelNameTests)', 'test_unique (model_inheritance.tests.InheritanceUniqueTests)', 'test_unique_together (model_inheritance.tests.InheritanceUniqueTests)', 'test_abstract (model_inheritance.tests.ModelInheritanceTests)', 'test_abstract_parent_link (model_inheritance.tests.ModelInheritanceTests)', 'Creating a child with non-abstract parents only issues INSERTs.', 'test_custompk_m2m (model_inheritance.tests.ModelInheritanceTests)', 'test_eq (model_inheritance.tests.ModelInheritanceTests)', 'test_init_subclass (model_inheritance.tests.ModelInheritanceTests)', 'test_meta_fields_and_ordering (model_inheritance.tests.ModelInheritanceTests)', 'test_mixin_init (model_inheritance.tests.ModelInheritanceTests)', 'test_model_with_distinct_accessors (model_inheritance.tests.ModelInheritanceTests)', 'test_model_with_distinct_related_query_name (model_inheritance.tests.ModelInheritanceTests)', 'test_reverse_relation_for_different_hierarchy_tree (model_inheritance.tests.ModelInheritanceTests)', 'test_set_name (model_inheritance.tests.ModelInheritanceTests)', 'test_update_parent_filtering (model_inheritance.tests.ModelInheritanceTests)', 'test_exclude_inherited_on_null (model_inheritance.tests.ModelInheritanceDataTests)', 'test_filter_inherited_model (model_inheritance.tests.ModelInheritanceDataTests)', 'test_filter_inherited_on_null (model_inheritance.tests.ModelInheritanceDataTests)', 'test_filter_on_parent_returns_object_of_parent_type (model_inheritance.tests.ModelInheritanceDataTests)', 'test_inherited_does_not_exist_exception (model_inheritance.tests.ModelInheritanceDataTests)', 'test_inherited_multiple_objects_returned_exception (model_inheritance.tests.ModelInheritanceDataTests)', 'test_parent_cache_reuse (model_inheritance.tests.ModelInheritanceDataTests)', 'test_parent_child_one_to_one_link (model_inheritance.tests.ModelInheritanceDataTests)', 'test_parent_child_one_to_one_link_on_nonrelated_objects (model_inheritance.tests.ModelInheritanceDataTests)', 'test_parent_fields_available_for_filtering_in_child_model (model_inheritance.tests.ModelInheritanceDataTests)', 'test_related_objects_for_inherited_models (model_inheritance.tests.ModelInheritanceDataTests)', 'test_select_related_defer (model_inheritance.tests.ModelInheritanceDataTests)', 'test_select_related_works_on_parent_model_fields (model_inheritance.tests.ModelInheritanceDataTests)', 'test_update_inherited_model (model_inheritance.tests.ModelInheritanceDataTests)', 'test_update_query_counts (model_inheritance.tests.ModelInheritanceDataTests)', 'test_update_works_on_parent_and_child_models_at_once (model_inheritance.tests.ModelInheritanceDataTests)', 'test_values_works_on_parent_model_fields (model_inheritance.tests.ModelInheritanceDataTests)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12470: resolved: False
+2026-06-22 09:28:03,271 - INFO - Attempting to stop container sweb.eval.django__django-12470.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:28:18,457 - INFO - Attempting to remove container sweb.eval.django__django-12470.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:28:18,474 - INFO - Container sweb.eval.django__django-12470.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 09:28:18,474 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12470:latest...
+2026-06-22 09:28:18,580 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12470:latest removed.

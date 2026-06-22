@@ -1,0 +1,20 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -1042,7 +1042,16 @@
+                 # it's a hexadecimal (coming from a pickled object)
+                 # assume that it is in standard form
+                 num = list(num)
+-                num[1] = long(num[1], 16)
++                s = num[1].strip()
++                try:
++                    num[1] = long(s, 16)
++                except ValueError:
++                    # Some Python 2 pickles may have a trailing 'L' on integer
++                    # literals (e.g. '1L'); strip a trailing L/l and try again.
++                    if isinstance(s, string_types) and s.endswith(('L', 'l')):
++                        num[1] = long(s[:-1], 16)
++                    else:
++                        raise
+                 _mpf_ = tuple(num)
+             else:
+                 if len(num) == 4:

@@ -1,0 +1,16 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -849,9 +849,10 @@
+         return context
+ 
+     def id_for_label(self, id_):
+-        if id_:
+-            id_ += '_0'
+-        return id_
++        # Don't include for="..." on the <label> for multiwidgets to improve
++        # accessibility when using a screen reader. Clicking such a label would
++        # otherwise toggle the first input only.
++        return ''
+ 
+     def value_from_datadict(self, data, files, name):
+         return [

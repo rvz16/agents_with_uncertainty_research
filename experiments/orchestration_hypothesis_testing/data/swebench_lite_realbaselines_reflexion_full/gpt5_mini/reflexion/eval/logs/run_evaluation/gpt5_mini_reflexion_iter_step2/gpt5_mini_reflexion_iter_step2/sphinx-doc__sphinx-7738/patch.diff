@@ -1,0 +1,16 @@
+--- a/sphinx/ext/napoleon/docstring.py
++++ b/sphinx/ext/napoleon/docstring.py
+@@ -318,9 +318,10 @@
+             return [line[min_indent:] for line in lines]
+ 
+     def _escape_args_and_kwargs(self, name: str) -> str:
+-        if name.endswith('_'):
+-            name = name[:-1] + r'\_'
+-
++        # Do not escape trailing underscores: leaving them as-is avoids
++        # producing visible backslashes in generated directive arguments
++        # (e.g. ".. attribute:: hello_") while still escaping leading
++        # '*' or '**' used for (kw)args so they render correctly.
+         if name[:2] == '**':
+             return r'\*\*' + name[2:]
+         elif name[:1] == '*':

@@ -1,0 +1,15 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,7 +1854,11 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++        # Ensure that the polynomial is printed using the same monomial ordering
++        # as the Poly object itself. The Add printer accepts an 'order' argument,
++        # so pass poly.order when printing the expression form so that monomials
++        # appear in the logical (Poly) order rather than arbitrary ordering.
++        expr = self._print(poly.as_expr(), getattr(poly, 'order', None))
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 

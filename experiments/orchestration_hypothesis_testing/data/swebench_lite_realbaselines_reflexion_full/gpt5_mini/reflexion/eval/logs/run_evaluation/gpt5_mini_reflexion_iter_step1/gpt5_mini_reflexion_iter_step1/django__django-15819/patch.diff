@@ -1,0 +1,35 @@
+--- a/django/core/management/commands/inspectdb.py
++++ b/django/core/management/commands/inspectdb.py
+@@ -182,10 +182,32 @@
+                             if ref_db_table == table_name
+                             else table2model(ref_db_table)
+                         )
++                        # Auto-generate a related_name when necessary to avoid reverse
++                        # accessor clashes. Generate a related_name when the relation is
++                        # self-referential or when multiple fields in this table point to
++                        # the same referenced table.
++                        same_ref_count = sum(
++                            1 for ref_col, ref_table in relations.values() if ref_table == ref_db_table
++                        )
++                        if ref_db_table == table_name:
++                            # For self relations, avoid using the same attribute name as the
++                            # forward field to prevent attribute conflicts.
++                            auto_related_name = "%s_related" % att_name
++                        elif same_ref_count > 1:
++                            # For multiple references to the same target, make the related
++                            # name unique by incorporating the source model and field name.
++                            auto_related_name = "%s_%s" % (
++                                table2model(table_name).lower(),
++                                att_name,
++                            )
++                        else:
++                            auto_related_name = None
+                         if rel_to in known_models:
+                             field_type = "%s(%s" % (rel_type, rel_to)
+                         else:
+                             field_type = "%s('%s'" % (rel_type, rel_to)
++                        if auto_related_name and "related_name" not in extra_params:
++                            extra_params["related_name"] = auto_related_name
+                     else:
+                         # Calling `get_field_type` to get the field type string and any
+                         # additional parameters and notes.

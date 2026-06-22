@@ -1,0 +1,33 @@
+--- a/sphinx/domains/std.py
++++ b/sphinx/domains/std.py
+@@ -1070,10 +1070,30 @@
+                 else:
+                     return env.toc_secnumbers[docname].get(anchorname)
+         else:
++            # try to resolve the figure/table/code-block id from the target node.
++            # In some cases the label points to a "target" node that references
++            # the actual enumerable node (via 'refid'). In that case, look up
++            # the referenced node's id so we can find the fignumber stored in
++            # env.toc_fignumbers. See issue where a user-defined label id
++            # (e.g. "mylabel") differs from the auto-generated node id
++            # (e.g. "id3") used in toc_fignumbers.
++            doctree = env.get_doctree(docname)
+             try:
+                 figure_id = target_node['ids'][0]
+                 return env.toc_fignumbers[docname][figtype][figure_id]
+             except (KeyError, IndexError) as exc:
++                # If the label points to an indirect target, follow its refid
++                # to the actual node and try again.
++                if isinstance(target_node, nodes.target) and 'refid' in target_node:
++                    refid = target_node['refid']
++                    real_node = doctree.ids.get(refid)
++                    if real_node is not None:
++                        try:
++                            figure_id = real_node['ids'][0]
++                            return env.toc_fignumbers[docname][figtype][figure_id]
++                        except (KeyError, IndexError):
++                            # fall through and raise below
++                            pass
+                 # target_node is found, but fignumber is not assigned.
+                 # Maybe it is defined in orphaned document.
+                 raise ValueError from exc

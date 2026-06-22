@@ -1,0 +1,26 @@
+--- a/django/db/models/sql/compiler.py
++++ b/django/db/models/sql/compiler.py
+@@ -374,15 +374,16 @@
+                     self.query.add_select_col(src)
+                     resolved.set_source_expressions([RawSQL('%d' % len(self.query.select), ())])
+             sql, params = self.compile(resolved)
+-            # Don't add the same column twice, but the order direction is
+-            # not taken into account so we strip it. When this entire method
+-            # is refactored into expressions, then we can check each part as we
+-            # generate it.
+-            without_ordering = self.ordering_parts.search(sql).group(1)
++            # Don't add the same column twice. Previously, the order direction
++            # was stripped when checking for duplicates which could cause an
++            # ordering specified as descending (e.g. "-pk") on a parent model to
++            # be lost in favor of an earlier ascending ordering for the same
++            # column. Preserve the ordering direction by including the full SQL
++            # (including ASC/DESC) in the seen check.
+             params_hash = make_hashable(params)
+-            if (without_ordering, params_hash) in seen:
++            if (sql, params_hash) in seen:
+                 continue
+-            seen.add((without_ordering, params_hash))
++            seen.add((sql, params_hash))
+             result.append((resolved, (sql, params, is_ref)))
+         return result
+ 

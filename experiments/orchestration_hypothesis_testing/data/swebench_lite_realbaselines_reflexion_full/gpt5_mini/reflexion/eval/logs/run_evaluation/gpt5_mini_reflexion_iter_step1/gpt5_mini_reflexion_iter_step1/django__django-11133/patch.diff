@@ -1,0 +1,13 @@
+--- a/django/http/response.py
++++ b/django/http/response.py
+@@ -231,6 +231,10 @@
+         # - when self._charset != 'utf-8' it re-encodes the content
+         if isinstance(value, bytes):
+             return bytes(value)
++        # Handle memoryview and bytearray objects by casting to bytes,
++        # which produces the expected raw byte content.
++        if isinstance(value, (memoryview, bytearray)):
++            return bytes(value)
+         if isinstance(value, str):
+             return bytes(value.encode(self.charset))
+         # Handle non-string types.

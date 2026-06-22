@@ -1,0 +1,30 @@
+--- a/lib/matplotlib/colorbar.py
++++ b/lib/matplotlib/colorbar.py
+@@ -504,6 +504,27 @@
+         and locator will be preserved.
+         """
+         _log.debug('colorbar update normal %r %r', mappable.norm, self.norm)
++
++        # Ensure the mappable's norm has appropriate vmin/vmax set so that
++        # subsequent colorbar drawing (which may call norm.inverse or
++        # LogLocator) does not encounter uninitialized values.
++        # Calling mappable.autoscale_None() may trigger the mappable's
++        # 'changed' callbacks which would re-enter this method; therefore
++        # block callbacks while autoscaling to avoid recursion.
++        try:
++            if getattr(mappable, "get_array", None) is not None and mappable.get_array() is not None:
++                nn = getattr(mappable, 'norm', None)
++                if nn is not None and (getattr(nn, 'vmin', None) is None or
++                                       getattr(nn, 'vmax', None) is None):
++                    with mappable.callbacks.blocked():
++                        mappable.autoscale_None()
++        except Exception:
++            # If autoscaling fails (for example, LogNorm with no positive
++            # values), let the later code handle/report as appropriate.
++            # Do not raise here to avoid leaving the colorbar in an inconsistent
++            # state from a partially-updated mappable.
++            pass
++
+         self.mappable = mappable
+         self.set_alpha(mappable.get_alpha())
+         self.cmap = mappable.cmap

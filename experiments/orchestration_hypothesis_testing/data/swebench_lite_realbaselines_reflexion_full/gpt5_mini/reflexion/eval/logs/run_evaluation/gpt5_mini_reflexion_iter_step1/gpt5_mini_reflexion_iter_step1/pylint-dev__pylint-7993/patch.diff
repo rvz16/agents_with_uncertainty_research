@@ -1,0 +1,60 @@
+--- a/pylint/reporters/text.py
++++ b/pylint/reporters/text.py
+@@ -14,6 +14,7 @@
+ import re
+ import sys
+ import warnings
++from string import Formatter
+ from dataclasses import asdict, fields
+ from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, TextIO, cast, overload
+ 
+@@ -174,16 +175,42 @@
+         # Set template to the currently selected template
+         self._template = template
+ 
+-        # Check to see if all parameters in the template are attributes of the Message
+-        arguments = re.findall(r"\{(.+?)(:.*)?\}", template)
+-        for argument in arguments:
+-            if argument[0] not in MESSAGE_FIELDS:
++        # Check to see if all parameters in the template are attributes of the Message.
++        # Use Formatter.parse to properly handle escaped braces ({{ and }}) and to
++        # reliably extract field names.
++        fmt_parser = Formatter()
++        fixed_parts: list[str] = []
++        for parsed in fmt_parser.parse(template):
++            # parsed may be a 3-tuple (literal_text, field_name, format_spec)
++            # or a 4-tuple (literal_text, field_name, format_spec, conversion)
++            if len(parsed) == 3:
++                literal_text, field_name, format_spec = parsed
++                conversion = ""
++            else:
++                literal_text, field_name, format_spec, conversion = parsed
++            fixed_parts.append(literal_text)
++            # No replacement field present (or empty), continue
++            if not field_name:
++                continue
++            # field_name may contain attribute access like 'obj.attr';
++            # consider only the base name for membership checks.
++            base_name = field_name.split(".")[0]
++            if base_name not in MESSAGE_FIELDS:
+                 warnings.warn(
+-                    f"Don't recognize the argument '{argument[0]}' in the --msg-template. "
++                    f"Don't recognize the argument '{base_name}' in the --msg-template. "
+                     "Are you sure it is supported on the current version of pylint?"
+                 )
+-                template = re.sub(r"\{" + argument[0] + r"(:.*?)?\}", "", template)
+-        self._fixed_template = template
++                # Skip this replacement field (remove it from the resulting template)
++                continue
++            # Reconstruct the replacement field including conversion and format spec
++            replacement = "{" + field_name
++            if conversion:
++                replacement += "!" + conversion
++            if format_spec:
++                replacement += ":" + format_spec
++            replacement += "}"
++            fixed_parts.append(replacement)
++        self._fixed_template = "".join(fixed_parts)
+ 
+     def write_message(self, msg: Message) -> None:
+         """Convenience method to write a formatted message with class default

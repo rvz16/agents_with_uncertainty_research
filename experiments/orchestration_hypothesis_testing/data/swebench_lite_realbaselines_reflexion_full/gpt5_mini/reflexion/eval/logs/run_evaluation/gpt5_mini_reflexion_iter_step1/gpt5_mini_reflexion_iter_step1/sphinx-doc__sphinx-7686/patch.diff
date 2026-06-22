@@ -1,0 +1,53 @@
+--- a/sphinx/ext/autosummary/generate.py
++++ b/sphinx/ext/autosummary/generate.py
+@@ -27,6 +27,7 @@
+ import warnings
+ from gettext import NullTranslations
+ from os import path
++import types
+ from typing import Any, Callable, Dict, List, NamedTuple, Set, Tuple, Union
+ 
+ from jinja2 import TemplateNotFound
+@@ -246,7 +247,41 @@
+     ns.update(context)
+ 
+     if doc.objtype == 'module':
+-        ns['members'] = dir(obj)
++        # Start from the full directory listing...
++        orig_members = dir(obj)
++
++        # Use ModuleAnalyzer to discover attributes defined in the module
++        # source (so constants/assignments are detected even if their
++        # runtime objects don't carry a __module__ pointing to this module).
++        _, module_attrs = get_module_attrs(orig_members)
++
++        # Filter imported members from the members list when requested.
++        if not imported_members:
++            filtered_members = []  # type: List[str]
++            for mname in orig_members:
++                # keep attributes that are statically defined in the module
++                if mname in module_attrs:
++                    filtered_members.append(mname)
++                    continue
++                try:
++                    value = safe_getattr(obj, mname)
++                except AttributeError:
++                    continue
++                # If it's a module object, include it only when it's the same
++                # module (e.g. package's own submodule). Imported modules
++                # (like 'os') are excluded.
++                if isinstance(value, types.ModuleType):
++                    if getattr(value, '__name__', None) == obj.__name__:
++                        filtered_members.append(mname)
++                else:
++                    # For other objects (functions, classes, etc.), include
++                    # them only if their __module__ matches the module name.
++                    if getattr(value, '__module__', None) == obj.__name__:
++                        filtered_members.append(mname)
++            ns['members'] = filtered_members
++        else:
++            ns['members'] = orig_members
++
+         ns['functions'], ns['all_functions'] = \
+             get_members(obj, {'function'}, imported=imported_members)
+         ns['classes'], ns['all_classes'] = \

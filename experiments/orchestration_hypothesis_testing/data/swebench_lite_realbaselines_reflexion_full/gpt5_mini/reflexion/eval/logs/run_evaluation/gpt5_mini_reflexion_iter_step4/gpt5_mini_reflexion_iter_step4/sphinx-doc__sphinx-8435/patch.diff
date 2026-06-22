@@ -1,0 +1,90 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1715,14 +1715,40 @@
+                 # AttributeError is raised on 3.5.2 (fixed by 3.5.3)
+                 annotations = {}
+ 
++            def _stringify_ann(annotation):
++                # If annotation is a string (e.g. from __annotations__ or analyzer),
++                # prefer configured type aliases. Otherwise, try to detect a
++                # ForwardRef-like object and consult aliases for its target.
++                if isinstance(annotation, str):
++                    mapped = self.config.autodoc_type_aliases.get(annotation)
++                    if mapped is not None:
++                        if isinstance(mapped, str):
++                            return mapped
++                        else:
++                            return stringify_typehint(mapped)
++                    return stringify_typehint(annotation)
++
++                forward = getattr(annotation, '__forward_arg__', None)
++                if forward:
++                    mapped = self.config.autodoc_type_aliases.get(forward)
++                    if mapped is not None:
++                        if isinstance(mapped, str):
++                            return mapped
++                        else:
++                            return stringify_typehint(mapped)
++                return stringify_typehint(annotation)
++
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                objrepr = _stringify_ann(annotations.get(self.objpath[-1]))
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
+-                                  sourcename)
++                    ann = self.analyzer.annotations[key]
++                    # analyzer.annotations usually contains a string representation;
++                    # apply aliases if configured.
++                    objrepr = _stringify_ann(ann)
++                    self.add_line('   :type: ' + objrepr, sourcename)
+ 
+             try:
+                 if self.object is UNINITIALIZED_ATTR:
+@@ -2106,14 +2132,40 @@
+                 # AttributeError is raised on 3.5.2 (fixed by 3.5.3)
+                 annotations = {}
+ 
++            def _stringify_ann(annotation):
++                # If annotation is a string (e.g. from __annotations__ or analyzer),
++                # prefer configured type aliases. Otherwise, try to detect a
++                # ForwardRef-like object and consult aliases for its target.
++                if isinstance(annotation, str):
++                    mapped = self.config.autodoc_type_aliases.get(annotation)
++                    if mapped is not None:
++                        if isinstance(mapped, str):
++                            return mapped
++                        else:
++                            return stringify_typehint(mapped)
++                    return stringify_typehint(annotation)
++
++                forward = getattr(annotation, '__forward_arg__', None)
++                if forward:
++                    mapped = self.config.autodoc_type_aliases.get(forward)
++                    if mapped is not None:
++                        if isinstance(mapped, str):
++                            return mapped
++                        else:
++                            return stringify_typehint(mapped)
++                return stringify_typehint(annotation)
++
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                objrepr = _stringify_ann(annotations.get(self.objpath[-1]))
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
+-                                  sourcename)
++                    ann = self.analyzer.annotations[key]
++                    # analyzer.annotations usually contains a string representation;
++                    # apply aliases if configured.
++                    objrepr = _stringify_ann(ann)
++                    self.add_line('   :type: ' + objrepr, sourcename)
+ 
+             # data descriptors do not have useful values
+             if not self._datadescriptor:

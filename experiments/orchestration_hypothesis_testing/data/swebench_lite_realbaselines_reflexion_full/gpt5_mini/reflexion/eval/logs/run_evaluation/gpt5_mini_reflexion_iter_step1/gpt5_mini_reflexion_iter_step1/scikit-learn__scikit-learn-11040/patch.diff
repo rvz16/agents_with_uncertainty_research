@@ -1,0 +1,81 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -9,6 +9,7 @@
+ import warnings
+ from abc import ABCMeta, abstractmethod
+ 
++import numbers
+ import numpy as np
+ from scipy.sparse import csr_matrix, issparse
+ 
+@@ -253,10 +254,24 @@
+                              % self.algorithm)
+ 
+         if self.n_neighbors is not None:
+-            if self.n_neighbors <= 0:
++            # Allow integer-like floats (e.g., 3.0) but enforce integer type
++            n_neighbors = self.n_neighbors
++            if isinstance(n_neighbors, numbers.Real) and not isinstance(n_neighbors, numbers.Integral):
++                # allow floats that are integer-valued
++                if float(n_neighbors).is_integer():
++                    n_neighbors = int(n_neighbors)
++                    self.n_neighbors = n_neighbors
++                else:
++                    raise ValueError("n_neighbors must be an integer > 0. Got %r"
++                                     % (self.n_neighbors,))
++            elif not isinstance(n_neighbors, numbers.Integral):
++                raise ValueError("n_neighbors must be an integer > 0. Got %r"
++                                 % (self.n_neighbors,))
++
++            if n_neighbors <= 0:
+                 raise ValueError(
+                     "Expected n_neighbors > 0. Got %d" %
+-                    self.n_neighbors
++                    n_neighbors
+                 )
+ 
+         return self
+@@ -327,6 +342,21 @@
+ 
+         if n_neighbors is None:
+             n_neighbors = self.n_neighbors
++
++        # Validate n_neighbors: allow integer-like floats (e.g., 3.0) but
++        # ensure it's an integer > 0
++        if n_neighbors is not None:
++            if isinstance(n_neighbors, numbers.Real) and not isinstance(n_neighbors, numbers.Integral):
++                if float(n_neighbors).is_integer():
++                    n_neighbors = int(n_neighbors)
++                else:
++                    raise ValueError("n_neighbors must be an integer > 0. Got %r"
++                                     % (n_neighbors,))
++            elif not isinstance(n_neighbors, numbers.Integral):
++                raise ValueError("n_neighbors must be an integer > 0. Got %r"
++                                 % (n_neighbors,))
++            if n_neighbors <= 0:
++                raise ValueError("Expected n_neighbors > 0. Got %d" % n_neighbors)
+ 
+         if X is not None:
+             query_is_train = False
+@@ -467,6 +497,21 @@
+         if n_neighbors is None:
+             n_neighbors = self.n_neighbors
+ 
++        # Validate n_neighbors: allow integer-like floats (e.g., 3.0) but
++        # ensure it's an integer > 0
++        if n_neighbors is not None:
++            if isinstance(n_neighbors, numbers.Real) and not isinstance(n_neighbors, numbers.Integral):
++                if float(n_neighbors).is_integer():
++                    n_neighbors = int(n_neighbors)
++                else:
++                    raise ValueError("n_neighbors must be an integer > 0. Got %r"
++                                     % (n_neighbors,))
++            elif not isinstance(n_neighbors, numbers.Integral):
++                raise ValueError("n_neighbors must be an integer > 0. Got %r"
++                                 % (n_neighbors,))
++            if n_neighbors <= 0:
++                raise ValueError("Expected n_neighbors > 0. Got %d" % n_neighbors)
++
+         # kneighbors does the None handling.
+         if X is not None:
+             X = check_array(X, accept_sparse='csr')

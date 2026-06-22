@@ -1,0 +1,38 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -967,7 +967,34 @@
+ 
+     def database_backwards(self, app_label, schema_editor, from_state, to_state):
+         if self.old_fields:
+-            # Backward operation with unnamed index is a no-op.
++            # Backward operation for an unnamed index: restore the original
++            # auto-generated name instead of being a no-op so that the operation
++            # can be re-applied idempotently.
++            model = from_state.apps.get_model(app_label, self.model_name)
++            if not self.allow_migrate_model(schema_editor.connection.alias, model):
++                return
++            columns = [model._meta.get_field(field).column for field in self.old_fields]
++            matching_index_name = schema_editor._constraint_names(
++                model, column_names=columns, index=True
++            )
++            if len(matching_index_name) != 1:
++                raise ValueError(
++                    "Found wrong number (%s) of indexes for %s(%s)."
++                    % (
++                        len(matching_index_name),
++                        model._meta.db_table,
++                        ", ".join(columns),
++                    )
++                )
++            current_name = matching_index_name[0]
++            # Compute the old auto-generated name and don't do anything if it's
++            # already the current name.
++            auto_name = schema_editor._create_index_name(model._meta.db_table, columns)
++            if current_name == auto_name:
++                return
++            old_index = models.Index(fields=self.old_fields, name=current_name)
++            new_index = models.Index(fields=self.old_fields, name=auto_name)
++            schema_editor.rename_index(model, old_index, new_index)
+             return
+ 
+         self.new_name_lower, self.old_name_lower = (

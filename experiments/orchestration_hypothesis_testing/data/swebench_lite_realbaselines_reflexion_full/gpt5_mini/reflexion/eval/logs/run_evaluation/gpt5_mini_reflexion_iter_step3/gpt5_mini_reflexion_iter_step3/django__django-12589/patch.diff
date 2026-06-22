@@ -1,0 +1,34 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1929,22 +1929,15 @@
+         """
+         group_by = list(self.select)
+         if self.annotation_select:
+-            for alias, annotation in self.annotation_select.items():
+-                signature = inspect.signature(annotation.get_group_by_cols)
+-                if 'alias' not in signature.parameters:
+-                    annotation_class = annotation.__class__
+-                    msg = (
+-                        '`alias=None` must be added to the signature of '
+-                        '%s.%s.get_group_by_cols().'
+-                    ) % (annotation_class.__module__, annotation_class.__qualname__)
+-                    warnings.warn(msg, category=RemovedInDjango40Warning)
+-                    group_by_cols = annotation.get_group_by_cols()
+-                else:
+-                    if not allow_aliases:
+-                        alias = None
+-                    group_by_cols = annotation.get_group_by_cols(alias=alias)
+-                group_by.extend(group_by_cols)
+-        self.group_by = tuple(group_by)
++            # Compute a set of column/field names for tables involved in this
++            # query so we can detect annotation alias collisions with actual
++            # table column names. If an annotation alias collides with any
++            # involved table column name, disable alias usage for that
++            # annotation in GROUP BY to avoid ambiguous column references
++            # (see #29966).
++            collision_names = set()
++            try:
++                from django.apps import apps
+ 
+     def add_select_related(self, fields):
+         """

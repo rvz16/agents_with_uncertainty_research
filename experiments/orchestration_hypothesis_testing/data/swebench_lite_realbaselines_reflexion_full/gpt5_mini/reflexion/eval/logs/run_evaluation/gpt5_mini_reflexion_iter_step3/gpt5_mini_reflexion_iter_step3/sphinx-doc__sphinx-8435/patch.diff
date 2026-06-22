@@ -1,0 +1,98 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -65,6 +65,51 @@
+ 
+ def identity(x: Any) -> Any:
+     return x
++
++
++def _resolve_annotation_with_aliases(annotation: Any, aliases: Dict[str, Any]) -> Any:
++    """
++    Resolve an annotation using the autodoc_type_aliases mapping.
++
++    - If the annotation is a string (PEP 563 postponed annotation) or a
++      ForwardRef-like object, and its name matches a key in *aliases*, the
++      annotation is replaced by the mapped value.
++    - If the mapped value is a dotted string, an import is attempted to obtain
++      the actual object; if import fails, the dotted string is left as-is.
++    - Otherwise the annotation is returned unchanged.
++    """
++    if not aliases:
++        return annotation
++
++    # Determine the annotation name to look up in aliases.
++    if isinstance(annotation, str):
++        key = annotation
++    else:
++        # typing.ForwardRef on different Python versions exposes the forward
++        # argument in __forward_arg__ attribute. Use getattr to be robust.
++        key = getattr(annotation, '__forward_arg__', None)
++
++    if not key:
++        return annotation
++
++    if key not in aliases:
++        return annotation
++
++    mapped = aliases[key]
++    # If the mapping is a dotted string like "module.Type", try to import it.
++    if isinstance(mapped, str):
++        mod, _, attr = mapped.rpartition('.')
++        if mod and attr:
++            try:
++                m = importlib.import_module(mod)
++                return getattr(m, attr, mapped)
++            except Exception:
++                # fallback to the string if import fails
++                return mapped
++        else:
++            return mapped
++    else:
++        return mapped
+ 
+ 
+ class _All:
+@@ -1716,13 +1761,26 @@
+                 annotations = {}
+ 
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                ann = annotations.get(self.objpath[-1])
++                ann = _resolve_annotation_with_aliases(ann, self.config.autodoc_type_aliases)
++                objrepr = stringify_typehint(ann)
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
+-                                  sourcename)
++                    # analyzer.annotations contains a string representation. If it
++                    # directly matches an alias key, try to map it to the alias
++                    # value (which may be an object or dotted name).
++                    annstr = self.analyzer.annotations[key]
++                    if annstr in self.config.autodoc_type_aliases:
++                        mapped = self.config.autodoc_type_aliases[annstr]
++                        if isinstance(mapped, str):
++                            self.add_line('   :type: ' + mapped, sourcename)
++                        else:
++                            self.add_line('   :type: ' + stringify_typehint(mapped),
++                                          sourcename)
++                    else:
++                        self.add_line('   :type: ' + annstr, sourcename)
+ 
+             try:
+                 if self.object is UNINITIALIZED_ATTR:
+@@ -2107,13 +2165,6 @@
+                 annotations = {}
+ 
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
+-                self.add_line('   :type: ' + objrepr, sourcename)
+-            else:
+-                key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+-                if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
+-                                  sourcename)
+ 
+             # data descriptors do not have useful values
+             if not self._datadescriptor:

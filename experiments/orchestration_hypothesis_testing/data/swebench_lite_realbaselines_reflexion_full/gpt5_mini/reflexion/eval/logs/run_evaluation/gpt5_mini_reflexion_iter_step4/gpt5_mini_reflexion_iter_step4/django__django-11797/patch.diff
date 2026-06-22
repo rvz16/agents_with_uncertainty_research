@@ -1,0 +1,29 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -262,9 +262,12 @@
+         from django.db.models.sql.query import Query
+         if isinstance(self.rhs, Query):
+             if self.rhs.has_limit_one():
+-                # The subquery must select only the pk.
+-                self.rhs.clear_select_clause()
+-                self.rhs.add_fields(['pk'])
++                # The subquery must select only the pk. Only override the
++                # inner query's select clause if it doesn't already have
++                # explicit select fields (for example, created via values()).
++                if not getattr(self.rhs, 'select', None):
++                    self.rhs.clear_select_clause()
++                    self.rhs.add_fields(['pk'])
+             else:
+                 raise ValueError(
+                     'The QuerySet value for an exact lookup must be limited to '
+@@ -353,7 +356,9 @@
+             placeholder = '(' + ', '.join(sqls) + ')'
+             return (placeholder, sqls_params)
+         else:
+-            if not getattr(self.rhs, 'has_select_fields', True):
++            # Only force the inner query to select the pk if it doesn't
++            # already have explicit select fields (e.g. from values()).
++            if not getattr(self.rhs, 'select', None):
+                 self.rhs.clear_select_clause()
+                 self.rhs.add_fields(['pk'])
+             return super().process_rhs(compiler, connection)

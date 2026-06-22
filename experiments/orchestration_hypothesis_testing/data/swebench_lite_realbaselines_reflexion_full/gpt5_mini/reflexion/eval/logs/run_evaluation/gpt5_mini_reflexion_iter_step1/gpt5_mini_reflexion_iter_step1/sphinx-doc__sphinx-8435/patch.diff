@@ -1,0 +1,70 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1716,13 +1716,30 @@
+                 annotations = {}
+ 
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                ann = annotations.get(self.objpath[-1])
++                # try to apply autodoc_type_aliases for forward refs or strings
++                replaced_ann = ann
++                key = None
++                if isinstance(ann, str):
++                    key = ann
++                else:
++                    try:
++                        from typing import ForwardRef as _ForwardRef  # type: ignore
++                        if _ForwardRef and isinstance(ann, _ForwardRef):  # type: ignore
++                            key = getattr(ann, '__forward_arg__', None)
++                    except Exception:
++                        key = None
++                if key and key in self.config.autodoc_type_aliases:
++                    replaced_ann = self.config.autodoc_type_aliases[key]
++                objrepr = stringify_typehint(replaced_ann)
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
+-                                  sourcename)
++                    ann = self.analyzer.annotations[key]
++                    if isinstance(ann, str) and ann in self.config.autodoc_type_aliases:
++                        ann = self.config.autodoc_type_aliases[ann]
++                    self.add_line('   :type: ' + ann, sourcename)
+ 
+             try:
+                 if self.object is UNINITIALIZED_ATTR:
+@@ -2107,13 +2124,30 @@
+                 annotations = {}
+ 
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                ann = annotations.get(self.objpath[-1])
++                # try to apply autodoc_type_aliases for forward refs or strings
++                replaced_ann = ann
++                key = None
++                if isinstance(ann, str):
++                    key = ann
++                else:
++                    try:
++                        from typing import ForwardRef as _ForwardRef  # type: ignore
++                        if _ForwardRef and isinstance(ann, _ForwardRef):  # type: ignore
++                            key = getattr(ann, '__forward_arg__', None)
++                    except Exception:
++                        key = None
++                if key and key in self.config.autodoc_type_aliases:
++                    replaced_ann = self.config.autodoc_type_aliases[key]
++                objrepr = stringify_typehint(replaced_ann)
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
+-                                  sourcename)
++                    ann = self.analyzer.annotations[key]
++                    if isinstance(ann, str) and ann in self.config.autodoc_type_aliases:
++                        ann = self.config.autodoc_type_aliases[ann]
++                    self.add_line('   :type: ' + ann, sourcename)
+ 
+             # data descriptors do not have useful values
+             if not self._datadescriptor:

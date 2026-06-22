@@ -1,0 +1,53 @@
+2026-06-22 02:04:55,702 - INFO - Creating container for django__django-12113...
+2026-06-22 02:04:56,057 - INFO - Container for django__django-12113 created: cc31d57f3e7a8bf3c2ec28a3637d28f0272636b74a2a4d8f78356430722c79fb
+2026-06-22 02:04:56,193 - INFO - Container for django__django-12113 started: cc31d57f3e7a8bf3c2ec28a3637d28f0272636b74a2a4d8f78356430722c79fb
+2026-06-22 02:04:56,194 - INFO - Intermediate patch for django__django-12113 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12113/patch.diff, now applying to container...
+2026-06-22 02:04:56,295 - INFO - >>>>> Applied Patch:
+Checking patch django/db/backends/sqlite3/creation.py...
+Applied patch django/db/backends/sqlite3/creation.py cleanly.
+
+2026-06-22 02:04:56,663 - INFO - Git diff before:
+diff --git a/django/db/backends/sqlite3/creation.py b/django/db/backends/sqlite3/creation.py
+index d97052f52d..aef95429de 100644
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -95,7 +95,10 @@ class DatabaseCreation(BaseDatabaseCreation):
+         TEST NAME. See https://www.sqlite.org/inmemorydb.html
+         """
+         test_database_name = self._get_test_db_name()
+-        sig = [self.connection.settings_dict['NAME']]
++        # Use the test database name (TEST.NAME when provided) to identify the
++        # test database. Falling back to the configured NAME for backwards
++        # compatibility when TEST.NAME is falsy.
++        sig = [test_database_name or self.connection.settings_dict['NAME']]
+         if self.is_in_memory_db(test_database_name):
+             sig.append(self.connection.alias)
+         return tuple(sig)
+2026-06-22 02:04:56,663 - INFO - Eval script for django__django-12113 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12113/eval.sh; copying to container...
+2026-06-22 02:05:04,767 - INFO - Test runtime: 8.05 seconds
+2026-06-22 02:05:04,768 - INFO - Test output for django__django-12113 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-12113/test_output.txt
+2026-06-22 02:05:04,823 - INFO - Git diff after:
+diff --git a/django/db/backends/sqlite3/creation.py b/django/db/backends/sqlite3/creation.py
+index d97052f52d..aef95429de 100644
+--- a/django/db/backends/sqlite3/creation.py
++++ b/django/db/backends/sqlite3/creation.py
+@@ -95,7 +95,10 @@ class DatabaseCreation(BaseDatabaseCreation):
+         TEST NAME. See https://www.sqlite.org/inmemorydb.html
+         """
+         test_database_name = self._get_test_db_name()
+-        sig = [self.connection.settings_dict['NAME']]
++        # Use the test database name (TEST.NAME when provided) to identify the
++        # test database. Falling back to the configured NAME for backwards
++        # compatibility when TEST.NAME is falsy.
++        sig = [test_database_name or self.connection.settings_dict['NAME']]
+         if self.is_in_memory_db(test_database_name):
+             sig.append(self.connection.alias)
+         return tuple(sig)
+2026-06-22 02:05:04,823 - INFO - Grading answer for django__django-12113...
+2026-06-22 02:05:04,824 - INFO - report: {'django__django-12113': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_custom_test_name (backends.sqlite.test_creation.TestDbSignatureTests)']}, 'PASS_TO_PASS': {'success': [], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-12113: resolved: False
+2026-06-22 02:05:04,824 - INFO - Attempting to stop container sweb.eval.django__django-12113.gpt5_mini_reflexion_iter_step1...
+2026-06-22 02:05:20,142 - INFO - Attempting to remove container sweb.eval.django__django-12113.gpt5_mini_reflexion_iter_step1...
+2026-06-22 02:05:20,160 - INFO - Container sweb.eval.django__django-12113.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 02:05:20,160 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-12113:latest...
+2026-06-22 02:05:20,787 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-12113:latest removed.

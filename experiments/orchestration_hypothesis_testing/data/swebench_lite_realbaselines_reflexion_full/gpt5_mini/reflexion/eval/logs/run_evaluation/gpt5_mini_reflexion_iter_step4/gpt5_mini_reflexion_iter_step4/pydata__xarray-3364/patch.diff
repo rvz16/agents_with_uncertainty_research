@@ -1,0 +1,31 @@
+--- a/xarray/core/concat.py
++++ b/xarray/core/concat.py
+@@ -1,4 +1,5 @@
+ import pandas as pd
++import numpy as np
+ 
+ from . import dtypes, utils
+ from .alignment import align
+@@ -314,10 +315,18 @@
+         for ds in datasets:
+             absent_merge_vars = variables_to_merge - set(ds.variables)
+             if absent_merge_vars:
+-                raise ValueError(
+-                    "variables %r are present in some datasets but not others. "
+-                    % absent_merge_vars
+-                )
++                # create filler variables for missing ones so we can merge
++                # (use the variable from the first dataset as a template)
++                for var in absent_merge_vars:
++                    template = datasets[0].variables[var]
++                    shape = tuple(dims_sizes.get(d, 1) for d in template.dims)
++                    dtype = getattr(template, "dtype", None)
++                    if dtype is not None:
++                        data = np.full(shape, fill_value, dtype=dtype)
++                    else:
++                        data = np.full(shape, fill_value)
++                    # Preserve attrs from the template variable
++                    ds.variables[var] = Variable(template.dims, data, attrs=template.attrs)
+ 
+             for var in variables_to_merge:
+                 to_merge[var].append(ds.variables[var])

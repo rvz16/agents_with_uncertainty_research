@@ -1,0 +1,23 @@
+--- a/sklearn/isotonic.py
++++ b/sklearn/isotonic.py
+@@ -410,7 +410,19 @@
+         y_pred : ndarray of shape (n_samples,)
+             Transformed data.
+         """
+-        return self.transform(T)
++        # We call the public ``transform`` to perform the interpolation but
++        # ensure that the returned value is a 1d NumPy array. This avoids
++        # leaking pandas objects (when ``set_config(transform_output="pandas")``)
++        # to callers that expect ndarray output (e.g. nested estimators such as
++        # CalibratedClassifierCV).
++        res = self.transform(T)
++        res = np.array(res, copy=False)
++        # Ensure a 1d array is returned. If transform produced a (n, 1)
++        # shaped array-like (e.g. a single-column DataFrame), reshape it to
++        # (n,).
++        if res.ndim != 1:
++            res = res.reshape(-1)
++        return res
+ 
+     # We implement get_feature_names_out here instead of using
+     # `ClassNamePrefixFeaturesOutMixin`` because `input_features` are ignored.

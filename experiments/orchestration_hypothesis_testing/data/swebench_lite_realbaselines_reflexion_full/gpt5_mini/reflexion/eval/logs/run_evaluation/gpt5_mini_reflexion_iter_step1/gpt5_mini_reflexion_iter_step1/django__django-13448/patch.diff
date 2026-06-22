@@ -1,0 +1,31 @@
+--- a/django/db/backends/base/creation.py
++++ b/django/db/backends/base/creation.py
+@@ -69,6 +69,28 @@
+                 database=self.connection.alias,
+                 run_syncdb=True,
+             )
++        else:
++            # When MIGRATE is False, we still need to create the tables for all
++            # apps (behave like the old syncdb behavior). Disable migrations
++            # by overriding MIGRATION_MODULES for the duration of the
++            # migration command so migrate will fall back to creating models'
++            # tables directly (run_syncdb).
++            old_migration_modules = getattr(settings, 'MIGRATION_MODULES', None)
++            try:
++                settings.MIGRATION_MODULES = {
++                    app.label: None
++                    for app in apps.get_app_configs()
++                }
++                call_command(
++                    'migrate',
++                    verbosity=max(verbosity - 1, 0),
++                    interactive=False,
++                    database=self.connection.alias,
++                    run_syncdb=True,
++                )
++            finally:
++                # Restore previous setting (may be None).
++                settings.MIGRATION_MODULES = old_migration_modules
+ 
+         # We then serialize the current state of the database into a string
+         # and store it on the connection. This slightly horrific process is so people

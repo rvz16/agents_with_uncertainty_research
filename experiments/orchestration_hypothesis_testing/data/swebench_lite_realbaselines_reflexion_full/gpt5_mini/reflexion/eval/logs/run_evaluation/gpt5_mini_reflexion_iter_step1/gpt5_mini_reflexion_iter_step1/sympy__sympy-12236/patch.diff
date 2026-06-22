@@ -1,0 +1,21 @@
+--- a/sympy/polys/domains/polynomialring.py
++++ b/sympy/polys/domains/polynomialring.py
+@@ -113,7 +113,17 @@
+ 
+     def get_field(self):
+         """Returns a field associated with `self`. """
+-        return self.ring.to_field().to_domain()
++        # Ensure that the coefficient domain is a field. For polynomial rings
++        # over an integral domain like ZZ[y] we want the coefficient field
++        # to be used for the rational function field (e.g. QQ(y) rather than
++        # ZZ(y)) so that divisions produce rational coefficients instead of
++        # integer-truncated results. Construct a PolyRing with the coefficient
++        # domain converted to its field and return its rational function field
++        # domain.
++        from sympy.polys.rings import PolyRing
++        base_field = self.domain.get_field()
++        ring = PolyRing(self.symbols, base_field, self.order)
++        return ring.to_field().to_domain()
+ 
+     def is_positive(self, a):
+         """Returns True if `LC(a)` is positive. """

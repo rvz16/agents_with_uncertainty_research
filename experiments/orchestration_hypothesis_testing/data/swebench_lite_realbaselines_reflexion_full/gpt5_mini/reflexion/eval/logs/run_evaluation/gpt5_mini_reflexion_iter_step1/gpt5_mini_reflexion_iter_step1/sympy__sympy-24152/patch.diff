@@ -1,0 +1,27 @@
+--- a/sympy/physics/quantum/tensorproduct.py
++++ b/sympy/physics/quantum/tensorproduct.py
+@@ -246,9 +246,21 @@
+             if isinstance(args[i], Add):
+                 for aa in args[i].args:
+                     tp = TensorProduct(*args[:i] + (aa,) + args[i + 1:])
+-                    if isinstance(tp, TensorProduct):
+-                        tp = tp._eval_expand_tensorproduct()
+-                    add_args.append(tp)
++                    # Split off commutative (scalar) factors from the result.
++                    # The TensorProduct constructor may return a Mul consisting
++                    # of commutative factors times a single TensorProduct, or
++                    # it may return a raw TensorProduct. We handle both cases
++                    # and ensure that any inner TensorProduct is expanded.
++                    c_part, nc_part = tp.args_cnc()
++                    if len(nc_part) == 1 and isinstance(nc_part[0], TensorProduct):
++                        expanded = nc_part[0]._eval_expand_tensorproduct()
++                        if isinstance(expanded, Add):
++                            for term in expanded.args:
++                                add_args.append(Mul(*c_part) * term)
++                        else:
++                            add_args.append(Mul(*c_part) * expanded)
++                    else:
++                        add_args.append(Mul(*c_part) * Mul(*nc_part))
+                 break
+ 
+         if add_args:

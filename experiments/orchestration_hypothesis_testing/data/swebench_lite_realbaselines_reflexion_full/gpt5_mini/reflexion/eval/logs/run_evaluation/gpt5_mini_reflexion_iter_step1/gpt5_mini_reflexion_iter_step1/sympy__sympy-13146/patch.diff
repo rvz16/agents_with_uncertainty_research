@@ -1,0 +1,29 @@
+--- a/sympy/core/operations.py
++++ b/sympy/core/operations.py
+@@ -316,10 +316,22 @@
+             if not (tail is self.identity or
+                     isinstance(x, AssocOp) and x.is_Function or
+                     x is self.identity and isinstance(tail, AssocOp)):
+-                # here, we have a number so we just call to _evalf with prec;
+-                # prec is not the same as n, it is the binary precision so
+-                # that's why we don't call to evalf.
+-                x = x._evalf(prec) if x is not self.identity else self.identity
++                # here, we have a number so we try to evaluate it using the
++                # _eval_evalf protocol first (which returns either a new
++                # evaluated object or None).  Fall back to _evalf if needed.
++                # prec is the binary precision, so we use the lower-level
++                # _evalf only as a fallback.
++                if x is not self.identity:
++                    # Prefer _eval_evalf as it recursively evaluates parts
++                    # in a way consistent with how tail args are handled.
++                    newx = getattr(x, "_eval_evalf", None)
++                    if newx is not None:
++                        nx = newx(prec)
++                        x = nx if nx is not None else x._evalf(prec)
++                    else:
++                        x = x._evalf(prec)
++                else:
++                    x = self.identity
+                 args = []
+                 tail_args = tuple(self.func.make_args(tail))
+                 for a in tail_args:

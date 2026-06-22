@@ -1,0 +1,31 @@
+--- a/django/contrib/admin/checks.py
++++ b/django/contrib/admin/checks.py
+@@ -901,6 +901,28 @@
+             try:
+                 field = getattr(obj.model, item)
+             except AttributeError:
++                return [
++                    checks.Error(
++                        "The value of '%s' refers to '%s', which is not a "
++                        "callable, an attribute of '%s', or an attribute or "
++                        "method on '%s'."
++                        % (
++                            label,
++                            item,
++                            obj.__class__.__name__,
++                            obj.model._meta.label,
++                        ),
++                        obj=obj.__class__,
++                        id="admin.E108",
++                    )
++                ]
++            else:
++                # If the attribute on the model class is callable (for example,
++                # a model method or property), it's allowed in list_display.
++                # Otherwise, treat it as an invalid value for list_display
++                # (this covers descriptors like reverse relation managers).
++                if callable(field):
++                    return []
+                 return [
+                     checks.Error(
+                         "The value of '%s' refers to '%s', which is not a "

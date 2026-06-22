@@ -1,0 +1,16 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,7 +1854,12 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++        # Ensure that the polynomial expression is printed using the logical
++        # monomial ordering (highest to lowest degree) used by the pretty and
++        # str printers. Passing 'old' as the order argument tells the Add
++        # printer to use the compatibility/lexicographic ordering rather than
++        # re-sorting the terms.
++        expr = self._print(poly.as_expr(), 'old')
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 

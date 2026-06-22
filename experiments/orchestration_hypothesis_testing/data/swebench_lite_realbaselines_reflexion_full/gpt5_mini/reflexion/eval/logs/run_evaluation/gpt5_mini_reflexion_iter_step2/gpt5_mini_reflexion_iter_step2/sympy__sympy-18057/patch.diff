@@ -1,0 +1,25 @@
+--- a/sympy/core/expr.py
++++ b/sympy/core/expr.py
+@@ -121,13 +121,17 @@
+ 
+     def __eq__(self, other):
+         try:
+-            other = sympify(other)
+-            if not isinstance(other, Expr):
+-                return False
+-        except (SympifyError, SyntaxError):
++            # Use the internal _sympify here to avoid attempting to parse
++            # arbitrary objects via their string/repr (which can lead to
++            # unexpected eval() of reprs and security issues). Equality with
++            # expressions should not trigger parsing of string representations.
++            other = _sympify(other)
++        except SympifyError:
++            return False
++        if not isinstance(other, Expr):
+             return False
+         # check for pure number expr
+-        if  not (self.is_Number and other.is_Number) and (
++        if not (self.is_Number and other.is_Number) and (
+                 type(self) != type(other)):
+             return False
+         a, b = self._hashable_content(), other._hashable_content()

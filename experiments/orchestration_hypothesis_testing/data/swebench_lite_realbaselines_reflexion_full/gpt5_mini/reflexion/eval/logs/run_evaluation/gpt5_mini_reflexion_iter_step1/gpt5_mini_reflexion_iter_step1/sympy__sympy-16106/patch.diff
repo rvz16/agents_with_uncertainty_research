@@ -1,0 +1,103 @@
+--- a/sympy/printing/mathml.py
++++ b/sympy/printing/mathml.py
+@@ -478,6 +478,48 @@
+         return dom_element
+ 
+ 
++    def _print_IndexedBase(self, base):
++        """
++        Content MathML representation for an IndexedBase.
++
++        We represent an IndexedBase as an <indexedbase> element containing the
++        printed underlying label (usually a Symbol).
++        """
++        xb = self.dom.createElement('indexedbase')
++        # Try common attributes to find the underlying label/symbol.
++        if hasattr(base, 'label'):
++            inner = base.label
++        elif getattr(base, 'args', None):
++            inner = base.args[0]
++        else:
++            inner = base
++        xb.appendChild(self._print(inner))
++        return xb
++
++    def _print_Indexed(self, e):
++        """
++        Content MathML representation for Indexed objects.
++
++        An Indexed object is represented as an <indexed> element whose first
++        child is the printed IndexedBase and whose following children are the
++        printed indices.
++        """
++        x = self.dom.createElement('indexed')
++        # base: prefer .base attribute, fall back to args[0]
++        base = getattr(e, 'base', None)
++        if base is None:
++            base = e.args[0]
++        x.appendChild(self._print(base))
++
++        # indices: prefer .indices attribute, fall back to args[1:]
++        indices = getattr(e, 'indices', None)
++        if indices is None:
++            indices = e.args[1:]
++        for idx in indices:
++            x.appendChild(self._print(idx))
++        return x
++
++
+ class MathMLPresentationPrinter(MathMLPrinterBase):
+     """Prints an expression to the Presentation MathML markup language.
+ 
+@@ -1190,6 +1232,51 @@
+         return dom_element
+ 
+ 
++    def _print_IndexedBase(self, base):
++        """
++        Presentation MathML representation for an IndexedBase.
++
++        We print the underlying label (usually a Symbol) using the existing
++        printers for that object so that it appears as a normal identifier.
++        """
++        # Determine the inner label/symbol
++        if hasattr(base, 'label'):
++            inner = base.label
++        elif getattr(base, 'args', None):
++            inner = base.args[0]
++        else:
++            inner = base
++        return self._print(inner)
++
++    def _print_Indexed(self, e):
++        """
++        Presentation MathML for Indexed objects.
++
++        Produces an <msub> element with the base and the index(es). If there
++        are multiple indices, the subscript is an <mrow> containing them.
++        """
++        base = getattr(e, 'base', None)
++        if base is None:
++            base = e.args[0]
++
++        indices = getattr(e, 'indices', None)
++        if indices is None:
++            indices = e.args[1:]
++
++        msub = self.dom.createElement('msub')
++        msub.appendChild(self._print(base))
++
++        if len(indices) == 1:
++            msub.appendChild(self._print(indices[0]))
++        else:
++            sub_mrow = self.dom.createElement('mrow')
++            for idx in indices:
++                sub_mrow.appendChild(self._print(idx))
++            msub.appendChild(sub_mrow)
++
++        return msub
++
++
+     def _print_Integers(self, e):
+         x = self.dom.createElement('mi')
+         x.setAttribute('mathvariant', 'normal')

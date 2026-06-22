@@ -1,0 +1,16 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -1921,7 +1921,12 @@
+             if exp == '2':
+                 exp = ''
+         else:
+-            exp = str(expt.args[0])
++            # For non-Rational exponents use the string form of the exponent
++            # rather than trying to use sub-args (which can be misleading,
++            # e.g. 1/E is exp(-1) and expt.args[0] == -1). Using str(expt)
++            # gives a more informative label (like "exp(-1)" or "EulerGamma")
++            # for the root index.
++            exp = str(expt)
+         exp = exp.ljust(2)
+         if len(exp) > 2:
+             rootsign = ' '*(len(exp) - 2) + rootsign

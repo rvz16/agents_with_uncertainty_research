@@ -1,0 +1,23 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -960,6 +960,20 @@
+     def get_internal_type(self):
+         return "BooleanField"
+ 
++    def select_format(self, compiler, sql, params):
++        """
++        Format boolean expressions used in SELECT lists.
++
++        Some boolean-like expressions (for example, ExpressionWrapper(~Q(...)))
++        may compile to an empty SQL string which results in invalid SQL like
++        "SELECT AS ...". As a safe fallback, use a numeric boolean literal
++        ("1") so the SELECT list remains valid SQL. Using "1"/"0" follows the
++        convention used elsewhere in the ORM for boolean constants.
++        """
++        if not sql:
++            return "1", params or []
++        return sql, params
++
+     def to_python(self, value):
+         if self.null and value in self.empty_values:
+             return None

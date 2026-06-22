@@ -1,0 +1,43 @@
+--- a/sympy/physics/vector/point.py
++++ b/sympy/physics/vector/point.py
+@@ -518,10 +518,36 @@
+         """
+ 
+         _check_frame(frame)
+-        if not (frame in self._vel_dict):
+-            raise ValueError('Velocity of point ' + self.name + ' has not been'
+-                             ' defined in ReferenceFrame ' + frame.name)
+-        return self._vel_dict[frame]
++        # If velocity explicitly defined in this frame, return it.
++        if frame in self._vel_dict:
++            return self._vel_dict[frame]
++
++        # Attempt to compute the velocity from known positions and velocities
++        # If there exists another Point in the position graph that has a
++        # velocity defined in the requested frame, then
++        # v_self = v_other + (r_self_from_other).dt(frame)
++        visited = set()
++        queue = [self]
++        other_with_vel = None
++
++        while queue:
++            node = queue.pop(0)
++            visited.add(node)
++            for neighbor in node._pos_dict.keys():
++                if neighbor not in visited and neighbor not in queue:
++                    queue.append(neighbor)
++                if frame in neighbor._vel_dict:
++                    other_with_vel = neighbor
++                    queue = []
++                    break
++
++        if other_with_vel is not None:
++            dist = self.pos_from(other_with_vel)
++            return other_with_vel.vel(frame) + dist.dt(frame)
++
++        # No way to determine velocity in the requested frame
++        raise ValueError('Velocity of point ' + self.name + ' has not been'
++                         ' defined in ReferenceFrame ' + frame.name)
+ 
+     def partial_velocity(self, frame, *gen_speeds):
+         """Returns the partial velocities of the linear velocity vector of this

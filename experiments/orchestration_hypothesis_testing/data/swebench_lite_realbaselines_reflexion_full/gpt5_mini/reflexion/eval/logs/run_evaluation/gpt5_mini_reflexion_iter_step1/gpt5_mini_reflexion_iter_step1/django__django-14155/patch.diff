@@ -1,0 +1,38 @@
+--- a/django/urls/resolvers.py
++++ b/django/urls/resolvers.py
+@@ -31,9 +31,33 @@
+ 
+ class ResolverMatch:
+     def __init__(self, func, args, kwargs, url_name=None, app_names=None, namespaces=None, route=None, tried=None):
++        # Unwrap functools.partial objects so that the ResolverMatch contains
++        # the underlying callable and any args/kwargs provided by the partial.
++        # For nested partials, outer partials override inner partials for
++        # keyword arguments, and positional arguments are accumulated in order.
++        pre_args = ()
++        pre_kwargs = {}
++        # Walk down through nested partials, if any.
++        while isinstance(func, functools.partial):
++            p = func
++            # Preserve order: inner partial args should come before outer partial args.
++            pre_args = p.args + pre_args
++            if p.keywords:
++                # Outer partials should override inner partials, so place p.keywords
++                # to the left when merging.
++                pre_kwargs = {**p.keywords, **pre_kwargs}
++            func = p.func
++
++        # Ensure args/kwargs are not None and merge with partial-provided values.
++        args = args or ()
++        kwargs = kwargs or {}
++        final_args = tuple(pre_args) + tuple(args)
++        # Call-time kwargs (from the URL) override partial-provided kwargs.
++        final_kwargs = {**pre_kwargs, **kwargs}
++
+         self.func = func
+-        self.args = args
+-        self.kwargs = kwargs
++        self.args = final_args
++        self.kwargs = final_kwargs
+         self.url_name = url_name
+         self.route = route
+         self.tried = tried

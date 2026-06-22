@@ -1,0 +1,37 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -3044,6 +3044,13 @@
+         self.__dict__ = state
+ 
+         # re-initialise some of the unstored state information
++        # The backend canvas initialization (e.g., on macOS retina displays)
++        # may alter the figure dpi for high-dpi handling.  To avoid
++        # permanently changing the stored logical dpi (which would cause it to
++        # be doubled on every unpickle), capture the saved dpi and restore it
++        # after the canvas/manager are created.
++        saved_dpi = getattr(self, "_dpi", None)
++
+         FigureCanvasBase(self)  # Set self.canvas.
+ 
+         if restore_to_pylab:
+@@ -3055,6 +3062,20 @@
+             mgr = plt._backend_mod.new_figure_manager_given_figure(num, self)
+             pylab_helpers.Gcf._set_new_active_manager(mgr)
+             plt.draw_if_interactive()
++
++        # Restore the logical dpi saved in the pickled state.  Use the
++        # internal _set_dpi with forward=False to avoid triggering a canvas
++        # resize (manager may already have been created above).
++        if saved_dpi is not None:
++            try:
++                # Use the protected method to avoid side-effects like resizing
++                # windows; the dpi_changed callback will still be processed.
++                self._set_dpi(saved_dpi, forward=False)
++            except Exception:
++                # Be conservative: if restoring dpi fails for some reason,
++                # don't prevent unpickling.  This matches prior behavior of
++                # being tolerant on restore.
++                pass
+ 
+         self.stale = True
+ 

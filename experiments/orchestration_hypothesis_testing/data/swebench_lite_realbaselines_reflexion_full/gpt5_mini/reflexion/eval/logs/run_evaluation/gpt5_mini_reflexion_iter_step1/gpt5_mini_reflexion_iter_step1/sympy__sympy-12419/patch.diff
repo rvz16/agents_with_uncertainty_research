@@ -1,0 +1,21 @@
+--- a/sympy/matrices/expressions/matexpr.py
++++ b/sympy/matrices/expressions/matexpr.py
+@@ -476,10 +476,16 @@
+         return self
+ 
+     def _entry(self, i, j):
+-        if i == j:
++        # For concrete equal/unequal indices return exact values; for symbolic
++        # indices return an expression that represents equality (KroneckerDelta)
++        # so that sums and other operations can be handled properly.
++        from sympy import KroneckerDelta, Eq
++        eq = Eq(i, j)
++        if eq is True:
+             return S.One
+-        else:
++        if eq is False:
+             return S.Zero
++        return KroneckerDelta(i, j)
+ 
+     def _eval_determinant(self):
+         return S.One

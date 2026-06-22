@@ -1,0 +1,13 @@
+--- a/django/db/models/enums.py
++++ b/django/db/models/enums.py
+@@ -31,6 +31,10 @@
+         # that is passed in as "self" as the value to use when looking up the
+         # label in the choices.
+         cls.label = property(lambda self: cls._value2label_map_.get(self.value))
++        # Make str(enum_member) return the underlying value (instead of
++        # "ClassName.MEMBER"), so that TextChoices/IntegerChoices behave like
++        # their underlying types when stringified.
++        cls.__str__ = lambda self: str(self.value)
+         return enum.unique(cls)
+ 
+     def __contains__(cls, member):

@@ -1,0 +1,115 @@
+2026-06-22 08:48:22,368 - INFO - Creating container for sympy__sympy-23117...
+2026-06-22 08:48:22,454 - INFO - Container for sympy__sympy-23117 created: 33114f2a72c6fd618e5d038684b031b929bb7af2b330398926866893b8680871
+2026-06-22 08:48:22,579 - INFO - Container for sympy__sympy-23117 started: 33114f2a72c6fd618e5d038684b031b929bb7af2b330398926866893b8680871
+2026-06-22 08:48:22,579 - INFO - Intermediate patch for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-23117/patch.diff, now applying to container...
+2026-06-22 08:48:22,651 - INFO - >>>>> Applied Patch:
+Checking patch sympy/tensor/array/ndim_array.py...
+Applied patch sympy/tensor/array/ndim_array.py cleanly.
+
+2026-06-22 08:48:22,900 - INFO - Git diff before:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..1f2cea8779 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -191,16 +191,36 @@ def _setter_iterable_check(self, value):
+     @classmethod
+     def _scan_iterable_shape(cls, iterable):
+         def f(pointer):
+-            if not isinstance(pointer, Iterable):
++            # Non-iterable (scalar) -> single element, zero-rank
++            if not isinstance(pointer, Iterable) or isinstance(pointer, (str, bytes)):
+                 return [pointer], ()
+ 
+-            result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
+-            if len(set(shapes)) != 1:
++            # Convert to a concrete sequence to allow multiple passes and to
++            # detect empty iterables (works for lists, tuples, generators, etc.)
++            try:
++                seq = list(pointer)
++            except TypeError:
++                # If conversion to list fails, treat as scalar
++                return [pointer], ()
++
++            # Empty iterable: define as a one-dimensional empty array
++            if len(seq) == 0:
++                return [], (0,)
++
++            elems_list = []
++            shapes_list = []
++            for i in seq:
++                elems, shape = f(i)
++                elems_list.append(elems)
++                shapes_list.append(shape)
++
++            if len(set(shapes_list)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+-            for i in elems:
+-                result.extend(i)
+-            return result, (len(shapes),)+shapes[0]
++
++            result = []
++            for sub in elems_list:
++                result.extend(sub)
++            return result, (len(shapes_list),) + shapes_list[0]
+ 
+         return f(iterable)
+2026-06-22 08:48:22,901 - INFO - Eval script for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-23117/eval.sh; copying to container...
+2026-06-22 08:48:25,525 - INFO - Test runtime: 2.58 seconds
+2026-06-22 08:48:25,526 - INFO - Test output for sympy__sympy-23117 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-23117/test_output.txt
+2026-06-22 08:48:25,569 - INFO - Git diff after:
+diff --git a/sympy/tensor/array/ndim_array.py b/sympy/tensor/array/ndim_array.py
+index 6490a655a4..1f2cea8779 100644
+--- a/sympy/tensor/array/ndim_array.py
++++ b/sympy/tensor/array/ndim_array.py
+@@ -191,16 +191,36 @@ def _setter_iterable_check(self, value):
+     @classmethod
+     def _scan_iterable_shape(cls, iterable):
+         def f(pointer):
+-            if not isinstance(pointer, Iterable):
++            # Non-iterable (scalar) -> single element, zero-rank
++            if not isinstance(pointer, Iterable) or isinstance(pointer, (str, bytes)):
+                 return [pointer], ()
+ 
+-            result = []
+-            elems, shapes = zip(*[f(i) for i in pointer])
+-            if len(set(shapes)) != 1:
++            # Convert to a concrete sequence to allow multiple passes and to
++            # detect empty iterables (works for lists, tuples, generators, etc.)
++            try:
++                seq = list(pointer)
++            except TypeError:
++                # If conversion to list fails, treat as scalar
++                return [pointer], ()
++
++            # Empty iterable: define as a one-dimensional empty array
++            if len(seq) == 0:
++                return [], (0,)
++
++            elems_list = []
++            shapes_list = []
++            for i in seq:
++                elems, shape = f(i)
++                elems_list.append(elems)
++                shapes_list.append(shape)
++
++            if len(set(shapes_list)) != 1:
+                 raise ValueError("could not determine shape unambiguously")
+-            for i in elems:
+-                result.extend(i)
+-            return result, (len(shapes),)+shapes[0]
++
++            result = []
++            for sub in elems_list:
++                result.extend(sub)
++            return result, (len(shapes_list),) + shapes_list[0]
+ 
+         return f(iterable)
+2026-06-22 08:48:25,569 - INFO - Grading answer for sympy__sympy-23117...
+2026-06-22 08:48:25,570 - INFO - report: {'sympy__sympy-23117': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_issue_17851'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_array_negative_indices', 'test_issue_18361', 'test_issue_20222'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-23117: resolved: True
+2026-06-22 08:48:25,570 - INFO - Attempting to stop container sweb.eval.sympy__sympy-23117.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:48:40,759 - INFO - Attempting to remove container sweb.eval.sympy__sympy-23117.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:48:40,777 - INFO - Container sweb.eval.sympy__sympy-23117.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 08:48:40,777 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest...
+2026-06-22 08:48:40,829 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-23117:latest removed.

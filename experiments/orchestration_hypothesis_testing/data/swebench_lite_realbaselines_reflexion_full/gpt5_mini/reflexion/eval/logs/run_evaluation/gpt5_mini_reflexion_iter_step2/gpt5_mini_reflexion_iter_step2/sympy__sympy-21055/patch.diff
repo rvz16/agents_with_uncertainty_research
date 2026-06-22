@@ -1,0 +1,46 @@
+--- a/sympy/assumptions/refine.py
++++ b/sympy/assumptions/refine.py
+@@ -252,6 +252,35 @@
+         return expr
+ 
+ 
++def refine_arg(expr, assumptions):
++    """
++    Handler for the argument (phase) function.
++
++    Examples
++    ========
++
++    >>> from sympy import Q, arg
++    >>> from sympy.assumptions.refine import refine_arg
++    >>> from sympy.abc import x
++    >>> refine_arg(arg(x), Q.real(x) & Q.positive(x))
++    0
++    >>> refine_arg(arg(x), Q.real(x) & Q.negative(x))
++    pi
++    """
++    z = expr.args[0]
++    # If the argument is real we can determine arg(z) exactly for many cases.
++    if ask(Q.real(z), assumptions):
++        if ask(Q.positive(z), assumptions):
++            return S.Zero
++        if ask(Q.negative(z), assumptions):
++            return S.Pi
++        if ask(Q.zero(z), assumptions):
++            # SymPy defines arg(0) == 0
++            return S.Zero
++    # unable to refine
++    return None
++
++
+ def refine_re(expr, assumptions):
+     """
+     Handler for real part.
+@@ -377,6 +406,7 @@
+     'Abs': refine_abs,
+     'Pow': refine_Pow,
+     'atan2': refine_atan2,
++    'arg': refine_arg,
+     're': refine_re,
+     'im': refine_im,
+     'sign': refine_sign,

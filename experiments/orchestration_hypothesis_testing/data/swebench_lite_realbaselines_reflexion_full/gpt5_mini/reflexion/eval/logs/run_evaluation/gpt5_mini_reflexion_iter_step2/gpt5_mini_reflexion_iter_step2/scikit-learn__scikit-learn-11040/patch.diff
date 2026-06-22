@@ -1,0 +1,24 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -99,8 +100,11 @@
+                          "'distance', or a callable function")
+ 
+ 
+-class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
+-    """Base class for nearest neighbors estimators."""
++def _check_n_neighbors(n_neighbors, param_name="n_neighbors"):
++    """Validate and coerce n_neighbors to an integer > 0.
++
++    Accept integer types (including numpy integers) and integer-valued floats
++    (e.g. 3.0 -> 3). Raise
+ 
+     @abstractmethod
+     def __init__(self, n_neighbors=None, radius=None,

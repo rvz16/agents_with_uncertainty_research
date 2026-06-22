@@ -1,0 +1,150 @@
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -59,22 +59,25 @@
+ 
+     @property
+     def _css(self):
+-        css = self._css_lists[0]
+-        # filter(None, ...) avoids calling merge with empty dicts.
+-        for obj in filter(None, self._css_lists[1:]):
+-            css = {
+-                medium: self.merge(css.get(medium, []), obj.get(medium, []))
+-                for medium in css.keys() | obj.keys()
+-            }
+-        return css
++        # Collect all sublists for each medium and merge them at once so that
++        # we don't introduce transient ordering constraints by merging
++        # dictionaries sequentially.
++        collected = {}
++        for css_dict in filter(None, self._css_lists):
++            for medium, paths in css_dict.items():
++                collected.setdefault(medium, []).append(paths)
++        # Merge each medium's lists together, preserving relative ordering and
++        # de-duplicating entries.
++        return {medium: self.merge(*lists) for medium, lists in collected.items()}
+ 
+     @property
+     def _js(self):
+-        js = self._js_lists[0]
+-        # filter(None, ...) avoids calling merge() with empty lists.
+-        for obj in filter(None, self._js_lists[1:]):
+-            js = self.merge(js, obj)
+-        return js
++        # Merge all js sublists at once to avoid introducing transient
++        # ordering constraints by sequentially merging lists.
++        lists = [lst for lst in self._js_lists if lst]
++        if not lists:
++            return []
++        return self.merge(*lists)
+ 
+     def render(self):
+         return mark_safe('\n'.join(chain.from_iterable(getattr(self, 'render_' + name)() for name in MEDIA_TYPES)))
+@@ -115,39 +118,75 @@
+         raise KeyError('Unknown media type "%s"' % name)
+ 
+     @staticmethod
+-    def merge(list_1, list_2):
+-        """
+-        Merge two lists while trying to keep the relative order of the elements.
+-        Warn if the lists have the same two elements in a different relative
+-        order.
+-
+-        For static assets it can be important to have them included in the DOM
+-        in a certain order. In JavaScript you may not be able to reference a
+-        global or in CSS you might want to override a style.
+-        """
+-        # Start with a copy of list_1.
+-        combined_list = list(list_1)
+-        last_insert_index = len(list_1)
+-        # Walk list_2 in reverse, inserting each element into combined_list if
+-        # it doesn't already exist.
+-        for path in reversed(list_2):
+-            try:
+-                # Does path already exist in the list?
+-                index = combined_list.index(path)
+-            except ValueError:
+-                # Add path to combined_list since it doesn't exist.
+-                combined_list.insert(last_insert_index, path)
+-            else:
+-                if index > last_insert_index:
+-                    warnings.warn(
+-                        'Detected duplicate Media files in an opposite order:\n'
+-                        '%s\n%s' % (combined_list[last_insert_index], combined_list[index]),
+-                        MediaOrderConflictWarning,
+-                    )
+-                # path already exists in the list. Update last_insert_index so
+-                # that the following elements are inserted in front of this one.
+-                last_insert_index = index
+-        return combined_list
++    def merge(*sublists):
++        """
++        Merge multiple lists while trying to keep the relative order of the
++        elements. This performs a topological sort based on the ordering
++        constraints implied by each sublist (each item should come before the
++        one that follows it in the same sublist). All input lists are
++        de-duplicated (preserving first occurrence) and merged together in a
++        way that preserves relative ordering where possible. If a cyclic
++        ordering is detected, a MediaOrderConflictWarning is raised and the
++        remaining items are appended in their first-seen order.
++        """
++        # Normalize and filter empty lists.
++        lists = [list(lst) for lst in sublists if lst]
++        if not lists:
++            return []
++
++        # Record first-seen order for tie-breaking.
++        seen_index = {}
++        first_seen = []
++        for lst in lists:
++            for item in lst:
++                if item not in seen_index:
++                    seen_index[item] = len(first_seen)
++                    first_seen.append(item)
++
++        # Build graph edges and indegrees. For each sublist, each item must
++        # precede the next item in that sublist.
++        adj = {item: set() for item in seen_index}
++        indegree = {item: 0 for item in seen_index}
++
++        for lst in lists:
++            prev = None
++            for item in lst:
++                if prev is not None and prev != item:
++                    if item not in adj[prev]:
++                        adj[prev].add(item)
++                        indegree[item] += 1
++                prev = item
++
++        # Kahn's algorithm for topological sort with deterministic tie-breaking
++        # based on first occurrence.
++        import heapq
++        heap = []
++        for item, deg in indegree.items():
++            if deg == 0:
++                heapq.heappush(heap, (seen_index[item], item))
++
++        result = []
++        while heap:
++            _, node = heapq.heappop(heap)
++            result.append(node)
++            for succ in list(adj[node]):
++                indegree[succ] -= 1
++                if indegree[succ] == 0:
++                    heapq.heappush(heap, (seen_index[succ], succ))
++            adj[node].clear()
++
++        # If not all items were emitted, a cycle exists. Warn and append the
++        # remaining items in first-seen order to provide a stable result.
++        if len(result) != len(first_seen):
++            remaining = [item for item in first_seen if item not in result]
++            warnings.warn(
++                'Detected a cyclic ordering in Media. The final ordering may be '
++                'inconsistent. The involved items are:\n%s' % '\n'.join(remaining),
++                MediaOrderConflictWarning,
++            )
++            result.extend(remaining)
++
++        return result
+ 
+     def __add__(self, other):
+         combined = Media()

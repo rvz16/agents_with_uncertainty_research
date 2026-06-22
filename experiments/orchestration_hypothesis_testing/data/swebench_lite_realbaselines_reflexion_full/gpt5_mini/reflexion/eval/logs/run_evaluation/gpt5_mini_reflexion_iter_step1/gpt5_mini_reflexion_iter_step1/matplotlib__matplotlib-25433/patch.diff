@@ -1,0 +1,39 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -3099,6 +3099,36 @@
+     def clear(self, keep_observers=False):
+         # docstring inherited
+         super().clear(keep_observers=keep_observers)
++
++        # Ensure any widget locks held by widgets that are being destroyed are
++        # released so new widgets can accept input. This can happen when a
++        # widget's callback destructively recreates widgets and the widgetlock
++        # remains held (for example, a RangeSlider callback that calls clf()).
++        wl = getattr(getattr(self, "canvas", None), "widgetlock", None)
++        if wl is not None:
++            # Try the public API first, but be tolerant to different
++            # implementations across backends/versions.
++            try:
++                # Some implementations accept no arguments.
++                wl.release()
++            except TypeError:
++                try:
++                    # Some implementations accept an explicit None to release all.
++                    wl.release(None)
++                except Exception:
++                    # Fall back to clearing the internal owner attribute if
++                    # present.
++                    try:
++                        wl._owner = None
++                    except Exception:
++                        pass
++            except Exception:
++                # As a last resort try to clear the internal attribute.
++                try:
++                    wl._owner = None
++                except Exception:
++                    pass
++
+         # FigureBase.clear does not clear toolbars, as
+         # only Figure can have toolbars
+         toolbar = self.canvas.toolbar

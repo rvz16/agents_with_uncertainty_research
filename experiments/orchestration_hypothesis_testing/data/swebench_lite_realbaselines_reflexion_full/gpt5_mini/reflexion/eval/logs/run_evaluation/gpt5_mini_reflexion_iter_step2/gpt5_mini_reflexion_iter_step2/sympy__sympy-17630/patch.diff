@@ -1,0 +1,17 @@
+--- a/sympy/matrices/expressions/matexpr.py
++++ b/sympy/matrices/expressions/matexpr.py
+@@ -627,7 +627,13 @@
+                 # manipulate them like non-commutative scalars.
+                 return cls._from_args(nonmatrices + [mat_class(*matrices).doit(deep=False)])
+ 
+-        return mat_class(cls._from_args(nonmatrices), *matrices).doit(deep=False)
++        # Convert any scalar factor into a 1x1 MatrixExpr when matrices are
++        # present to avoid collapse to scalar Zero (e.g., in block matrix
++        # multiplication where matrix-shaped zeros must be preserved).
++        scalar = cls._from_args(nonmatrices)
++        if matrices and not isinstance(scalar, MatrixExpr):
++            scalar = _make_matrix(scalar)
++        return mat_class(scalar, *matrices).doit(deep=False)
+     return _postprocessor
+ 
+ 

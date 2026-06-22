@@ -1,0 +1,38 @@
+--- a/django/db/models/lookups.py
++++ b/django/db/models/lookups.py
+@@ -1,6 +1,7 @@
+ import itertools
+ import math
+ from copy import copy
++import warnings
+ 
+ from django.core.exceptions import EmptyResultSet
+ from django.db.models.expressions import Case, Exists, Func, Value, When
+@@ -9,6 +10,7 @@
+ )
+ from django.db.models.query_utils import RegisterLookupMixin
+ from django.utils.datastructures import OrderedSet
++from django.utils.deprecation import RemovedInDjango40Warning
+ from django.utils.functional import cached_property
+ 
+ 
+@@ -463,6 +465,19 @@
+     prepare_rhs = False
+ 
+     def as_sql(self, compiler, connection):
++        # Passing non-boolean values to an isnull lookup has historically
++        # relied on truthiness, which can be confusing and lead to silent
++        # issues (especially with joins). Deprecate this behavior and warn
++        # so that callers switch to explicit True/False values. This will be
++        # removed in Django 4.0.
++        if not isinstance(self.rhs, bool):
++            warnings.warn(
++                "Passing non-boolean values to an isnull lookup is deprecated and "
++                "will be removed in Django 4.0. Use True or False instead.",
++                RemovedInDjango40Warning,
++                stacklevel=2,
++            )
++
+         sql, params = compiler.compile(self.lhs)
+         if self.rhs:
+             return "%s IS NULL" % sql, params

@@ -1,0 +1,45 @@
+--- a/lib/mpl_toolkits/axes_grid1/axes_grid.py
++++ b/lib/mpl_toolkits/axes_grid1/axes_grid.py
+@@ -11,10 +11,40 @@
+ 
+ 
+ def _tick_only(ax, bottom_on, left_on):
++    """
++    Toggle ticklabels and axis labels for an axes.
++
++    The Axes from mpl_toolkits.axes_grid1 can expose an "axis" mapping
++    (AxisArtist API) which is subscriptable (e.g. ax.axis["bottom"]).
++    Other Axes subclasses (e.g. Cartopy's GeoAxes) expose ax.axis as a
++    method or do not provide the AxisArtist API.  To support both, try to
++    use the AxisArtist API when available; otherwise fall back to the
++    standard Matplotlib Axes API.
++    """
+     bottom_off = not bottom_on
+     left_off = not left_on
+-    ax.axis["bottom"].toggle(ticklabels=bottom_off, label=bottom_off)
+-    ax.axis["left"].toggle(ticklabels=left_off, label=left_off)
++
++    axis_attr = getattr(ax, "axis", None)
++
++    # If ax.axis is subscriptable (AxisArtist API), use its toggle method.
++    if axis_attr is not None and hasattr(axis_attr, "__getitem__"):
++        try:
++            axis_attr["bottom"].toggle(ticklabels=bottom_off, label=bottom_off)
++            axis_attr["left"].toggle(ticklabels=left_off, label=left_off)
++            return
++        except Exception:
++            # If something goes wrong with the AxisArtist API, fall back to
++            # the standard Axes behavior below.
++            pass
++
++    # Fallback for normal Matplotlib Axes (and other axes subclasses that
++    # don't implement the AxisArtist API).  Here, "bottom_off" and
++    # "left_off" follow the original semantics used by AxisArtist.toggle:
++    # True means show ticklabels/label, False means hide.
++    ax.xaxis.set_tick_params(labelbottom=bottom_off)
++    ax.xaxis.label.set_visible(bottom_off)
++    ax.yaxis.set_tick_params(labelleft=left_off)
++    ax.yaxis.label.set_visible(left_off)
+ 
+ 
+ class CbarAxesBase:

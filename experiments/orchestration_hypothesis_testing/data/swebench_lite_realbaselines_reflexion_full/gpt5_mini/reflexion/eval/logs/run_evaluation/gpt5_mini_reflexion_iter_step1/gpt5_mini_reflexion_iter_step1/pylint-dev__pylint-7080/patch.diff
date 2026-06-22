@@ -1,0 +1,58 @@
+--- a/pylint/lint/expand_modules.py
++++ b/pylint/lint/expand_modules.py
+@@ -74,25 +74,28 @@
+     path = sys.path.copy()
+ 
+     for something in files_or_modules:
+-        basename = os.path.basename(something)
++        # Normalize filesystem-like inputs so ignore-paths regexes match
++        # regardless of './' prefixes or OS path separators.
++        normalized_something = os.path.normpath(something)
++        basename = os.path.basename(normalized_something)
+         if _is_ignored_file(
+-            something, ignore_list, ignore_list_re, ignore_list_paths_re
++            normalized_something, ignore_list, ignore_list_re, ignore_list_paths_re
+         ):
+             continue
+-        module_path = get_python_path(something)
++        module_path = get_python_path(normalized_something)
+         additional_search_path = [".", module_path] + path
+-        if os.path.exists(something):
++        if os.path.exists(normalized_something):
+             # this is a file or a directory
+             try:
+                 modname = ".".join(
+-                    modutils.modpath_from_file(something, path=additional_search_path)
++                    modutils.modpath_from_file(normalized_something, path=additional_search_path)
+                 )
+             except ImportError:
+                 modname = os.path.splitext(basename)[0]
+-            if os.path.isdir(something):
+-                filepath = os.path.join(something, "__init__.py")
++            if os.path.isdir(normalized_something):
++                filepath = os.path.join(normalized_something, "__init__.py")
+             else:
+-                filepath = something
++                filepath = normalized_something
+         else:
+             # suppose it's a module or package
+             modname = something
+@@ -116,7 +119,7 @@
+         except ImportError:
+             # Might not be acceptable, don't crash.
+             is_namespace = False
+-            is_directory = os.path.isdir(something)
++            is_directory = os.path.isdir(normalized_something)
+         else:
+             is_namespace = modutils.is_namespace(spec)
+             is_directory = modutils.is_directory(spec)
+@@ -138,6 +141,9 @@
+             for subfilepath in modutils.get_module_files(
+                 os.path.dirname(filepath), ignore_list, list_all=is_namespace
+             ):
++                # Normalize subfile paths before checking ignores to handle './'
++                # prefixes and path separator differences across platforms.
++                subfilepath = os.path.normpath(subfilepath)
+                 if filepath == subfilepath:
+                     continue
+                 if _is_in_ignore_list_re(

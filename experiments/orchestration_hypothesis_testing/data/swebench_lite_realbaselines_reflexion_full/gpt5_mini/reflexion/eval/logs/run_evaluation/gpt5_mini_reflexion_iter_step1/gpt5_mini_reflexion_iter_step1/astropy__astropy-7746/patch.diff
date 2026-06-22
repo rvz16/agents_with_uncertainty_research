@@ -1,0 +1,27 @@
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1222,7 +1222,23 @@
+ 
+             if ra_dec_order and sky == 'input':
+                 xy = self._denormalize_sky(xy)
+-            output = func(xy, origin)
++            try:
++                output = func(xy, origin)
++            except InconsistentAxisTypesError:
++                # wcslib can raise InconsistentAxisTypesError when called with
++                # zero coordinates (ncoord == 0). In this case we should
++                # return empty arrays instead of propagating the exception.
++                if xy.shape[0] == 0:
++                    # Try to infer the number of output axes. For wcslib-based
++                    # transforms this is self.wcs.naxis; fall back to
++                    # self.naxis if necessary.
++                    try:
++                        nout = self.wcs.naxis
++                    except Exception:
++                        nout = self.naxis
++                    output = np.empty((0, nout))
++                else:
++                    raise
+             if ra_dec_order and sky == 'output':
+                 output = self._normalize_sky(output)
+                 return (output[:, 0].reshape(axes[0].shape),

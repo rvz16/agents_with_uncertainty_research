@@ -1,0 +1,25 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -585,7 +585,12 @@
+         self._name_to_fitted_passthrough = {}
+ 
+         for name, old, column, _ in self._iter():
+-            if old == "drop":
++            # If the column selection was empty at fit time, nothing was fitted
++            # for this transformer. Preserve the original transformer object
++            # (or string) and do not consume from fitted_transformers.
++            if _is_empty_column_selection(column):
++                trans = old
++            elif old == "drop":
+                 trans = "drop"
+             elif old == "passthrough":
+                 # FunctionTransformer is present in list of transformers,
+@@ -596,8 +601,6 @@
+                 # The fitted FunctionTransformer is saved in another attribute,
+                 # so it can be used during transform for set_output.
+                 self._name_to_fitted_passthrough[name] = func_transformer
+-            elif _is_empty_column_selection(column):
+-                trans = old
+             else:
+                 trans = next(fitted_transformers)
+             transformers_.append((name, trans, column))

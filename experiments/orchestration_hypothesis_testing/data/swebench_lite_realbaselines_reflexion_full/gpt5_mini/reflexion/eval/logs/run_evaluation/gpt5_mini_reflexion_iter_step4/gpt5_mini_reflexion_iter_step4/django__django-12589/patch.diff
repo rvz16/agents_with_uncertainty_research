@@ -1,0 +1,42 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1929,6 +1929,21 @@
+         """
+         group_by = list(self.select)
+         if self.annotation_select:
++            # Build a set of actual column names for the tables involved in
++            # this query to detect potential collisions between annotation
++            # aliases and real table column names. If an annotation alias
++            # collides with a column name, we must disable alias-based GROUP
++            # BY for that annotation (pass alias=None) to avoid ambiguous
++            # column references.
++            table_names = {alias_data.table_name for alias_data in self.alias_map.values()}
++            colliding_columns = set()
++            if table_names:
++                # Import apps lazily to avoid circular imports at module load.
++                from django.apps import apps as django_apps
++                for model in django_apps.get_models():
++                    if model._meta.db_table in table_names:
++                        colliding_columns.update(get_field_names_from_opts(model._meta))
++
+             for alias, annotation in self.annotation_select.items():
+                 signature = inspect.signature(annotation.get_group_by_cols)
+                 if 'alias' not in signature.parameters:
+@@ -1940,9 +1955,15 @@
+                     warnings.warn(msg, category=RemovedInDjango40Warning)
+                     group_by_cols = annotation.get_group_by_cols()
+                 else:
++                    alias_param = alias
+                     if not allow_aliases:
+-                        alias = None
+-                    group_by_cols = annotation.get_group_by_cols(alias=alias)
++                        alias_param = None
++                    else:
++                        # Disable GROUP BY alias if it collides with any actual
++                        # column name in the involved tables.
++                        if alias_param is not None and alias_param in colliding_columns:
++                            alias_param = None
++                    group_by_cols = annotation.get_group_by_cols(alias=alias_param)
+                 group_by.extend(group_by_cols)
+         self.group_by = tuple(group_by)
+ 

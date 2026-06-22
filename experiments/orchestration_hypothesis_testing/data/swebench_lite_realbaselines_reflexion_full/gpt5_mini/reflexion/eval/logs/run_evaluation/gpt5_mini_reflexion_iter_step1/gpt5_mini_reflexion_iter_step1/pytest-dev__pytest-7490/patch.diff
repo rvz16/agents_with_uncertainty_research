@@ -1,0 +1,27 @@
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -246,15 +246,21 @@
+ 
+ @hookimpl(hookwrapper=True)
+ def pytest_runtest_call(item: Item) -> Generator[None, None, None]:
+-    xfailed = item._store.get(xfailed_key, None)
+-    if xfailed is None:
+-        item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
++    # Evaluate xfail marks before the call to handle run=False (so we can skip
++    # running the test if requested).
++    xfailed = evaluate_xfail_marks(item)
++    item._store[xfailed_key] = xfailed
+ 
+     if not item.config.option.runxfail:
+         if xfailed and not xfailed.run:
+             xfail("[NOTRUN] " + xfailed.reason)
+ 
+     yield
++
++    # Re-evaluate after the call to catch xfail markers that were added
++    # dynamically during the call phase (e.g. request.node.add_marker(pytest.mark.xfail(...)))
++    # and save the result for use in pytest_runtest_makereport.
++    item._store[xfailed_key] = evaluate_xfail_marks(item)
+ 
+ 
+ @hookimpl(hookwrapper=True)

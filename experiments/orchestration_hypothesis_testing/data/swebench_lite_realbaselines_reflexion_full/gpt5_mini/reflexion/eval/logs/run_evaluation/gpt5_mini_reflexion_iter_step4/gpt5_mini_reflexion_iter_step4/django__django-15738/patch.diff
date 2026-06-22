@@ -1,0 +1,30 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -1059,16 +1059,17 @@
+             and callable(field.default)
+         ):
+             self.questioner.ask_unique_callable_default_addition(field_name, model_name)
+-        self.add_operation(
+-            app_label,
+-            operations.AddField(
+-                model_name=model_name,
+-                name=field_name,
+-                field=field,
+-                preserve_default=preserve_default,
+-            ),
+-            dependencies=dependencies,
+-        )
++        # If there is an AlterUniqueTogether operation for this model scheduled
++        # (removing/altering unique_together), ensure the AddField depends on it
++        # to avoid adding a field before unique_together constraints are removed.
++        if app_label in self.generated_operations:
++            for op in self.generated_operations[app_label]:
++                if isinstance(op, operations.AlterUniqueTogether) and getattr(
++                    op, "name", ""
++                ).lower() == model_name.lower():
++                    dep = (app_label, model_name, field_name, "foo_together_change")
++                    if dep not in dependencies:
++                        # Make a shallow copy to avoid mutating external
+ 
+     def generate_removed_fields(self):
+         """Make RemoveField operations."""

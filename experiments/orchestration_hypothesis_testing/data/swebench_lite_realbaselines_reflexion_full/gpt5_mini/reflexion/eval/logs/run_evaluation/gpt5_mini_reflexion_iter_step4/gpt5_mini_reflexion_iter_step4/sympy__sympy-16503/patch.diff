@@ -1,0 +1,15 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -617,9 +617,9 @@
+             prettySign = prettyForm(*prettySign.below(prettyLower))
+ 
+             if first:
+-                # change F baseline so it centers on the sign
+-                prettyF.baseline -= d - (prettyF.height()//2 -
+-                                         prettyF.baseline) - adjustment
++                # center F baseline on the sign's vertical center
++                # Align the center of prettyF with the center of the sign
++                prettyF.baseline = prettySign.height()//2 - (prettyF.height()//2 - prettyF.baseline)
+                 first = False
+ 
+             # put padding to the right

@@ -1,0 +1,71 @@
+2026-06-22 11:05:38,755 - INFO - Creating container for sympy__sympy-13915...
+2026-06-22 11:05:38,867 - INFO - Container for sympy__sympy-13915 created: 6777b1e64cf76699e61e387c2523de8b180f0a7dd59136e541af73236185e191
+2026-06-22 11:05:38,997 - INFO - Container for sympy__sympy-13915 started: 6777b1e64cf76699e61e387c2523de8b180f0a7dd59136e541af73236185e191
+2026-06-22 11:05:38,997 - INFO - Intermediate patch for sympy__sympy-13915 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step3/gpt5_mini_reflexion_iter_step3/sympy__sympy-13915/patch.diff, now applying to container...
+2026-06-22 11:05:39,109 - INFO - >>>>> Applied Patch:
+Checking patch sympy/core/mul.py...
+Applied patch sympy/core/mul.py cleanly.
+
+2026-06-22 11:05:39,309 - INFO - Git diff before:
+diff --git a/sympy/core/mul.py b/sympy/core/mul.py
+index 4f01eeedbd..f724e3f87b 100644
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -377,6 +377,20 @@ def flatten(cls, seq):
+ 
+         # gather exponents of common bases...
+         def _gather(c_powers):
++            # Avoid combining powers when the base contains infinities
++            # (Infinity, -Infinity, or ComplexInfinity).  Combining in such
++            # cases can result in incorrect cancellations like turning
++            # (zoo + a)/(zoo + a) into 1 when the expression really is
++            # undefined (NaN). See issue where substitution introduces zoo
++            # into subexpressions and then gathering exponents collapses
++            # inverse factors.
++            for b, e in c_powers:
++                if (b.has(S.ComplexInfinity) or b.has(S.Infinity) or
++                        b.has(S.NegativeInfinity)):
++                    # Return without gathering so that potentially singular
++                    # factors are not combined/cancelled.
++                    return c_powers
++
+             common_b = {}  # b:e
+             for b, e in c_powers:
+                 co = e.as_coeff_Mul()
+2026-06-22 11:05:39,309 - INFO - Eval script for sympy__sympy-13915 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step3/gpt5_mini_reflexion_iter_step3/sympy__sympy-13915/eval.sh; copying to container...
+2026-06-22 11:05:42,650 - INFO - Test runtime: 3.30 seconds
+2026-06-22 11:05:42,650 - INFO - Test output for sympy__sympy-13915 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step3/gpt5_mini_reflexion_iter_step3/sympy__sympy-13915/test_output.txt
+2026-06-22 11:05:42,704 - INFO - Git diff after:
+diff --git a/sympy/core/mul.py b/sympy/core/mul.py
+index 4f01eeedbd..f724e3f87b 100644
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -377,6 +377,20 @@ def flatten(cls, seq):
+ 
+         # gather exponents of common bases...
+         def _gather(c_powers):
++            # Avoid combining powers when the base contains infinities
++            # (Infinity, -Infinity, or ComplexInfinity).  Combining in such
++            # cases can result in incorrect cancellations like turning
++            # (zoo + a)/(zoo + a) into 1 when the expression really is
++            # undefined (NaN). See issue where substitution introduces zoo
++            # into subexpressions and then gathering exponents collapses
++            # inverse factors.
++            for b, e in c_powers:
++                if (b.has(S.ComplexInfinity) or b.has(S.Infinity) or
++                        b.has(S.NegativeInfinity)):
++                    # Return without gathering so that potentially singular
++                    # factors are not combined/cancelled.
++                    return c_powers
++
+             common_b = {}  # b:e
+             for b, e in c_powers:
+                 co = e.as_coeff_Mul()
+2026-06-22 11:05:42,704 - INFO - Grading answer for sympy__sympy-13915...
+2026-06-22 11:05:42,706 - INFO - report: {'sympy__sympy-13915': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_Mul_does_not_cancel_infinities']}, 'PASS_TO_PASS': {'success': ['test_bug1', 'test_Symbol', 'test_arit0', 'test_pow2', 'test_pow3', 'test_mod_pow', 'test_pow_E', 'test_pow_issue_3516', 'test_pow_im', 'test_real_mul', 'test_ncmul', 'test_ncpow', 'test_powerbug', 'test_Mul_doesnt_expand_exp', 'test_Add_Mul_is_integer', 'test_Add_Mul_is_finite', 'test_Mul_is_even_odd', 'test_evenness_in_ternary_integer_product_with_even', 'test_oddness_in_ternary_integer_product_with_even', 'test_Mul_is_rational', 'test_Add_is_rational', 'test_Add_is_even_odd', 'test_Mul_is_negative_positive', 'test_Mul_is_negative_positive_2', 'test_Mul_is_nonpositive_nonnegative', 'test_Pow_is_zero', 'test_Mul_hermitian_antihermitian', 'test_Add_is_comparable', 'test_Mul_is_comparable', 'test_Pow_is_comparable', 'test_Add_is_positive_2', 'test_Add_is_irrational', 'test_issue_3531b', 'test_bug3', 'test_suppressed_evaluation', 'test_Add_as_coeff_mul', 'test_Pow_as_coeff_mul_doesnt_expand', 'test_issue_3514', 'test_make_args', 'test_issue_5126', 'test_Rational_as_content_primitive', 'test_Add_as_content_primitive', 'test_Mul_as_content_primitive', 'test_Pow_as_content_primitive', 'test_issue_5460', 'test_product_irrational', 'test_issue_5919', 'test_Mod_is_integer', 'test_issue_6001', 'test_polar', 'test_issue_6040', 'test_issue_6082', 'test_issue_6077', 'test_mul_flatten_oo', 'test_add_flatten', 'test_issue_5160_6087_6089_6090', 'test_float_int', 'test_issue_6611a', 'test_denest_add_mul', 'test_mul_zero_detection', 'test_Mul_with_zero_infinite', 'test_issue_8247_8354'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-13915: resolved: False
+2026-06-22 11:05:42,706 - INFO - Attempting to stop container sweb.eval.sympy__sympy-13915.gpt5_mini_reflexion_iter_step3...
+2026-06-22 11:05:57,888 - INFO - Attempting to remove container sweb.eval.sympy__sympy-13915.gpt5_mini_reflexion_iter_step3...
+2026-06-22 11:05:57,904 - INFO - Container sweb.eval.sympy__sympy-13915.gpt5_mini_reflexion_iter_step3 removed.
+2026-06-22 11:05:57,904 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-13915:latest...
+2026-06-22 11:05:57,952 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-13915:latest removed.

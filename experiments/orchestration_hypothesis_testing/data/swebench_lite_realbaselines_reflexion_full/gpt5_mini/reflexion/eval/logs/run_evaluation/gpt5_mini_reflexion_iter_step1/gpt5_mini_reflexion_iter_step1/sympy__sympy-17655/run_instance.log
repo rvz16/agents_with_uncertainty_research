@@ -1,0 +1,87 @@
+2026-06-22 08:42:41,287 - INFO - Creating container for sympy__sympy-17655...
+2026-06-22 08:42:41,378 - INFO - Container for sympy__sympy-17655 created: 33d7d120f015f671f7723a3e1623f42b3e52ae84178a3e827c357df391da9ec7
+2026-06-22 08:42:41,520 - INFO - Container for sympy__sympy-17655 started: 33d7d120f015f671f7723a3e1623f42b3e52ae84178a3e827c357df391da9ec7
+2026-06-22 08:42:41,520 - INFO - Intermediate patch for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-17655/patch.diff, now applying to container...
+2026-06-22 08:42:41,641 - INFO - >>>>> Applied Patch:
+Checking patch sympy/geometry/point.py...
+Applied patch sympy/geometry/point.py cleanly.
+
+2026-06-22 08:42:41,876 - INFO - Git diff before:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 7c978c47be..3e258e7565 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -213,7 +213,28 @@ def __add__(self, other):
+         sympy.geometry.point.Point.translate
+ 
+         """
++        # Handle the case where `other` is a Mul like `2*Point(...)`.
++        # In that case try to extract a single Point factor and treat
++        # the rest as the scalar factor so that scalar*Point behaves
++        # like Point.__mul__.
+         try:
++            if isinstance(other, Expr) and getattr(other, 'is_Mul', False):
++                point_part = None
++                factor = S.One
++                multiple_points = False
++                for a in other.args:
++                    if isinstance(a, Point):
++                        if point_part is None:
++                            point_part = a
++                        else:
++                            multiple_points = True
++                            break
++                    else:
++                        factor = factor * a
++                if (point_part is not None) and (not multiple_points):
++                    # Rebuild `other` as a Point scaled by factor
++                    other = point_part * factor
++
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:
+             raise GeometryError("Don't know how to add {} and a Point object".format(other))
+2026-06-22 08:42:41,876 - INFO - Eval script for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-17655/eval.sh; copying to container...
+2026-06-22 08:42:50,544 - INFO - Test runtime: 8.62 seconds
+2026-06-22 08:42:50,545 - INFO - Test output for sympy__sympy-17655 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-17655/test_output.txt
+2026-06-22 08:42:50,580 - INFO - Git diff after:
+diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py
+index 7c978c47be..3e258e7565 100644
+--- a/sympy/geometry/point.py
++++ b/sympy/geometry/point.py
+@@ -213,7 +213,28 @@ def __add__(self, other):
+         sympy.geometry.point.Point.translate
+ 
+         """
++        # Handle the case where `other` is a Mul like `2*Point(...)`.
++        # In that case try to extract a single Point factor and treat
++        # the rest as the scalar factor so that scalar*Point behaves
++        # like Point.__mul__.
+         try:
++            if isinstance(other, Expr) and getattr(other, 'is_Mul', False):
++                point_part = None
++                factor = S.One
++                multiple_points = False
++                for a in other.args:
++                    if isinstance(a, Point):
++                        if point_part is None:
++                            point_part = a
++                        else:
++                            multiple_points = True
++                            break
++                    else:
++                        factor = factor * a
++                if (point_part is not None) and (not multiple_points):
++                    # Rebuild `other` as a Point scaled by factor
++                    other = point_part * factor
++
+             s, o = Point._normalize_dimension(self, Point(other, evaluate=False))
+         except TypeError:
+             raise GeometryError("Don't know how to add {} and a Point object".format(other))
+2026-06-22 08:42:50,580 - INFO - Grading answer for sympy__sympy-17655...
+2026-06-22 08:42:50,580 - INFO - report: {'sympy__sympy-17655': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_point', 'test_point3D']}, 'PASS_TO_PASS': {'success': ['test_Point2D', 'test_issue_9214', 'test_issue_11617', 'test_transform', 'test_concyclic_doctest_bug', 'test_arguments', 'test_unit', 'test_dot', 'test__normalize_dimension'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-17655: resolved: False
+2026-06-22 08:42:50,580 - INFO - Attempting to stop container sweb.eval.sympy__sympy-17655.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:43:05,792 - INFO - Attempting to remove container sweb.eval.sympy__sympy-17655.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:43:05,815 - INFO - Container sweb.eval.sympy__sympy-17655.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 08:43:05,815 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-17655:latest...
+2026-06-22 08:43:05,855 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-17655:latest removed.

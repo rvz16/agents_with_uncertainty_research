@@ -1,0 +1,24 @@
+--- a/django/db/models/deletion.py
++++ b/django/db/models/deletion.py
+@@ -395,7 +395,11 @@
+                 with transaction.mark_for_rollback_on_error():
+                     count = sql.DeleteQuery(model).delete_batch([instance.pk], self.using)
+                 setattr(instance, model._meta.pk.attname, None)
+-                return count, {model._meta.label: count}
++                # Keep the returned dict consistent: don't include model keys with
++                # a zero count.
++                if count:
++                    return count, {model._meta.label: count}
++                return count, {}
+ 
+         with transaction.atomic(using=self.using, savepoint=False):
+             # send pre_delete signals
+@@ -442,4 +446,7 @@
+         for model, instances in self.data.items():
+             for instance in instances:
+                 setattr(instance, model._meta.pk.attname, None)
+-        return sum(deleted_counter.values()), dict(deleted_counter)
++        total_deleted = sum(deleted_counter.values())
++        # Exclude models with a zero deletion count for a consistent API.
++        deleted_dict = {label: count for label, count in deleted_counter.items() if count}
++        return total_deleted, deleted_dict

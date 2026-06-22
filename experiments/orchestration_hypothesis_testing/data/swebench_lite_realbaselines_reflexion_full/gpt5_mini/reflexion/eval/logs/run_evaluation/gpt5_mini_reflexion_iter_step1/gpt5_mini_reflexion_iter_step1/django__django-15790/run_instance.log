@@ -1,0 +1,67 @@
+2026-06-22 02:40:24,542 - INFO - Creating container for django__django-15790...
+2026-06-22 02:40:24,883 - INFO - Container for django__django-15790 created: 28c47f460518f8c4c65d3c8fc3e52bb6b47905f65a4f39093d05098e8632816e
+2026-06-22 02:40:25,015 - INFO - Container for django__django-15790 started: 28c47f460518f8c4c65d3c8fc3e52bb6b47905f65a4f39093d05098e8632816e
+2026-06-22 02:40:25,015 - INFO - Intermediate patch for django__django-15790 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-15790/patch.diff, now applying to container...
+2026-06-22 02:40:25,129 - INFO - >>>>> Applied Patch:
+Checking patch django/core/checks/templates.py...
+Applied patch django/core/checks/templates.py cleanly.
+
+2026-06-22 02:40:25,480 - INFO - Git diff before:
+diff --git a/django/core/checks/templates.py b/django/core/checks/templates.py
+index 5214276987..592cfd8733 100644
+--- a/django/core/checks/templates.py
++++ b/django/core/checks/templates.py
+@@ -61,12 +61,16 @@ def check_for_template_tags_with_the_same_name(app_configs, **kwargs):
+         libraries[module_name].append(module_path)
+ 
+     for library_name, items in libraries.items():
+-        if len(items) > 1:
++        # Remove duplicates while preserving order. A module path may appear
++        # both in TEMPLATES OPTIONS['libraries'] and in the discovered
++        # template tag modules; only consider distinct module paths.
++        unique_items = list(dict.fromkeys(items))
++        if len(unique_items) > 1:
+             errors.append(
+                 Error(
+                     E003.msg.format(
+                         repr(library_name),
+-                        ", ".join(repr(item) for item in items),
++                        ", ".join(repr(item) for item in unique_items),
+                     ),
+                     id=E003.id,
+                 )
+2026-06-22 02:40:25,480 - INFO - Eval script for django__django-15790 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-15790/eval.sh; copying to container...
+2026-06-22 02:40:29,018 - INFO - Test runtime: 3.50 seconds
+2026-06-22 02:40:29,018 - INFO - Test output for django__django-15790 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/django__django-15790/test_output.txt
+2026-06-22 02:40:29,059 - INFO - Git diff after:
+diff --git a/django/core/checks/templates.py b/django/core/checks/templates.py
+index 5214276987..592cfd8733 100644
+--- a/django/core/checks/templates.py
++++ b/django/core/checks/templates.py
+@@ -61,12 +61,16 @@ def check_for_template_tags_with_the_same_name(app_configs, **kwargs):
+         libraries[module_name].append(module_path)
+ 
+     for library_name, items in libraries.items():
+-        if len(items) > 1:
++        # Remove duplicates while preserving order. A module path may appear
++        # both in TEMPLATES OPTIONS['libraries'] and in the discovered
++        # template tag modules; only consider distinct module paths.
++        unique_items = list(dict.fromkeys(items))
++        if len(unique_items) > 1:
+             errors.append(
+                 Error(
+                     E003.msg.format(
+                         repr(library_name),
+-                        ", ".join(repr(item) for item in items),
++                        ", ".join(repr(item) for item in unique_items),
+                     ),
+                     id=E003.id,
+                 )
+2026-06-22 02:40:29,059 - INFO - Grading answer for django__django-15790...
+2026-06-22 02:40:29,060 - INFO - report: {'django__django-15790': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_template_tags_same_library_in_installed_apps_libraries (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['Error if template loaders are specified and APP_DIRS is True.', 'test_app_dirs_removed (check_framework.test_templates.CheckTemplateSettingsAppDirsTest)', 'test_loaders_removed (check_framework.test_templates.CheckTemplateSettingsAppDirsTest)', 'test_string_if_invalid_both_are_strings (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_string_if_invalid_first_is_string (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_string_if_invalid_not_specified (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_string_if_invalid_not_string (check_framework.test_templates.CheckTemplateStringIfInvalidTest)', 'test_template_tags_with_different_library_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_different_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_same_library_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_same_library_name_and_module_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)', 'test_template_tags_with_same_name (check_framework.test_templates.CheckTemplateTagLibrariesWithSameName)'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-15790: resolved: True
+2026-06-22 02:40:29,060 - INFO - Attempting to stop container sweb.eval.django__django-15790.gpt5_mini_reflexion_iter_step1...
+2026-06-22 02:40:44,232 - INFO - Attempting to remove container sweb.eval.django__django-15790.gpt5_mini_reflexion_iter_step1...
+2026-06-22 02:40:44,248 - INFO - Container sweb.eval.django__django-15790.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 02:40:44,249 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-15790:latest...
+2026-06-22 02:40:44,559 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-15790:latest removed.

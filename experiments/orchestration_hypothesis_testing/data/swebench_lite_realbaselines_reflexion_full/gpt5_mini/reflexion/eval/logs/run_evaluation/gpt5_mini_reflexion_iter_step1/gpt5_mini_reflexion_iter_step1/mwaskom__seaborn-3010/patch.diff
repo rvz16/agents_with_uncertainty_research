@@ -1,0 +1,30 @@
+--- a/seaborn/_stats/regression.py
++++ b/seaborn/_stats/regression.py
+@@ -23,13 +23,23 @@
+ 
+         x = data["x"]
+         y = data["y"]
+-        if x.nunique() <= self.order:
++
++        # Drop any observations with missing x or y before fitting.
++        mask = x.notna() & y.notna()
++        x = x[mask]
++        y = y[mask]
++
++        if x.nunique() <= self.order or len(x) == 0:
+             # TODO warn?
+             xx = yy = []
+         else:
+-            p = np.polyfit(x, y, self.order)
+-            xx = np.linspace(x.min(), x.max(), self.gridsize)
+-            yy = np.polyval(p, xx)
++            try:
++                p = np.polyfit(x, y, self.order)
++                xx = np.linspace(x.min(), x.max(), self.gridsize)
++                yy = np.polyval(p, xx)
++            except np.linalg.LinAlgError:
++                # If the fit fails (e.g. SVD did not converge), return empty result.
++                xx = yy = []
+ 
+         return pd.DataFrame(dict(x=xx, y=yy))
+ 

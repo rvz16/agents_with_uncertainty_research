@@ -1,0 +1,21 @@
+--- a/django/db/models/query_utils.py
++++ b/django/db/models/query_utils.py
+@@ -41,6 +41,18 @@
+ 
+     def _combine(self, other, conn):
+         if not isinstance(other, Q):
++            # If the other operand knows how to handle the reversed
++            # operator, delegate to it so combinations are commutative
++            # (e.g. Q() & Exists(...)). This mirrors Python's
++            # __and__/__rand__ and __or__/__ror__ behavior.
++            if conn == self.AND:
++                rand = getattr(other, '__rand__', None)
++                if rand is not None:
++                    return rand(self)
++            else:
++                ror = getattr(other, '__ror__', None)
++                if ror is not None:
++                    return ror(self)
+             raise TypeError(other)
+ 
+         # If the other Q() is empty, ignore it and just use `self`.

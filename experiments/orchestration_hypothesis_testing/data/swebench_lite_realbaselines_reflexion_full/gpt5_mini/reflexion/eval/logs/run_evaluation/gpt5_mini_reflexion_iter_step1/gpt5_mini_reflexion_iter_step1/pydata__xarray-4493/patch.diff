@@ -1,0 +1,20 @@
+--- a/xarray/core/variable.py
++++ b/xarray/core/variable.py
+@@ -201,6 +201,17 @@
+         # can't use fastpath (yet) for scalars
+         return _maybe_wrap_data(data)
+ 
++    # Import DataArray here to avoid circular imports at module import time.
++    # If a DataArray is passed in, prefer to use its underlying .data to avoid
++    # forcing computation by accessing .values (which may call .compute()).
++    try:
++        from .dataarray import DataArray  # local import to avoid circular import
++    except Exception:
++        DataArray = None
++
++    if DataArray is not None and isinstance(data, DataArray):
++        return data.data
++
+     if isinstance(data, Variable):
+         return data.data
+ 

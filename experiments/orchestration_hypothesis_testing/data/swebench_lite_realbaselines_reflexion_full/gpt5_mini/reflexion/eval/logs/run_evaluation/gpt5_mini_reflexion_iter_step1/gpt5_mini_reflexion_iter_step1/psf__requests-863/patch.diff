@@ -1,0 +1,16 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -149,7 +149,12 @@
+         hooks = hooks or {}
+ 
+         for (k, v) in list(hooks.items()):
+-            self.register_hook(event=k, hook=v)
++            # Allow a list/tuple of hooks to be supplied for a single event.
++            if isinstance(v, (list, tuple)):
++                for func in v:
++                    self.register_hook(event=k, hook=func)
++            else:
++                self.register_hook(event=k, hook=v)
+ 
+         #: Session.
+         self.session = session

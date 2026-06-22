@@ -1,0 +1,49 @@
+2026-06-22 08:29:31,394 - INFO - Creating container for scikit-learn__scikit-learn-13779...
+2026-06-22 08:29:32,056 - INFO - Container for scikit-learn__scikit-learn-13779 created: 0dc32e56c0dc1b945bf21413883980913f3606acd0c772cbbb70488d9f26d3af
+2026-06-22 08:29:32,245 - INFO - Container for scikit-learn__scikit-learn-13779 started: 0dc32e56c0dc1b945bf21413883980913f3606acd0c772cbbb70488d9f26d3af
+2026-06-22 08:29:32,246 - INFO - Intermediate patch for scikit-learn__scikit-learn-13779 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-13779/patch.diff, now applying to container...
+2026-06-22 08:29:32,333 - INFO - >>>>> Applied Patch:
+Checking patch sklearn/ensemble/voting.py...
+Applied patch sklearn/ensemble/voting.py cleanly.
+
+2026-06-22 08:29:32,486 - INFO - Git diff before:
+diff --git a/sklearn/ensemble/voting.py b/sklearn/ensemble/voting.py
+index 7afa7180c..39c7b4ee3 100644
+--- a/sklearn/ensemble/voting.py
++++ b/sklearn/ensemble/voting.py
+@@ -78,6 +78,9 @@ class _BaseVoting(_BaseComposition, TransformerMixin):
+ 
+         if sample_weight is not None:
+             for name, step in self.estimators:
++                # An estimator can be set to None via set_params; skip those.
++                if step is None:
++                    continue
+                 if not has_fit_parameter(step, 'sample_weight'):
+                     raise ValueError('Underlying estimator \'%s\' does not'
+                                      ' support sample weights.' % name)
+2026-06-22 08:29:32,486 - INFO - Eval script for scikit-learn__scikit-learn-13779 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-13779/eval.sh; copying to container...
+2026-06-22 08:29:35,959 - INFO - Test runtime: 3.42 seconds
+2026-06-22 08:29:35,960 - INFO - Test output for scikit-learn__scikit-learn-13779 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/scikit-learn__scikit-learn-13779/test_output.txt
+2026-06-22 08:29:36,005 - INFO - Git diff after:
+diff --git a/sklearn/ensemble/voting.py b/sklearn/ensemble/voting.py
+index 7afa7180c..39c7b4ee3 100644
+--- a/sklearn/ensemble/voting.py
++++ b/sklearn/ensemble/voting.py
+@@ -78,6 +78,9 @@ class _BaseVoting(_BaseComposition, TransformerMixin):
+ 
+         if sample_weight is not None:
+             for name, step in self.estimators:
++                # An estimator can be set to None via set_params; skip those.
++                if step is None:
++                    continue
+                 if not has_fit_parameter(step, 'sample_weight'):
+                     raise ValueError('Underlying estimator \'%s\' does not'
+                                      ' support sample weights.' % name)
+2026-06-22 08:29:36,005 - INFO - Grading answer for scikit-learn__scikit-learn-13779...
+2026-06-22 08:29:36,005 - INFO - report: {'scikit-learn__scikit-learn-13779': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['sklearn/ensemble/tests/test_voting.py::test_none_estimator_with_weights[X0-y0-voter0]', 'sklearn/ensemble/tests/test_voting.py::test_none_estimator_with_weights[X1-y1-voter1]'], 'failure': []}, 'PASS_TO_PASS': {'success': ['sklearn/ensemble/tests/test_voting.py::test_estimator_init', 'sklearn/ensemble/tests/test_voting.py::test_predictproba_hardvoting', 'sklearn/ensemble/tests/test_voting.py::test_notfitted', 'sklearn/ensemble/tests/test_voting.py::test_majority_label_iris', 'sklearn/ensemble/tests/test_voting.py::test_tie_situation', 'sklearn/ensemble/tests/test_voting.py::test_weights_iris', 'sklearn/ensemble/tests/test_voting.py::test_weights_regressor', 'sklearn/ensemble/tests/test_voting.py::test_predict_on_toy_problem', 'sklearn/ensemble/tests/test_voting.py::test_predict_proba_on_toy_problem', 'sklearn/ensemble/tests/test_voting.py::test_multilabel', 'sklearn/ensemble/tests/test_voting.py::test_gridsearch', 'sklearn/ensemble/tests/test_voting.py::test_parallel_fit', 'sklearn/ensemble/tests/test_voting.py::test_sample_weight', 'sklearn/ensemble/tests/test_voting.py::test_sample_weight_kwargs', 'sklearn/ensemble/tests/test_voting.py::test_set_params', 'sklearn/ensemble/tests/test_voting.py::test_set_estimator_none', 'sklearn/ensemble/tests/test_voting.py::test_estimator_weights_format', 'sklearn/ensemble/tests/test_voting.py::test_transform'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for scikit-learn__scikit-learn-13779: resolved: True
+2026-06-22 08:29:36,006 - INFO - Attempting to stop container sweb.eval.scikit-learn__scikit-learn-13779.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:29:51,162 - INFO - Attempting to remove container sweb.eval.scikit-learn__scikit-learn-13779.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:29:51,176 - INFO - Container sweb.eval.scikit-learn__scikit-learn-13779.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 08:29:51,176 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-13779:latest...
+2026-06-22 08:29:51,223 - INFO - Image swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-13779:latest removed.

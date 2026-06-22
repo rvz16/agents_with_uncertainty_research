@@ -1,0 +1,36 @@
+--- a/sympy/core/exprtools.py
++++ b/sympy/core/exprtools.py
+@@ -448,14 +448,26 @@
+         args = []
+         for factor, exp in self.factors.items():
+             if exp != 1:
+-                b, e = factor.as_base_exp()
+-                if isinstance(exp, int):
+-                    e = _keep_coeff(Integer(exp), e)
+-                elif isinstance(exp, Rational):
+-                    e = _keep_coeff(exp, e)
++                # If the factor is itself a power (for example x**2) then
++                # combining exponents by multiplying them (i.e. turning
++                # (x**2)**(1/2) into x) is not generally valid for
++                # non-integer exponents (it can change the principal branch
++                # or remove an absolute value). Only combine exponents when
++                # the outer exponent is an integer; otherwise keep the
++                # nested power form.
++                if factor.is_Pow and not (isinstance(exp, int) or
++                                          getattr(exp, 'is_Integer', False)):
++                    # keep (base**inner_exp)**exp as-is, e.g. (x**2)**(1/2)
++                    args.append(factor**exp)
+                 else:
+-                    e *= exp
+-                args.append(b**e)
++                    b, e = factor.as_base_exp()
++                    if isinstance(exp, int):
++                        e = _keep_coeff(Integer(exp), e)
++                    elif isinstance(exp, Rational):
++                        e = _keep_coeff(exp, e)
++                    else:
++                        e *= exp
++                    args.append(b**e)
+             else:
+                 args.append(factor)
+         return Mul(*args)

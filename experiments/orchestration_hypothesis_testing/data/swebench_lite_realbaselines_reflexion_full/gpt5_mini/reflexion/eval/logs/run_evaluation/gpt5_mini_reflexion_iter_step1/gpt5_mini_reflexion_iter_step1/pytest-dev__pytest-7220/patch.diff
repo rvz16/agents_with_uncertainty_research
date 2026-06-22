@@ -1,0 +1,54 @@
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -362,10 +362,50 @@
+             truncate_locals = True
+ 
+         try:
+-            os.getcwd()
++            cwd = os.getcwd()
+             abspath = False
+         except OSError:
++            # If we cannot getcwd, fall back to absolute paths.
++            cwd = None
+             abspath = True
++
++        # When the process cwd has been changed (for example in a fixture),
++        # make sure the traceback formatting uses the original invocation
++        # directory as base for relative paths. This prevents showing paths
++        # relative to an altered working directory (which confuses editors).
++        invocation_dir = None
++        try:
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                invocation_dir = str(invocation_dir)
++        except Exception:
++            invocation_dir = None
++
++        # If we have a known invocation_dir and the cwd differs, temporarily
++        # chdir back to the invocation dir while generating the repr so that
++        # relative paths are computed against the original directory.
++        if not abspath and invocation_dir and cwd and cwd != invocation_dir:
++            try:
++                os.chdir(invocation_dir)
++                try:
++                    return excinfo.getrepr(
++                        funcargs=True,
++                        abspath=False,
++                        showlocals=self.config.getoption("showlocals", False),
++                        style=style,
++                        tbfilter=False,  # pruned already, or in --fulltrace mode.
++                        truncate_locals=truncate_locals,
++                    )
++                finally:
++                    # restore original cwd
++                    try:
++                        os.chdir(cwd)
++                    except OSError:
++                        # ignore failure to restore cwd
++                        pass
++            except OSError:
++                # If chdir fails for any reason, fall back to default behaviour.
++                pass
+ 
+         return excinfo.getrepr(
+             funcargs=True,

@@ -1,0 +1,65 @@
+2026-06-22 10:11:20,151 - INFO - Creating container for sympy__sympy-21847...
+2026-06-22 10:11:20,263 - INFO - Container for sympy__sympy-21847 created: ebee149a2c2894821e6459d49c5f091bb2ff59d73e84c41c5d5ad46d146d1e1e
+2026-06-22 10:11:20,397 - INFO - Container for sympy__sympy-21847 started: ebee149a2c2894821e6459d49c5f091bb2ff59d73e84c41c5d5ad46d146d1e1e
+2026-06-22 10:11:20,397 - INFO - Intermediate patch for sympy__sympy-21847 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-21847/patch.diff, now applying to container...
+2026-06-22 10:11:20,507 - INFO - >>>>> Applied Patch:
+Checking patch sympy/polys/monomials.py...
+Applied patch sympy/polys/monomials.py cleanly.
+
+2026-06-22 10:11:20,794 - INFO - Git diff before:
+diff --git a/sympy/polys/monomials.py b/sympy/polys/monomials.py
+index 0e84403307..d2cd3451e5 100644
+--- a/sympy/polys/monomials.py
++++ b/sympy/polys/monomials.py
+@@ -127,7 +127,7 @@ def itermonomials(variables, max_degrees, min_degrees=None):
+                 for variable in item:
+                     if variable != 1:
+                         powers[variable] += 1
+-                if max(powers.values()) >= min_degree:
++                if sum(powers.values()) >= min_degree:
+                     monomials_list_comm.append(Mul(*item))
+             yield from set(monomials_list_comm)
+         else:
+@@ -139,7 +139,7 @@ def itermonomials(variables, max_degrees, min_degrees=None):
+                 for variable in item:
+                     if variable != 1:
+                         powers[variable] += 1
+-                if max(powers.values()) >= min_degree:
++                if sum(powers.values()) >= min_degree:
+                     monomials_list_non_comm.append(Mul(*item))
+             yield from set(monomials_list_non_comm)
+     else:
+2026-06-22 10:11:20,794 - INFO - Eval script for sympy__sympy-21847 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-21847/eval.sh; copying to container...
+2026-06-22 10:11:23,332 - INFO - Test runtime: 2.50 seconds
+2026-06-22 10:11:23,333 - INFO - Test output for sympy__sympy-21847 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-21847/test_output.txt
+2026-06-22 10:11:23,370 - INFO - Git diff after:
+diff --git a/sympy/polys/monomials.py b/sympy/polys/monomials.py
+index 0e84403307..d2cd3451e5 100644
+--- a/sympy/polys/monomials.py
++++ b/sympy/polys/monomials.py
+@@ -127,7 +127,7 @@ def itermonomials(variables, max_degrees, min_degrees=None):
+                 for variable in item:
+                     if variable != 1:
+                         powers[variable] += 1
+-                if max(powers.values()) >= min_degree:
++                if sum(powers.values()) >= min_degree:
+                     monomials_list_comm.append(Mul(*item))
+             yield from set(monomials_list_comm)
+         else:
+@@ -139,7 +139,7 @@ def itermonomials(variables, max_degrees, min_degrees=None):
+                 for variable in item:
+                     if variable != 1:
+                         powers[variable] += 1
+-                if max(powers.values()) >= min_degree:
++                if sum(powers.values()) >= min_degree:
+                     monomials_list_non_comm.append(Mul(*item))
+             yield from set(monomials_list_non_comm)
+     else:
+2026-06-22 10:11:23,370 - INFO - Grading answer for sympy__sympy-21847...
+2026-06-22 10:11:23,370 - INFO - report: {'sympy__sympy-21847': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_monomials'], 'failure': []}, 'PASS_TO_PASS': {'success': ['test_monomial_count', 'test_monomial_mul', 'test_monomial_div', 'test_monomial_gcd', 'test_monomial_lcm', 'test_monomial_max', 'test_monomial_pow', 'test_monomial_min', 'test_monomial_divides'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-21847: resolved: True
+2026-06-22 10:11:23,370 - INFO - Attempting to stop container sweb.eval.sympy__sympy-21847.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:11:38,540 - INFO - Attempting to remove container sweb.eval.sympy__sympy-21847.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:11:38,559 - INFO - Container sweb.eval.sympy__sympy-21847.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 10:11:38,559 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-21847:latest...
+2026-06-22 10:11:38,597 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-21847:latest removed.

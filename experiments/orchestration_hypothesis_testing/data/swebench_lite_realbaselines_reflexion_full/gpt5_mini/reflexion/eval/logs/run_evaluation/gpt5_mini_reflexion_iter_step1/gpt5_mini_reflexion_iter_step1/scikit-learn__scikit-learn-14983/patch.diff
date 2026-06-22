@@ -1,0 +1,29 @@
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -1161,7 +1161,10 @@
+         rng = check_random_state(self.random_state)
+         cv = self.cv(random_state=rng, shuffle=True,
+                      **self.cvargs)
+-        return cv.get_n_splits(X, y, groups) * self.n_repeats
++        return cv.get_n_splits(X, y, groups)
++
++    def __repr__(self):
++        return _build_repr(self)
+ 
+ 
+ class RepeatedKFold(_RepeatedSplits):
+@@ -2163,6 +2166,14 @@
+                 continue
+         finally:
+             warnings.filters.pop(0)
++
++        # Some repeated splitters (e.g. RepeatedKFold) store constructor
++        # parameters for the underlying CV in self.cvargs (instead of as
++        # attributes on the wrapper instance). If the attribute is missing
++        # on the instance, fall back to cvargs when available.
++        if value is None and hasattr(self, "cvargs") and key in getattr(self, "cvargs"):
++            value = self.cvargs[key]
++
+         params[key] = value
+ 
+     return '%s(%s)' % (class_name, _pprint(params, offset=len(class_name)))

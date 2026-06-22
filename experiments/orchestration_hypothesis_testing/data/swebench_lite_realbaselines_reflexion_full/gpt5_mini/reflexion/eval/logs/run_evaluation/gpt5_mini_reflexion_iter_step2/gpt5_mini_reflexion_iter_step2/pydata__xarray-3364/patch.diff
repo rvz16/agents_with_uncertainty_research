@@ -1,0 +1,44 @@
+--- a/xarray/core/concat.py
++++ b/xarray/core/concat.py
+@@ -1,4 +1,5 @@
+ import pandas as pd
++import numpy as np
+ 
+ from . import dtypes, utils
+ from .alignment import align
+@@ -311,16 +312,25 @@
+     if variables_to_merge:
+         to_merge = {var: [] for var in variables_to_merge}
+ 
+-        for ds in datasets:
+-            absent_merge_vars = variables_to_merge - set(ds.variables)
+-            if absent_merge_vars:
+-                raise ValueError(
+-                    "variables %r are present in some datasets but not others. "
+-                    % absent_merge_vars
+-                )
+-
+-            for var in variables_to_merge:
+-                to_merge[var].append(ds.variables[var])
++        # For variables missing in some datasets, create filler variables
++        for var in variables_to_merge:
++            # find a reference variable to infer dimensions and dtype
++            ref_var = next((ds.variables[var] for ds in datasets if var in ds.variables), None)
++            if ref_var is None:
++                raise ValueError("variable %r not found in any dataset." % var)
++            ref_dims = ref_var.dims
++            ref_dtype = getattr(ref_var, "dtype", None)
++            # build shape for the reference dims
++            ref_shape = tuple(dims_sizes.get(d, 1) for d in ref_dims)
++
++            for ds in datasets:
++                if var in ds.variables:
++                    to_merge[var].append(ds.variables[var])
++                else:
++                    # create filler array filled with fill_value
++                    data = np.full(ref_shape, fill_value, dtype=ref_dtype)
++                    filler = Variable(ref_dims, data)
++                    to_merge[var].append(filler)
+ 
+         for var in variables_to_merge:
+             result_vars[var] = unique_variable(

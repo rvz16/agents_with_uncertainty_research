@@ -1,0 +1,64 @@
+--- a/sympy/geometry/util.py
++++ b/sympy/geometry/util.py
+@@ -12,7 +12,7 @@
+ """
+ from __future__ import division, print_function
+ 
+-from sympy import Function, Symbol, solve
++from sympy import Function, Symbol, solve, Eq
+ from sympy.core.compatibility import (
+     is_sequence, range, string_types, ordered)
+ from sympy.core.containers import OrderedSet
+@@ -565,14 +565,50 @@
+     sympy.core.function.diff: explicitly differentiates wrt symbols
+ 
+     """
++    # Accept Eq(...) by converting to expression (lhs - rhs)
++    if isinstance(eq, Eq):
++        eq = eq.lhs - eq.rhs
++
++    # Normalize dependent variable(s) to Symbols. Support Symbol, sequence of
++    # Symbols, and applied functions like f(x) or f(x, ...).
+     if is_sequence(y):
+-        dep = set(y)
+-        y = y[0]
++        # Build a set of dependent Symbols, substituting applied functions
++        # in the equation with plain Symbols.
++        dep = set()
++        subs_map = {}
++        # Keep the first entry as the primary dependent variable
++        y_first = y[0]
++        for item in y:
++            if isinstance(item, Symbol):
++                dep.add(item)
++            elif hasattr(item, 'func') and getattr(item, 'args', None):
++                # applied function like f(x)
++                name = item.func.__name__ if hasattr(item.func, '__name__') else str(item.func)
++                s = Symbol(name)
++                dep.add(s)
++                subs_map[item] = s
++            else:
++                raise ValueError("expecting x-dependent symbol(s) but got: %s" % item)
++        if subs_map:
++            eq = eq.subs(subs_map)
++        # ensure y is set to the first (possibly substituted) Symbol
++        if isinstance(y_first, Symbol):
++            y = y_first
++        else:
++            y = subs_map.get(y_first, y_first)
+     elif isinstance(y, Symbol):
+         dep = {y}
++    elif hasattr(y, 'func') and getattr(y, 'args', None):
++        # single applied function like f(x)
++        name = y.func.__name__ if hasattr(y.func, '__name__') else str(y.func)
++        y_sym = Symbol(name)
++        dep = {y_sym}
++        eq = eq.subs({y: y_sym})
++        y = y_sym
+     else:
+         raise ValueError("expecting x-dependent symbol(s) but got: %s" % y)
+ 
++    # Map dependent Symbols to their function forms of x, e.g. y -> y(x)
+     f = dict([(s, Function(
+         s.name)(x)) for s in eq.free_symbols if s != x and s in dep])
+     dydx = Function(y.name)(x).diff(x)

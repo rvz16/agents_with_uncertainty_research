@@ -1,0 +1,37 @@
+--- a/django/contrib/admin/utils.py
++++ b/django/contrib/admin/utils.py
+@@ -388,6 +388,34 @@
+         return _boolean_icon(value)
+     elif value is None:
+         return empty_value_display
++
++    # JSONField should be displayed as valid JSON when readonly in the admin.
++    # Prefer isinstance check against django.db.models.JSONField if available,
++    # otherwise fall back to inspecting the field's internal type name. Use
++    # the field's prepare_value() to ensure proper handling of invalid JSON
++    # inputs.
++    is_json_field = False
++    if field is not None:
++        try:
++            json_field_cls = getattr(models, 'JSONField', None)
++            if json_field_cls is not None and isinstance(field, json_field_cls):
++                is_json_field = True
++            else:
++                get_internal_type = getattr(field, 'get_internal_type', None)
++                if callable(get_internal_type) and get_internal_type() == 'JSONField':
++                    is_json_field = True
++        except Exception:
++            # Any problem inspecting the field should not prevent normal display.
++            is_json_field = False
++
++    if is_json_field:
++        try:
++            # prepare_value is preferred over json.dumps to let the field handle
++            # InvalidJSONInput and other edge cases.
++            return field.prepare_value(value)
++        except Exception:
++            return display_for_value(value, empty_value_display)
++
+     elif isinstance(field, models.DateTimeField):
+         return formats.localize(timezone.template_localtime(value))
+     elif isinstance(field, (models.DateField, models.TimeField)):

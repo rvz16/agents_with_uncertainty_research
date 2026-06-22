@@ -1,0 +1,45 @@
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -84,6 +84,29 @@
+     """Check *typ* is system defined TypeVar."""
+     modname = getattr(typ, '__module__', '')
+     return modname == 'typing' and isinstance(typ, TypeVar)
++
++
++def _find_module_for_obj(obj: Any) -> Optional[str]:
++    """Try to find a module name where *obj* is defined.
++
++    This scans already-imported modules as a best-effort fallback for objects
++    whose __module__ is incorrect (for example struct.Struct on some Python
++    versions reports '__module__' == 'builtins'). Returns the module name if
++    found, otherwise None.
++    """
++    name = getattr(obj, '__name__', None)
++    if not name:
++        return None
++    for mod_name, mod in list(sys.modules.items()):
++        if mod is None:
++            continue
++        try:
++            if getattr(mod, name, None) is obj:
++                return mod_name
++        except Exception:
++            # Some modules raise on attribute access; ignore and continue.
++            continue
++    return None
+ 
+ 
+ def restify(cls: Optional["Type"]) -> str:
+@@ -302,6 +325,12 @@
+         return 'None'
+     elif (getattr(annotation, '__module__', None) == 'builtins' and
+           hasattr(annotation, '__qualname__')):
++        # Try to find the real defining module as a fallback for objects that
++        # wrongly report their __module__ as 'builtins' (see struct.Struct on
++        # older Python versions). If found, qualify the name with the module.
++        mod = _find_module_for_obj(annotation)
++        if mod:
++            return '%s.%s' % (mod, annotation.__qualname__)
+         return annotation.__qualname__
+     elif annotation is Ellipsis:
+         return '...'

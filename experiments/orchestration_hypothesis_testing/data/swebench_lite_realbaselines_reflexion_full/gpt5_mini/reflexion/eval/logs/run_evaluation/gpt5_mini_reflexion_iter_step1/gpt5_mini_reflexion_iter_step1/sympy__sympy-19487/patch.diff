@@ -1,0 +1,21 @@
+--- a/sympy/functions/elementary/complexes.py
++++ b/sympy/functions/elementary/complexes.py
+@@ -388,6 +388,18 @@
+     def _eval_rewrite_as_Piecewise(self, arg, **kwargs):
+         if arg.is_extended_real:
+             return Piecewise((1, arg > 0), (-1, arg < 0), (0, True))
++
++    def _eval_rewrite_as_Abs(self, arg, **kwargs):
++        """
++        Rewrite sign(x) in terms of Abs when possible.
++
++        Returns Piecewise((0, Eq(arg, 0)), (arg/Abs(arg), True)) so that the
++        singular case arg == 0 is handled explicitly.
++        """
++        if arg is S.NaN:
++            return S.NaN
++        # Return a Piecewise to guard against division by Abs(0)
++        return Piecewise((S.Zero, Eq(arg, 0)), (arg/Abs(arg), True))
+ 
+     def _eval_rewrite_as_Heaviside(self, arg, **kwargs):
+         from sympy.functions.special.delta_functions import Heaviside

@@ -1,0 +1,45 @@
+--- a/sklearn/utils/multiclass.py
++++ b/sklearn/utils/multiclass.py
+@@ -73,9 +73,41 @@
+     >>> unique_labels([1, 2, 10], [5, 11])
+     array([ 1,  2,  5, 10, 11])
+     """
+-    xp, is_array_api = get_namespace(*ys)
+     if not ys:
+         raise ValueError("No argument has been passed.")
++    # Normalize pandas nullable dtypes (e.g. "Int64", "Float64", "boolean")
++    try:
++        import pandas as pd  # type: ignore
++    except Exception:
++        pd = None
++
++    norm_ys = []
++    for y in ys:
++        converted = False
++        if pd is not None:
++            try:
++                dtype_name = str(y.dtype)
++            except Exception:
++                dtype_name = None
++            if dtype_name in ("Int64", "Float64", "boolean"):
++                # Only convert when there are no missing values to preserve
++                # existing behavior for missing values (pandas.NA)
++                try:
++                    has_na = pd.isna(y).any()
++                except Exception:
++                    has_na = False
++                if not has_na:
++                    if dtype_name == "Int64":
++                        y = np.asarray(y, dtype=np.int64)
++                    elif dtype_name == "Float64":
++                        y = np.asarray(y, dtype=np.float64)
++                    else:  # "boolean"
++                        y = np.asarray(y, dtype=bool)
++                    converted = True
++        norm_ys.append(y)
++
++    ys = tuple(norm_ys)
++    xp, is_array_api = get_namespace(*ys)
+     # Check that we don't mix label format
+ 
+     ys_types = set(type_of_target(x) for x in ys)

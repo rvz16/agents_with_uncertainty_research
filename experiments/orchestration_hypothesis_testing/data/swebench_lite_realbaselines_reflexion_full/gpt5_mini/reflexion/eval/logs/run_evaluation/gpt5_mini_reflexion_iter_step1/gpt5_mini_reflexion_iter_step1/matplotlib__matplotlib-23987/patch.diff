@@ -1,0 +1,22 @@
+--- a/lib/matplotlib/figure.py
++++ b/lib/matplotlib/figure.py
+@@ -2426,9 +2426,16 @@
+             if isinstance(tight_layout, dict):
+                 self.get_layout_engine().set(**tight_layout)
+         elif constrained_layout is not None:
+-            self.set_layout_engine(layout='constrained')
+-            if isinstance(constrained_layout, dict):
+-                self.get_layout_engine().set(**constrained_layout)
++            # If the user explicitly passed False, disable layout engine.
++            # If they passed a dict or True, enable constrained layout.
++            if constrained_layout is False:
++                # Use 'none' to explicitly disable any layout engine while
++                # preserving compatibility checks if a previous engine existed.
++                self.set_layout_engine(layout='none')
++            else:
++                self.set_layout_engine(layout='constrained')
++                if isinstance(constrained_layout, dict):
++                    self.get_layout_engine().set(**constrained_layout)
+         else:
+             # everything is None, so use default:
+             self.set_layout_engine(layout=layout)

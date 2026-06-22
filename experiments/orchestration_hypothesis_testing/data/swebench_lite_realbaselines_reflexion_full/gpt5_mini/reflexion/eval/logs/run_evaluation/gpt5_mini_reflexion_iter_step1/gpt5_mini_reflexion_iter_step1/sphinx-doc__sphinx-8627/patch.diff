@@ -1,0 +1,102 @@
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -55,6 +55,43 @@
+ 
+ # inventory data on memory
+ Inventory = Dict[str, Dict[str, Tuple[str, str, str, str]]]
++
++
++def _find_module_for_obj(obj: Any) -> Optional[str]:
++    """
++    Try to find a more specific module name for an object that reports
++    a generic module like 'builtins'. This helps for objects that are
++    exposed via builtins but actually defined in extension modules
++    (e.g. struct.Struct on some Python versions).
++    """
++    qual = getattr(obj, '__qualname__', None)
++    if not qual:
++        return None
++    parts = qual.split('.')
++    # Iterate over loaded modules and try to resolve the qualname
++    for mod in list(sys.modules.values()):
++        try:
++            modname = getattr(mod, '__name__', None)
++            if not modname:
++                continue
++            # skip builtin module itself
++            if modname in ('builtins', '__builtin__'):
++                continue
++            attr = getattr(mod, parts[0], None)
++            if attr is None:
++                continue
++            cur = attr
++            for p in parts[1:]:
++                cur = getattr(cur, p, None)
++                if cur is None:
++                    break
++            else:
++                if cur is obj:
++                    return modname
++        except Exception:
++            # Some modules may raise on attribute access; ignore them
++            continue
++    return None
+ 
+ 
+ def get_type_hints(obj: Any, globalns: Dict = None, localns: Dict = None) -> Dict[str, Any]:
+@@ -97,7 +134,15 @@
+     elif inspect.isNewType(cls):
+         return ':class:`%s`' % cls.__name__
+     elif cls.__module__ in ('__builtin__', 'builtins'):
+-        return ':class:`%s`' % cls.__name__
++        # Some types (e.g. struct.Struct on older Python versions) report
++        # their module as 'builtins' even though they are defined in a
++        # separate module. Try to find a more accurate module for nicer
++        # cross-references.
++        mod = _find_module_for_obj(cls)
++        if mod:
++            return ':class:`%s.%s`' % (mod, cls.__name__)
++        else:
++            return ':class:`%s`' % cls.__name__
+     else:
+         if sys.version_info >= (3, 7):  # py37+
+             return _restify_py37(cls)
+@@ -302,6 +347,11 @@
+         return 'None'
+     elif (getattr(annotation, '__module__', None) == 'builtins' and
+           hasattr(annotation, '__qualname__')):
++        # Try to resolve a more specific module for objects exposed as
++        # builtins so we can return e.g. 'struct.Struct' instead of just 'Struct'.
++        mod = _find_module_for_obj(annotation)
++        if mod:
++            return '%s.%s' % (mod, annotation.__qualname__)
+         return annotation.__qualname__
+     elif annotation is Ellipsis:
+         return '...'
+@@ -315,6 +365,13 @@
+ def _stringify_py37(annotation: Any) -> str:
+     """stringify() for py37+."""
+     module = getattr(annotation, '__module__', None)
++    # If an object claims to be in 'builtins' but actually comes from another
++    # module, try to detect that module so that we produce accurate qualified
++    # names like 'struct.Struct'.
++    if module == 'builtins':
++        _mod = _find_module_for_obj(annotation)
++        if _mod:
++            module = _mod
+     if module == 'typing':
+         if getattr(annotation, '_name', None):
+             qualname = annotation._name
+@@ -367,6 +424,12 @@
+ def _stringify_py36(annotation: Any) -> str:
+     """stringify() for py35 and py36."""
+     module = getattr(annotation, '__module__', None)
++    # If an object reports 'builtins' but exists in another module, prefer that
++    # module for qualification (see _find_module_for_obj).
++    if module == 'builtins':
++        _mod = _find_module_for_obj(annotation)
++        if _mod:
++            module = _mod
+     if module == 'typing':
+         if getattr(annotation, '_name', None):
+             qualname = annotation._name

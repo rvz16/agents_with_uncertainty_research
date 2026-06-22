@@ -1,0 +1,20 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -1708,9 +1708,15 @@
+         return str(value)
+ 
+     def formfield(self, **kwargs):
++        # Allow `path` and `match` to be callables so their evaluation can be
++        # deferred (e.g. based on settings or environment). Do not mutate
++        # self.path/self.match so that deconstruction (migrations) can keep
++        # the original callable import path.
++        path = self.path() if callable(self.path) else self.path
++        match = self.match() if callable(self.match) else self.match
+         return super().formfield(**{
+-            'path': self.path,
+-            'match': self.match,
++            'path': path,
++            'match': match,
+             'recursive': self.recursive,
+             'form_class': forms.FilePathField,
+             'allow_files': self.allow_files,

@@ -1,0 +1,22 @@
+--- a/django/utils/functional.py
++++ b/django/utils/functional.py
+@@ -373,6 +373,19 @@
+     __len__ = new_method_proxy(len)
+     __contains__ = new_method_proxy(operator.contains)
+ 
++    def __radd__(self, other):
++        """
++        Support reflected addition (other + self). If the wrapped object isn't
++        initialized, initialize it first. If the addition is not supported,
++        return NotImplemented so Python can try other fallbacks.
++        """
++        if self._wrapped is empty:
++            self._setup()
++        try:
++            return other + self._wrapped
++        except TypeError:
++            return NotImplemented
++
+ 
+ def unpickle_lazyobject(wrapped):
+     """

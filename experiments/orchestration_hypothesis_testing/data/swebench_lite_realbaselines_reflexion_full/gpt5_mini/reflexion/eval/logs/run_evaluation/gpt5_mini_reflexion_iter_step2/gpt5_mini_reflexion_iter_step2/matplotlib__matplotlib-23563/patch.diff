@@ -1,0 +1,72 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -169,9 +169,18 @@
+         self._verts3d = xs, ys, zs
+ 
+     def set_3d_properties(self, zs=0, zdir='z'):
+-        xs = self.get_xdata()
+-        ys = self.get_ydata()
+-        zs = np.broadcast_to(zs, len(xs))
++        # Ensure we operate on 1D numpy arrays so broadcasting works
++        xs = np.asarray(self.get_xdata()).ravel()
++        ys = np.asarray(self.get_ydata()).ravel()
++        # make zs a 1D array (or 1-element array for scalars)
++        zs = np.atleast_1d(zs).ravel()
++        # Broadcast zs to the shape of xs (number of points). If broadcasting
++        # fails for some exotic shape, fall back to resizing (repeating) to
++        # match the length.
++        try:
++            zs = np.broadcast_to(zs, xs.shape)
++        except ValueError:
++            zs = np.resize(zs, xs.shape)
+         self._verts3d = juggle_axes(xs, ys, zs, zdir)
+         self.stale = True
+ 
+@@ -228,7 +237,7 @@
+ def _path_to_3d_segment(path, zs=0, zdir='z'):
+     """Convert a path to a 3D segment."""
+ 
+-    zs = np.broadcast_to(zs, len(path))
++    zs = np.broadcast_to(np.atleast_1d(zs).ravel(), len(path))
+     pathsegs = path.iter_segments(simplify=False, curves=False)
+     seg = [(x, y, z) for (((x, y), code), z) in zip(pathsegs, zs)]
+     seg3d = [juggle_axes(x, y, z, zdir) for (x, y, z) in seg]
+@@ -238,7 +247,8 @@
+ def _paths_to_3d_segments(paths, zs=0, zdir='z'):
+     """Convert paths from a collection object to 3D segments."""
+ 
+-    if not np.iterable(zs):
++    zs = np.atleast_1d(zs).ravel()
++    if zs.size == 1:
+         zs = np.broadcast_to(zs, len(paths))
+     else:
+         if len(zs) != len(paths):
+@@ -252,7 +262,7 @@
+ def _path_to_3d_segment_with_codes(path, zs=0, zdir='z'):
+     """Convert a path to a 3D segment with path codes."""
+ 
+-    zs = np.broadcast_to(zs, len(path))
++    zs = np.broadcast_to(np.atleast_1d(zs).ravel(), len(path))
+     pathsegs = path.iter_segments(simplify=False, curves=False)
+     seg_codes = [((x, y, z), code) for ((x, y), code), z in zip(pathsegs, zs)]
+     if seg_codes:
+@@ -269,7 +279,9 @@
+     Convert paths from a collection object to 3D segments with path codes.
+     """
+ 
+-    zs = np.broadcast_to(zs, len(paths))
++    zs = np.atleast_1d(zs).ravel()
++    if zs.size == 1:
++        zs = np.broadcast_to(zs, len(paths))
+     segments_codes = [_path_to_3d_segment_with_codes(path, pathz, zdir)
+                       for path, pathz in zip(paths, zs)]
+     if segments_codes:
+@@ -329,7 +341,7 @@
+         self.set_3d_properties(zs, zdir)
+ 
+     def set_3d_properties(self, verts, zs=0, zdir='z'):
+-        zs = np.broadcast_to(zs, len(verts))
++        zs = np.broadcast_to(np.atleast_1d(zs).ravel(), len(verts))
+         self._segment3d = [juggle_axes(x, y, z, zdir)
+                            for ((x, y), z) in zip(verts, zs)]
+ 

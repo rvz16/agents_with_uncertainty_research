@@ -1,0 +1,14 @@
+--- a/sympy/parsing/mathematica.py
++++ b/sympy/parsing/mathematica.py
+@@ -586,7 +586,10 @@
+         "##": lambda: ["SlotSequence", "1"],
+     }
+ 
+-    _literal = r"[A-Za-z][A-Za-z0-9]*"
++    # Allow Unicode letters as the first character and Unicode letters+digits (but not underscore)
++    # for the rest of the identifier. This keeps '_' as a separate token (used by Mathematica
++    # pattern syntax) while permitting names such as Greek letters (e.g. 'λ').
++    _literal = r"[^\W\d_][^\W_]*"
+     _number = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+ 
+     _enclosure_open = ["(", "[", "[[", "{"]

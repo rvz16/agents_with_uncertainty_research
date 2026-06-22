@@ -1,0 +1,54 @@
+--- a/src/_pytest/assertion/util.py
++++ b/src/_pytest/assertion/util.py
+@@ -82,11 +82,19 @@
+ 
+ 
+ def issequence(x):
+-    return isinstance(x, Sequence) and not isinstance(x, str)
++    # Exclude text and raw byte sequences from being treated as generic
++    # indexable sequences for the purposes of assertion explanations.
++    # bytes and bytearray are sequences of integers which leads to confusing
++    # "contains more items" messages; treat them separately.
++    return isinstance(x, Sequence) and not isinstance(x, (str, bytes, bytearray))
+ 
+ 
+ def istext(x):
+     return isinstance(x, str)
++
++
++def isbytes(x):
++    return isinstance(x, (bytes, bytearray))
+ 
+ 
+ def isdict(x):
+@@ -125,7 +133,12 @@
+     explanation = None
+     try:
+         if op == "==":
+-            if istext(left) and istext(right):
++            # For textual comparisons show a readable diff. Treat bytes/bytearray
++            # similarly to text so diffs display printable characters instead of
++            # sequence-of-integers messages (see issue with confusing ordinal output).
++            if (istext(left) and istext(right)) or (
++                isinstance(left, (bytes, bytearray)) and isinstance(right, (bytes, bytearray))
++            ):
+                 explanation = _diff_text(left, right, verbose)
+             else:
+                 if issequence(left) and issequence(right):
+@@ -186,10 +199,12 @@
+         r = r.replace(r"\r", "\r")
+         return r
+ 
+-    if isinstance(left, bytes):
+-        left = escape_for_readable_diff(left)
+-    if isinstance(right, bytes):
+-        right = escape_for_readable_diff(right)
++    # Accept both bytes and bytearray; convert bytearray to bytes for a stable
++    # readable diff representation.
++    if isinstance(left, (bytes, bytearray)):
++        left = escape_for_readable_diff(bytes(left))
++    if isinstance(right, (bytes, bytearray)):
++        right = escape_for_readable_diff(bytes(right))
+     if verbose < 1:
+         i = 0  # just in case left or right has zero length
+         for i in range(min(len(left), len(right))):

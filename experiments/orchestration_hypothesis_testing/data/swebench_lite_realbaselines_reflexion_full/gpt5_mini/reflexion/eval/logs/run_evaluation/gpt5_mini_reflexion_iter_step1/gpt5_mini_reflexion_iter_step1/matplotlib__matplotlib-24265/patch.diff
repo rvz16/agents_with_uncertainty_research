@@ -1,0 +1,18 @@
+--- a/lib/matplotlib/style/core.py
++++ b/lib/matplotlib/style/core.py
+@@ -255,6 +255,15 @@
+     """Reload the style library."""
+     global library
+     library = update_user_library(_base_library)
++    # Provide backwards compatibility aliases for seaborn styles that were
++    # renamed to "seaborn-v0_8-<style>" in newer Matplotlib releases so that
++    # code accessing the old names (e.g. "seaborn-colorblind") continues to work.
++    for name in list(library.keys()):
++        if name.startswith("seaborn-v0_8-"):
++            alias = "seaborn-" + name[len("seaborn-v0_8-"):]
++            # Do not overwrite an explicitly defined user style.
++            if alias not in library:
++                library[alias] = library[name]
+     available[:] = sorted(library.keys())
+ 
+ 

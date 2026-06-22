@@ -1,0 +1,15 @@
+--- a/sphinx/domains/std.py
++++ b/sphinx/domains/std.py
+@@ -43,7 +43,11 @@
+ 
+ 
+ # RE for option descriptions
+-option_desc_re = re.compile(r'((?:/|--|-|\+)?[^\s=[]+)(=?\s*.*)')
++# relaxed matching: accept any non-space sequence as the option name and
++# treat the rest of the string as its arguments. This allows option
++# descriptions such as "[enable=]PATTERN" which previous overly-strict
++# patterns rejected.
++option_desc_re = re.compile(r'(\S+)(.*)')
+ # RE for grammar tokens
+ token_re = re.compile(r'`(\w+)`', re.U)
+ 

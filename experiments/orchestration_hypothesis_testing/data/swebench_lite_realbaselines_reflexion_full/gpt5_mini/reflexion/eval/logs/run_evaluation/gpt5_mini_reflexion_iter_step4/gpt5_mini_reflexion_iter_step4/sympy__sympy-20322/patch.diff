@@ -1,0 +1,109 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1263,26 +1263,92 @@
+         return zero
+ 
+     def _eval_is_integer(self):
+-        from sympy import fraction
++        """
++        Conservative structural check for integrality that avoids
++        evaluating unevaluated Mul/Pow nodes.
++
++        The goal is to return True only when we can determine integrality
++        from the structure (e.g. all factors are integers), False when we
++        can prove the value is non-integer, and otherwise return None.
++        This avoids calling fraction(self, exact=True) which can mis-handle
++        nested unevaluated Muls.
++        """
+         from sympy.core.numbers import Float
+ 
++        # If we can determine rationality is False, then integrality is False
+         is_rational = self._eval_is_rational()
+         if is_rational is False:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
+-        n, d = fraction(self, exact=True)
+-        if is_rational:
+-            if d is S.One:
+-                return True
+-        if d.is_even:
+-            if d.is_prime:  # literal or symbolic 2
+-                return n.is_even
+-            if n.is_odd:
+-                return False  # true even if d = 0
+-        if n == d:
+-            return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++        # recursive iterator to descend into nested unevaluated Muls
++        def mul_args(expr):
++            for term in expr.args:
++                if term.is_Mul:
++                    for t in mul_args(term):
++                        yield t
++                else:
++                    yield term
++
++        numerators = []
++        denominators = []
++
++        for a in mul_args(self):
++            # integer factors contribute to the numerator
++            if a.is_integer:
++                numerators.append(a)
++                continue
++
++            # explicit Rational factors
++            if a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++                continue
++
++            # simple Pow factors: only handle cases that can be decided
++            if a.is_Pow:
++                b, e = a.as_base_exp()
++                # handle integer exponents only
++                if e.is_Integer:
++                    # negative exponent: treat as denominator only for e == -1
++                    if e.is_negative:
++                        if e == -1:
++                            if b.is_integer:
++                                denominators.append(b)
++                                continue
++                            if b.is_Rational:
++                                n, d = b.as_numer_denom()
++                                numerators.append(n)
++                                denominators.append(d)
++                                continue
++                        # other negative integer exponents are not handled conservatively
++                        return
++                    else:
++                        # positive integer exponent: if base is integer then the factor is integer
++                        if b.is_integer:
++                            # represent the integer power as an integer-like numerator
++                            # (we don't need exact value; presence is sufficient)
++                            numerators.append(b**e)
++                            continue
++                        # otherwise cannot decide
++                        return
++                # cannot decide for non-integer exponents
++                return
++
++            # any other form we cannot decide without evaluation
++            return
++
++        # If there are no denominator factors, then the product is integer
++        if not denominators:
++            return True
++
++        # If any denominator is known even and all numerators are known odd -> non-integer
++        if any(d.is_even for d in denominators):
++            # ensure every numerator is known odd
++            if numerators and all(n.is_odd is True for n in numerators):
++                return False
++
++        # If the only denominator is 2 and all numerators are
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

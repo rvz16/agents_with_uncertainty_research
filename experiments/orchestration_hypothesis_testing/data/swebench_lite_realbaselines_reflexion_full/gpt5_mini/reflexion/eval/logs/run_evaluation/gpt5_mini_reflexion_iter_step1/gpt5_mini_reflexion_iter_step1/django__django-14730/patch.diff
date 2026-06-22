@@ -1,0 +1,40 @@
+--- a/django/db/models/fields/related.py
++++ b/django/db/models/fields/related.py
+@@ -1211,6 +1211,7 @@
+         return [
+             *super().check(**kwargs),
+             *self._check_unique(**kwargs),
++            *self._check_related_name_on_symmetrical(**kwargs),
+             *self._check_relationship_model(**kwargs),
+             *self._check_ignored_options(**kwargs),
+             *self._check_table_uniqueness(**kwargs),
+@@ -1259,6 +1260,29 @@
+             )
+ 
+         return warnings
++
++    def _check_related_name_on_symmetrical(self, from_model=None, **kwargs):
++        # If the user didn't pass a related_name explicitly, nothing to check.
++        if self._related_name is None:
++            return []
++        # We need the model where this field is attached to determine whether
++        # the relation is self-referential.
++        if from_model is None:
++            return []
++        if not self.remote_field.symmetrical:
++            return []
++        to_model = resolve_relation(from_model, self.remote_field.model)
++        if self.remote_field.model == RECURSIVE_RELATIONSHIP_CONSTANT or to_model == from_model:
++            return [
++                checks.Warning(
++                    "ManyToManyField '%s' defines a related_name, but the relation is symmetrical so the related_name will be ignored." % self.name,
++                    hint=("Remove the related_name argument for this field, or set "
++                          "symmetrical=False if you expect a reverse relationship."),
++                    obj=self,
++                    id='fields.W345',
++                )
++            ]
++        return []
+ 
+     def _check_relationship_model(self, from_model=None, **kwargs):
+         if hasattr(self.remote_field.through, '_meta'):

@@ -1,0 +1,47 @@
+--- a/lib/matplotlib/__init__.py
++++ b/lib/matplotlib/__init__.py
+@@ -131,7 +131,10 @@
+ 
+ 
+ def __getattr__(name):
+-    if name == "__version__":
++    # Support lazy access to version information.  Historically only
++    # __version__ was exposed; expose comparable version tuples as well via
++    # __version_info__ and version_info.
++    if name in ("__version__", "__version_info__", "version_info"):
+         import setuptools_scm
+         global __version__  # cache it.
+         # Only shell out to a git subprocess if really needed, and not on a
+@@ -147,7 +150,31 @@
+             )
+         else:  # Get the version from the _version.py setuptools_scm file.
+             __version__ = _version.version
+-        return __version__
++
++        # Compute a comparable version tuple from the string version.
++        # Prefer packaging's parsed `.release` tuple when available;
++        # otherwise fall back to extracting numeric components.
++        try:
++            vobj = parse_version(__version__)
++            rel = getattr(vobj, "release", None)
++            if rel is None:
++                # LegacyVersion or unexpected object: extract integers.
++                rel = tuple(int(x) for x in re.findall(r'\d+', __version__))
++            else:
++                # Ensure it's a plain tuple of ints.
++                rel = tuple(int(x) for x in rel)
++        except Exception:
++            # Be conservative on any unexpected parse error.
++            rel = tuple(int(x) for x in re.findall(r'\d+', __version__))
++
++        # Cache both names in the module globals for subsequent direct access.
++        globals()["__version_info__"] = rel
++        globals()["version_info"] = rel
++
++        if name == "__version__":
++            return __version__
++        return globals()[name]
++
+     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+ 
+ 

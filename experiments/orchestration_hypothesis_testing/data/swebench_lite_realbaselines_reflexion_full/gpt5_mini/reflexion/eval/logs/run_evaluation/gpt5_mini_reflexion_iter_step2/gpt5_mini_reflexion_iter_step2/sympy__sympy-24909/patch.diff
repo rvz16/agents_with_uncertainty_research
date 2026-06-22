@@ -1,0 +1,33 @@
+--- a/sympy/physics/units/prefixes.py
++++ b/sympy/physics/units/prefixes.py
+@@ -83,18 +83,24 @@
+         if not isinstance(other, (Quantity, Prefix)):
+             return super().__mul__(other)
+ 
+-        fact = self.scale_factor * other.scale_factor
+-
+-        if fact == 1:
+-            return 1
+-        elif isinstance(other, Prefix):
++        # If combining two prefixes, try to simplify to a single prefix or a
++        # numeric factor as before.
++        if isinstance(other, Prefix):
++            fact = self.scale_factor * other.scale_factor
++            if fact == 1:
++                return 1
+             # simplify prefix
+             for p in PREFIXES:
+                 if PREFIXES[p].scale_factor == fact:
+                     return PREFIXES[p]
+             return fact
+ 
+-        return self.scale_factor * other
++        # If the other object is a Quantity (unit), delegate the multiplication
++        # to the Quantity implementation so that prefixed units are constructed
++        # correctly (e.g. milli * W -> milliwatt) instead of accidentally
++        # collapsing numeric scale factors to 1 when base units contain
++        # different internal prefixes (like kilogram).
++        return other * self
+ 
+     def __truediv__(self, other):
+         if not hasattr(other, "scale_factor"):

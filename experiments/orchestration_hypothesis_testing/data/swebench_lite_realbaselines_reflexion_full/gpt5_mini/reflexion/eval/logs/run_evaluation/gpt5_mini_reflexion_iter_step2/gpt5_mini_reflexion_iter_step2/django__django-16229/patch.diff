@@ -1,0 +1,19 @@
+--- a/django/forms/boundfield.py
++++ b/django/forms/boundfield.py
+@@ -96,9 +96,15 @@
+             attrs.setdefault(
+                 "id", self.html_initial_id if only_initial else self.auto_id
+             )
++        # When rendering the hidden "initial" widget, use the field's initial
++        # value rather than the bound value. This ensures that callable defaults
++        # (for example, default=list on a model field) are preserved as the
++        # initial for change detection across submissions, instead of the last
++        # posted (bound) value.
++        value = self.initial if only_initial else self.value()
+         return widget.render(
+             name=self.html_initial_name if only_initial else self.html_name,
+-            value=self.value(),
++            value=value,
+             attrs=attrs,
+             renderer=self.form.renderer,
+         )

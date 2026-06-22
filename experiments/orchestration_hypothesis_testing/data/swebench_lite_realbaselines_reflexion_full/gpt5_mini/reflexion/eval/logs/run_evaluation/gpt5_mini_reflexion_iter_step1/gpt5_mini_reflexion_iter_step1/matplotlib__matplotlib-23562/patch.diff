@@ -1,0 +1,35 @@
+--- a/lib/mpl_toolkits/mplot3d/art3d.py
++++ b/lib/mpl_toolkits/mplot3d/art3d.py
+@@ -867,10 +867,30 @@
+         self.stale = True
+ 
+     def get_facecolor(self):
+-        return self._facecolors2d
++        try:
++            return self._facecolors2d
++        except AttributeError:
++            # If the 2D facecolor cache hasn't been created yet (e.g. the
++            # artist hasn't been drawn), ensure any scalar mappable is
++            # evaluated so callers (such as legend handlers) can query
++            # facecolors prior to a draw.
++            try:
++                self.update_scalarmappable()
++            except Exception:
++                # Be conservative: if update fails for any reason, fall back
++                # to the base PolyCollection behavior.
++                pass
++            return PolyCollection.get_facecolor(self)
+ 
+     def get_edgecolor(self):
+-        return self._edgecolors2d
++        try:
++            return self._edgecolors2d
++        except AttributeError:
++            try:
++                self.update_scalarmappable()
++            except Exception:
++                pass
++            return PolyCollection.get_edgecolor(self)
+ 
+ 
+ def poly_collection_2d_to_3d(col, zs=0, zdir='z'):

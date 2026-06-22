@@ -1,0 +1,26 @@
+--- a/django/db/migrations/autodetector.py
++++ b/django/db/migrations/autodetector.py
+@@ -395,10 +395,19 @@
+                             if self.check_dependency(op2, dep):
+                                 dependency_graph[op].add(op2)
+ 
+-            # we use a stable sort for deterministic tests & general behavior
+-            self.generated_operations[app_label] = stable_topological_sort(
+-                ops, dependency_graph
+-            )
++            # Special-case: ensure AlterUniqueTogether/AlterIndexTogether
++            # operations are ordered before AddField operations that create
++            # many-to-many fields in the same model. This avoids cases where
++            # a ManyToManyField added with the same name as a removed
++            # ForeignKey ends up being ordered before the AlterUniqueTogether
++            # that clears the unique constraint, leading to database errors.
++            for op in ops:
++                # Guard against operations that aren't AddField or don't have a field
++                if not isinstance(op, operations.AddField):
++                    continue
++                field = getattr(op, "field", None)
++                # Only consider many-to-many additions
++                if
+ 
+     def _optimize_migrations(self):
+         # Add in internal dependencies among the migrations

@@ -1,0 +1,52 @@
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -778,15 +778,43 @@
+         select_mask[opts.pk] = {}
+         # Only include fields mentioned in the mask.
+         for field_name, field_mask in mask.items():
+-            field = opts.get_field(field_name)
+-            field_select_mask = select_mask.setdefault(field, {})
+-            if field_mask:
+-                if not field.is_relation:
+-                    raise FieldError(next(iter(field_mask)))
+-                related_model = field.remote_field.model._meta.concrete_model
++            # Support filtered relations first, mirroring behavior in
++            # _get_defer_select_mask.
++            if filtered_relation := self._filtered_relations.get(field_name):
++                relation = opts.get_field(filtered_relation.relation_name)
++                field_select_mask = select_mask.setdefault((field_name, relation), {})
++                field = relation.field
++                related_model = field.model._meta.concrete_model
+                 self._get_only_select_mask(
+                     related_model._meta, field_mask, field_select_mask
+                 )
++                continue
++
++            field = opts.get_field(field_name)
++            # Forward relational fields.
++            if getattr(field, "is_relation", False):
++                field_select_mask = select_mask.setdefault(field, {})
++                if field_mask:
++                    related_model = field.remote_field.model._meta.concrete_model
++                    self._get_only_select_mask(
++                        related_model._meta, field_mask, field_select_mask
++                    )
++            # Reverse relations (e.g. OneToOne reverse lookups) expose a
++            # descriptor-like object with a .field attribute. Handle those by
++            # descending to the actual field on the related model.
++            elif hasattr(field, "field"):
++                reverse_rel = field
++                field = reverse_rel.field
++                field_select_mask = select_mask.setdefault(field, {})
++                related_model = field.model._meta.concrete_model
++                self._get_only_select_mask(
++                    related_model._meta, field_mask, field_select_mask
++                )
++            else:
++                # Non-relational field with nested mask is invalid.
++                if field_mask:
++                    raise FieldError(next(iter(field_mask)))
++                select_mask.setdefault(field, {})
+         return select_mask
+ 
+     def get_select_mask(self):

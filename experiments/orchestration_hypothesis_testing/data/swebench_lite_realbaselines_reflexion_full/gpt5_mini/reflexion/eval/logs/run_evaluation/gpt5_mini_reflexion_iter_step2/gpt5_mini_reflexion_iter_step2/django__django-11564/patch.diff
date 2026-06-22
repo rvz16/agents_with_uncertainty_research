@@ -1,0 +1,53 @@
+--- a/django/conf/__init__.py
++++ b/django/conf/__init__.py
+@@ -71,10 +71,49 @@
+         }
+ 
+     def __getattr__(self, name):
+-        """Return the value of a setting and cache it in self.__dict__."""
++        """Return the value of a setting and cache it in self.__dict__.
++
++        STATIC_URL and MEDIA_URL are special-cased: if they are root-relative
++        paths (start with a single '/') they are prefixed with the current
++        script prefix (as returned by django.urls.get_script_prefix()) so that
++        deployments under a WSGI SCRIPT_NAME are handled dynamically. These
++        values are not cached so that the script prefix can vary across
++        requests/environments.
++        """
+         if self._wrapped is empty:
+             self._setup(name)
+         val = getattr(self._wrapped, name)
++
++        # Dynamically prefix root-relative STATIC_URL and MEDIA_URL with the
++        # current script prefix so deployments under a WSGI SCRIPT_NAME work
++        # without having to hard-code the prefix into settings. Don't touch
++        # absolute URLs (//host or scheme://).
++        if name in ("STATIC_URL", "MEDIA_URL") and isinstance(val, str):
++            if val.startswith('/') and not val.startswith('//'):
++                try:
++                    # Import lazily to avoid import-time circular dependencies.
++                    from django.urls import get_script_prefix
++                except Exception:
++                    script_prefix = '/'
++                else:
++                    script_prefix = get_script_prefix() or '/'
++
++                # Only prefix when there's a non-root script prefix.
++                if script_prefix != '/':
++                    # Ensure script_prefix starts with a single leading slash and
++                    # ends with a single trailing slash.
++                    if not script_prefix.startswith('/'):
++                        script_prefix = '/' + script_prefix
++                    if not script_prefix.endswith('/'):
++                        script_prefix = script_prefix + '/'
++
++                    # If the value is already prefixed, return it as-is.
++                    if not val.startswith(script_prefix):
++                        # Avoid duplicate slashes when joining; val starts with '/'.
++                        new_val = script_prefix.rstrip('/') + val
++                        return new_val
++
++        # Default behaviour: cache and return the value.
+         self.__dict__[name] = val
+         return val
+ 

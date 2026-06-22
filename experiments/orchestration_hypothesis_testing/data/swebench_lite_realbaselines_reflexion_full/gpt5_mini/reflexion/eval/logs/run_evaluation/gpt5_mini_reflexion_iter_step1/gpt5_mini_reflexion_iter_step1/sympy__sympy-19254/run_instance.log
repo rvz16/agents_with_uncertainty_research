@@ -1,0 +1,145 @@
+2026-06-22 08:45:32,518 - INFO - Creating container for sympy__sympy-19254...
+2026-06-22 08:45:32,628 - INFO - Container for sympy__sympy-19254 created: 0fd1fdb77d2f8d0e2e315e434f507c51096f4eae741010996e41c168c1d5358f
+2026-06-22 08:45:32,758 - INFO - Container for sympy__sympy-19254 started: 0fd1fdb77d2f8d0e2e315e434f507c51096f4eae741010996e41c168c1d5358f
+2026-06-22 08:45:32,758 - INFO - Intermediate patch for sympy__sympy-19254 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-19254/patch.diff, now applying to container...
+2026-06-22 08:45:32,867 - INFO - >>>>> Applied Patch:
+Checking patch sympy/polys/factortools.py...
+Applied patch sympy/polys/factortools.py cleanly.
+
+2026-06-22 08:45:33,101 - INFO - Git diff before:
+diff --git a/sympy/polys/factortools.py b/sympy/polys/factortools.py
+index 93298f47e6..66c5a0c5a9 100644
+--- a/sympy/polys/factortools.py
++++ b/sympy/polys/factortools.py
+@@ -124,21 +124,53 @@ def dmp_trial_division(f, factors, u, K):
+ 
+ 
+ def dup_zz_mignotte_bound(f, K):
+-    """Mignotte bound for univariate polynomials in `K[x]`. """
++    """Knuth-Cohen style bound (improvement over the classical Mignotte bound)
++    for univariate polynomials in `K[x]`.
++
++    The original Mignotte bound used a factor depending on the total degree.
++    Here we use a simple improvement that considers possible factor degrees
++    and takes the minimal candidate bound. For a factor of degree k (0..n)
++    the candidate is taken as sqrt(k+1) * 2**k * a * b where `a` is the
++    max-norm of f and `b` is the absolute value of the leading coefficient.
++    This provides a tighter heuristic bound in practice and is a lightweight
++    replacement for the previous Mignotte expression.
++    """
+     a = dup_max_norm(f, K)
+     b = abs(dup_LC(f, K))
+     n = dup_degree(f)
+ 
+-    return K.sqrt(K(n + 1))*2**n*a*b
++    # Consider all possible factor degrees and take the minimal candidate.
++    best = None
++    for k in range(0, n + 1):
++        cand = K.sqrt(K(k + 1))*2**k*a*b
++        if best is None or cand < best:
++            best = cand
++
++    return best if best is not None else K.zero
+ 
+ 
+ def dmp_zz_mignotte_bound(f, u, K):
+-    """Mignotte bound for multivariate polynomials in `K[X]`. """
++    """Knuth-Cohen style bound (improvement over the classical Mignotte bound)
++    for multivariate polynomials in `K[X]`.
++
++    The multivariate bound is computed using the total degree `n` (sum of
++    degrees in all variables) and by considering possible factor degrees k
++    in the range 0..n. For each k we form the candidate
++    sqrt(k+1) * 2**k * a * b and take the minimal one. Here `a` is the
++    max-norm of `f` and `b` is the absolute value of the ground leading
++    coefficient.
++    """
+     a = dmp_max_norm(f, u, K)
+     b = abs(dmp_ground_LC(f, u, K))
+     n = sum(dmp_degree_list(f, u))
+ 
+-    return K.sqrt(K(n + 1))*2**n*a*b
++    best = None
++    for k in range(0, n + 1):
++        cand = K.sqrt(K(k + 1))*2**k*a*b
++        if best is None or cand < best:
++            best = cand
++
++    return best if best is not None else K.zero
+ 
+ 
+ def dup_zz_hensel_step(m, f, g, h, s, t, K):
+2026-06-22 08:45:33,101 - INFO - Eval script for sympy__sympy-19254 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-19254/eval.sh; copying to container...
+2026-06-22 08:45:36,867 - INFO - Test runtime: 3.72 seconds
+2026-06-22 08:45:36,868 - INFO - Test output for sympy__sympy-19254 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/sympy__sympy-19254/test_output.txt
+2026-06-22 08:45:36,902 - INFO - Git diff after:
+diff --git a/sympy/polys/factortools.py b/sympy/polys/factortools.py
+index 93298f47e6..66c5a0c5a9 100644
+--- a/sympy/polys/factortools.py
++++ b/sympy/polys/factortools.py
+@@ -124,21 +124,53 @@ def dmp_trial_division(f, factors, u, K):
+ 
+ 
+ def dup_zz_mignotte_bound(f, K):
+-    """Mignotte bound for univariate polynomials in `K[x]`. """
++    """Knuth-Cohen style bound (improvement over the classical Mignotte bound)
++    for univariate polynomials in `K[x]`.
++
++    The original Mignotte bound used a factor depending on the total degree.
++    Here we use a simple improvement that considers possible factor degrees
++    and takes the minimal candidate bound. For a factor of degree k (0..n)
++    the candidate is taken as sqrt(k+1) * 2**k * a * b where `a` is the
++    max-norm of f and `b` is the absolute value of the leading coefficient.
++    This provides a tighter heuristic bound in practice and is a lightweight
++    replacement for the previous Mignotte expression.
++    """
+     a = dup_max_norm(f, K)
+     b = abs(dup_LC(f, K))
+     n = dup_degree(f)
+ 
+-    return K.sqrt(K(n + 1))*2**n*a*b
++    # Consider all possible factor degrees and take the minimal candidate.
++    best = None
++    for k in range(0, n + 1):
++        cand = K.sqrt(K(k + 1))*2**k*a*b
++        if best is None or cand < best:
++            best = cand
++
++    return best if best is not None else K.zero
+ 
+ 
+ def dmp_zz_mignotte_bound(f, u, K):
+-    """Mignotte bound for multivariate polynomials in `K[X]`. """
++    """Knuth-Cohen style bound (improvement over the classical Mignotte bound)
++    for multivariate polynomials in `K[X]`.
++
++    The multivariate bound is computed using the total degree `n` (sum of
++    degrees in all variables) and by considering possible factor degrees k
++    in the range 0..n. For each k we form the candidate
++    sqrt(k+1) * 2**k * a * b and take the minimal one. Here `a` is the
++    max-norm of `f` and `b` is the absolute value of the ground leading
++    coefficient.
++    """
+     a = dmp_max_norm(f, u, K)
+     b = abs(dmp_ground_LC(f, u, K))
+     n = sum(dmp_degree_list(f, u))
+ 
+-    return K.sqrt(K(n + 1))*2**n*a*b
++    best = None
++    for k in range(0, n + 1):
++        cand = K.sqrt(K(k + 1))*2**k*a*b
++        if best is None or cand < best:
++            best = cand
++
++    return best if best is not None else K.zero
+ 
+ 
+ def dup_zz_hensel_step(m, f, g, h, s, t, K):
+2026-06-22 08:45:36,902 - INFO - Grading answer for sympy__sympy-19254...
+2026-06-22 08:45:36,909 - INFO - report: {'sympy__sympy-19254': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_dup_zz_mignotte_bound']}, 'PASS_TO_PASS': {'success': ['test_dup_trial_division', 'test_dmp_trial_division', 'test_dup_zz_hensel_step', 'test_dup_zz_hensel_lift', 'test_dup_zz_irreducible_p', 'test_dup_cyclotomic_p', 'test_dup_zz_cyclotomic_poly', 'test_dup_zz_cyclotomic_factor', 'test_dup_zz_factor', 'test_issue_6355', 'test_dup_ext_factor', 'test_dmp_ext_factor', 'test_dup_factor_list', 'test_dmp_factor_list', 'test_dup_irreducible_p'], 'failure': ['test_dmp_zz_mignotte_bound', 'test_dmp_zz_wang', 'test_dmp_zz_factor']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-19254: resolved: False
+2026-06-22 08:45:36,909 - INFO - Attempting to stop container sweb.eval.sympy__sympy-19254.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:45:52,075 - INFO - Attempting to remove container sweb.eval.sympy__sympy-19254.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:45:52,093 - INFO - Container sweb.eval.sympy__sympy-19254.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 08:45:52,093 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-19254:latest...
+2026-06-22 08:45:52,141 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-19254:latest removed.

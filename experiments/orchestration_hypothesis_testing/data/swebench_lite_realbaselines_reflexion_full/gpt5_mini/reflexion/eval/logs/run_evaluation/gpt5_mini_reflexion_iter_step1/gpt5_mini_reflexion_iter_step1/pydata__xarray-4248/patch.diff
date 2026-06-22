@@ -1,0 +1,50 @@
+--- a/xarray/core/formatting.py
++++ b/xarray/core/formatting.py
+@@ -268,6 +268,34 @@
+         return "..."
+ 
+ 
++def _get_unit_str_from_var(var) -> str:
++    """Return a short unit string for a Variable, including surrounding
++    brackets and a leading space (e.g. ' [m]'), or an empty string if no
++    unit can be determined.
++
++    We prefer explicit attributes 'units' or 'unit' on the Variable (var.attrs),
++    and fall back to checking the underlying data object (var._data) for common
++    unit attributes (e.g. pint's .units or .unit). The returned string is
++    intended to be inserted directly after the variable name.
++    """
++    # Prefer attributes on the Variable itself
++    if hasattr(var, "attrs") and isinstance(var.attrs, dict):
++        unit = var.attrs.get("units") or var.attrs.get("unit")
++        if unit:
++            return f" [{unit}]"
++    # Fallback: check underlying data for common unit attributes
++    data = getattr(var, "_data", None)
++    if data is not None:
++        # Common attribute names used by unit libraries (pint, etc.)
++        unit_attr = getattr(data, "units", None)
++        if unit_attr is None:
++            unit_attr = getattr(data, "unit", None)
++        if unit_attr is not None:
++            # convert to string in case it's a Unit object
++            return f" [{unit_attr}]"
++    return ""
++
++
+ def summarize_variable(
+     name: Hashable, var, col_width: int, marker: str = " ", max_width: int = None
+ ):
+@@ -278,7 +306,11 @@
+             raise TypeError(f"`max_width` value of `{max_width}` is not a valid int")
+         else:
+             max_width = max_width_options
+-    first_col = pretty_print(f"  {marker} {name} ", col_width)
++
++    # include units (from attrs or from unit-aware arrays) next to the name
++    unit_str = _get_unit_str_from_var(var)
++    first_col = pretty_print(f"  {marker} {name}{unit_str} ", col_width)
++
+     if var.dims:
+         dims_str = "({}) ".format(", ".join(map(str, var.dims)))
+     else:

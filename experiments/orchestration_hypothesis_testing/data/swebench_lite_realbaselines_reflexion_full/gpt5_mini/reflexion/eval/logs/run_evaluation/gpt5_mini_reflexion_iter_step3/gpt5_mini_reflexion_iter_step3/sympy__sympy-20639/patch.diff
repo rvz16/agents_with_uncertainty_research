@@ -1,0 +1,17 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -1954,7 +1954,13 @@
+             if e is S.NegativeOne:
+                 return prettyForm("1")/self._print(b)
+             n, d = fraction(e)
+-            if n is S.One and d.is_Atom and not e.is_Integer and self._settings['root_notation']:
++            # Only use root notation for exponents that are actual rationals
++            # (e.g. 1/3). Avoid treating expressions like 1/E (which internally
++            # may be represented as exp(-1) and have different args) as nth
++            # roots; falling back to the normal power printing produces the
++            # correct pretty form (see issue with pi**(1/E)).
++            if (n is S.One and d.is_Atom and not e.is_Integer and
++                    self._settings['root_notation'] and e.is_Rational):
+                 return self._print_nth_root(b, e)
+             if e.is_Rational and e < 0:
+                 return prettyForm("1")/self._print(Pow(b, -e, evaluate=False))

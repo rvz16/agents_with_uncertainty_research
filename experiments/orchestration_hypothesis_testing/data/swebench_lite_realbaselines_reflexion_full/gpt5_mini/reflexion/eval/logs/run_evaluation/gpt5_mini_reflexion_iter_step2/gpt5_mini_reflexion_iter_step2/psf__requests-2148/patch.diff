@@ -1,0 +1,31 @@
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -9,6 +9,7 @@
+ 
+ import collections
+ import datetime
++import socket
+ 
+ from io import BytesIO, UnsupportedOperation
+ from .hooks import default_hooks
+@@ -21,7 +22,7 @@
+ from .packages.urllib3.util import parse_url
+ from .packages.urllib3.exceptions import DecodeError
+ from .exceptions import (
+-    HTTPError, RequestException, MissingSchema, InvalidURL,
++    HTTPError, RequestException, ConnectionError, MissingSchema, InvalidURL,
+     ChunkedEncodingError, ContentDecodingError)
+ from .utils import (
+     guess_filename, get_auth_from_url, requote_uri,
+@@ -640,6 +641,11 @@
+                     raise ChunkedEncodingError(e)
+                 except DecodeError as e:
+                     raise ContentDecodingError(e)
++                except socket.error as e:
++                    # Any socket-level error should be exposed as a Requests
++                    # ConnectionError so callers can catch Requests' exception
++                    # types rather than raw socket exceptions.
++                    raise ConnectionError(e)
+             except AttributeError:
+                 # Standard file-like object.
+                 while True:

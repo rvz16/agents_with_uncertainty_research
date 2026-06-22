@@ -1,0 +1,85 @@
+--- a/django/db/migrations/operations/models.py
++++ b/django/db/migrations/operations/models.py
+@@ -187,14 +187,25 @@
+             isinstance(operation, AlterTogetherOptionOperation)
+             and self.name_lower == operation.name_lower
+         ):
++            options = {**self.options}
++            if operation.option_name == "index_together":
++                # Convert deprecated index_together into Meta.indexes to avoid
++                # deprecation warnings when squashing migrations.
++                options.pop("index_together", None)
++                existing_indexes = list(options.get("indexes", []))
++                for fields in (operation.option_value or []):
++                    existing_indexes.append(models.Index(fields=list(fields)))
++                if existing_indexes:
++                    options["indexes"] = existing_indexes
++                else:
++                    options.pop("indexes", None)
++            else:
++                options.update({operation.option_name: operation.option_value})
+             return [
+                 CreateModel(
+                     self.name,
+                     fields=self.fields,
+-                    options={
+-                        **self.options,
+-                        **{operation.option_name: operation.option_value},
+-                    },
++                    options=options,
+                     bases=self.bases,
+                     managers=self.managers,
+                 ),
+@@ -244,22 +255,37 @@
+                 ]
+             elif isinstance(operation, RemoveField):
+                 options = self.options.copy()
+-                for option_name in ("unique_together", "index_together"):
+-                    option = options.pop(option_name, None)
+-                    if option:
+-                        option = set(
+-                            filter(
+-                                bool,
+-                                (
+-                                    tuple(
+-                                        f for f in fields if f != operation.name_lower
+-                                    )
+-                                    for fields in option
+-                                ),
+-                            )
++                # Handle unique_together normally.
++                unique_option = options.pop("unique_together", None)
++                if unique_option:
++                    unique_option = set(
++                        filter(
++                            bool,
++                            (
++                                tuple(f for f in fields if f != operation.name_lower)
++                                for fields in unique_option
++                            ),
+                         )
+-                        if option:
+-                            options[option_name] = option
++                    )
++                    if unique_option:
++                        options["unique_together"] = unique_option
++                # Convert index_together into Meta.indexes.
++                index_option = options.pop("index_together", None)
++                if index_option:
++                    index_option = set(
++                        filter(
++                            bool,
++                            (
++                                tuple(f for f in fields if f != operation.name_lower)
++                                for fields in index_option
++                            ),
++                        )
++                    )
++                    if index_option:
++                        existing_indexes = list(options.get("indexes", []))
++                        for fields in index_option:
++                            existing_indexes.append(models.Index(fields=list(fields)))
++                        options["indexes"] = existing_indexes
+                 order_with_respect_to = options.get("order_with_respect_to")
+                 if order_with_respect_to == operation.name_lower:
+                     del options["order_with_respect_to"]

@@ -1,0 +1,14 @@
+--- a/lib/mpl_toolkits/mplot3d/axes3d.py
++++ b/lib/mpl_toolkits/mplot3d/axes3d.py
+@@ -387,6 +387,11 @@
+ 
+     @martist.allow_rasterization
+     def draw(self, renderer):
++        # Respect the visible flag like regular Axes; if the Axes3D has been
++        # made invisible via set_visible(False), do not draw anything.
++        if not self.get_visible():
++            return
++
+         self._unstale_viewLim()
+ 
+         # draw the background patch

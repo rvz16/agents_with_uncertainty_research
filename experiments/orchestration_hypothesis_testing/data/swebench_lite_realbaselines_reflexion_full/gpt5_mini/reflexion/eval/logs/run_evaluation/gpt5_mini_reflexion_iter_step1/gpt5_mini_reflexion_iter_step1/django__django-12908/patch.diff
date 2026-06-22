@@ -1,0 +1,13 @@
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1138,6 +1138,10 @@
+         """
+         Return a new QuerySet instance that will select only distinct results.
+         """
++        # distinct() is not supported on combined (UNION/INTERSECT/EXCEPT)
++        # querysets. See the documentation which allows only LIMIT, OFFSET,
++        # COUNT(*), ORDER BY and specifying columns on the resulting queryset.
++        self._not_support_combined_queries('distinct')
+         assert not self.query.is_sliced, \
+             "Cannot create distinct fields once a slice has been taken."
+         obj = self._chain()

@@ -1,0 +1,16 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1854,7 +1854,12 @@
+ 
+     def _print_Poly(self, poly):
+         cls = poly.__class__.__name__
+-        expr = self._print(poly.as_expr())
++        # Preserve the polynomial's monomial ordering when printing its expression.
++        # The Add printer understands an 'order' keyword (e.g. "lex", "grlex",
++        # "grevlex", "old", "none") and will order terms accordingly.  Forward
++        # the Poly's order (which may be None) so that the LaTeX output uses the
++        # same ordering as the pretty and str printers.
++        expr = self._print(poly.as_expr(), order=getattr(poly, 'order', None))
+         gens = list(map(self._print, poly.gens))
+         domain = "domain=%s" % self._print(poly.get_domain())
+ 

@@ -1,0 +1,39 @@
+--- a/django/contrib/admin/options.py
++++ b/django/contrib/admin/options.py
+@@ -2037,10 +2037,35 @@
+         self.opts = self.model._meta
+         self.has_registered_model = admin_site.is_registered(self.model)
+         super().__init__()
++        # Determine whether the Inline class explicitly defined verbose_name
++        # / verbose_name_plural at the class level. If the developer has set
++        # verbose_name on the Inline but not verbose_name_plural, derive the
++        # plural based on the Inline verbose_name using the same suffix used
++        # by the target model where possible (e.g. "option" -> "options").
++        cls_attrs = vars(self.__class__)
+         if self.verbose_name is None:
+             self.verbose_name = self.model._meta.verbose_name
++            verbose_name_explicit = False
++        else:
++            verbose_name_explicit = 'verbose_name' in cls_attrs
+         if self.verbose_name_plural is None:
+-            self.verbose_name_plural = self.model._meta.verbose_name_plural
++            if 'verbose_name_plural' in cls_attrs:
++                # The class explicitly provided verbose_name_plural (even if it
++                # was set to None), respect that.
++                self.verbose_name_plural = None
++            elif verbose_name_explicit:
++                # Try to reuse the model's plural suffix if the model's plural
++                # starts with its singular (common case). Fallback to adding
++                # 's' if that heuristic doesn't apply.
++                model_singular = str(self.model._meta.verbose_name)
++                model_plural = str(self.model._meta.verbose_name_plural)
++                if model_plural.startswith(model_singular):
++                    suffix = model_plural[len(model_singular):]
++                else:
++                    suffix = 's'
++                self.verbose_name_plural = f"{self.verbose_name}{suffix}"
++            else:
++                self.verbose_name_plural = self.model._meta.verbose_name_plural
+ 
+     @property
+     def media(self):

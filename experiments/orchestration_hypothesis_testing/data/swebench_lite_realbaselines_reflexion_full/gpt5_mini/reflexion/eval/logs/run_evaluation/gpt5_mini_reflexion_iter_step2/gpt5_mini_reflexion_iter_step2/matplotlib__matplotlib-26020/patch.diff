@@ -1,0 +1,63 @@
+--- a/lib/mpl_toolkits/axes_grid1/axes_grid.py
++++ b/lib/mpl_toolkits/axes_grid1/axes_grid.py
+@@ -13,8 +13,30 @@
+ def _tick_only(ax, bottom_on, left_on):
+     bottom_off = not bottom_on
+     left_off = not left_on
+-    ax.axis["bottom"].toggle(ticklabels=bottom_off, label=bottom_off)
+-    ax.axis["left"].toggle(ticklabels=left_off, label=left_off)
++    # ax.axis is a dict-like for AxisArtist axes, but some Axes subclasses
++    # (e.g., cartopy GeoAxes) expose axis as a callable/method. Detect
++    # subscriptability and fall back to the standard Matplotlib API.
++    axis = getattr(ax, "axis", None)
++    if hasattr(axis, "__getitem__"):
++        axis["bottom"].toggle(ticklabels=bottom_off, label=bottom_off)
++        axis["left"].toggle(ticklabels=left_off, label=left_off)
++    else:
++        # AxisArtist.toggle(True) shows labels, so bottom_off/left_off map to
++        # visibility truth values.
++        show_bottom = bool(bottom_off)
++        show_left = bool(left_off)
++        # Tick labels
++        ax.tick_params(axis="x", labelbottom=show_bottom)
++        ax.tick_params(axis="y", labelleft=show_left)
++        # Axis labels
++        try:
++            ax.xaxis.label.set_visible(show_bottom)
++        except Exception:
++            pass
++        try:
++            ax.yaxis.label.set_visible(show_left)
++        except Exception:
++            pass
+ 
+ 
+ class CbarAxesBase:
+@@ -28,8 +50,25 @@
+ 
+     @_api.deprecated("3.8", alternative="ax.tick_params and colorbar.set_label")
+     def toggle_label(self, b):
+-        axis = self.axis[self.orientation]
+-        axis.toggle(ticklabels=b, label=b)
++        axis = getattr(self, "axis", None)
++        if hasattr(axis, "__getitem__"):
++            axis[self.orientation].toggle(ticklabels=b, label=b)
++        else:
++            show = bool(b)
++            if self.orientation in ("left", "right"):
++                # vertical colorbar axis
++                self.tick_params(axis="y", labelleft=show)
++                try:
++                    self.yaxis.label.set_visible(show)
++                except Exception:
++                    pass
++            else:
++                # horizontal colorbar axis
++                self.tick_params(axis="x", labelbottom=show)
++                try:
++                    self.xaxis.label.set_visible(show)
++                except Exception:
++                    pass
+ 
+ 
+ _cbaraxes_class_factory = cbook._make_class_factory(CbarAxesBase, "Cbar{}")

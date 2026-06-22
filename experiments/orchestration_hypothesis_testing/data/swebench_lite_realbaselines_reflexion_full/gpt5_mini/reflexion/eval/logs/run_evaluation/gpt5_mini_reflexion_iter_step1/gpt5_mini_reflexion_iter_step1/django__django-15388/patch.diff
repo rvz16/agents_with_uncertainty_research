@@ -1,0 +1,19 @@
+--- a/django/template/autoreload.py
++++ b/django/template/autoreload.py
+@@ -48,6 +48,16 @@
+ 
+ @receiver(file_changed, dispatch_uid='template_loaders_file_changed')
+ def template_changed(sender, file_path, **kwargs):
++    # Ensure file_path is a pathlib.Path instance.
++    if not isinstance(file_path, Path):
++        file_path = Path(file_path)
++
++    # If a Python file changes inside a template directory, do not
++    # treat it as a template change that should suppress the autoreload.
++    # Returning None allows other file change handlers to trigger a reload.
++    if file_path.suffix == '.py':
++        return
++
+     for template_dir in get_template_directories():
+         if template_dir in file_path.parents:
+             reset_loaders()

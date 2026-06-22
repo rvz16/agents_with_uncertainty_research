@@ -1,0 +1,42 @@
+--- a/lib/matplotlib/cbook.py
++++ b/lib/matplotlib/cbook.py
+@@ -798,6 +798,39 @@
+         for key in to_drop:
+             val = mapping.pop(key)
+             val.remove(key)
++
++    def __getstate__(self):
++        """
++        Return a picklable state for the Grouper.
++
++        The internal representation uses weakref.ref objects which are not
++        picklable.  We therefore return the groups as lists of the referenced
++        objects (skipping dead refs).  This allows the Grouper to be
++        pickled as part of larger objects (e.g., Figure aligners).
++        """
++        self.clean()
++        # de-duplicate groups by identity of the underlying list
++        unique_groups = {id(group): group for group in self._mapping.values()}
++        groups = [[ref() for ref in group if ref() is not None]
++                  for group in unique_groups.values()]
++        return {"groups": groups}
++
++    def __setstate__(self, state):
++        """
++        Restore the internal weakref-based mapping from the pickled groups.
++
++        The stored groups are lists of strong references; recreate the
++        weakref.ref keys and lists of weakrefs as used by the runtime
++        implementation.
++        """
++        groups = state.get("groups", [])
++        self._mapping = {}
++        for group in groups:
++            # Recreate the list of weakrefs for this group, skipping any
++            # None entries just in case.
++            weak_list = [weakref.ref(x) for x in group if x is not None]
++            for r in weak_list:
++                self._mapping[r] = weak_list
+ 
+     def join(self, a, *args):
+         """

@@ -1,0 +1,63 @@
+2026-06-22 09:31:00,543 - INFO - Creating container for django__django-16229...
+2026-06-22 09:31:00,783 - INFO - Container for django__django-16229 created: 3f16ea0a2bca84fa4ac91c931622fdfb3f02780724ced97fff9dde8f030a1e13
+2026-06-22 09:31:00,904 - INFO - Container for django__django-16229 started: 3f16ea0a2bca84fa4ac91c931622fdfb3f02780724ced97fff9dde8f030a1e13
+2026-06-22 09:31:00,904 - INFO - Intermediate patch for django__django-16229 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/django__django-16229/patch.diff, now applying to container...
+2026-06-22 09:31:01,008 - INFO - >>>>> Applied Patch:
+Checking patch django/forms/boundfield.py...
+Applied patch django/forms/boundfield.py cleanly.
+
+2026-06-22 09:31:01,382 - INFO - Git diff before:
+diff --git a/django/forms/boundfield.py b/django/forms/boundfield.py
+index 9f2ae59ab4..523f7e1d71 100644
+--- a/django/forms/boundfield.py
++++ b/django/forms/boundfield.py
+@@ -96,9 +96,15 @@ class BoundField:
+             attrs.setdefault(
+                 "id", self.html_initial_id if only_initial else self.auto_id
+             )
++        # When rendering the hidden "initial" widget, use the field's initial
++        # value rather than the bound value. This ensures that callable defaults
++        # (for example, default=list on a model field) are preserved as the
++        # initial for change detection across submissions, instead of the last
++        # posted (bound) value.
++        value = self.initial if only_initial else self.value()
+         return widget.render(
+             name=self.html_initial_name if only_initial else self.html_name,
+-            value=self.value(),
++            value=value,
+             attrs=attrs,
+             renderer=self.form.renderer,
+         )
+2026-06-22 09:31:01,382 - INFO - Eval script for django__django-16229 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/django__django-16229/eval.sh; copying to container...
+2026-06-22 09:31:04,847 - INFO - Test runtime: 3.44 seconds
+2026-06-22 09:31:04,847 - INFO - Test output for django__django-16229 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/django__django-16229/test_output.txt
+2026-06-22 09:31:04,898 - INFO - Git diff after:
+diff --git a/django/forms/boundfield.py b/django/forms/boundfield.py
+index 9f2ae59ab4..523f7e1d71 100644
+--- a/django/forms/boundfield.py
++++ b/django/forms/boundfield.py
+@@ -96,9 +96,15 @@ class BoundField:
+             attrs.setdefault(
+                 "id", self.html_initial_id if only_initial else self.auto_id
+             )
++        # When rendering the hidden "initial" widget, use the field's initial
++        # value rather than the bound value. This ensures that callable defaults
++        # (for example, default=list on a model field) are preserved as the
++        # initial for change detection across submissions, instead of the last
++        # posted (bound) value.
++        value = self.initial if only_initial else self.value()
+         return widget.render(
+             name=self.html_initial_name if only_initial else self.html_name,
+-            value=self.value(),
++            value=value,
+             attrs=attrs,
+             renderer=self.form.renderer,
+         )
+2026-06-22 09:31:04,898 - INFO - Grading answer for django__django-16229...
+2026-06-22 09:31:04,898 - INFO - report: {'django__django-16229': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': ['test_callable_default_hidden_widget_value_not_overridden (forms_tests.tests.tests.ModelFormCallableModelDefault)'], 'failure': []}, 'PASS_TO_PASS': {'success': ['Test for issue 10405', "If a model's ManyToManyField has blank=True and is saved with no data,", 'test_m2m_field_exclusion (forms_tests.tests.tests.ManyToManyExclusionTestCase)', 'test_empty_field_char (forms_tests.tests.tests.Jinja2EmptyLabelTestCase)', 'test_empty_field_char_none (forms_tests.tests.tests.Jinja2EmptyLabelTestCase)', 'test_empty_field_integer (forms_tests.tests.tests.Jinja2EmptyLabelTestCase)', 'test_get_display_value_on_none (forms_tests.tests.tests.Jinja2EmptyLabelTestCase)', 'test_html_rendering_of_prepopulated_models (forms_tests.tests.tests.Jinja2EmptyLabelTestCase)', 'test_save_empty_label_forms (forms_tests.tests.tests.Jinja2EmptyLabelTestCase)', 'test_boundary_conditions (forms_tests.tests.tests.FormsModelTestCase)', 'test_formfield_initial (forms_tests.tests.tests.FormsModelTestCase)', 'test_unicode_filename (forms_tests.tests.tests.FormsModelTestCase)', 'test_empty_field_char (forms_tests.tests.tests.EmptyLabelTestCase)', 'test_empty_field_char_none (forms_tests.tests.tests.EmptyLabelTestCase)', 'test_empty_field_integer (forms_tests.tests.tests.EmptyLabelTestCase)', 'test_get_display_value_on_none (forms_tests.tests.tests.EmptyLabelTestCase)', 'test_html_rendering_of_prepopulated_models (forms_tests.tests.tests.EmptyLabelTestCase)', 'test_save_empty_label_forms (forms_tests.tests.tests.EmptyLabelTestCase)', 'The initial value for a callable default returning a queryset is the', "If a model's ForeignKey has blank=False and a default, no empty option"], 'failure': ['Initial instances for model fields may also be instances (refs #7287)']}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for django__django-16229: resolved: False
+2026-06-22 09:31:04,898 - INFO - Attempting to stop container sweb.eval.django__django-16229.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:31:20,111 - INFO - Attempting to remove container sweb.eval.django__django-16229.gpt5_mini_reflexion_iter_step2...
+2026-06-22 09:31:20,128 - INFO - Container sweb.eval.django__django-16229.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 09:31:20,128 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.django_1776_django-16229:latest...
+2026-06-22 09:31:20,472 - INFO - Image swebench/sweb.eval.x86_64.django_1776_django-16229:latest removed.

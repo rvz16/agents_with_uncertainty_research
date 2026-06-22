@@ -1,0 +1,44 @@
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -466,6 +466,41 @@
+         # not a data type (e.g. a column named dtype in a pandas DataFrame)
+         dtype_orig = None
+ 
++    # Special-case pandas DataFrame/Series which expose .dtypes (DataFrame) or
++    # .dtype (Series). For DataFrame, .dtype is not a single dtype and the
++    # getattr above yields an object without 'kind', causing dtype_orig to be
++    # None and preventing dtype-change warnings. Attempt a best-effort
++    # inference: if any column has object dtype, consider the original dtype
++    # as object so that subsequent conversion to float64 triggers a warning.
++    if dtype_orig is None:
++        try:
++            # Import pandas lazily to avoid hard dependency.
++            import pandas as _pd  # local import
++        except Exception:
++            _pd = None
++
++        if _pd is not None:
++            # pandas Series: use its dtype
++            if isinstance(array, _pd.Series):
++                dtype_orig = array.dtype
++            # pandas DataFrame: inspect column dtypes
++            elif isinstance(array, _pd.DataFrame):
++                try:
++                    dtypes = array.dtypes
++                    # If any column is object, treat the input dtype as object.
++                    if any(getattr(dt, "kind", None) == "O" for dt in dtypes):
++                        dtype_orig = np.dtype("O")
++                    else:
++                        # If all columns share the same dtype, use that dtype;
++                        # otherwise, leave dtype_orig as None (no single dtype).
++                        uniq = dtypes.unique()
++                        if len(uniq) == 1:
++                            dtype_orig = uniq[0]
++                        else:
++                            dtype_orig = None
++                except Exception:
++                    dtype_orig = None
++
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":
+             # if input is object, convert to float.

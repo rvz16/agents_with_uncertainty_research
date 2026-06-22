@@ -1,0 +1,28 @@
+--- a/sklearn/compose/_column_transformer.py
++++ b/sklearn/compose/_column_transformer.py
+@@ -862,12 +862,22 @@
+                 if not self.verbose_feature_names_out:
+                     return output
+ 
+-                transformer_names = [
+-                    t[0] for t in self._iter(fitted=True, replace_strings=True)
++                # Build the list of transformer names corresponding to the actual
++                # transformed outputs in `Xs`. During fit, transformers with an
++                # empty column selection are skipped and thus do not produce an
++                # entry in `Xs`. When using the fitted iterator we need to
++                # filter out such transformers (and 'drop') to keep the same
++                # ordering/length as `Xs`.
++                valid_transformer_names = [
++                    name
++                    for name, trans, columns, _ in self._iter(
++                        fitted=True, replace_strings=True
++                    )
++                    if trans != "drop" and not _is_empty_column_selection(columns)
+                 ]
+                 feature_names_outs = [X.columns for X in Xs]
+                 names_out = self._add_prefix_for_feature_names_out(
+-                    list(zip(transformer_names, feature_names_outs))
++                    list(zip(valid_transformer_names, feature_names_outs))
+                 )
+                 output.columns = names_out
+                 return output

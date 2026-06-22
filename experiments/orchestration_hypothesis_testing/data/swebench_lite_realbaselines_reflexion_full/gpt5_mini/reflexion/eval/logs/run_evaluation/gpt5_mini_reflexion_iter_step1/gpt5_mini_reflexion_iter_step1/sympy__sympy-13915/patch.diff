@@ -1,0 +1,48 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -377,17 +377,43 @@
+ 
+         # gather exponents of common bases...
+         def _gather(c_powers):
++            """
++            Gather exponents of common bases, but avoid combining bases that
++            contain infinities (including ComplexInfinity). Combining such
++            bases can lead to incorrect cancellation (e.g. due to -zoo == zoo).
++            For bases that contain infinities we leave the (base, exp) pairs
++            as-is to prevent unsafe exponent combination.
++            """
++            def _has_infty(b):
++                # treat explicit infinity atoms and expressions known to be
++                # infinite as unsafe for exponent combination
++                if b is S.ComplexInfinity or b is S.Infinity or b is S.NegativeInfinity:
++                    return True
++                if getattr(b, 'is_infinite', None) is True:
++                    return True
++                # .has(...) will detect if the expression contains these atoms
++                if b.has(S.ComplexInfinity) or b.has(S.Infinity) or b.has(S.NegativeInfinity):
++                    return True
++                return False
++
+             common_b = {}  # b:e
++            unsafe = []
+             for b, e in c_powers:
++                if _has_infty(b):
++                    # do not attempt to combine exponents for bases that involve
++                    # infinities; keep them separate to avoid unsafe cancellation
++                    unsafe.append((b, e))
++                    continue
+                 co = e.as_coeff_Mul()
+-                common_b.setdefault(b, {}).setdefault(
+-                    co[1], []).append(co[0])
++                common_b.setdefault(b, {}).setdefault(co[1], []).append(co[0])
+             for b, d in common_b.items():
+                 for di, li in d.items():
+                     d[di] = Add(*li)
+             new_c_powers = []
+             for b, e in common_b.items():
+                 new_c_powers.extend([(b, c*t) for t, c in e.items()])
++            # append the unsafe entries unchanged
++            new_c_powers.extend(unsafe)
+             return new_c_powers
+ 
+         # in c_powers

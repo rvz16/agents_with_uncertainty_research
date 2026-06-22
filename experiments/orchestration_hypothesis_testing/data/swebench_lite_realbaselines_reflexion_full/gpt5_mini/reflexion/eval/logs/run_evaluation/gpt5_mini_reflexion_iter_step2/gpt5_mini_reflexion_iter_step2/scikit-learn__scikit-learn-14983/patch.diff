@@ -1,0 +1,22 @@
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -2157,7 +2157,18 @@
+         warnings.simplefilter("always", DeprecationWarning)
+         try:
+             with warnings.catch_warnings(record=True) as w:
+-                value = getattr(self, key, None)
++                # Prefer the actual attribute value if present. Some
++                # wrappers (e.g. _RepeatedSplits) store parameters for the
++                # underlying cv in self.cvargs rather than as attributes on
++                # the wrapper instance. If the attribute is not present,
++                # but cvargs contains the parameter, use that value as a
++                # fallback.
++                if hasattr(self, key):
++                    value = getattr(self, key)
++                elif hasattr(self, "cvargs") and key in self.cvargs:
++                    value = self.cvargs[key]
++                else:
++                    value = None
+             if len(w) and w[0].category == DeprecationWarning:
+                 # if the parameter is deprecated, don't show it
+                 continue

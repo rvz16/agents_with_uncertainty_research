@@ -1,0 +1,30 @@
+--- a/django/db/models/query.py
++++ b/django/db/models/query.py
+@@ -1837,13 +1837,26 @@
+         inserted_rows = []
+         bulk_return = connection.features.can_return_rows_from_bulk_insert
+         for item in [objs[i : i + batch_size] for i in range(0, len(objs), batch_size)]:
+-            if bulk_return and on_conflict is None:
++            # Allow returning rows from bulk insert when the backend supports
++            # it. In addition to the no-conflict case, some backends (e.g.
++            # PostgreSQL, SQLite 3.35+) support RETURNING even when using
++            # ON CONFLICT ... DO UPDATE. Only enable RETURNING in that case
++            # when update_conflicts is requested (OnConflict.UPDATE).
++            if bulk_return and (on_conflict is None or on_conflict == OnConflict.UPDATE):
++                conflict_kwargs = {}
++                if on_conflict is not None:
++                    conflict_kwargs = {
++                        "on_conflict": on_conflict,
++                        "update_fields": update_fields,
++                        "unique_fields": unique_fields,
++                    }
+                 inserted_rows.extend(
+                     self._insert(
+                         item,
+                         fields=fields,
+                         using=self.db,
+                         returning_fields=self.model._meta.db_returning_fields,
++                        **conflict_kwargs,
+                     )
+                 )
+             else:

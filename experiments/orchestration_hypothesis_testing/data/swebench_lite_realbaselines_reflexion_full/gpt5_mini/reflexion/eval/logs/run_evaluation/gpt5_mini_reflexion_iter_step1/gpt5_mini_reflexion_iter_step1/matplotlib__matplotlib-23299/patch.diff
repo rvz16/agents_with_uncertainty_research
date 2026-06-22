@@ -1,0 +1,28 @@
+--- a/lib/matplotlib/__init__.py
++++ b/lib/matplotlib/__init__.py
+@@ -1095,6 +1095,25 @@
+             rcParams.update(rc)
+         yield
+     finally:
++        # Avoid restoring the backend to the auto-sentinel if it was resolved
++        # during the context and figures were created. Restoring to the
++        # sentinel would cause a later access to rcParams['backend'] (e.g.
++        # via matplotlib.get_backend()) to re-resolve the backend, which may
++        # switch backends and close figures. Keep the resolved backend in that
++        # case by ensuring orig['backend'] matches the current rcParams
++        # backend when appropriate.
++        auto = rcsetup._auto_backend_sentinel
++        try:
++            was_auto = dict.__getitem__(orig, 'backend') is auto
++            current_backend = dict.__getitem__(rcParams, 'backend')
++        except Exception:
++            was_auto = False
++            current_backend = None
++        if was_auto and current_backend is not auto:
++            # Preserve the resolved backend so that restoring rcParams does not
++            # re-introduce the auto-sentinel and trigger a re-resolution that
++            # could close existing figures.
++            dict.__setitem__(orig, 'backend', current_backend)
+         dict.update(rcParams, orig)  # Revert to the original rcs.
+ 
+ 

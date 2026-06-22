@@ -1,0 +1,38 @@
+--- a/src/_pytest/tmpdir.py
++++ b/src/_pytest/tmpdir.py
+@@ -150,13 +150,33 @@
+ 
+ def get_user() -> Optional[str]:
+     """Return the current user name, or None if getuser() does not work
+-    in the current environment (see #1010)."""
++    in the current environment (see #1010).
++
++    The returned username is sanitized to be safe for use in filesystem paths.
++    Some environments (notably certain SSH setups on Windows) can return values
++    like "DOMAIN\\user" or include characters that are invalid in directory
++    names. We strip any domain prefix and replace any character that is not
++    alphanumeric or one of "._-" with an underscore.
++    """
+     import getpass
+ 
+     try:
+-        return getpass.getuser()
++        user = getpass.getuser()
+     except (ImportError, KeyError):
+         return None
++
++    if not user:
++        return None
++
++    # Strip domain prefix such as "DOMAIN\user" or any accidental path-like
++    # components, taking the last segment.
++    user = user.split("\\")[-1].split("/")[-1]
++
++    # Replace any character that is not alphanumeric, dot, underscore or hyphen
++    # with an underscore to ensure the username is safe for directory names.
++    user = re.sub(r"[^A-Za-z0-9._-]+", "_", user)
++
++    return user
+ 
+ 
+ def pytest_configure(config: Config) -> None:

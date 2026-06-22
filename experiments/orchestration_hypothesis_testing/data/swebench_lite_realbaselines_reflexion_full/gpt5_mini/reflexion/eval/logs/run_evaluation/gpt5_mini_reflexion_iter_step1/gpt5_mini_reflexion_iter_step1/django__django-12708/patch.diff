@@ -1,0 +1,19 @@
+--- a/django/db/backends/base/schema.py
++++ b/django/db/backends/base/schema.py
+@@ -403,9 +403,15 @@
+         meta_constraint_names = {constraint.name for constraint in model._meta.constraints}
+         meta_index_names = {constraint.name for constraint in model._meta.indexes}
+         columns = [model._meta.get_field(field).column for field in fields]
++        # When deleting an index (index=True), avoid matching unique constraints
++        # (unique_together). The database introspection may mark unique
++        # constraints as indexes, so require unique=False for pure indexes.
++        kwargs = dict(constraint_kwargs)
++        if kwargs.get('index') is True:
++            kwargs.setdefault('unique', False)
+         constraint_names = self._constraint_names(
+             model, columns, exclude=meta_constraint_names | meta_index_names,
+-            **constraint_kwargs
++            **kwargs
+         )
+         if len(constraint_names) != 1:
+             raise ValueError("Found wrong number (%s) of constraints for %s(%s)" % (

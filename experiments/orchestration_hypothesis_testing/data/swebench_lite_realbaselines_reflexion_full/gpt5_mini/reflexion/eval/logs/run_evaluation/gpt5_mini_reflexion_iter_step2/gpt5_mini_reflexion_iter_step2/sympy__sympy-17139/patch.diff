@@ -1,0 +1,21 @@
+--- a/sympy/simplify/fu.py
++++ b/sympy/simplify/fu.py
+@@ -501,9 +501,15 @@
+         if not (rv.is_Pow and rv.base.func == f):
+             return rv
+ 
+-        if (rv.exp < 0) == True:
+-            return rv
+-        if (rv.exp > max) == True:
++        try:
++            # Comparisons like rv.exp < 0 may raise TypeError for exponents
++            # that are not comparable (e.g. complex I). If such a comparison
++            # cannot be performed, skip this transformation.
++            if (rv.exp < 0) == True:
++                return rv
++            if (rv.exp > max) == True:
++                return rv
++        except TypeError:
+             return rv
+         if rv.exp == 2:
+             return h(g(rv.base.args[0])**2)

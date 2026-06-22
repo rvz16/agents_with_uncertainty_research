@@ -1,0 +1,18 @@
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -2189,6 +2189,15 @@
+         #Todo: Handle indices
+         contents = self._print(p.args[0])
+         return r'\mbox{Tr}\left(%s\right)' % (contents)
++
++    def _print_Trace(self, p):
++        # Print matrix Trace objects (e.g. Trace(A**2)).
++        # Use \operatorname{Tr} so that LaTeX renders the operator in roman
++        # font with proper spacing. The inner expression is printed with the
++        # normal LaTeX printer so things like A^{2} are rendered correctly.
++        # Todo: Handle indices (e.g., traces with specified indices)
++        contents = self._print(p.args[0])
++        return r'\operatorname{Tr}\left(%s\right)' % (contents)
+ 
+     def _print_totient(self, expr, exp=None):
+         if exp is not None:

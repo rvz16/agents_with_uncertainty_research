@@ -1,0 +1,17 @@
+--- a/seaborn/_core/scales.py
++++ b/seaborn/_core/scales.py
+@@ -347,6 +347,14 @@
+             else:
+                 vmin, vmax = new.norm
+             vmin, vmax = axis.convert_units((vmin, vmax))
++
++            # Coerce boolean (or other non-numeric) bounds to floats so that
++            # subsequent arithmetic (e.g., subtraction) does not raise a
++            # numpy boolean operation error. This ensures color mapping and
++            # other normalization steps work with boolean inputs.
++            vmin = np.asarray(vmin, dtype=float)
++            vmax = np.asarray(vmax, dtype=float)
++
+             a = forward(vmin)
+             b = forward(vmax) - forward(vmin)
+ 

@@ -1,0 +1,17 @@
+--- a/sympy/ntheory/residue_ntheory.py
++++ b/sympy/ntheory/residue_ntheory.py
+@@ -768,6 +768,14 @@
+     """
+     from sympy.core.numbers import igcdex
+     a, n, p = as_int(a), as_int(n), as_int(p)
++    # If a is divisible by p then x == 0 (mod p) is always a solution.
++    # Handle this edge case early so that nthroot_mod(..., all_roots=True)
++    # returns [0] and nthroot_mod(..., all_roots=False) returns 0.
++    # Guard against invalid modulus (p <= 0) to avoid ZeroDivisionError.
++    if p > 0 and a % p == 0:
++        if all_roots:
++            return [0]
++        return 0
+     if n == 2:
+         return sqrt_mod(a, p, all_roots)
+     # see Hackman "Elementary Number Theory" (2009), page 76

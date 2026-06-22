@@ -1,0 +1,41 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -11,6 +11,7 @@
+ 
+ import numpy as np
+ from scipy.sparse import csr_matrix, issparse
++from numbers import Integral
+ 
+ from .ball_tree import BallTree
+ from .kd_tree import KDTree
+@@ -99,8 +100,28 @@
+                          "'distance', or a callable function")
+ 
+ 
+-class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
+-    """Base class for nearest neighbors estimators."""
++def _check_n_neighbors(n_neighbors, name="n_neighbors"):
++    """Validate the 'n_neighbors' parameter.
++
++    Accept integer types (including numpy integers) and floats that are
++    integer-valued (e.g., 3.0). Return the value coerced to int, or None.
++
++    Raises
++    ------
++    TypeError
++        If n_neighbors is of an unsupported type.
++    ValueError
++        If n_neighbors is a non-integer float.
++    """
++    if n_neighbors is None:
++        return None
++
++    # Integral covers Python ints and numpy integer types
++    if isinstance(n_neighbors, Integral):
++        return int(n_neighbors)
++
++    # Accept integer-valued floats like 3.0
++    if isinstance(n_neighbors,
+ 
+     @abstractmethod
+     def __init__(self, n_neighbors=None, radius=None,

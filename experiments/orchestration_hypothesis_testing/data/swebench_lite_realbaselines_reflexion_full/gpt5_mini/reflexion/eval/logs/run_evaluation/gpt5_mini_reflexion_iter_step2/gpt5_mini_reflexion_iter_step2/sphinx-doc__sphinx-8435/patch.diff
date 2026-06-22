@@ -1,0 +1,50 @@
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -65,6 +65,47 @@
+ 
+ def identity(x: Any) -> Any:
+     return x
++
++
++def _resolve_type_alias(annotation: Any, type_aliases: Dict[str, Any]) -> Any:
++    """
++    Resolve simple type aliases for annotations.
++
++    If annotation is a string that matches a key in type_aliases, replace it
++    with the mapped object. The mapping value can be an object or a dotted name
++    string (e.g. 'module.Name'). If resolution fails, return the original
++    annotation.
++    """
++    if not type_aliases or annotation is None:
++        return annotation
++
++    # Handle plain string annotations / ForwardRefs represented as strings.
++    if isinstance(annotation, str):
++        name = annotation
++        if name in type_aliases:
++            target = type_aliases[name]
++            # If the mapping is a dotted path string, try to import it.
++            if isinstance(target, str):
++                modname, _, attr = target.rpartition('.')
++                if modname:
++                    try:
++                        module = importlib.import_module(modname)
++                        return getattr(module, attr)
++                    except Exception:
++                        # Fall back to original annotation if resolution fails.
++                        return annotation
++                else:
++                    # No module part: try importing the name as a module.
++                    try:
++                        module = importlib.import_module(target)
++                        return module
++                    except Exception:
++                        return annotation
++            else:
++                # Mapping is already an object/type.
++                return target
++
++    return annotation
+ 
+ 
+ class _All:

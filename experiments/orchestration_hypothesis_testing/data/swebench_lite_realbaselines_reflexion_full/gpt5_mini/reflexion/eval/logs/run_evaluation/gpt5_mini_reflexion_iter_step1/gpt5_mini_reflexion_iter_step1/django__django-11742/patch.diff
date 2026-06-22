@@ -1,0 +1,71 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -202,6 +202,7 @@
+         return [
+             *self._check_field_name(),
+             *self._check_choices(),
++            *self._check_choices_max_length(),
+             *self._check_db_index(),
+             *self._check_null_allowed_for_primary_keys(),
+             *self._check_backend_specific_checks(**kwargs),
+@@ -290,6 +291,60 @@
+                 id='fields.E005',
+             )
+         ]
++
++    def _check_choices_max_length(self):
++        """
++        Ensure that when a field has choices and a max_length, the max_length
++        is large enough to hold the longest choice value.
++        """
++        if not self.choices:
++            return []
++        if self.max_length is None:
++            return []
++
++        errors = []
++
++        def is_value(value, accept_promise=True):
++            return isinstance(value, (str, Promise) if accept_promise else str) or not is_iterable(value)
++
++        for choice, _ in self.flatchoices:
++            try:
++                if not is_value(choice):
++                    continue
++            except Exception:
++                # If we can't determine, skip this choice
++                continue
++
++            # Obtain a string representation suitable for length checking.
++            if isinstance(choice, Promise):
++                try:
++                    choice_str = choice._proxy____cast()
++                except Exception:
++                    choice_str = str(choice)
++            else:
++                choice_str = str(choice)
++
++            try:
++                choice_len = len(choice_str)
++            except Exception:
++                # If length can't be determined, skip
++                continue
++
++            if choice_len > self.max_length:
++                errors.append(
++                    checks.Error(
++                        "The 'max_length' of field '%s' (%s) is too small to fit the longest 'choices' value (%r)." % (
++                            getattr(self, 'name', '<unnamed>'), self.max_length, choice_str
++                        ),
++                        hint="Increase 'max_length' to at least %d." % choice_len,
++                        obj=self,
++                        id='fields.E124',
++                    )
++                )
++                # One error is sufficient
++                break
++
++        return errors
+ 
+     def _check_db_index(self):
+         if self.db_index not in (None, True, False):

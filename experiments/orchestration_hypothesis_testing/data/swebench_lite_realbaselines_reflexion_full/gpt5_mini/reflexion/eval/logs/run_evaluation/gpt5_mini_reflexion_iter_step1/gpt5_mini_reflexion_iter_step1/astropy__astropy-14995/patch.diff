@@ -1,0 +1,44 @@
+--- a/astropy/nddata/mixins/ndarithmetic.py
++++ b/astropy/nddata/mixins/ndarithmetic.py
+@@ -512,19 +512,31 @@
+             If neither had a mask ``None`` is returned. Otherwise
+             ``handle_mask`` must create (and copy) the returned mask.
+         """
+-        # If only one mask is present we need not bother about any type checks
+-        if (
+-            self.mask is None and operand is not None and operand.mask is None
+-        ) or handle_mask is None:
++        # If handle_mask is explicitly disabled, nothing to do.
++        if handle_mask is None:
+             return None
+-        elif self.mask is None and operand is not None:
+-            # Make a copy so there is no reference in the result.
++
++        # If operand is None (e.g. collapse operations), just copy self.mask.
++        if operand is None:
++            return deepcopy(self.mask)
++
++        # At this point operand is not None. Determine presence of masks.
++        self_has_mask = self.mask is not None
++        operand_has_mask = getattr(operand, "mask", None) is not None
++
++        # Neither has a mask: nothing to do.
++        if not self_has_mask and not operand_has_mask:
++            return None
++
++        # Only one has a mask: return a copy of that mask.
++        if not self_has_mask and operand_has_mask:
+             return deepcopy(operand.mask)
+-        elif operand is None:
++        if self_has_mask and not operand_has_mask:
+             return deepcopy(self.mask)
+-        else:
+-            # Now lets calculate the resulting mask (operation enforces copy)
+-            return handle_mask(self.mask, operand.mask, **kwds)
++
++        # Both have masks: delegate to the provided handler.
++        # Now lets calculate the resulting mask (operation enforces copy)
++        return handle_mask(self.mask, operand.mask, **kwds)
+ 
+     def _arithmetic_wcs(self, operation, operand, compare_wcs, **kwds):
+         """

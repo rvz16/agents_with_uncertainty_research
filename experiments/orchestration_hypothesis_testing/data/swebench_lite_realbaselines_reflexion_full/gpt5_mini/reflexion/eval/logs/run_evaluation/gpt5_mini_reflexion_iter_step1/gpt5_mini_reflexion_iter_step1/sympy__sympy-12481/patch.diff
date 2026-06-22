@@ -1,0 +1,20 @@
+--- a/sympy/combinatorics/permutations.py
++++ b/sympy/combinatorics/permutations.py
+@@ -896,11 +896,13 @@
+ 
+         temp = flatten(args)
+         if has_dups(temp):
+-            if is_cycle:
+-                raise ValueError('there were repeated elements; to resolve '
+-                'cycles use Cycle%s.' % ''.join([str(tuple(c)) for c in args]))
+-            else:
++            if not is_cycle:
++                # repeated elements in array-form are not allowed
+                 raise ValueError('there were repeated elements.')
++            # If cycle notation is provided and elements appear in more than
++            # one cycle, treat the list of cycles as a product of (possibly
++            # non-disjoint) cycles applied left-to-right. Do not raise an
++            # error here.
+         temp = set(temp)
+ 
+         if not is_cycle and \

@@ -1,0 +1,19 @@
+--- a/astropy/io/fits/fitsrec.py
++++ b/astropy/io/fits/fitsrec.py
+@@ -1260,8 +1260,15 @@
+             output_field[jdx] = value
+ 
+         # Replace exponent separator in floating point numbers
++        # Ensure we get the correct column format object for the column
++        # index so that the 'in' test works as expected.
++        format = self._coldefs[col_idx].format
+         if 'D' in format:
+-            output_field.replace(encode_ascii('E'), encode_ascii('D'))
++            # np.char.replace (and chararray.replace) return a new array rather
++            # than modifying in-place.  Make the replacement and write it back
++            # into the output_field to modify the underlying buffer.
++            output_field[...] = np.char.replace(output_field, encode_ascii('E'),
++                                                encode_ascii('D'))
+ 
+ 
+ def _get_recarray_field(array, key):

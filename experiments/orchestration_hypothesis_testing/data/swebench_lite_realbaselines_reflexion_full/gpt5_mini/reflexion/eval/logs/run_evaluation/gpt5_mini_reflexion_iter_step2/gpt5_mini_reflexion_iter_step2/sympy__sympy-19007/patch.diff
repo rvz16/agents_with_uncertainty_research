@@ -1,0 +1,59 @@
+--- a/sympy/matrices/expressions/blockmatrix.py
++++ b/sympy/matrices/expressions/blockmatrix.py
+@@ -233,18 +233,48 @@
+         return self._eval_transpose()
+ 
+     def _entry(self, i, j, **kwargs):
+-        # Find row entry
+-        for row_block, numrows in enumerate(self.rowblocksizes):
+-            if (i < numrows) != False:
++        # Find row entry. When indices are symbolic it may be impossible to
++        # decide which block they belong to; in such cases we should not
++        # simplify to a specific block (which could be wrong). Use ask to
++        # determine inequalities where possible; if undecidable return a
++        # MatrixSlice for the single element to keep it unevaluated.
++        from sympy import ask, Q
++        # work on local copies so we don't lose the original i, j used below
++        i_local = i
++        row_block = None
++        for idx, numrows in enumerate(self.rowblocksizes):
++            lt = ask(Q.lt(i_local, numrows))
++            if lt is True:
++                row_block = idx
+                 break
++            elif lt is False:
++                # definitely not in this block
++                i_local = i_local - numrows
++                continue
+             else:
+-                i -= numrows
+-        for col_block, numcols in enumerate(self.colblocksizes):
+-            if (j < numcols) != False:
++                # undecidable: leave unevaluated
++                return MatrixSlice(self, (i, i + 1), (j, j + 1))
++
++        if row_block is None:
++            return MatrixSlice(self, (i, i + 1), (j, j + 1))
++
++        j_local = j
++        col_block = None
++        for idx, numcols in enumerate(self.colblocksizes):
++            lt = ask(Q.lt(j_local, numcols))
++            if lt is True:
++                col_block = idx
+                 break
++            elif lt is False:
++                j_local = j_local - numcols
++                continue
+             else:
+-                j -= numcols
+-        return self.blocks[row_block, col_block][i, j]
++                return MatrixSlice(self, (i, i + 1), (j, j + 1))
++
++        if col_block is None:
++            return MatrixSlice(self, (i, i + 1), (j, j + 1))
++
++        return self.blocks[row_block, col_block][i_local, j_local]
+ 
+     @property
+     def is_Identity(self):

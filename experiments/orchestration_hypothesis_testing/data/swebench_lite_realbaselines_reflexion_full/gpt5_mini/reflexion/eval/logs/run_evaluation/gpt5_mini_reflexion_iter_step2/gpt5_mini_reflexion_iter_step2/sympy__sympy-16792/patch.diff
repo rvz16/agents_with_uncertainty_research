@@ -1,0 +1,74 @@
+--- a/sympy/utilities/codegen.py
++++ b/sympy/utilities/codegen.py
+@@ -739,7 +739,17 @@
+                 try:
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # If the user explicitly requested an argument that was not
++                    # detected in the expression, preserve array/matrix
++                    # information when possible (e.g., MatrixSymbol) so that
++                    # generated code gets the correct signature (pointer/array).
++                    if isinstance(symbol, MatrixSymbol):
++                        dims = []
++                        for dim in symbol.shape:
++                            dims.append((S.Zero, dim - 1))
++                        new_args.append(InputArgument(symbol, dimensions=dims))
++                    else:
++                        new_args.append(InputArgument(symbol))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_val, local_vars, global_vars)
+@@ -1402,7 +1412,16 @@
+                 try:
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # Preserve array/matrix metadata for explicitly requested
++                    # arguments (e.g., MatrixSymbol) so generated function
++                    # signatures are correct even if they are unused in expr.
++                    if isinstance(symbol, MatrixSymbol):
++                        dims = []
++                        for dim in symbol.shape:
++                            dims.append((S.Zero, dim - 1))
++                        new_args.append(InputArgument(symbol, dimensions=dims))
++                    else:
++                        new_args.append(InputArgument(symbol))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_vals, local_vars, global_vars)
+@@ -1610,7 +1629,15 @@
+                 try:
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # If the requested symbol is a MatrixSymbol, include its
++                    # dimensions so the argument is treated as an array.
++                    if isinstance(symbol, MatrixSymbol):
++                        dims = []
++                        for dim in symbol.shape:
++                            dims.append((S.Zero, dim - 1))
++                        new_args.append(InputArgument(symbol, dimensions=dims))
++                    else:
++                        new_args.append(InputArgument(symbol))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_vals, local_vars, global_vars)
+@@ -1841,7 +1868,16 @@
+                 try:
+                     new_args.append(name_arg_dict[symbol])
+                 except KeyError:
+-                    new_args.append(InputArgument(symbol))
++                    # Preserve array information for MatrixSymbol arguments
++                    # requested by the user even if they don't appear in the
++                    # expression.
++                    if isinstance(symbol, MatrixSymbol):
++                        dims = []
++                        for dim in symbol.shape:
++                            dims.append((S.Zero, dim - 1))
++                        new_args.append(InputArgument(symbol, dimensions=dims))
++                    else:
++                        new_args.append(InputArgument(symbol))
+             arg_list = new_args
+ 
+         return Routine(name, arg_list, return_vals, local_vars, global_vars)

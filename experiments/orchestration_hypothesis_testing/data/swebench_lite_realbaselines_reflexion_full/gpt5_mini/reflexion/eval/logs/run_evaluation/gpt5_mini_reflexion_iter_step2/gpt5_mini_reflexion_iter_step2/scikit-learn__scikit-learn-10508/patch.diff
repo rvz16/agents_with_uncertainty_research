@@ -1,0 +1,16 @@
+--- a/sklearn/preprocessing/label.py
++++ b/sklearn/preprocessing/label.py
+@@ -126,6 +126,13 @@
+         """
+         check_is_fitted(self, 'classes_')
+         y = column_or_1d(y, warn=True)
++
++        # Handle empty input early to avoid dtype-casting issues when
++        # y is an empty float array (e.g. coming from []) but classes_
++        # have a string/object dtype. Returning an empty integer array
++        # is the expected behavior.
++        if y.size == 0:
++            return np.array([], dtype=np.intp)
+ 
+         classes = np.unique(y)
+         if len(np.intersect1d(classes, self.classes_)) < len(classes):

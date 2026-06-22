@@ -1,0 +1,60 @@
+--- a/sklearn/neighbors/base.py
++++ b/sklearn/neighbors/base.py
+@@ -10,6 +10,7 @@
+ from abc import ABCMeta, abstractmethod
+ 
+ import numpy as np
++import numbers
+ from scipy.sparse import csr_matrix, issparse
+ 
+ from .ball_tree import BallTree
+@@ -99,6 +100,40 @@
+                          "'distance', or a callable function")
+ 
+ 
++def _check_n_neighbors(n_neighbors, name="n_neighbors"):
++    """Validate and normalize n_neighbors-like parameters.
++
++    Accepts integers and integer-valued floats (e.g. 3.0) and returns an int.
++    Raises a ValueError for non-integer reals or other types.
++    None is accepted and returned as-is.
++    """
++    if n_neighbors is None:
++        return None
++
++    # numbers.Integral will accept Python ints and numpy integer types.
++    if isinstance(n_neighbors, numbers.Integral):
++        n = int(n_neighbors)
++    # Accept real numbers that are integer-valued (e.g. 3.0)
++    elif isinstance(n_neighbors, numbers.Real):
++        # float and numpy floats support is_integer(); fallback to equality check
++        try:
++            is_int_valued = float(n_neighbors).is_integer()
++        except Exception:
++            is_int_valued = int(n_neighbors) == n_neighbors
++        if is_int_valued:
++            n = int(n_neighbors)
++        else:
++            raise ValueError("%s must be an integer. Got %r." %
++                             (name, n_neighbors))
++    else:
++        raise ValueError("%s must be an integer. Got %r." % (name, n_neighbors))
++
++    if n <= 0:
++        raise ValueError("Expected %s > 0. Got %d" % (name, n))
++
++    return n
++
++
+ class NeighborsBase(six.with_metaclass(ABCMeta, BaseEstimator)):
+     """Base class for nearest neighbors estimators."""
+ 
+@@ -327,6 +362,8 @@
+ 
+         if n_neighbors is None:
+             n_neighbors = self.n_neighbors
++        n_neighbors = _check_n_neighbors(n_neighbors, "n_neighbors")
++        n_neighbors = _check_n_neighbors(n_neighbors, "n_neighbors")
+ 
+         if X is not None:
+             query_is_train = False

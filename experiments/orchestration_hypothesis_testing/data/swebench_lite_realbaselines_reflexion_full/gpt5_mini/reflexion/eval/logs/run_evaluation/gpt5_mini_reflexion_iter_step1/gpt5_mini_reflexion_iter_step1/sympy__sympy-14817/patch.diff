@@ -1,0 +1,67 @@
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -819,18 +819,57 @@
+         return self._print(B.blocks)
+ 
+     def _print_MatAdd(self, expr):
++        """
++        Pretty print matrix addition. This mirrors the logic used in
++        _print_Add to determine when to display '+' or '-' so that
++        printing does not try to sympify string-like symbols (which
++        can raise errors) and negative terms are handled correctly.
++        """
+         s = None
+-        for item in expr.args:
+-            pform = self._print(item)
++        for i, item in enumerate(expr.args):
++            # Determine if the item is negative (has a negative coefficient)
++            is_neg = False
++            pform = None
++
++            if item.is_Mul and _coeff_isneg(item):
++                # item has a negative coefficient like -a*b
++                is_neg = True
++                coeff, other = item.as_coeff_mul(rational=False)
++                # build the positive part for printing (remove the - sign)
++                pos_item = Mul(-coeff, *other, evaluate=False)
++                pform = self._print(pos_item)
++            elif item.is_Number and item < 0:
++                is_neg = True
++                pform = self._print(-item)
++
++            if pform is None:
++                pform = self._print(item)
++
+             if s is None:
+-                s = pform     # First element
++                # first element: if negative, prepend a leading minus
++                if is_neg:
++                    # choose '-' or '- ' depending on height
++                    neg_str = '- ' if pform.height() > 1 else '-'
++                    # parenthesize if needed (same rule as in _print_Add)
++                    if (pform.binding > prettyForm.NEG or
++                            pform.binding == prettyForm.ADD):
++                        p = stringPict(*pform.parens())
++                    else:
++                        p = pform
++                    p = stringPict.next(neg_str, p)
++                    s = prettyForm(binding=prettyForm.NEG, *p)
++                else:
++                    s = pform
+             else:
+-                if S(item.args[0]).is_negative:
+-                    s = prettyForm(*stringPict.next(s, ' '))
+-                    pform = self._print(item)
++                # subsequent elements: use ' + ' or ' - ' as appropriate
++                if is_neg:
++                    s = prettyForm(*stringPict.next(s, ' - '))
++                    s = prettyForm(*stringPict.next(s, pform))
+                 else:
+                     s = prettyForm(*stringPict.next(s, ' + '))
+-                s = prettyForm(*stringPict.next(s, pform))
++                    s = prettyForm(*stringPict.next(s, pform))
++
++        return s
+ 
+         return s
+ 

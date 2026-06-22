@@ -1,0 +1,32 @@
+--- a/sympy/sets/sets.py
++++ b/sympy/sets/sets.py
+@@ -1262,12 +1262,27 @@
+         # flatten inputs to merge intersections and iterables
+         args = _sympify(args)
+ 
++        # Remove duplicates and order for canonical processing. This ensures
++        # that intersections with repeated arguments behave the same as those
++        # without duplicates (e.g., Intersection(A, A, B) == Intersection(A, B)).
++        # Use ordered to get a deterministic order, then remove duplicates while
++        # preserving that order. Fall back to an equality-based check if some
++        # args are unhashable.
++        args = list(ordered(args, Set._infimum_key))
++        try:
++            # dict.fromkeys preserves order and removes duplicates based on hash/equality
++            args = list(dict.fromkeys(args))
++        except TypeError:
++            unique = []
++            for a in args:
++                if not any(a == u for u in unique):
++                    unique.append(a)
++            args = unique
++
+         # Reduce sets using known rules
+         if evaluate:
+             args = list(cls._new_args_filter(args))
+             return simplify_intersection(args)
+-
+-        args = list(ordered(args, Set._infimum_key))
+ 
+         obj = Basic.__new__(cls, *args)
+         obj._argset = frozenset(args)

@@ -1,0 +1,135 @@
+2026-06-22 08:19:51,905 - INFO - Creating container for pytest-dev__pytest-7220...
+2026-06-22 08:19:52,044 - INFO - Container for pytest-dev__pytest-7220 created: 95e611d3686727ac621d6e661204d3f4b22310af51e1851c33fe053b2562e3ee
+2026-06-22 08:19:52,201 - INFO - Container for pytest-dev__pytest-7220 started: 95e611d3686727ac621d6e661204d3f4b22310af51e1851c33fe053b2562e3ee
+2026-06-22 08:19:52,201 - INFO - Intermediate patch for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/pytest-dev__pytest-7220/patch.diff, now applying to container...
+2026-06-22 08:19:52,284 - INFO - >>>>> Applied Patch:
+Checking patch src/_pytest/nodes.py...
+Applied patch src/_pytest/nodes.py cleanly.
+
+2026-06-22 08:19:52,359 - INFO - Git diff before:
+diff --git a/src/_pytest/nodes.py b/src/_pytest/nodes.py
+index 4a79bc861..9572aa93f 100644
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -362,11 +362,51 @@ class Node(metaclass=NodeMeta):
+             truncate_locals = True
+ 
+         try:
+-            os.getcwd()
++            cwd = os.getcwd()
+             abspath = False
+         except OSError:
++            # If we cannot getcwd, fall back to absolute paths.
++            cwd = None
+             abspath = True
+ 
++        # When the process cwd has been changed (for example in a fixture),
++        # make sure the traceback formatting uses the original invocation
++        # directory as base for relative paths. This prevents showing paths
++        # relative to an altered working directory (which confuses editors).
++        invocation_dir = None
++        try:
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                invocation_dir = str(invocation_dir)
++        except Exception:
++            invocation_dir = None
++
++        # If we have a known invocation_dir and the cwd differs, temporarily
++        # chdir back to the invocation dir while generating the repr so that
++        # relative paths are computed against the original directory.
++        if not abspath and invocation_dir and cwd and cwd != invocation_dir:
++            try:
++                os.chdir(invocation_dir)
++                try:
++                    return excinfo.getrepr(
++                        funcargs=True,
++                        abspath=False,
++                        showlocals=self.config.getoption("showlocals", False),
++                        style=style,
++                        tbfilter=False,  # pruned already, or in --fulltrace mode.
++                        truncate_locals=truncate_locals,
++                    )
++                finally:
++                    # restore original cwd
++                    try:
++                        os.chdir(cwd)
++                    except OSError:
++                        # ignore failure to restore cwd
++                        pass
++            except OSError:
++                # If chdir fails for any reason, fall back to default behaviour.
++                pass
++
+         return excinfo.getrepr(
+             funcargs=True,
+             abspath=abspath,
+2026-06-22 08:19:52,359 - INFO - Eval script for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/pytest-dev__pytest-7220/eval.sh; copying to container...
+2026-06-22 08:19:55,301 - INFO - Test runtime: 2.91 seconds
+2026-06-22 08:19:55,302 - INFO - Test output for pytest-dev__pytest-7220 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step1/gpt5_mini_reflexion_iter_step1/pytest-dev__pytest-7220/test_output.txt
+2026-06-22 08:19:55,332 - INFO - Git diff after:
+diff --git a/src/_pytest/nodes.py b/src/_pytest/nodes.py
+index 4a79bc861..9572aa93f 100644
+--- a/src/_pytest/nodes.py
++++ b/src/_pytest/nodes.py
+@@ -362,11 +362,51 @@ class Node(metaclass=NodeMeta):
+             truncate_locals = True
+ 
+         try:
+-            os.getcwd()
++            cwd = os.getcwd()
+             abspath = False
+         except OSError:
++            # If we cannot getcwd, fall back to absolute paths.
++            cwd = None
+             abspath = True
+ 
++        # When the process cwd has been changed (for example in a fixture),
++        # make sure the traceback formatting uses the original invocation
++        # directory as base for relative paths. This prevents showing paths
++        # relative to an altered working directory (which confuses editors).
++        invocation_dir = None
++        try:
++            invocation_dir = getattr(self.config, "invocation_dir", None)
++            if invocation_dir is not None:
++                invocation_dir = str(invocation_dir)
++        except Exception:
++            invocation_dir = None
++
++        # If we have a known invocation_dir and the cwd differs, temporarily
++        # chdir back to the invocation dir while generating the repr so that
++        # relative paths are computed against the original directory.
++        if not abspath and invocation_dir and cwd and cwd != invocation_dir:
++            try:
++                os.chdir(invocation_dir)
++                try:
++                    return excinfo.getrepr(
++                        funcargs=True,
++                        abspath=False,
++                        showlocals=self.config.getoption("showlocals", False),
++                        style=style,
++                        tbfilter=False,  # pruned already, or in --fulltrace mode.
++                        truncate_locals=truncate_locals,
++                    )
++                finally:
++                    # restore original cwd
++                    try:
++                        os.chdir(cwd)
++                    except OSError:
++                        # ignore failure to restore cwd
++                        pass
++            except OSError:
++                # If chdir fails for any reason, fall back to default behaviour.
++                pass
++
+         return excinfo.getrepr(
+             funcargs=True,
+             abspath=abspath,
+2026-06-22 08:19:55,332 - INFO - Grading answer for pytest-dev__pytest-7220...
+2026-06-22 08:19:55,333 - INFO - report: {'pytest-dev__pytest-7220': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['testing/test_nodes.py::test_failure_with_changed_cwd']}, 'PASS_TO_PASS': {'success': ['testing/test_nodes.py::test_ischildnode[--True]', 'testing/test_nodes.py::test_ischildnode[-foo-True]', 'testing/test_nodes.py::test_ischildnode[-foo/bar-True]', 'testing/test_nodes.py::test_ischildnode[-foo/bar::TestBaz-True]', 'testing/test_nodes.py::test_ischildnode[foo-food-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar::TestBaz-foo/bar-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar::TestBaz-foo/bar::TestBop-False]', 'testing/test_nodes.py::test_ischildnode[foo/bar-foo/bar::TestBop-True]', 'testing/test_nodes.py::test_node_from_parent_disallowed_arguments', 'testing/test_nodes.py::test__check_initialpaths_for_relpath', 'testing/test_nodes.py::test_std_warn_not_pytestwarning'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for pytest-dev__pytest-7220: resolved: False
+2026-06-22 08:19:55,333 - INFO - Attempting to stop container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:20:10,524 - INFO - Attempting to remove container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_reflexion_iter_step1...
+2026-06-22 08:20:10,539 - INFO - Container sweb.eval.pytest-dev__pytest-7220.gpt5_mini_reflexion_iter_step1 removed.
+2026-06-22 08:20:10,539 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7220:latest...
+2026-06-22 08:20:11,085 - INFO - Image swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7220:latest removed.

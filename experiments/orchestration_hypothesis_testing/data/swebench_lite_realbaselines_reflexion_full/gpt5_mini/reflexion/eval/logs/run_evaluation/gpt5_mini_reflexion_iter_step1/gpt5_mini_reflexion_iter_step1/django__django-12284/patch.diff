@@ -1,0 +1,22 @@
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -764,10 +764,17 @@
+             if not getattr(cls, self.attname, None):
+                 setattr(cls, self.attname, self.descriptor_class(self))
+         if self.choices is not None:
+-            if not hasattr(cls, 'get_%s_display' % self.name):
++            method_name = 'get_%s_display' % self.name
++            # Only avoid overriding if the method is defined directly on the
++            # class. Using hasattr() prevents subclasses from getting their own
++            # get_FOO_display when they override choices; check cls.__dict__
++            # so inherited methods do not block creating a subclass-specific
++            # display method. If a developer defined get_FOO_display on the
++            # class itself, do not override it.
++            if method_name not in cls.__dict__:
+                 setattr(
+                     cls,
+-                    'get_%s_display' % self.name,
++                    method_name,
+                     partialmethod(cls._get_FIELD_display, field=self),
+                 )
+ 

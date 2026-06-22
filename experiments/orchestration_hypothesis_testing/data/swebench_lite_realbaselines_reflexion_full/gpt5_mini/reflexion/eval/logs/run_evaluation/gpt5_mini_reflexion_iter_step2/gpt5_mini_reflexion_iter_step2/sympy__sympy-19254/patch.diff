@@ -1,0 +1,72 @@
+--- a/sympy/polys/factortools.py
++++ b/sympy/polys/factortools.py
+@@ -124,21 +124,60 @@
+ 
+ 
+ def dup_zz_mignotte_bound(f, K):
+-    """Mignotte bound for univariate polynomials in `K[x]`. """
+-    a = dup_max_norm(f, K)
+-    b = abs(dup_LC(f, K))
++    """Knuth-Cohen bound (replacement for the old Mignotte bound)
++    for univariate polynomials in `K[x]`.
++
++    The original implementation returned Mignotte's bound.  Here we use
++    the Knuth-Cohen style bound based on the Euclidean (L2) norm of the
++    coefficient vector which in practice gives a much tighter estimate
++    for coefficient growth of factors.
++
++    For a polynomial f with coefficients c_i we estimate the L2-norm
++    sqrt(sum_i c_i^2) and return 2**n * ||f||_2 where n = deg(f).  This
++    form is a safe overestimate for the size of coefficients of any
++    integral factor of f and replaces the older Mignotte expression.
++    """
++    # Compute squared L2 norm of coefficients as Python integers.
++    s = 0
++    for coeff in f:
++        # coeffs in integer polynomials are plain Python integers;
++        # convert defensively to int().
++        cc = int(coeff)
++        s += cc*cc
++
++    a2 = K.sqrt(K(s)) if s != 0 else K.zero
+     n = dup_degree(f)
+ 
+-    return K.sqrt(K(n + 1))*2**n*a*b
++    return K.pow(K(2), n)*a2
+ 
+ 
+ def dmp_zz_mignotte_bound(f, u, K):
+-    """Mignotte bound for multivariate polynomials in `K[X]`. """
++    """Knuth-Cohen style bound (replacement for the old Mignotte bound)
++    for multivariate polynomials in `K[X]`.
++
++    For multivariate polynomials the exact L2-norm computation can be
++    expensive and the representation may be sparse.  We therefore
++    conservatively estimate the L2-norm by using the maximum coefficient
++    magnitude together with the total number of coefficient positions
++    for a dense tensor of shape (deg_i + 1) for each variable.  Let
++    a = max coeff (infty-norm) and m = prod(deg_i + 1).  Then
++    ||f||_2 <= sqrt(m) * a and we return 2**N * sqrt(m) * a where
++    N = sum(deg_i).  This gives a safe Knuth-Cohen style bound for
++    multivariate factors.
++    """
+     a = dmp_max_norm(f, u, K)
+-    b = abs(dmp_ground_LC(f, u, K))
+-    n = sum(dmp_degree_list(f, u))
+-
+-    return K.sqrt(K(n + 1))*2**n*a*b
++    degs = dmp_degree_list(f, u)
++    # total degree measure used for the 2**N factor
++    n = sum(degs)
++
++    # estimate number of coefficient positions in a dense representation
++    m = 1
++    for d in degs:
++        m *= (d + 1)
++
++    a2 = K.sqrt(K(m))*a if m != 0 else K.zero
++
++    return K.pow(K(2), n)*a2
+ 
+ 
+ def dup_zz_hensel_step(m, f, g, h, s, t, K):

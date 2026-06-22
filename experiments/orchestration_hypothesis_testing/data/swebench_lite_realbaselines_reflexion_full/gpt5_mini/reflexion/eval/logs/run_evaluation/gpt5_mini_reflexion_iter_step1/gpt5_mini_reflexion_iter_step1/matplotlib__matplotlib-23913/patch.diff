@@ -1,0 +1,26 @@
+--- a/lib/matplotlib/legend.py
++++ b/lib/matplotlib/legend.py
+@@ -341,6 +341,9 @@
+         handler_map=None,
+         title_fontproperties=None,  # properties for the legend title
+         alignment="center",       # control the alignment within the legend box
++        draggable=False,
++        draggable_use_blit=False,
++        draggable_update="loc",
+         *,
+         ncol=1  # synonym for ncols (backward compatibility)
+     ):
+@@ -538,6 +541,13 @@
+ 
+         self.set_title(title, prop=title_prop_fp)
+         self._draggable = None
++
++        # Enable draggable behavior at creation if requested.
++        if draggable:
++            # Use the public API to enable dragging; this will create the
++            # DraggableLegend helper and return it (ignored here).
++            self.set_draggable(draggable, use_blit=draggable_use_blit,
++                               update=draggable_update)
+ 
+         # set the text color
+ 

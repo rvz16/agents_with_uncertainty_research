@@ -1,0 +1,75 @@
+--- a/django/contrib/admin/checks.py
++++ b/django/contrib/admin/checks.py
+@@ -898,8 +898,16 @@
+         try:
+             field = obj.model._meta.get_field(item)
+         except FieldDoesNotExist:
++            # getattr may succeed for descriptors that represent reverse
++            # relationships (for example, the reverse FK descriptor), but
++            # those are not valid for list_display. Detect such descriptors
++            # using inspect.getattr_static and report them as missing fields
++            # so that system checks emit E108 instead of allowing a runtime
++            # error in the admin list view.
++            import inspect
++
+             try:
+-                field = getattr(obj.model, item)
++                static_attr = inspect.getattr_static(obj.model, item)
+             except AttributeError:
+                 return [
+                     checks.Error(
+@@ -916,6 +924,54 @@
+                         id="admin.E108",
+                     )
+                 ]
++            else:
++                # Import related descriptor classes lazily to avoid import
++                # side-effects at module import time.
++                try:
++                    from django.db.models.fields.related_descriptors import (
++                        ReverseOneToOneDescriptor,
++                        ReverseManyToOneDescriptor,
++                        ForwardManyToOneDescriptor,
++                        ManyToManyDescriptor,
++                    )
++                except Exception:
++                    related_descrs = ()
++                else:
++                    related_descrs = (
++                        ReverseOneToOneDescriptor,
++                        ReverseManyToOneDescriptor,
++                        ForwardManyToOneDescriptor,
++                        ManyToManyDescriptor,
++                    )
++
++                if isinstance(static_attr, related_descrs):
++                    return [
++                        checks.Error(
++                            "The value of '%s' refers to '%s', which is not a "
++                            "callable, an attribute of '%s', or an attribute or "
++                            "method on '%s'."
++                            % (
++                                label,
++                                item,
++                                obj.__class__.__name__,
++                                obj.model._meta.label,
++                            ),
++                            obj=obj.__class__,
++                            id="admin.E108",
++                        )
++                    ]
++                # Fallback to the runtime attribute for further checks.
++                try:
++                    field = getattr(obj.model, item)
++                except AttributeError:
++                    return [
++                        checks.Error(
++                            "The value of '%s' refers to '%s', which is not a "
++                            "callable, an attribute of '%s', or an attribute or "
++                            "method on '%s'."
++                            % (
++                                label,
++                                item,
+         if isinstance(field, models.ManyToManyField) or (
+             getattr(field, "rel", None) and field.rel.field.many_to_one
+         ):

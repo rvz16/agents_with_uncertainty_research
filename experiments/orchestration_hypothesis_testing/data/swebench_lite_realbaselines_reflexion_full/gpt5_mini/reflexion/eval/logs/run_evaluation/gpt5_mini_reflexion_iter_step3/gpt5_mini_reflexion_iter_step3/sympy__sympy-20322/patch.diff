@@ -1,0 +1,78 @@
+--- a/sympy/core/mul.py
++++ b/sympy/core/mul.py
+@@ -1270,7 +1270,65 @@
+         if is_rational is False:
+             return False
+ 
+-        # use exact=True to avoid recomputing num or den
++        # Try to determine integrality without forcing evaluation of nested
++        # Muls. Be conservative: only return True/False when we can decide
++        # from the structure of the factors. If we encounter a factor whose
++        # contribution to numerator/denominator can't be determined without
++        # evaluation, give up (return None).
++        numerators = []
++        denominators = []
++        for a in self.args:
++            # integers contribute to numerator
++            if a.is_integer:
++                numerators.append(a)
++                continue
++            # explicit rational numbers
++            if a.is_Rational:
++                n, d = a.as_numer_denom()
++                numerators.append(n)
++                denominators.append(d)
++                continue
++            # handle basic powers: b**e where e is integer
++            if a.is_Pow:
++                b, e = a.as_base_exp()
++                if e.is_integer:
++                    # negative integer exponent -> factor goes to denominator
++                    if e.is_negative:
++                        if b.is_integer:
++                            denominators.append(b)
++                            continue
++                        else:
++                            return
++                    else:
++                        # positive integer exponent -> contributes to numerator if base integer
++                        if b.is_integer:
++                            numerators.append(b)
++                            continue
++                        else:
++                            return
++            # other/unknown factors (including unevaluated Muls) -- cannot decide
++            return
++
++        # If there are no denominator factors then the product is integer.
++        if not denominators:
++            return True
++
++        if not numerators:
++            numerators = [S.One]
++
++        odd = lambda ints: all(i.is_odd for i in ints)
++        even = lambda ints: any(i.is_even for i in ints)
++
++        # simple structural checks:
++        # - if all numerators are odd but some denominator is even, result is non-integer
++        if odd(numerators) and even(denominators):
++            return False
++        # - heuristic: if numerators are even and the only denominator is 2, result is integer
++        if even(numerators) and len(denominators) == 1 and denominators[0] == 2:
++            return True
++
++        # If we couldn't decide conservatively, fall back to fraction-based
++        # logic which may inspect and manipulate nested Muls.
+         n, d = fraction(self, exact=True)
+         if is_rational:
+             if d is S.One:
+@@ -1282,7 +1340,7 @@
+                 return False  # true even if d = 0
+         if n == d:
+             return fuzzy_and([not bool(self.atoms(Float)),
+-            fuzzy_not(d.is_zero)])
++                              fuzzy_not(d.is_zero)])
+ 
+     def _eval_is_polar(self):
+         has_polar = any(arg.is_polar for arg in self.args)

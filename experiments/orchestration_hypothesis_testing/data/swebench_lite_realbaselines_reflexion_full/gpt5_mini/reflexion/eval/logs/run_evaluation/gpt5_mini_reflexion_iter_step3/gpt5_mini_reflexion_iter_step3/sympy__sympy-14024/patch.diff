@@ -1,0 +1,19 @@
+--- a/sympy/core/numbers.py
++++ b/sympy/core/numbers.py
+@@ -2224,8 +2224,14 @@
+             ne = -expt
+             if self.is_negative:
+                 if expt.q != 1:
+-                    return -(S.NegativeOne)**((expt.p % expt.q) /
+-                            S(expt.q))*Rational(1, -self)**ne
++                    # For negative rational exponents of a negative integer base
++                    # we should preserve the factor (-1)**expt so that the
++                    # principal branch is used consistently (e.g.
++                    # (-2)**(-10/3) -> (-1)**(-10/3)*2**(-10/3)).
++                    # Earlier code introduced an extra leading minus which gave
++                    # an incorrect branch. Use S.NegativeOne**expt to keep the
++                    # correct principal value.
++                    return S.NegativeOne**expt * Rational(1, -self)**ne
+                 else:
+                     return (S.NegativeOne)**ne*Rational(1, -self)**ne
+             else:

@@ -1,0 +1,59 @@
+2026-06-22 10:13:31,327 - INFO - Creating container for sympy__sympy-23191...
+2026-06-22 10:13:31,461 - INFO - Container for sympy__sympy-23191 created: 2f1af6a5b8486e29537db588f1f60f79d2f361b33003c971a598afed56206e12
+2026-06-22 10:13:31,591 - INFO - Container for sympy__sympy-23191 started: 2f1af6a5b8486e29537db588f1f60f79d2f361b33003c971a598afed56206e12
+2026-06-22 10:13:31,592 - INFO - Intermediate patch for sympy__sympy-23191 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-23191/patch.diff, now applying to container...
+2026-06-22 10:13:31,715 - INFO - >>>>> Applied Patch:
+Checking patch sympy/printing/pretty/pretty.py...
+Applied patch sympy/printing/pretty/pretty.py cleanly.
+
+2026-06-22 10:13:31,970 - INFO - Git diff before:
+diff --git a/sympy/printing/pretty/pretty.py b/sympy/printing/pretty/pretty.py
+index 66461181d0..d4f11b0c88 100644
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -1190,7 +1190,13 @@ def _print_BasisDependent(self, expr):
+                                            3*(len(lengths)-1)))
+                     strs[j] += ' '*(lengths[-1]+3)
+ 
+-        return prettyForm('\n'.join([s[:-3] for s in strs]))
++        p = prettyForm('\n'.join([s[:-3] for s in strs]))
++        # Center the baseline vertically and mark the form as an atomic/open
++        # group so that surrounding pretty-printing (like adding parentheses)
++        # won't insert characters in the middle of the multiline representation.
++        p.baseline = p.height()//2
++        p.binding = prettyForm.OPEN
++        return p
+ 
+     def _print_NDimArray(self, expr):
+         from sympy.matrices.immutable import ImmutableMatrix
+2026-06-22 10:13:31,970 - INFO - Eval script for sympy__sympy-23191 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-23191/eval.sh; copying to container...
+2026-06-22 10:13:34,414 - INFO - Test runtime: 2.40 seconds
+2026-06-22 10:13:34,414 - INFO - Test output for sympy__sympy-23191 written to logs/run_evaluation/gpt5_mini_reflexion_iter_step2/gpt5_mini_reflexion_iter_step2/sympy__sympy-23191/test_output.txt
+2026-06-22 10:13:34,462 - INFO - Git diff after:
+diff --git a/sympy/printing/pretty/pretty.py b/sympy/printing/pretty/pretty.py
+index 66461181d0..d4f11b0c88 100644
+--- a/sympy/printing/pretty/pretty.py
++++ b/sympy/printing/pretty/pretty.py
+@@ -1190,7 +1190,13 @@ def _print_BasisDependent(self, expr):
+                                            3*(len(lengths)-1)))
+                     strs[j] += ' '*(lengths[-1]+3)
+ 
+-        return prettyForm('\n'.join([s[:-3] for s in strs]))
++        p = prettyForm('\n'.join([s[:-3] for s in strs]))
++        # Center the baseline vertically and mark the form as an atomic/open
++        # group so that surrounding pretty-printing (like adding parentheses)
++        # won't insert characters in the middle of the multiline representation.
++        p.baseline = p.height()//2
++        p.binding = prettyForm.OPEN
++        return p
+ 
+     def _print_NDimArray(self, expr):
+         from sympy.matrices.immutable import ImmutableMatrix
+2026-06-22 10:13:34,462 - INFO - Grading answer for sympy__sympy-23191...
+2026-06-22 10:13:34,463 - INFO - report: {'sympy__sympy-23191': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'tests_status': {'FAIL_TO_PASS': {'success': [], 'failure': ['test_issue_23058']}, 'PASS_TO_PASS': {'success': ['test_str_printing', 'test_pretty_print_unicode_v', 'test_latex_printing'], 'failure': []}, 'FAIL_TO_FAIL': {'success': [], 'failure': []}, 'PASS_TO_FAIL': {'success': [], 'failure': []}}}}
+Result for sympy__sympy-23191: resolved: False
+2026-06-22 10:13:34,463 - INFO - Attempting to stop container sweb.eval.sympy__sympy-23191.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:13:49,759 - INFO - Attempting to remove container sweb.eval.sympy__sympy-23191.gpt5_mini_reflexion_iter_step2...
+2026-06-22 10:13:49,787 - INFO - Container sweb.eval.sympy__sympy-23191.gpt5_mini_reflexion_iter_step2 removed.
+2026-06-22 10:13:49,787 - INFO - Attempting to remove image swebench/sweb.eval.x86_64.sympy_1776_sympy-23191:latest...
+2026-06-22 10:13:49,852 - INFO - Image swebench/sweb.eval.x86_64.sympy_1776_sympy-23191:latest removed.

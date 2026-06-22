@@ -1,0 +1,75 @@
+--- a/sphinx/util/typing.py
++++ b/sphinx/util/typing.py
+@@ -55,6 +55,24 @@
+ 
+ # inventory data on memory
+ Inventory = Dict[str, Dict[str, Tuple[str, str, str, str]]]
++
++
++def _find_real_module_name(obj: Any) -> Optional[str]:
++    """Try to find the real module name for objects that report 'builtins' as
++    their __module__ (for example, struct.Struct on older Pythons). We search
++    loaded modules for one that defines the object by name and return its name.
++    """
++    name = getattr(obj, '__name__', None)
++    if not name:
++        return None
++    for mod in sys.modules.values():
++        try:
++            if getattr(mod, name, None) is obj:
++                return getattr(mod, '__name__', None)
++        except Exception:
++            # Some modules may fail attribute access; ignore them.
++            continue
++    return None
+ 
+ 
+ def get_type_hints(obj: Any, globalns: Dict = None, localns: Dict = None) -> Dict[str, Any]:
+@@ -97,6 +115,13 @@
+     elif inspect.isNewType(cls):
+         return ':class:`%s`' % cls.__name__
+     elif cls.__module__ in ('__builtin__', 'builtins'):
++        # Some extension types report their __module__ as 'builtins' even
++        # though they are defined in another module. Try to find the real
++        # module so we can create a qualified cross-reference like
++        # :class:`struct.Struct`.
++        real_mod = _find_real_module_name(cls)
++        if real_mod:
++            return ':class:`%s.%s`' % (real_mod, cls.__name__)
+         return ':class:`%s`' % cls.__name__
+     else:
+         if sys.version_info >= (3, 7):  # py37+
+@@ -302,6 +327,11 @@
+         return 'None'
+     elif (getattr(annotation, '__module__', None) == 'builtins' and
+           hasattr(annotation, '__qualname__')):
++        # Some extension types lie about their __module__. Try to locate the
++        # real module and qualify the name if possible.
++        real_mod = _find_real_module_name(annotation)
++        if real_mod:
++            return '%s.%s' % (real_mod, annotation.__qualname__)
+         return annotation.__qualname__
+     elif annotation is Ellipsis:
+         return '...'
+@@ -315,6 +345,10 @@
+ def _stringify_py37(annotation: Any) -> str:
+     """stringify() for py37+."""
+     module = getattr(annotation, '__module__', None)
++    if module in ('__builtin__', 'builtins'):
++        real_mod = _find_real_module_name(annotation)
++        if real_mod:
++            module = real_mod
+     if module == 'typing':
+         if getattr(annotation, '_name', None):
+             qualname = annotation._name
+@@ -367,6 +401,10 @@
+ def _stringify_py36(annotation: Any) -> str:
+     """stringify() for py35 and py36."""
+     module = getattr(annotation, '__module__', None)
++    if module in ('__builtin__', 'builtins'):
++        real_mod = _find_real_module_name(annotation)
++        if real_mod:
++            module = real_mod
+     if module == 'typing':
+         if getattr(annotation, '_name', None):
+             qualname = annotation._name

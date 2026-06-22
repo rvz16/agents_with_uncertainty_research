@@ -1,0 +1,19 @@
+--- a/django/db/models/base.py
++++ b/django/db/models/base.py
+@@ -17,7 +17,7 @@
+     connections, router, transaction,
+ )
+ from django.db.models import (
+-    NOT_PROVIDED, ExpressionWrapper, IntegerField, Max, Value,
++    NOT_PROVIDED, ExpressionWrapper, IntegerField, Max, Value, AutoField,
+ )
+ from django.db.models.constants import LOOKUP_SEP
+ from django.db.models.constraints import CheckConstraint, UniqueConstraint
+@@ -1299,6 +1299,7 @@
+     def _check_default_pk(cls):
+         if (
+             cls._meta.pk.auto_created and
++            isinstance(cls._meta.pk, AutoField) and
+             not settings.is_overridden('DEFAULT_AUTO_FIELD') and
+             not cls._meta.app_config._is_default_auto_field_overridden
+         ):
