@@ -6,6 +6,43 @@ edit. Keep entries terse: file, what, why.
 
 ---
 
+## 2026-06-23 — analysis.ipynb: drop leaked SWE public-test critic from policy + regime stats
+
+**Problem.** SWE-Bench has no public-test critic distinct from the oracle
+verifier (the `test_patch` *is* the verifier). The `calib__swe_lite__haiku45`
+raw-evidence cache nonetheless carried an `L2_public_tests` column equal to
+`Y` on all 900 records — it was scored by the full pytest harness == the
+oracle, so `Cr_test` leaked the label. `_compute_likelihoods_from_rows` emits a
+valid near-oracle likelihood for it (gap 0.993), which the standard
+absent-critic None-filter does **not** drop, so the leaked critic fed the
+Bayesian posterior on that one cell. It contaminated Figure 2 (regime map), the
+§7 R×c_ver winner grid, the per-model policy bars, the swe_lite c_ver sweep,
+and `STAT_POLICY` → `pc` → Table 1.
+
+**Fix.** Null `L2_public_tests` for `swe_lite`/`swe_verified` right after
+`_compute_likelihoods_from_rows` (before the None-filter) at every likelihood
+site in `experiments/orchestration/wandb/analysis.ipynb`: §3 `STAT_POLICY`
+("Policy utilities recomputed from raw evidence"), §3h median-anchored
+sensitivity, §7 winner grid, the per-model policy plotter, and the regime-map
+cell. The §7 self-consistency tripwire (recompute == `pc`) now passes because
+both sides are leak-free.
+
+**Impact.** Only `swe_lite/haiku45` carried the leak (the other 11 SWE cells
+have no L2). At the canonical SWE cost (`c_ver=90`) every non-Bayesian policy
+is unchanged; `bayesian_DP` drops +67.6 → +67.3, tying `bayesian_greedy` (gold
+star moves to greedy; `full_results.tex` Table 1 row updated to bold both at
++67.3). The swe_lite c_ver sweep shifts at mid-cost (up to ~7.8 utility units).
+Regenerated paper figures: `policies_per_model/swe_lite_{haiku45_eval,eval,train_vs_eval}.png`
+and `cver_sweep/swe_lite_grid.png`.
+
+**Also in the same commit.** Regime sweeps use canonical `c_gen=10` and the
+full 54-cell pool via a cal-only 75/25 split fallback; winner markers use
+strict argmax (`TIE_TOL=0`); regime-map title reads `len(CELLS)`; Figure 2
+`other` points rendered opaque; `kernel_effect` uses a local `_keff_df` so it
+no longer clobbers the global `runs` dataframe.
+
+---
+
 ## 2026-06-17 — SWE-Bench pipeline: local-build harness fix + reusable runner
 
 **Problem.** Running the SWE-Bench harness against rootless podman 3.4.4
