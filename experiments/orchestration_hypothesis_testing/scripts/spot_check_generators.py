@@ -66,8 +66,10 @@ sys.path.insert(0, str(ROOT))
 
 # Local import: thread-safe cost ledger
 SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+ORCH_DIR = SCRIPT_DIR.parent
+for path in (SCRIPT_DIR, ORCH_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 from _common.cost import CostTracker, extract_usage, project_cost  # noqa: E402
 
 # Provider exceptions that should NOT be retried; we abort immediately.
@@ -129,6 +131,7 @@ GENERATORS: dict[str, tuple[str, str | None, bool | None]] = {
     "qwen3_8b":          ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   False),
     "qwen3_8b_thinking": ("Qwen/Qwen3-8B",              "http://127.0.0.1:8002/v1",   True),
     "qwen25_32b":        ("Qwen/Qwen2.5-Coder-32B-Instruct", "http://127.0.0.1:8003/v1",   None),
+    "gpt_oss_20b":       (os.environ.get("GPT_OSS_20B_MODEL", "openai/gpt-oss-20b"), os.environ.get("GPT_OSS_20B_BASE_URL", "http://127.0.0.1:8004/v1"), None),
 }
 
 # Per-model cost cap (USD) — used by --max-cost-usd-per-model when not given a
@@ -143,6 +146,7 @@ DEFAULT_COST_CAPS_USD: dict[str, float] = {
     "gpt5_mini":   2.0,
     "qwen25_7b":  1000.0,
     "qwen25_32b": 1000.0,
+    "gpt_oss_20b": 1000.0,
     "qwen3_8b":   1000.0,
     "qwen3_8b_thinking": 1000.0,
 }
@@ -1218,6 +1222,7 @@ Auto-no-ops on real Docker (where the platform kwarg is fine).
 """
 import os
 if "podman" in os.environ.get("DOCKER_HOST", "").lower() or os.environ.get("SWEBENCH_PODMAN_COMPAT"):
+    import fcntl
     import docker
     from docker.api import container as _container_api
     from docker.api import build as _build_api
@@ -1238,6 +1243,166 @@ if "podman" in os.environ.get("DOCKER_HOST", "").lower() or os.environ.get("SWEB
         kwargs.pop("platform", None)
         return _orig_build(self, *args, **kwargs)
     _build_api.BuildApiMixin.build = _patched_build  # type: ignore[assignment]
+
+    def _patch_arm64_test_spec(spec):
+        if getattr(spec, "arch", None) != "arm64":
+            return spec
+        if spec.repo in {"scikit-learn/scikit-learn", "pydata/xarray"}:
+            apt = (
+                "apt-get update && apt-get install -y "
+                "gfortran libopenblas-dev liblapack-dev pkg-config "
+                "&& rm -rf /var/lib/apt/lists/*"
+            )
+            if apt not in spec.env_script_list:
+                spec.env_script_list.insert(1, apt)
+        if spec.repo == "pydata/xarray":
+            drop_cdms2 = "sed -i '/^[[:space:]]*- cdms2$/d' environment.yml"
+            if drop_cdms2 not in spec.env_script_list:
+                for i, cmd in enumerate(spec.env_script_list):
+                    if cmd == "conda env update -f environment.yml":
+                        spec.env_script_list.insert(i, drop_cdms2)
+                        break
+        if spec.repo == "scikit-learn/scikit-learn":
+            pip_pin = "python -m pip install 'pip<23.1'"
+            if pip_pin not in spec.env_script_list:
+                spec.env_script_list.append(pip_pin)
+        for i, cmd in enumerate(spec.env_script_list):
+            if "conda create -n testbed python=3.5" in cmd:
+                spec.env_script_list[i] = cmd.replace("python=3.5", "python=3.6")
+        if any("lxml" in cmd or "pikepdf" in cmd for cmd in spec.env_script_list):
+            apt = (
+                "apt-get update && apt-get install -y "
+                "libxml2-dev libxslt1-dev zlib1g-dev "
+                "&& rm -rf /var/lib/apt/lists/*"
+            )
+            if apt not in spec.env_script_list:
+                spec.env_script_list.insert(1, apt)
+        if spec.repo == "astropy/astropy":
+            for i, cmd in enumerate(spec.env_script_list):
+                if "conda create -n testbed python=3.6 setuptools==38.2.4 -y" in cmd:
+                    spec.env_script_list[i] = cmd.replace(" setuptools==38.2.4", "")
+                    setuptools_pin = "python -m pip install 'setuptools==38.2.4'"
+                    if setuptools_pin not in spec.env_script_list:
+                        spec.env_script_list.insert(i + 2, setuptools_pin)
+                    break
+            for i, cmd in enumerate(spec.env_script_list):
+                if cmd.startswith("python -m pip install ") and "--no-clean" not in cmd:
+                    spec.env_script_list[i] = cmd.replace(
+                        "python -m pip install ",
+                        "python -m pip install --no-clean ",
+                        1,
+                    )
+        if spec.repo == "matplotlib/matplotlib":
+            for i, cmd in enumerate(spec.repo_script_list):
+                if cmd.startswith("tar -xvzf ") and "--no-same-owner" not in cmd:
+                    spec.repo_script_list[i] = cmd.replace(
+                        "tar -xvzf ",
+                        "tar --no-same-owner -xvzf ",
+                        1,
+                    )
+        return spec
+
+    import builtins as _builtins
+    import sys as _sys
+    import types as _types
+    from pathlib import Path
+
+    def _patch_loaded_swebench():
+        mod = _sys.modules.get("swebench.harness.test_spec.test_spec")
+        if mod is None or not hasattr(mod, "make_test_spec"):
+            return
+        fn = mod.make_test_spec
+        if not getattr(fn, "_swe_podman_patched", False):
+            orig = _types.FunctionType(
+                fn.__code__,
+                fn.__globals__,
+                name=fn.__name__,
+                argdefs=fn.__defaults__,
+                closure=fn.__closure__,
+            )
+
+            def _patched_make_test_spec(*args, **kwargs):
+                arch = _swe_podman_os.environ.get("SWEBENCH_ARCH")
+                if arch:
+                    if len(args) >= 6:
+                        args = list(args)
+                        args[5] = arch
+                        args = tuple(args)
+                    else:
+                        kwargs["arch"] = arch
+                return _swe_podman_patch_arm64_test_spec(
+                    _swe_podman_original_make_test_spec(*args, **kwargs)
+                )
+
+            fn.__globals__["_swe_podman_os"] = os
+            fn.__globals__["_swe_podman_patch_arm64_test_spec"] = _patch_arm64_test_spec
+            fn.__globals__["_swe_podman_original_make_test_spec"] = orig
+            fn.__code__ = _patched_make_test_spec.__code__
+            fn.__defaults__ = _patched_make_test_spec.__defaults__
+            fn.__kwdefaults__ = _patched_make_test_spec.__kwdefaults__
+            fn._swe_podman_patched = True
+        patched = mod.make_test_spec
+        for module_name in (
+            "swebench.harness.test_spec",
+            "swebench.harness.docker_build",
+            "swebench.harness.run_evaluation",
+            "swebench.harness.reporting",
+        ):
+            module = _sys.modules.get(module_name)
+            if module is not None and hasattr(module, "make_test_spec"):
+                module.make_test_spec = patched
+        docker_build = _sys.modules.get("swebench.harness.docker_build")
+        build_dir = os.environ.get("SWEBENCH_BUILD_DIR")
+        if (
+            docker_build is not None
+            and build_dir
+            and hasattr(docker_build, "build_env_images")
+            and hasattr(docker_build, "build_instance_image")
+        ):
+            build_root = Path(build_dir)
+            docker_build.BASE_IMAGE_BUILD_DIR = build_root / "base"
+            docker_build.ENV_IMAGE_BUILD_DIR = build_root / "env"
+            docker_build.INSTANCE_IMAGE_BUILD_DIR = build_root / "instances"
+            if not getattr(docker_build, "_swe_podman_build_patched", False):
+                lock_dir = build_root / "locks"
+                lock_dir.mkdir(parents=True, exist_ok=True)
+                lock_path = lock_dir / "swebench_local_build.lock"
+                orig_build_env_images = docker_build.build_env_images
+                orig_build_instance_image = docker_build.build_instance_image
+                build_max_workers = int(os.environ.get("SWEBENCH_BUILD_MAX_WORKERS", "1"))
+
+                def _with_build_lock(fn, *args, **kwargs):
+                    with open(lock_path, "w") as lock_file:
+                        fcntl.flock(lock_file, fcntl.LOCK_EX)
+                        return fn(*args, **kwargs)
+
+                def _patched_build_env_images(*args, **kwargs):
+                    if len(args) >= 4:
+                        args = list(args)
+                        args[3] = build_max_workers
+                        args = tuple(args)
+                        kwargs.pop("max_workers", None)
+                    else:
+                        kwargs["max_workers"] = build_max_workers
+                    return _with_build_lock(orig_build_env_images, *args, **kwargs)
+
+                def _patched_build_instance_image(*args, **kwargs):
+                    return _with_build_lock(orig_build_instance_image, *args, **kwargs)
+
+                docker_build.build_env_images = _patched_build_env_images
+                docker_build.build_instance_image = _patched_build_instance_image
+                docker_build._swe_podman_build_patched = True
+
+    if not getattr(_builtins, "_swe_podman_import_hook", False):
+        _orig_import = _builtins.__import__
+
+        def _patched_import(name, globals=None, locals=None, fromlist=(), level=0):
+            imported = _orig_import(name, globals, locals, fromlist, level)
+            _patch_loaded_swebench()
+            return imported
+
+        _builtins.__import__ = _patched_import
+        _builtins._swe_podman_import_hook = True
 '''
 
 
@@ -1289,6 +1454,12 @@ def run_swebench_eval(
         # instance_id with patch_id 0/1/2 reuses one built image.
         "--cache_level", "instance",
     ]
+    if env.get("SWEBENCH_ARCH"):
+        env.setdefault(
+            "SWEBENCH_BUILD_DIR",
+            str(Path(env.get("CAPSTOR_BASE", "/tmp")) / "swebench_build_images"),
+        )
+        cmd.extend(["--namespace", "none"])
     log.info("eval: %s", " ".join(cmd))
     proc = subprocess.run(
         cmd, cwd=work_dir, env=env, capture_output=True, text=True,

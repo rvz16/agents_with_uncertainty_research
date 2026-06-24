@@ -1,6 +1,6 @@
 """SWE-bench Lite harness via Docker exec.
 
-Uses Princeton's pre-built x86_64 images (pulled on demand) and runs critics
+Uses Princeton's pre-built images (pulled on demand) and runs critics
 inside a long-lived container per instance. No LLM — Y=1 is produced by
 applying the dataset's gold `patch`; Y=0 is the base_commit source unchanged.
 `test_patch` (new/modified tests) is always applied, because the dataset's
@@ -17,6 +17,7 @@ Critics:
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -25,6 +26,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 from datasets import load_dataset
 
@@ -147,13 +149,169 @@ def changed_files_from_patch(patch_text: str) -> list[str]:
 # Docker primitives
 # ---------------------------------------------------------------------------
 
-def _image(instance_id: str) -> str:
+_IMAGE_BY_INSTANCE: dict[str, str] = {}
+
+
+def _arch() -> str:
+    return os.environ.get("SWEBENCH_ARCH", "x86_64")
+
+
+def _remote_image(instance_id: str) -> str:
     tag = instance_id.replace("__", "_1776_")
-    return f"swebench/sweb.eval.x86_64.{tag}:latest"
+    return f"docker.io/swebench/sweb.eval.{_arch()}.{tag}:latest"
+
+
+def _local_image(instance_id: str) -> str:
+    return f"sweb.eval.{_arch()}.{instance_id.lower()}:latest"
+
+
+def _image(instance_id: str) -> str:
+    return _IMAGE_BY_INSTANCE.get(instance_id, _remote_image(instance_id))
+
+
+def _docker_platform() -> str:
+    return os.environ.get("SWEBENCH_DOCKER_PLATFORM", "linux/amd64")
 
 
 def _container_name(instance_id: str) -> str:
     return f"swe_abbo_{instance_id.replace('__', '_')}"
+
+
+def _build_missing_images() -> bool:
+    return os.environ.get("SWEBENCH_BUILD_MISSING_IMAGES", "1").lower() not in {
+        "0", "false", "no", "off",
+    }
+
+
+def _patch_local_arm64_test_spec(spec) -> None:
+    """Small compatibility fixes for locally built SWE images on aarch64."""
+    if spec.arch != "arm64":
+        return
+
+    if spec.repo in {"scikit-learn/scikit-learn", "pydata/xarray"}:
+        apt = (
+            "apt-get update && apt-get install -y "
+            "gfortran libopenblas-dev liblapack-dev pkg-config "
+            "&& rm -rf /var/lib/apt/lists/*"
+        )
+        if apt not in spec.env_script_list:
+            spec.env_script_list.insert(1, apt)
+
+    if spec.repo == "pydata/xarray":
+        for i, cmd in enumerate(spec.env_script_list):
+            if cmd == "conda env update -f environment.yml":
+                drop_cdms2 = "sed -i '/^[[:space:]]*- cdms2$/d' environment.yml"
+                if drop_cdms2 not in spec.env_script_list:
+                    spec.env_script_list.insert(i, drop_cdms2)
+                break
+
+    if spec.repo == "scikit-learn/scikit-learn":
+        pip_pin = "python -m pip install 'pip<23.1'"
+        if pip_pin not in spec.env_script_list:
+            spec.env_script_list.append(pip_pin)
+
+    if spec.repo == "sympy/sympy":
+        reset_commit = None
+        for cmd in spec.repo_script_list:
+            m = re.match(r"git reset --hard ([0-9a-f]+)$", cmd)
+            if m:
+                reset_commit = m.group(1)
+                break
+        for i, cmd in enumerate(spec.repo_script_list):
+            if cmd.startswith("git clone -o origin --branch ") and "https://github.com/sympy/sympy /testbed" in cmd:
+                fallback = "git clone -o origin https://github.com/sympy/sympy /testbed"
+                if reset_commit:
+                    fallback = (
+                        "git init /testbed && cd /testbed && "
+                        "git remote add origin https://github.com/sympy/sympy && "
+                        f"git fetch --depth 1 origin {reset_commit} && "
+                        "git checkout FETCH_HEAD"
+                    )
+                spec.repo_script_list[i] = (
+                    f"{cmd} || "
+                    f"(rm -rf /testbed && {fallback})"
+                )
+                break
+
+    for i, cmd in enumerate(spec.env_script_list):
+        if "conda create -n testbed python=3.5" in cmd:
+            spec.env_script_list[i] = cmd.replace("python=3.5", "python=3.6")
+
+    if any("lxml" in cmd or "pikepdf" in cmd for cmd in spec.env_script_list):
+        apt = (
+            "apt-get update && apt-get install -y "
+            "libxml2-dev libxslt1-dev zlib1g-dev "
+            "&& rm -rf /var/lib/apt/lists/*"
+        )
+        if apt not in spec.env_script_list:
+            spec.env_script_list.insert(1, apt)
+
+    if spec.repo == "astropy/astropy":
+        for i, cmd in enumerate(spec.env_script_list):
+            if "conda create -n testbed python=3.6 setuptools==38.2.4 -y" in cmd:
+                spec.env_script_list[i] = cmd.replace(" setuptools==38.2.4", "")
+                setuptools_pin = "python -m pip install 'setuptools==38.2.4'"
+                if setuptools_pin not in spec.env_script_list:
+                    spec.env_script_list.insert(i + 2, setuptools_pin)
+                break
+        for i, cmd in enumerate(spec.env_script_list):
+            if cmd.startswith("python -m pip install ") and "--no-clean" not in cmd:
+                spec.env_script_list[i] = cmd.replace(
+                    "python -m pip install ",
+                    "python -m pip install --no-clean ",
+                    1,
+                )
+        for i, cmd in enumerate(spec.repo_script_list):
+            if cmd == "python -m pip install -e .[test] --verbose":
+                spec.repo_script_list[i:i + 1] = [
+                    "python -m pip install jinja2",
+                    "python -m pip install 'Cython<3'",
+                    "python -m pip install extension-helpers",
+                    "python -m pip install --no-build-isolation -e .[test] --verbose",
+                ]
+                break
+
+    if spec.repo == "matplotlib/matplotlib":
+        for i, cmd in enumerate(spec.repo_script_list):
+            if cmd.startswith("tar -xvzf ") and "--no-same-owner" not in cmd:
+                spec.repo_script_list[i] = cmd.replace(
+                    "tar -xvzf ",
+                    "tar --no-same-owner -xvzf ",
+                    1,
+                )
+
+
+def _looks_like_missing_remote_image(stderr: str) -> bool:
+    s = stderr.lower()
+    return any(
+        marker in s
+        for marker in (
+            "requested access to the resource is denied",
+            "manifest unknown",
+            "not found",
+            "pull access denied",
+            "repository does not exist",
+            "toomanyrequests",
+            "too many requests",
+            "pull rate limit",
+        )
+    )
+
+
+def _looks_like_rootless_storage_flake(exc: BaseException | str | None) -> bool:
+    s = str(exc or "").lower()
+    return (
+        ("lgetxattr" in s or "lsetxattr" in s or "containers-storage" in s)
+        and ("permission denied" in s or "operation not supported" in s)
+    )
+
+
+def _cleanup_after_rootless_storage_flake(image_key: str, verbose: bool = True) -> None:
+    """Clean partial Podman build state after rootless overlay metadata flakes."""
+    if verbose:
+        print("  rootless Podman storage flake; cleaning partial build state before retry", flush=True)
+    _sh(["docker", "container", "prune", "-f"], timeout=60)
+    _sh(["docker", "image", "rm", "-f", image_key], timeout=60)
 
 
 # Harness stability knobs. Tuned so transient Docker/containerd hiccups
@@ -218,25 +376,146 @@ def _retry(
     return last
 
 
+def _build_local_image(instance_id: str, verbose: bool = True) -> str:
+    """Build a namespace-less SWE-bench image for the local architecture."""
+    import docker
+    import swebench.harness.docker_build as docker_build
+    from swebench.harness.test_spec.test_spec import make_test_spec
+
+    build_root = Path(
+        os.environ.get(
+            "SWEBENCH_BUILD_DIR",
+            "/capstor/store/cscs/swissai/a0142/agents_uq/swebench_build_images",
+        )
+    )
+    build_max_workers = int(os.environ.get("SWEBENCH_BUILD_MAX_WORKERS", "1"))
+    docker_build.BASE_IMAGE_BUILD_DIR = build_root / "base"
+    docker_build.ENV_IMAGE_BUILD_DIR = build_root / "env"
+    docker_build.INSTANCE_IMAGE_BUILD_DIR = build_root / "instances"
+    lock_dir = build_root / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+
+    lock_path = lock_dir / "swebench_local_build.lock"
+    with open(lock_path, "w") as lock_file:
+        if verbose:
+            print(f"  waiting for SWE image build lock {lock_path} ...", flush=True)
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        local_img = _local_image(instance_id)
+        r = _sh(["docker", "image", "inspect", local_img], timeout=30)
+        if r.returncode == 0:
+            return local_img
+        if verbose:
+            print(f"  building local SWE image {local_img} ...", flush=True)
+        client = docker.from_env()
+        spec = make_test_spec(
+            get_instance(instance_id),
+            namespace=None,
+            instance_image_tag="latest",
+            env_image_tag="latest",
+            arch=_arch(),
+        )
+        _patch_local_arm64_test_spec(spec)
+        last_failed = []
+        env_build_attempts = max(int(os.environ.get("SWEBENCH_ENV_BUILD_ATTEMPTS", "4")), 1)
+        force_rebuilds = [(attempt % 2) == 0 for attempt in range(1, env_build_attempts + 1)]
+        last_env_exc = None
+        for attempt, force_rebuild in enumerate(force_rebuilds, start=1):
+            last_env_exc = None
+            try:
+                _, last_failed = docker_build.build_env_images(
+                    client,
+                    [spec],
+                    force_rebuild=force_rebuild,
+                    max_workers=build_max_workers,
+                    namespace=None,
+                    instance_image_tag="latest",
+                    env_image_tag="latest",
+                )
+            except Exception as exc:
+                last_env_exc = exc
+                last_failed = [spec.env_image_key]
+                if _looks_like_rootless_storage_flake(exc):
+                    _cleanup_after_rootless_storage_flake(spec.env_image_key, verbose=verbose)
+            env_exists = _sh(["docker", "image", "inspect", spec.env_image_key], timeout=30)
+            if env_exists.returncode == 0 and not last_failed:
+                last_env_exc = None
+                break
+            if env_exists.returncode == 0 and last_env_exc is not None:
+                last_failed = []
+                last_env_exc = None
+                break
+            if not last_failed:
+                last_failed = [spec.env_image_key]
+            if attempt < len(force_rebuilds) and verbose:
+                next_force = force_rebuilds[attempt]
+                print(f"  SWE env image build failed/missing; retrying with force_rebuild={next_force}", flush=True)
+        if last_failed:
+            if last_env_exc is not None:
+                raise RuntimeError(f"SWE env image build failed for {instance_id}: {last_failed}") from last_env_exc
+            raise RuntimeError(f"SWE env image build failed for {instance_id}: {last_failed}")
+
+        instance_build_attempts = int(os.environ.get("SWEBENCH_INSTANCE_BUILD_ATTEMPTS", "2"))
+        last_exc = None
+        for attempt in range(1, instance_build_attempts + 1):
+            try:
+                docker_build.build_instance_image(spec, client, None, nocache=False)
+            except Exception as exc:
+                last_exc = exc
+                if _looks_like_rootless_storage_flake(exc):
+                    _cleanup_after_rootless_storage_flake(spec.instance_image_key, verbose=verbose)
+                if attempt < instance_build_attempts and verbose:
+                    print("  SWE instance image build failed; retrying", flush=True)
+                continue
+            img_exists = _sh(["docker", "image", "inspect", spec.instance_image_key], timeout=30)
+            if img_exists.returncode == 0:
+                return spec.instance_image_key
+            if attempt < instance_build_attempts and verbose:
+                print("  SWE instance image missing after build; retrying", flush=True)
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"SWE instance image build failed for {instance_id}: {spec.instance_image_key}")
+
+
 def pull_image(instance_id: str, verbose: bool = True) -> None:
-    img = _image(instance_id)
-    r = _sh(["docker", "image", "inspect", img], timeout=30)
+    local_img = _local_image(instance_id)
+    r = _sh(["docker", "image", "inspect", local_img], timeout=30)
     if r.returncode == 0:
+        _IMAGE_BY_INSTANCE[instance_id] = local_img
+        return
+
+    remote_img = _remote_image(instance_id)
+    r = _sh(["docker", "image", "inspect", remote_img], timeout=30)
+    if r.returncode == 0:
+        _IMAGE_BY_INSTANCE[instance_id] = remote_img
         return
     if verbose:
-        print(f"  pulling {img} ...", flush=True)
-    r = _retry(
-        lambda: _sh(
-            ["docker", "pull", "--platform", "linux/amd64", img],
+        print(f"  pulling {remote_img} ...", flush=True)
+
+    last = None
+    for i in range(PULL_RETRY_ATTEMPTS):
+        last = _sh(
+            ["docker", "pull", "--platform", _docker_platform(), remote_img],
             timeout=PULL_TIMEOUT_S,
-        ),
-        attempts=PULL_RETRY_ATTEMPTS,
-        label=f"pull {img}",
-        verbose=verbose,
-    )
-    if r.returncode != 0:
+        )
+        if last.returncode == 0:
+            _IMAGE_BY_INSTANCE[instance_id] = remote_img
+            return
+        if _build_missing_images() and _looks_like_missing_remote_image(last.stderr or ""):
+            if verbose:
+                print("  remote SWE image unavailable; falling back to local build", flush=True)
+            _IMAGE_BY_INSTANCE[instance_id] = _build_local_image(instance_id, verbose=verbose)
+            return
+        if i + 1 < PULL_RETRY_ATTEMPTS:
+            wait = RETRY_BACKOFF_S[min(i, len(RETRY_BACKOFF_S) - 1)]
+            if verbose:
+                tail = (last.stderr or "")[-200:].replace("\n", " | ")
+                print(f"  pull {remote_img} attempt {i+1}/{PULL_RETRY_ATTEMPTS} failed (rc={last.returncode}): {tail}",
+                      flush=True)
+                print(f"  retrying in {wait}s ...", flush=True)
+            time.sleep(wait)
+    if last is None or last.returncode != 0:
         raise RuntimeError(f"pull failed after {PULL_RETRY_ATTEMPTS} attempts: "
-                           f"{(r.stderr or '')[-400:]}")
+                           f"{((last.stderr if last else '') or '')[-400:]}")
 
 
 def start_container(instance_id: str, verbose: bool = True) -> str:
@@ -245,7 +524,7 @@ def start_container(instance_id: str, verbose: bool = True) -> str:
     r = _retry(
         lambda: _sh(
             [
-                "docker", "run", "-d", "--platform", "linux/amd64",
+                "docker", "run", "-d", "--platform", _docker_platform(),
                 "--name", cname,
                 "--entrypoint", "/bin/bash",
                 _image(instance_id),

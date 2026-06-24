@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = ROOT.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from abbo.realworld.agents.bayes_agent import DPPlanner, bayes_update
@@ -74,6 +75,11 @@ THRESHOLD_L3_CRITICS = ["critic_syntax", "critic_lint", "critic_early", "critic_
 
 # best_of_3 generates this many candidate patches before giving up.
 BEST_OF_N = 3
+VERIFIED_200_IDS = (
+    REPO_ROOT
+    / "experiments/orchestration_hypothesis_testing/data"
+    / "swebench_verified_calibration_full/verified_200_instance_ids.json"
+)
 
 # Cached fitted theta from the SWE calibration run (allure artifact 9e7fd0d7)
 FITTED_THETA = {
@@ -683,6 +689,39 @@ def _model_slug_for(model_id: str) -> str:
     return model_id.split("/")[-1].replace(":", "_").replace(".", "_")
 
 
+def _prioritize_verified_200(test_ids: list[str]) -> list[str]:
+    if not VERIFIED_200_IDS.exists():
+        return test_ids
+    try:
+        preferred = json.loads(VERIFIED_200_IDS.read_text())
+    except Exception as e:
+        raise SystemExit(f"failed to read {VERIFIED_200_IDS}: {e}")
+    if not isinstance(preferred, list) or not all(isinstance(x, str) for x in preferred):
+        raise SystemExit(f"{VERIFIED_200_IDS} must be a JSON list of strings")
+    order = {iid: i for i, iid in enumerate(preferred)}
+    return sorted(test_ids, key=lambda iid: (0, order[iid]) if iid in order else (1, 0))
+
+
+def _print_verified_200_progress(test_ids: list[str], variants: tuple[str, ...], results: dict) -> None:
+    if not VERIFIED_200_IDS.exists():
+        return
+    preferred = set(json.loads(VERIFIED_200_IDS.read_text()))
+    groups = (
+        ("important", [tid for tid in test_ids if tid in preferred]),
+        ("other", [tid for tid in test_ids if tid not in preferred]),
+    )
+    for label, ids in groups:
+        if not ids:
+            continue
+        pairs_done = sum(1 for tid in ids for v in variants if results.get(f"{tid}|{v}"))
+        pairs_total = len(ids) * len(variants)
+        full_done = sum(all(results.get(f"{tid}|{v}") for v in variants) for tid in ids)
+        print(
+            f"Resume {label}: {full_done}/{len(ids)} instances complete, "
+            f"{pairs_done}/{pairs_total} pairs done"
+        )
+
+
 def main():
     args = _parse_args()
     if args.dataset:
@@ -711,6 +750,8 @@ def main():
             raise SystemExit(f"failed to read {args.instance_ids_file}: {e}")
         if not isinstance(test_ids, list) or not all(isinstance(x, str) for x in test_ids):
             raise SystemExit("--instance-ids-file must be a JSON list of strings")
+        if dataset_tag == "verified":
+            test_ids = _prioritize_verified_200(test_ids)
         print(f"Dataset: SWE-bench_{dataset_tag.capitalize()}  "
               f"Instance list: {args.instance_ids_file}  "
               f"({len(test_ids)} instances)  Results: {results_path}")
@@ -760,6 +801,9 @@ def main():
     total = len(test_ids) * len(variants)
     done = sum(1 for tid in test_ids for v in variants if results.get(f"{tid}|{v}"))
     print(f"\nResume: {done}/{total} pairs already done.\n")
+    if dataset_tag == "verified":
+        _print_verified_200_progress(test_ids, variants, results)
+        print()
 
     started = time.time()
     for i, tid in enumerate(test_ids):

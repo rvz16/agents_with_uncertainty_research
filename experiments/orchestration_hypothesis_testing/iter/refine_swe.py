@@ -155,6 +155,62 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2))
 
 
+def load_existing_cost(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    total = 0.0
+    for line in open(path):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            total += float(json.loads(line).get("cost_usd") or 0.0)
+        except Exception:
+            continue
+    return total
+
+
+def load_completed_trajectories(records_path: Path, steps: int) -> dict[str, dict]:
+    """Return instances that have a complete trajectory in iter_records.jsonl."""
+    if not records_path.exists():
+        return {}
+    by_inst: dict[str, dict[int, dict]] = {}
+    for line in open(records_path):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        inst = row.get("instance_id")
+        step = row.get("step")
+        if not isinstance(inst, str) or not isinstance(step, int):
+            continue
+        by_inst.setdefault(inst, {})[step] = row
+
+    completed: dict[str, dict] = {}
+    for inst, rows_by_step in by_inst.items():
+        rows = [rows_by_step[k] for k in sorted(rows_by_step)]
+        stop_row = next((r for r in rows if r.get("stop_decision")), None)
+        full_horizon = bool(rows and rows[-1].get("step") == steps - 1)
+        if not stop_row and not full_horizon:
+            continue
+        n_reflections = 0
+        for row in rows:
+            ms = row.get("method_specific") or {}
+            if isinstance(ms, dict):
+                n_reflections = max(n_reflections, int(ms.get("memory_size") or 0))
+        completed[inst] = {
+            "instance_id": inst,
+            "trajectory": rows,
+            "stop_step": stop_row.get("step") if stop_row else None,
+            "stop_reason": "resume_stop_decision" if stop_row else "resume_full_horizon",
+            "n_reflections": n_reflections,
+        }
+    return completed
+
+
 def get_git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"],
@@ -646,54 +702,67 @@ def main() -> None:
         candidate = candidate[:args.n_instances]
         log.info("[%s/%s] %d eligible instances (cap $%.1f)",
                  gen, args.method, len(candidate), cap_usd)
-        if not candidate:
-            continue
 
-        # Pre-fetch oracles
+        records_path = gen_out / "iter_records.jsonl"
+        selected_ids = set(candidate)
+        completed = {
+            inst: result
+            for inst, result in load_completed_trajectories(records_path, args.steps).items()
+            if inst in selected_ids
+        }
+        if completed:
+            before = len(candidate)
+            candidate = [inst for inst in candidate if inst not in completed]
+            log.info("[%s/%s] resume: %d/%d instances already complete, %d left",
+                     gen, args.method, len(completed), before, len(candidate))
+
+        # Pre-fetch oracles only for unfinished instances.
         oracle_cache: dict[str, dict] = {}
         for inst in candidate:
             row = inst_to_row[inst]
             files = scg.get_changed_files_from_patch(row["patch"])
             oracle_cache[inst] = scg.fetch_oracle_files(row["repo"], row["base_commit"], files)
 
-        cost_lock = threading.Lock()
-        cost_counter = {"v": 0.0}
         call_logger = CallLogger(gen_out)
+        existing_cost = load_existing_cost(call_logger.cost_log_path)
+        call_logger.cumulative_cost = existing_cost
+        cost_lock = threading.Lock()
+        cost_counter = {"v": existing_cost}
         # Per-generator action telemetry (refine/reflect/critic_L0/critic_L3
         # per step) — see _common/telemetry.py for the row schema.
         tele = TelemetryLogger(gen_out / "action_telemetry.jsonl",
                                dataset=str(args.output_dir.name),
                                model_name=gen)
-        records_path = gen_out / "iter_records.jsonl"
 
-        all_results: list[dict] = []
+        all_results: list[dict] = list(completed.values())
         try:
-            with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
-                futures = {}
-                for inst in candidate:
-                    row = inst_to_row[inst]
-                    fut = ex.submit(
-                        run_one_instance,
-                        inst=inst, row=row, oracle=oracle_cache[inst],
-                        step0_record=crit_by_inst[inst],
-                        step0_diff=diff_by_inst[inst],
-                        method=args.method, model_id=model_id, gen_name=gen,
-                        steps=args.steps, temperature=args.temperature,
-                        client=client, gen_client=gen_client,
-                        call_logger=call_logger, tele=tele,
-                        cost_lock=cost_lock, cost_counter=cost_counter,
-                        cap_usd=cap_usd)
-                    futures[fut] = inst
-                for fut in as_completed(futures):
-                    inst = futures[fut]
-                    try:
-                        result = fut.result()
-                    except Exception as e:
-                        log.error("[%s/%s/%s] failed: %s", args.method, gen, inst, e)
-                        continue
-                    all_results.append(result)
-                    for row in result["trajectory"]:
-                        append_jsonl(records_path, row)
+            if candidate:
+                with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+                    futures = {}
+                    for inst in candidate:
+                        row = inst_to_row[inst]
+                        fut = ex.submit(
+                            run_one_instance,
+                            inst=inst, row=row, oracle=oracle_cache[inst],
+                            step0_record=crit_by_inst[inst],
+                            step0_diff=diff_by_inst[inst],
+                            method=args.method, model_id=model_id, gen_name=gen,
+                            steps=args.steps, temperature=args.temperature,
+                            client=client, gen_client=gen_client,
+                            call_logger=call_logger, tele=tele,
+                            cost_lock=cost_lock, cost_counter=cost_counter,
+                            cap_usd=cap_usd)
+                        futures[fut] = inst
+                    for fut in as_completed(futures):
+                        inst = futures[fut]
+                        try:
+                            result = fut.result()
+                        except Exception as e:
+                            log.error("[%s/%s/%s] failed: %s", args.method, gen, inst, e)
+                            continue
+                        all_results.append(result)
+                        for row in result["trajectory"]:
+                            append_jsonl(records_path, row)
         finally:
             tele.close()
 

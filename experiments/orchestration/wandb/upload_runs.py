@@ -35,6 +35,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import subprocess
 from pathlib import Path
@@ -63,8 +64,15 @@ _LOCAL_DATA = EXPERIMENT_ROOT / "data"
 DATA_ROOT = _ARCHIVE_DATA if _ARCHIVE_DATA.exists() else _LOCAL_DATA
 ABBO_RESULTS = REPO_ROOT / "bayesian_optimization_for_code_testing" / "agent-bugfix-bayes" / "sim_results"
 
-GENERATORS = ["gpt5_mini", "qwen3_coder", "haiku45", "sonnet45", "qwen25_32b"]
+GENERATORS = ["gpt5_mini", "qwen3_coder", "haiku45", "sonnet45", "qwen25_32b", "gpt_oss_20b"]
 ABBO_GENERATORS = ["gpt_oss_20b"]
+RUN_NAME_SUFFIX = ""
+EXTRA_RUN_CONFIG: dict = {}
+EXTRA_RUN_TAGS: list[str] = []
+SWE_RERUN_VARIANTS = (
+    "simple", "greedy_hand", "dp_hand", "best_of_3",
+    "threshold_L0", "threshold_L2", "threshold_L3", "fixed_pipeline",
+)
 
 # (benchmark_key, data_subdir)
 ORCH_CALIBRATION_BENCHMARKS = [
@@ -170,6 +178,12 @@ def existing_run_names(api: "wandb.Api") -> set[str]:
 
 def safe_init(name: str, config: dict, tags: list[str],
               existing: set[str], force: bool, dry_run: bool):
+    if RUN_NAME_SUFFIX:
+        name = f"{name}{RUN_NAME_SUFFIX}"
+    if EXTRA_RUN_CONFIG:
+        config = {**config, **EXTRA_RUN_CONFIG}
+    if EXTRA_RUN_TAGS:
+        tags = list(dict.fromkeys([*tags, *EXTRA_RUN_TAGS]))
     if dry_run:
         log.info(f"  [DRY-RUN] would create run: {name}")
         return None
@@ -719,8 +733,139 @@ def upload_paper_table(args, existing):
 # ---------------------------------------------------------------------------
 # ABBO track — colleague's codebase
 
+def _mean(xs: list[float]) -> float | None:
+    return sum(xs) / len(xs) if xs else None
+
+
+def _slug_to_generator(model_slug: str) -> str:
+    if model_slug == "Qwen2_5-Coder-32B-Instruct":
+        return "qwen25_32b"
+    if model_slug == "gpt-oss-20b":
+        return "gpt_oss_20b"
+    return model_slug
+
+
+def _target_tag(generator: str) -> str:
+    return {"qwen25_32b": "qwen25_32b", "gpt_oss_20b": "gpt_oss_20b"}.get(generator, generator)
+
+
+def _swe_rerun_files() -> list[tuple[str, str, Path]]:
+    files = []
+    for path in sorted(ABBO_RESULTS.glob("swebench_full_endtoend__*__*.json")):
+        m = re.match(r"swebench_full_endtoend__(lite|verified)__(.+)\.json$", path.name)
+        if not m:
+            continue
+        dataset, model_slug = m.groups()
+        files.append((f"swe_{dataset}", _slug_to_generator(model_slug), path))
+    return files
+
+
+def upload_abbo_swe_reruns(args, existing):
+    log.info("=== ABBO SWE rerun policy-comparison files ===")
+    for bench, generator, path in _swe_rerun_files():
+        if args.benchmark and args.benchmark != bench:
+            continue
+        if args.generator and args.generator != generator:
+            continue
+
+        dataset = bench.replace("swe_", "")
+        tag = _target_tag(generator)
+        failed_path = ABBO_RESULTS / f"swebench_rerun_targets/failed__swe_{dataset}__{tag}.json"
+        solved_path = ABBO_RESULTS / f"swebench_rerun_targets/solved__swe_{dataset}__{tag}.json"
+        data = load_json(path) or {}
+        results = data.get("results") or {}
+        failed_ids = load_json(failed_path) or []
+        solved_ids = load_json(solved_path) or []
+        if not isinstance(failed_ids, list):
+            failed_ids = []
+        if not isinstance(solved_ids, list):
+            solved_ids = []
+
+        n_pairs_total = len(failed_ids) * len(SWE_RERUN_VARIANTS)
+        n_pairs_done = sum(
+            1
+            for iid in failed_ids
+            for variant in SWE_RERUN_VARIANTS
+            if results.get(f"{iid}|{variant}")
+        )
+        n_failed_complete = sum(
+            all(results.get(f"{iid}|{variant}") for variant in SWE_RERUN_VARIANTS)
+            for iid in failed_ids
+        )
+        complete = bool(failed_ids) and n_failed_complete == len(failed_ids)
+        if not complete and not args.allow_incomplete_swe_reruns:
+            log.info(
+                f"  skip incomplete: {bench}/{generator} "
+                f"{n_failed_complete}/{len(failed_ids)} failed-target instances, "
+                f"{n_pairs_done}/{n_pairs_total} pairs"
+            )
+            continue
+
+        partial_suffix = "__partial" if not complete else ""
+        name = f"policy_comparison__abbo_swe_rerun__{bench}__{generator}{partial_suffix}"
+        config = {
+            "track": "abbo",
+            "experiment_type": "policy_comparison",
+            "benchmark": bench,
+            "dataset": dataset,
+            "generator": generator,
+            "complete": complete,
+            "n_instances": len(set(solved_ids) | set(failed_ids)),
+            "n_solved_before": len(solved_ids),
+            "n_failed_targets": len(failed_ids),
+            "n_failed_targets_complete": n_failed_complete,
+            "n_pairs": n_pairs_done,
+            "data_variant": "swe_rerun_targets",
+            "git_sha": git_sha(),
+            "data_source": rel(path),
+            "failed_ids_source": rel(failed_path),
+            "solved_ids_source": rel(solved_path),
+            "cost_R": 100, "cost_ver": 30, "cost_gen": 10,
+            "cost_L0": 1, "cost_L2": 2, "cost_L3": 5,
+        }
+        tags = [
+            "track:abbo", "experiment:policy_comparison",
+            "data_variant:swe_rerun_targets",
+            f"benchmark:{bench}", f"generator:{generator}",
+        ]
+        if not complete:
+            tags.append("status:partial")
+        run = safe_init(name, config, tags, existing, args.force, args.dry_run)
+        if run is None:
+            continue
+
+        run.summary["failed_targets/n_instances"] = len(failed_ids)
+        run.summary["failed_targets/n_pairs"] = n_pairs_done
+        run.summary["full/n_instances"] = len(set(solved_ids) | set(failed_ids))
+        run.summary["full/n_solved_before"] = len(solved_ids)
+
+        for variant in SWE_RERUN_VARIANTS:
+            rows = [
+                results.get(f"{iid}|{variant}")
+                for iid in failed_ids
+                if results.get(f"{iid}|{variant}")
+            ]
+            if not rows:
+                continue
+            fixed = [1.0 if r.get("fixed") else 0.0 for r in rows]
+            costs = [float(r.get("total_cost") or 0.0) for r in rows]
+            utilities = [100.0 * y - c for y, c in zip(fixed, costs)]
+            run.summary[f"{variant}/n_episodes"] = len(rows)
+            run.summary[f"{variant}/fix_rate"] = _mean(fixed)
+            run.summary[f"{variant}/mean_cost"] = _mean(costs)
+            run.summary[f"{variant}/mean_utility"] = _mean(utilities)
+            run.summary[f"{variant}/mean_wall_clock"] = _mean([float(r.get("wall_clock") or 0.0) for r in rows])
+            run.summary[f"{variant}/mean_llm_calls"] = _mean([float(r.get("n_llm_calls") or 0.0) for r in rows])
+            run.summary[f"{variant}/mean_full_tests"] = _mean([float(r.get("n_full_tests") or 0.0) for r in rows])
+
+        maybe_log_artifact(run, path, "policy_comparison", f"abbo_swe_rerun_{bench}_{generator}_results")
+        maybe_log_artifact(run, failed_path, "split", f"abbo_swe_rerun_{bench}_{generator}_failed_ids")
+        maybe_log_artifact(run, solved_path, "split", f"abbo_swe_rerun_{bench}_{generator}_solved_ids")
+        run.finish()
+
 def upload_abbo(args, existing):
     log.info("=== ABBO runs (track:abbo) ===")
+    upload_abbo_swe_reruns(args, existing)
     files = {
         "humanevalfix":  ABBO_RESULTS / "humaneval_full_endtoend.json",
         "codecontests":  ABBO_RESULTS / "codecontests_simulation_metrics.json",
@@ -781,14 +926,23 @@ def main():
     ap.add_argument("--generator", default=None, help="Filter by generator (debug)")
     ap.add_argument("--force", action="store_true",
                     help="Re-upload runs that already exist (creates a new version)")
+    ap.add_argument("--rerun", action="store_true",
+                    help="Mark uploaded runs as reruns and suffix run names with __rerun")
     ap.add_argument("--dry-run", action="store_true",
                     help="List what would be uploaded; do not actually call wandb")
+    ap.add_argument("--allow-incomplete-swe-reruns", action="store_true",
+                    help="Upload incomplete ABBO SWE rerun files with __partial run suffix")
     ap.add_argument("--data-root", default=None,
                     help=f"Override orchestration results dir (default: {DATA_ROOT})")
     ap.add_argument("--abbo-root", default=None,
                     help=f"Override abbo sim_results dir (default: {ABBO_RESULTS})")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+    global RUN_NAME_SUFFIX, EXTRA_RUN_CONFIG, EXTRA_RUN_TAGS
+    if args.rerun:
+        RUN_NAME_SUFFIX = "__rerun"
+        EXTRA_RUN_CONFIG = {"is_rerun": True, "data_variant": "rerun"}
+        EXTRA_RUN_TAGS = ["variant:rerun", "data_variant:rerun"]
 
     logging.basicConfig(
         format="%(asctime)s  %(message)s",
@@ -800,10 +954,15 @@ def main():
         DATA_ROOT = Path(args.data_root).expanduser().resolve()
     if args.abbo_root:
         ABBO_RESULTS = Path(args.abbo_root).expanduser().resolve()
-    if not DATA_ROOT.exists():
+    want_orch = args.track in ("orchestration", "all")
+    want_abbo = args.track in ("abbo", "all")
+    if want_orch and not DATA_ROOT.exists():
         log.error(f"DATA_ROOT does not exist: {DATA_ROOT}. Pass --data-root.")
         sys.exit(1)
-    log.info(f"DATA_ROOT = {DATA_ROOT}")
+    if want_orch:
+        log.info(f"DATA_ROOT = {DATA_ROOT}")
+    else:
+        log.info(f"DATA_ROOT = {DATA_ROOT} (unused for --track abbo)")
     log.info(f"ABBO_RESULTS = {ABBO_RESULTS}")
 
     # Sanity: is wandb authed?
@@ -818,9 +977,6 @@ def main():
         log.info(f"Project has {len(existing)} existing runs.")
     else:
         existing = set()
-
-    want_orch = args.track in ("orchestration", "all")
-    want_abbo = args.track in ("abbo", "all")
 
     if want_orch:
         if args.experiment in ("calibration", "all"):
