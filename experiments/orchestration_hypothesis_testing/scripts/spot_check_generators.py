@@ -1248,6 +1248,7 @@ shim can force native arm64 TestSpecs and normalizes Docker platform strings for
 podman's Docker API.
 """
 import os
+import re
 import sys
 
 if "podman" in os.environ.get("DOCKER_HOST", "").lower() or os.environ.get("SWEBENCH_PODMAN_COMPAT"):
@@ -1275,6 +1276,104 @@ if "podman" in os.environ.get("DOCKER_HOST", "").lower() or os.environ.get("SWEB
         )
         _dockerfiles._DOCKERFILE_BASE["py"] = _python_dockerfiles._DOCKERFILE_BASE_PY
 
+    def _patch_arm64_test_spec(spec):
+        if getattr(spec, "arch", None) != "arm64":
+            return spec
+
+        if spec.repo in {"scikit-learn/scikit-learn", "pydata/xarray"}:
+            apt = (
+                "apt-get update && apt-get install -y "
+                "gfortran libopenblas-dev liblapack-dev pkg-config "
+                "&& rm -rf /var/lib/apt/lists/*"
+            )
+            if apt not in spec.env_script_list:
+                spec.env_script_list.insert(1, apt)
+
+        if spec.repo == "pydata/xarray":
+            drop_cdms2 = "sed -i '/^[[:space:]]*- cdms2$/d' environment.yml"
+            if drop_cdms2 not in spec.env_script_list:
+                for i, cmd in enumerate(spec.env_script_list):
+                    if cmd == "conda env update -f environment.yml":
+                        spec.env_script_list.insert(i, drop_cdms2)
+                        break
+
+        if spec.repo == "scikit-learn/scikit-learn":
+            pip_pin = "python -m pip install 'pip<23.1'"
+            if pip_pin not in spec.env_script_list:
+                spec.env_script_list.append(pip_pin)
+
+        if spec.repo == "sympy/sympy":
+            reset_commit = None
+            for cmd in spec.repo_script_list:
+                match = re.match(r"git reset --hard ([0-9a-f]+)$", cmd)
+                if match:
+                    reset_commit = match.group(1)
+                    break
+            for i, cmd in enumerate(spec.repo_script_list):
+                if cmd.startswith("git clone -o origin --branch ") and "https://github.com/sympy/sympy /testbed" in cmd:
+                    fallback = "git clone -o origin https://github.com/sympy/sympy /testbed"
+                    if reset_commit:
+                        fallback = (
+                            "git init /testbed && cd /testbed && "
+                            "git remote add origin https://github.com/sympy/sympy && "
+                            f"git fetch --depth 1 origin {reset_commit} && "
+                            "git checkout FETCH_HEAD"
+                        )
+                    spec.repo_script_list[i] = (
+                        f"{cmd} || "
+                        f"(rm -rf /testbed && {fallback})"
+                    )
+                    break
+
+        for i, cmd in enumerate(spec.env_script_list):
+            if "conda create -n testbed python=3.5" in cmd:
+                spec.env_script_list[i] = cmd.replace("python=3.5", "python=3.6")
+
+        if any("lxml" in cmd or "pikepdf" in cmd for cmd in spec.env_script_list):
+            apt = (
+                "apt-get update && apt-get install -y "
+                "libxml2-dev libxslt1-dev zlib1g-dev "
+                "&& rm -rf /var/lib/apt/lists/*"
+            )
+            if apt not in spec.env_script_list:
+                spec.env_script_list.insert(1, apt)
+
+        if spec.repo == "astropy/astropy":
+            for i, cmd in enumerate(spec.env_script_list):
+                if "conda create -n testbed python=3.6 setuptools==38.2.4 -y" in cmd:
+                    spec.env_script_list[i] = cmd.replace(" setuptools==38.2.4", "")
+                    setuptools_pin = "python -m pip install 'setuptools==38.2.4'"
+                    if setuptools_pin not in spec.env_script_list:
+                        spec.env_script_list.insert(i + 2, setuptools_pin)
+                    break
+            for i, cmd in enumerate(spec.env_script_list):
+                if cmd.startswith("python -m pip install ") and "--no-clean" not in cmd:
+                    spec.env_script_list[i] = cmd.replace(
+                        "python -m pip install ",
+                        "python -m pip install --no-clean ",
+                        1,
+                    )
+            for i, cmd in enumerate(spec.repo_script_list):
+                if cmd == "python -m pip install -e .[test] --verbose":
+                    spec.repo_script_list[i:i + 1] = [
+                        "python -m pip install jinja2",
+                        "python -m pip install 'Cython<3'",
+                        "python -m pip install extension-helpers",
+                        "python -m pip install --no-build-isolation -e .[test] --verbose",
+                    ]
+                    break
+
+        if spec.repo == "matplotlib/matplotlib":
+            for i, cmd in enumerate(spec.repo_script_list):
+                if cmd.startswith("tar -xvzf ") and "--no-same-owner" not in cmd:
+                    spec.repo_script_list[i] = cmd.replace(
+                        "tar -xvzf ",
+                        "tar --no-same-owner -xvzf ",
+                        1,
+                    )
+
+        return spec
+
     def _normalize_platform(platform):
         platform = platform or _DEFAULT_PLATFORM
         if platform in {"linux/x86_64", "linux/x64"}:
@@ -1293,13 +1392,15 @@ if "podman" in os.environ.get("DOCKER_HOST", "").lower() or os.environ.get("SWEB
             instance_image_tag="latest",
             arch="x86_64",
         ):
-            return _orig_make_test_spec(
-                instance,
-                namespace=namespace,
-                base_image_tag=base_image_tag,
-                env_image_tag=env_image_tag,
-                instance_image_tag=instance_image_tag,
-                arch=_FORCED_ARCH,
+            return _patch_arm64_test_spec(
+                _orig_make_test_spec(
+                    instance,
+                    namespace=namespace,
+                    base_image_tag=base_image_tag,
+                    env_image_tag=env_image_tag,
+                    instance_image_tag=instance_image_tag,
+                    arch=_FORCED_ARCH,
+                )
             )
         _test_spec.make_test_spec = _patched_make_test_spec  # type: ignore[assignment]
         for _module_name in (

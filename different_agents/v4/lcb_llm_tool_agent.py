@@ -38,8 +38,9 @@ sys.modules.setdefault("lcb_calibrate", lcb_calibrate)
 
 from _common.cost import cost_for_call  # noqa: E402
 from _common.generators import GENERATORS, _make_client, canonical_generator_key  # noqa: E402
-from fitted_live.common import Candidate, CriticResult, VerifyResult, safe_stem  # noqa: E402
-from fitted_live.function_adapters import LCBAdapter  # noqa: E402
+from fitted_live.common import BenchmarkAdapter, Candidate, CriticResult, VerifyResult, safe_stem  # noqa: E402
+from fitted_live.function_adapters import make_function_adapter  # noqa: E402
+from fitted_live.swe_adapter import make_swe_adapter  # noqa: E402
 
 from sage_agent import ExecutionResult, ToolCall, ToolCallCandidate, ToolSchema  # noqa: E402
 from sage_agent.langgraph import SAGEGraph, SAGEGraphConfig  # noqa: E402
@@ -120,6 +121,7 @@ class AgentState(TypedDict, total=False):
     done: bool
     final_action: str
     error: str
+    last_generation_prompt: str
     prior_Y1: float
     prior_calibration_n: int
     prior_calibration_correct: int
@@ -127,7 +129,7 @@ class AgentState(TypedDict, total=False):
 
 @dataclass
 class AgentDeps:
-    adapter: LCBAdapter
+    adapter: BenchmarkAdapter
     llm_client: Any
     reviewer_client: Any
     model_id: str
@@ -140,6 +142,10 @@ class AgentDeps:
     require_generation_logprobs: bool = False
     top_logprobs: int = 0
     logprobs_output: Path | None = None
+
+
+class ContextOverflowError(RuntimeError):
+    pass
 
 
 def _load_env_chain() -> None:
@@ -231,6 +237,51 @@ def _message_text(message: Any) -> str:
     return ""
 
 
+def _message_content_text(message: Any) -> str:
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+            elif item:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return ""
+
+
+def _retry_max_tokens_for_context_error(exc: Exception, requested: int) -> int | None:
+    text = str(exc)
+    if "max_tokens" not in text and "max_completion_tokens" not in text:
+        return None
+    if "maximum context length" not in text:
+        return None
+    match = re.search(
+        r"maximum context length is (\d+) tokens and your request has (\d+) input tokens",
+        text,
+    )
+    if not match:
+        return None
+    available = int(match.group(1)) - int(match.group(2))
+    for candidate in (2048, 1024, 512, 256):
+        if candidate <= available - 64:
+            return min(requested, candidate)
+    return None
+
+
+def _is_context_overflow_error(exc: Exception) -> bool:
+    text = str(exc)
+    return (
+        "maximum context length" in text
+        or "max_tokens must be at least 1" in text
+        or "max_completion_tokens must be at least 1" in text
+    )
+
+
 def _chat(
     deps: AgentDeps,
     messages: list[dict[str, str]],
@@ -238,6 +289,8 @@ def _chat(
     temperature: float,
     max_tokens: int,
     include_logprobs: bool = False,
+    content_only: bool = False,
+    extra_body: dict[str, Any] | None = None,
 ) -> tuple[str, int, int, float, Any]:
     params: dict[str, Any] = {
         "model": deps.model_id,
@@ -249,8 +302,28 @@ def _chat(
         params["logprobs"] = True
         if deps.top_logprobs > 0:
             params["top_logprobs"] = deps.top_logprobs
-    resp = deps.llm_client.chat.completions.create(**params)
-    text = _message_text(resp.choices[0].message)
+    if extra_body:
+        params["extra_body"] = extra_body
+    try:
+        resp = deps.llm_client.chat.completions.create(**params)
+    except Exception as exc:
+        retry_max_tokens = _retry_max_tokens_for_context_error(exc, max_tokens)
+        if retry_max_tokens is None or retry_max_tokens >= max_tokens:
+            if _is_context_overflow_error(exc):
+                raise ContextOverflowError(str(exc)) from exc
+            raise
+        print(
+            f"retrying context-limited request with max_tokens={retry_max_tokens} "
+            f"(was {max_tokens})",
+            file=sys.stderr,
+            flush=True,
+        )
+        params["max_tokens"] = retry_max_tokens
+        resp = deps.llm_client.chat.completions.create(**params)
+    if content_only:
+        text = _message_content_text(resp.choices[0].message)
+    else:
+        text = _message_text(resp.choices[0].message)
     prompt_tokens, completion_tokens = _usage(resp)
     return (
         text,
@@ -328,6 +401,103 @@ def _trajectory_brief(trajectory: list[dict[str, Any]]) -> str:
             f"reason={reasoning!r} observation={obs!r}"
         )
     return "\n".join(rows)
+
+
+VERBALIZED_2S_CONFIDENCE_PROMPT = (
+    "Provide the probability that your guess is correct. Give ONLY the probability, "
+    "no other words or explanation.\n\nFor example:\n\nProbability: <the probability "
+    "between 0.0 and 1.0 that your guess is correct, without any extra commentary "
+    "whatsoever; just the probability!>"
+)
+
+
+def _parse_verbalized_2s_confidence(text: str) -> float | None:
+    patterns = [
+        r"confidence\s*[:=]\s*((?:[0-9]+(?:\.[0-9]+)?)|(?:\.[0-9]+))\s*(%)?",
+        r"probability\s*[:=]\s*((?:[0-9]+(?:\.[0-9]+)?)|(?:\.[0-9]+))\s*(%)?",
+        r"certainty\s*[:=]\s*((?:[0-9]+(?:\.[0-9]+)?)|(?:\.[0-9]+))\s*(%)?",
+        r"\b((?:[0-9]+(?:\.[0-9]+)?)|(?:\.[0-9]+))\s*%",
+        r"^\s*((?:0(?:\.[0-9]+)?)|(?:1(?:\.0+)?)|(?:\.[0-9]+))\s*$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            value = float(match.group(1))
+        except (TypeError, ValueError):
+            continue
+        has_percent = len(match.groups()) >= 2 and bool(match.group(2))
+        if has_percent or value > 1.0:
+            value /= 100.0
+        return max(0.0, min(1.0, value))
+    return None
+
+
+def run_verbalized_2s(
+    state: AgentState,
+    deps: AgentDeps,
+    *,
+    temperature: float,
+    max_tokens: int,
+    require_parse: bool,
+) -> dict[str, Any]:
+    """LM-Polygraph-style Verbalized2S: ask confidence after the answer."""
+    candidate = _candidate_from_state(state)
+    if candidate is None:
+        return {
+            "verbalized_2s_confidence": None,
+            "verbalized_2s_uncertainty": None,
+            "verbalized_2s_raw": "",
+            "verbalized_2s_error": "no_candidate",
+            "verbalized_2s_prompt_tokens": 0,
+            "verbalized_2s_completion_tokens": 0,
+            "verbalized_2s_api_cost_usd": 0.0,
+        }
+
+    input_prompt = str(state.get("last_generation_prompt") or "")
+    if not input_prompt:
+        input_prompt = deps.adapter.build_prompt(state["instance"], None, [])
+    input_prompt = input_prompt[:12000]
+    answer = candidate.payload[: deps.max_code_chars]
+
+    try:
+        raw, pt, ct, cost, _logprobs = _chat(
+            deps,
+            [
+                {"role": "user", "content": input_prompt},
+                {"role": "assistant", "content": answer},
+                {"role": "user", "content": VERBALIZED_2S_CONFIDENCE_PROMPT},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            content_only=True,
+            extra_body={"reasoning_effort": "low"},
+        )
+        confidence = _parse_verbalized_2s_confidence(raw)
+        if confidence is None and require_parse:
+            raise RuntimeError(f"could not parse Verbalized2S confidence: {raw[:500]}")
+        return {
+            "verbalized_2s_confidence": confidence,
+            "verbalized_2s_uncertainty": None if confidence is None else 1.0 - confidence,
+            "verbalized_2s_raw": raw,
+            "verbalized_2s_error": "" if confidence is not None else "parse_failed",
+            "verbalized_2s_prompt_tokens": pt,
+            "verbalized_2s_completion_tokens": ct,
+            "verbalized_2s_api_cost_usd": cost,
+        }
+    except Exception as exc:
+        if require_parse:
+            raise
+        return {
+            "verbalized_2s_confidence": None,
+            "verbalized_2s_uncertainty": None,
+            "verbalized_2s_raw": "",
+            "verbalized_2s_error": f"{type(exc).__name__}: {exc}",
+            "verbalized_2s_prompt_tokens": 0,
+            "verbalized_2s_completion_tokens": 0,
+            "verbalized_2s_api_cost_usd": 0.0,
+        }
 
 
 def _decision_prompt(state: AgentState) -> str:
@@ -480,12 +650,28 @@ def decide_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             "decision_raw": "",
         }
 
-    raw, pt, ct, cost, _logprobs = _chat(
-        deps,
-        _decision_messages(state),
-        temperature=deps.decision_temperature,
-        max_tokens=deps.max_tokens_decision,
-    )
+    try:
+        raw, pt, ct, cost, _logprobs = _chat(
+            deps,
+            _decision_messages(state),
+            temperature=deps.decision_temperature,
+            max_tokens=deps.max_tokens_decision,
+        )
+    except ContextOverflowError as exc:
+        return {
+            "done": True,
+            "fixed": False,
+            "final_action": "context_overflow_skip",
+            "error": str(exc),
+            "trajectory": _record(
+                state,
+                action="think",
+                reasoning="context overflow",
+                observation="skipped: context overflow",
+                skipped=True,
+                error=str(exc),
+            ),
+        }
     action, reasoning = _parse_decision(raw)
     if not action:
         action, reasoning = fallback_decision_after_parse_failure(state)
@@ -557,13 +743,30 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             candidate,
             _adapter_log(state.get("trajectory", [])),
         )
-        raw, pt, ct, cost, logprobs = _chat(
-            deps,
-            [{"role": "user", "content": prompt}],
-            temperature=deps.generation_temperature,
-            max_tokens=deps.max_tokens_generation,
-            include_logprobs=deps.save_generation_logprobs,
-        )
+        try:
+            raw, pt, ct, cost, logprobs = _chat(
+                deps,
+                [{"role": "user", "content": prompt}],
+                temperature=deps.generation_temperature,
+                max_tokens=deps.max_tokens_generation,
+                include_logprobs=deps.save_generation_logprobs,
+            )
+        except ContextOverflowError as exc:
+            return {
+                "step": step_next,
+                "done": True,
+                "fixed": False,
+                "final_action": "context_overflow_skip",
+                "error": str(exc),
+                "trajectory": _record(
+                    state,
+                    action=action,
+                    reasoning=reasoning,
+                    observation="skipped: context overflow",
+                    skipped=True,
+                    error=str(exc),
+                ),
+            }
         if deps.require_generation_logprobs and logprobs is None:
             raise RuntimeError(
                 "generation logprobs were requested but the model endpoint "
@@ -598,6 +801,7 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 "candidate_payload": new_candidate.payload,
                 "candidate_raw": new_candidate.raw_text[: deps.max_code_chars],
                 "candidate_kind": new_candidate.kind,
+                "last_generation_prompt": prompt[:12000],
                 "n_generations": int(state.get("n_generations", 0)) + 1,
                 "trajectory": _record(
                     state,
@@ -794,12 +998,31 @@ class SageActionCandidateGenerator:
                 )
             ]
 
-        raw, pt, ct, cost, _logprobs = _chat(
-            self.deps,
-            _decision_messages(self.state),
-            temperature=self.deps.decision_temperature,
-            max_tokens=self.deps.max_tokens_decision,
-        )
+        try:
+            raw, pt, ct, cost, _logprobs = _chat(
+                self.deps,
+                _decision_messages(self.state),
+                temperature=self.deps.decision_temperature,
+                max_tokens=self.deps.max_tokens_decision,
+            )
+        except ContextOverflowError as exc:
+            self.state.update(
+                {
+                    "done": True,
+                    "fixed": False,
+                    "final_action": "context_overflow_skip",
+                    "error": str(exc),
+                    "trajectory": _record(
+                        self.state,
+                        action="think",
+                        reasoning="context overflow",
+                        observation="skipped: context overflow",
+                        skipped=True,
+                        error=str(exc),
+                    ),
+                }
+            )
+            return [ToolCallCandidate(tool_name="finish", arguments={"reasoning": "context overflow"})]
         action, reasoning = _parse_decision(raw)
         if not action:
             action, reasoning = fallback_decision_after_parse_failure(self.state)
@@ -887,13 +1110,13 @@ def run_sage_agent_episode(state: AgentState, deps: AgentDeps) -> AgentState:
     return state
 
 
-def instance_id_set(instances: list[dict[str, Any]], adapter: LCBAdapter) -> set[str]:
+def instance_id_set(instances: list[dict[str, Any]], adapter: BenchmarkAdapter) -> set[str]:
     return {adapter.instance_id(inst) for inst in instances}
 
 
 def split_instances(
     instances: list[dict[str, Any]],
-    adapter: LCBAdapter,
+    adapter: BenchmarkAdapter,
     *,
     n_train: int | None,
     train_fraction: float,
@@ -1001,13 +1224,60 @@ def calibrate_prior(
                 continue
             started = time.perf_counter()
             prompt = deps.adapter.build_prompt(instance, None, [])
-            raw, pt, ct, cost, logprobs = _chat(
-                deps,
-                [{"role": "user", "content": prompt}],
-                temperature=deps.generation_temperature,
-                max_tokens=deps.max_tokens_generation,
-                include_logprobs=deps.save_generation_logprobs,
-            )
+            try:
+                raw, pt, ct, cost, logprobs = _chat(
+                    deps,
+                    [{"role": "user", "content": prompt}],
+                    temperature=deps.generation_temperature,
+                    max_tokens=deps.max_tokens_generation,
+                    include_logprobs=deps.save_generation_logprobs,
+                )
+            except ContextOverflowError as exc:
+                wall_s = time.perf_counter() - started
+                actions = [
+                    {
+                        "step": 0,
+                        "action": "generate",
+                        "observation": "skipped: context overflow",
+                        "skipped": True,
+                        "error": str(exc),
+                    }
+                ]
+                row = {
+                    "split": "train_calibration",
+                    "benchmark": benchmark,
+                    "instance_id": inst_id,
+                    "patch_id": patch_id,
+                    "model_id": deps.model_id,
+                    "passed": None,
+                    "detail": "skipped_context_overflow",
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "api_cost_usd": 0.0,
+                    "wall_clock_s": round(wall_s, 4),
+                    "actions": actions,
+                    "code": "",
+                    "error": str(exc),
+                }
+                append_jsonl(output_path, row)
+                append_actions(
+                    actions_output_path,
+                    split="train_calibration",
+                    benchmark=benchmark,
+                    instance_id=inst_id,
+                    model_id=deps.model_id,
+                    actions=actions,
+                    extra={"patch_id": patch_id},
+                )
+                rows.append(row)
+                done.add((inst_id, patch_id))
+                completed_now += 1
+                if print_each:
+                    print(
+                        f"[prior {completed_now}/{total_jobs}] {inst_id} p{patch_id} "
+                        "passed=None detail=skipped_context_overflow"
+                    )
+                continue
             if deps.require_generation_logprobs and logprobs is None:
                 raise RuntimeError(
                     "train prior calibration requested generation logprobs, "
@@ -1230,11 +1500,22 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--benchmark",
-        choices=["lcb_easy", "lcb_medium", "lcb_med", "lcb_hard"],
+        choices=[
+            "lcb_easy",
+            "lcb_medium",
+            "lcb_med",
+            "lcb_hard",
+            "mbpp",
+            "humaneval",
+            "swebench_lite",
+            "swebench_verified",
+            "humanevalfix",
+            "codecontests",
+        ],
         default="lcb_easy",
     )
     p.add_argument("--generator", default="haiku45", help="Key from _common.generators")
-    p.add_argument("--n-instances", type=int, default=5, help="0 = all matching LCB tasks")
+    p.add_argument("--n-instances", type=int, default=5, help="0 = all matching benchmark tasks")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--split-seed", type=int, default=42)
     p.add_argument("--train-fraction", type=float, default=0.5)
@@ -1244,6 +1525,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--platform", default="leetcode", choices=["leetcode", "atcoder", "codeforces", "all"])
     p.add_argument("--lcb-version", default="all", choices=["v1", "all"])
     p.add_argument("--private-test-cap", type=int, default=12, help="0 = all private tests")
+    p.add_argument("--plus-input-cap", type=int, default=200)
+    p.add_argument("--swe-harness-workers", type=int, default=1)
     p.add_argument("--max-steps", type=int, default=12)
     p.add_argument("--max-generations", type=int, default=3)
     p.add_argument("--max-verifications", type=int, default=2)
@@ -1286,6 +1569,24 @@ def parse_args() -> argparse.Namespace:
         help="JSONL path for generation logprobs. Default: <output stem>.generation_logprobs.jsonl.",
     )
     p.add_argument(
+        "--save-verbalized-2s",
+        action="store_true",
+        help="Save LM-Polygraph-style Verbalized2S confidence for the final candidate.",
+    )
+    p.add_argument(
+        "--require-verbalized-2s",
+        action="store_true",
+        help="Fail an episode if Verbalized2S confidence cannot be parsed.",
+    )
+    p.add_argument("--verbalized-2s-temperature", type=float, default=0.0)
+    p.add_argument("--verbalized-2s-max-tokens", type=int, default=1024)
+    p.add_argument(
+        "--verbalized-2s-output",
+        type=Path,
+        default=None,
+        help="JSONL path for Verbalized2S rows. Default: <output stem>.verbalized_2s.jsonl.",
+    )
+    p.add_argument(
         "--split-output",
         type=Path,
         default=None,
@@ -1319,12 +1620,56 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def make_adapter(args: argparse.Namespace) -> BenchmarkAdapter:
+    benchmark = "lcb_medium" if args.benchmark == "lcb_med" else args.benchmark
+    if benchmark in {"swebench_lite", "swebench_verified"}:
+        from calibration import from_spotcheck as calibrate_from_spotcheck
+
+        sys.modules.setdefault("calibrate_from_spotcheck", calibrate_from_spotcheck)
+        return make_swe_adapter(
+            benchmark=benchmark,
+            n_instances=args.n_instances,
+            seed=args.seed,
+            output_dir=args.output.parent,
+            harness_workers=args.swe_harness_workers,
+        )
+    if benchmark == "mbpp":
+        from calibration import mbpp as mbpp_calibrate
+
+        sys.modules.setdefault("mbpp_calibrate", mbpp_calibrate)
+    elif benchmark == "humaneval":
+        from calibration import humaneval as humaneval_calibrate
+
+        sys.modules.setdefault("humaneval_calibrate", humaneval_calibrate)
+    elif benchmark == "humanevalfix":
+        from calibration import humanevalfix as humanevalfix_calibrate
+
+        sys.modules.setdefault("humanevalfix_calibrate", humanevalfix_calibrate)
+    elif benchmark == "codecontests":
+        from calibration import codecontests as codecontests_calibrate
+
+        sys.modules.setdefault("codecontests_calibrate", codecontests_calibrate)
+    return make_function_adapter(
+        benchmark=benchmark,
+        n_instances=args.n_instances,
+        seed=args.seed,
+        lcb_version=args.lcb_version,
+        plus_input_cap=args.plus_input_cap,
+        lcb_private_test_cap=args.private_test_cap,
+        platform=args.platform,
+    )
+
+
 def main() -> None:
     args = parse_args()
     _load_env_chain()
     if args.logprobs_output is None:
         args.logprobs_output = args.output.with_name(
             args.output.stem + ".generation_logprobs.jsonl"
+        )
+    if args.verbalized_2s_output is None:
+        args.verbalized_2s_output = args.output.with_name(
+            args.output.stem + ".verbalized_2s.jsonl"
         )
     if args.split_output is None:
         args.split_output = args.output.with_name(args.output.stem + ".split.json")
@@ -1344,17 +1689,7 @@ def main() -> None:
     if generator == "gpt_oss_120b_local":
         model_id = os.environ.get("GPT_OSS_120B_MODEL", model_id)
     benchmark = "lcb_medium" if args.benchmark == "lcb_med" else args.benchmark
-    difficulty = benchmark.split("_", 1)[1]
-
-    adapter = LCBAdapter(
-        benchmark=benchmark,
-        difficulty=difficulty,
-        n_instances=args.n_instances,
-        seed=args.seed,
-        platform=args.platform,
-        lcb_version=args.lcb_version,
-        private_test_cap=args.private_test_cap,
-    )
+    adapter = make_adapter(args)
     instances = adapter.load_instances()
 
     train_instances, test_instances, split_summary = split_instances(
@@ -1384,6 +1719,8 @@ def main() -> None:
         if args.save_generation_logprobs:
             args.logprobs_output.unlink(missing_ok=True)
             args.prior_calibration_logprobs_output.unlink(missing_ok=True)
+        if args.save_verbalized_2s:
+            args.verbalized_2s_output.unlink(missing_ok=True)
         args.prior_calibration_output.unlink(missing_ok=True)
         args.actions_output.unlink(missing_ok=True)
 
@@ -1455,6 +1792,8 @@ def main() -> None:
     if args.save_generation_logprobs:
         print(f"generation_logprobs={args.logprobs_output}")
         print(f"prior_calibration_logprobs={args.prior_calibration_logprobs_output}")
+    if args.save_verbalized_2s:
+        print(f"verbalized_2s={args.verbalized_2s_output}")
     for idx, instance in enumerate(test_instances, start=1):
         inst_id = adapter.instance_id(instance)
         started = time.perf_counter()
@@ -1472,6 +1811,26 @@ def main() -> None:
                 final_state = run_sage_agent_episode(state, deps)
             else:
                 final_state = graph.invoke(state)
+            verbalized_2s_row: dict[str, Any] = {}
+            if args.save_verbalized_2s:
+                verbalized_2s_row = run_verbalized_2s(
+                    final_state,
+                    deps,
+                    temperature=args.verbalized_2s_temperature,
+                    max_tokens=args.verbalized_2s_max_tokens,
+                    require_parse=args.require_verbalized_2s,
+                )
+                append_jsonl(
+                    args.verbalized_2s_output,
+                    {
+                        "split": "test",
+                        "benchmark": benchmark,
+                        "instance_id": inst_id,
+                        "model_id": model_id,
+                        "agent_backend": args.agent_backend,
+                        **verbalized_2s_row,
+                    },
+                )
             if args.final_verify:
                 final_state = maybe_final_verify(final_state, deps)
             row = result_record(
@@ -1482,6 +1841,7 @@ def main() -> None:
                 prior_summary=prior_summary,
             )
             row["agent_backend"] = args.agent_backend
+            row.update(verbalized_2s_row)
         except Exception as exc:
             row = {
                 "benchmark": benchmark,

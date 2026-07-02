@@ -181,13 +181,57 @@ def fit_train_likelihoods(
     seed: int,
     platform: str,
     lcb_version: str,
+    plus_input_cap: int,
+    swe_harness_workers: int,
     include_l3: bool,
 ) -> dict[str, Any]:
     from calibration import lcb as lcb_calibrate
 
     sys.modules.setdefault("lcb_calibrate", lcb_calibrate)
     from fitted_live.common import Candidate
-    from fitted_live.function_adapters import LCBAdapter
+    from fitted_live.function_adapters import make_function_adapter
+    from fitted_live.swe_adapter import make_swe_adapter
+
+    benchmark = "lcb_medium" if benchmark == "lcb_med" else benchmark
+    if benchmark in {"swebench_lite", "swebench_verified"}:
+        from calibration import from_spotcheck as calibrate_from_spotcheck
+
+        sys.modules.setdefault("calibrate_from_spotcheck", calibrate_from_spotcheck)
+        adapter = make_swe_adapter(
+            benchmark=benchmark,
+            n_instances=0,
+            seed=seed,
+            output_dir=output_path.parent,
+            harness_workers=swe_harness_workers,
+        )
+        candidate_kind = "diff"
+    else:
+        if benchmark == "mbpp":
+            from calibration import mbpp as mbpp_calibrate
+
+            sys.modules.setdefault("mbpp_calibrate", mbpp_calibrate)
+        elif benchmark == "humaneval":
+            from calibration import humaneval as humaneval_calibrate
+
+            sys.modules.setdefault("humaneval_calibrate", humaneval_calibrate)
+        elif benchmark == "humanevalfix":
+            from calibration import humanevalfix as humanevalfix_calibrate
+
+            sys.modules.setdefault("humanevalfix_calibrate", humanevalfix_calibrate)
+        elif benchmark == "codecontests":
+            from calibration import codecontests as codecontests_calibrate
+
+            sys.modules.setdefault("codecontests_calibrate", codecontests_calibrate)
+        adapter = make_function_adapter(
+            benchmark=benchmark,
+            n_instances=0,
+            seed=seed,
+            lcb_version=lcb_version,
+            plus_input_cap=plus_input_cap,
+            lcb_private_test_cap=private_test_cap,
+            platform=platform,
+        )
+        candidate_kind = "code"
 
     split = json.loads(split_path.read_text())
     train_ids = {str(x) for x in split.get("train_ids", [])}
@@ -196,16 +240,6 @@ def fit_train_likelihoods(
         for r in train_rows
         if str(r.get("instance_id")) in train_ids and r.get("passed") in (True, False)
     }
-    difficulty = {"med": "medium"}.get(benchmark.split("_", 1)[1], benchmark.split("_", 1)[1])
-    adapter = LCBAdapter(
-        benchmark=benchmark,
-        difficulty=difficulty,
-        n_instances=0,
-        seed=seed,
-        platform=platform,
-        lcb_version=lcb_version,
-        private_test_cap=private_test_cap,
-    )
     instances = {adapter.instance_id(inst): inst for inst in adapter.load_instances()}
     records = []
     for iid in sorted(train_ids):
@@ -221,7 +255,7 @@ def fit_train_likelihoods(
         candidate = Candidate(
             payload=str(row.get("code") or ""),
             raw_text=str(row.get("code") or ""),
-            kind="code",
+            kind=candidate_kind,
         )
         for critic in ("L0_syntax", "L1_lint", "L2_public_tests"):
             try:
@@ -297,7 +331,39 @@ def spearman(xs: list[float], ys: list[int]) -> float | None:
         return None
 
 
-def rejection_area(conf: list[float], quality: list[int], max_rejection: float) -> float | None:
+def prediction_rejection_area(
+    uncertainty: list[float], quality: list[int], max_rejection: float
+) -> float | None:
+    """lm-polygraph-compatible PredictionRejectionArea for binary quality."""
+    pairs = [
+        (float(u), int(q))
+        for u, q in zip(uncertainty, quality)
+        if u is not None and math.isfinite(float(u))
+    ]
+    if len(pairs) < 2:
+        return None
+    try:
+        import numpy as np
+    except Exception:
+        return None
+    ue = np.array([u for u, _ in pairs])
+    target = np.array([q for _, q in pairs])
+    min_t, max_t = np.min(target), np.max(target)
+    if np.isclose(min_t, max_t):
+        min_t -= 1
+        max_t += 1
+    target = (target - min_t) / (max_t - min_t)
+    sorted_metrics = target[np.argsort(ue)]
+    n = len(sorted_metrics)
+    num_rej = int(max_rejection * n)
+    if num_rej <= 0:
+        return None
+    cumsum = np.cumsum(sorted_metrics)[-num_rej:]
+    scores = (cumsum / np.arange((n - num_rej) + 1, n + 1))[::-1]
+    return float(np.sum(scores) / num_rej)
+
+
+def prr(conf: list[float], quality: list[int], max_rejection: float) -> float | None:
     pairs = [
         (float(c), int(q))
         for c, q in zip(conf, quality)
@@ -305,24 +371,41 @@ def rejection_area(conf: list[float], quality: list[int], max_rejection: float) 
     ]
     if len(pairs) < 2:
         return None
-    pairs.sort(key=lambda x: x[0])  # reject low-confidence first
-    q = [v for _, v in pairs]
-    n = len(q)
-    max_k = min(n - 1, max(1, int(math.floor(max_rejection * n))))
-    xs, ys = [], []
-    for k in range(max_k + 1):
-        xs.append(k / n)
-        ys.append(sum(q[k:]) / (n - k))
-    return sum((xs[i] - xs[i - 1]) * (ys[i] + ys[i - 1]) / 2 for i in range(1, len(xs)))
+    conf_f = [c for c, _ in pairs]
+    quality_f = [q for _, q in pairs]
+    area = prediction_rejection_area([-c for c in conf_f], quality_f, max_rejection)
+    oracle = prediction_rejection_area([-float(q) for q in quality_f], quality_f, max_rejection)
+    try:
+        import numpy as np
 
-
-def prr(conf: list[float], quality: list[int], max_rejection: float) -> float | None:
-    area = rejection_area(conf, quality, max_rejection)
-    oracle = rejection_area([float(q) for q in quality], quality, max_rejection)
-    random = (sum(quality) / len(quality)) * (math.floor(max_rejection * len(quality)) / len(quality))
-    if area is None or oracle is None or abs(oracle - random) < 1e-12:
+        rng = np.random.RandomState(42)
+        rand_scores = np.arange(len(quality_f))
+        random_scores = []
+        for _ in range(1000):
+            rng.shuffle(rand_scores)
+            score = prediction_rejection_area(rand_scores.tolist(), quality_f, max_rejection)
+            if score is not None:
+                random_scores.append(score)
+        random = float(np.mean(random_scores)) if random_scores else None
+    except Exception:
+        random = sum(quality_f) / len(quality_f)
+    if area is None or oracle is None or random is None or abs(oracle - random) < 1e-12:
         return None
     return (area - random) / (oracle - random)
+
+
+def load_tool_success(path: Path | None, prior: float) -> dict[str, float]:
+    if path is None or not path.exists():
+        return {}
+    out = {}
+    with path.open(newline="") as f:
+        for row in csv.DictReader(f):
+            iid = row.get("instance_id")
+            if iid is None:
+                continue
+            score = finite_or_none(row.get("tool_no_final_before_verify_pass_success_rate"))
+            out[str(iid)] = prior if score is None else score
+    return out
 
 
 def load_logprob_stats(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
@@ -346,6 +429,27 @@ def load_logprob_stats(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
                 }
             )
             out[key] = stat
+    return out
+
+
+def load_verbalized_2s(path: Path) -> dict[str, dict[str, Any]]:
+    out = {}
+    for row in read_jsonl(path):
+        iid = row.get("instance_id")
+        if iid is None:
+            continue
+        out[str(iid)] = {
+            "verbalized_2s_confidence": finite_or_none(
+                row.get("verbalized_2s_confidence")
+            ),
+            "verbalized_2s_uncertainty": finite_or_none(
+                row.get("verbalized_2s_uncertainty")
+            ),
+            "verbalized_2s_error": row.get("verbalized_2s_error", ""),
+            "verbalized_2s_completion_tokens": int(
+                row.get("verbalized_2s_completion_tokens") or 0
+            ),
+        }
     return out
 
 
@@ -465,6 +569,8 @@ def build_metrics(final_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ("llm_log_seq_prob", True),
         ("bayes_state", True),
         ("bayes_state_after_generation", True),
+        ("tool_success", True),
+        ("verbalized_2s_confidence", True),
     ]
     rows = []
     for name, higher_is_better in specs:
@@ -490,11 +596,14 @@ def main() -> None:
     p.add_argument("--generator", default="gpt_oss_120b_local")
     p.add_argument("--likelihoods", type=Path, default=None)
     p.add_argument("--kernel", type=Path, default=None)
+    p.add_argument("--tool-success-csv", type=Path, default=None)
     p.add_argument("--output-dir", type=Path, default=None)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--platform", default="leetcode")
     p.add_argument("--lcb-version", default="all")
     p.add_argument("--private-test-cap", type=int, default=12)
+    p.add_argument("--plus-input-cap", type=int, default=200)
+    p.add_argument("--swe-harness-workers", type=int, default=1)
     p.add_argument("--include-l3-train-likelihood", action="store_true")
     args = p.parse_args()
 
@@ -507,7 +616,19 @@ def main() -> None:
     actions = [r for r in read_jsonl(root / f"{stem}.actions.jsonl") if r.get("split") == "test"]
     prior_rows = read_jsonl(root / f"{stem}.train_prior_calibration.jsonl")
     logprobs = load_logprob_stats(root / f"{stem}.generation_logprobs.jsonl")
+    verbalized_2s = load_verbalized_2s(root / f"{stem}.verbalized_2s.jsonl")
     prior = prior_from_train(prior_rows)
+    tool_success_path = args.tool_success_csv
+    if tool_success_path is None:
+        for candidate in (
+            out_dir / "tool_success_by_instance.csv",
+            root / "tool_success_by_instance.csv",
+            root / "readable" / "tool_success_by_instance.csv",
+        ):
+            if candidate.exists():
+                tool_success_path = candidate
+                break
+    tool_success = load_tool_success(tool_success_path, float(prior["prior_Y1"]))
 
     if args.likelihoods:
         table = json.loads(args.likelihoods.read_text())
@@ -524,6 +645,8 @@ def main() -> None:
             seed=args.seed,
             platform=args.platform,
             lcb_version=args.lcb_version,
+            plus_input_cap=args.plus_input_cap,
+            swe_harness_workers=args.swe_harness_workers,
             include_l3=args.include_l3_train_likelihood,
         )
         theta_source = str(likelihood_path)
@@ -549,6 +672,20 @@ def main() -> None:
             prior=float(prior["prior_Y1"]),
             theta=theta,
             kernel=kernel,
+        )
+        final.update(
+            verbalized_2s.get(
+                iid,
+                {
+                    "verbalized_2s_confidence": None,
+                    "verbalized_2s_uncertainty": None,
+                    "verbalized_2s_error": "missing",
+                    "verbalized_2s_completion_tokens": 0,
+                },
+            )
+        )
+        final["tool_success"] = (
+            tool_success.get(iid, float(prior["prior_Y1"])) if tool_success_path else None
         )
         final_rows.append(final)
         traj_rows.extend(trace)
@@ -577,6 +714,10 @@ def main() -> None:
             "bayes_state": r["bayes_state"],
             "quality": r["quality"],
             "bayes_state_after_generation": r["bayes_state_after_generation"],
+            "tool_success": r["tool_success"],
+            "verbalized_2s_confidence": r["verbalized_2s_confidence"],
+            "verbalized_2s_uncertainty": r["verbalized_2s_uncertainty"],
+            "verbalized_2s_error": r["verbalized_2s_error"],
             "perplexity": r["perplexity"],
             "final_action": r["final_action"],
         }
@@ -623,6 +764,18 @@ def main() -> None:
         "theta": theta,
         "kernel": kernel,
         "action_counts": dict(Counter(r.get("action") for r in actions)),
+        "tool_success_source": str(tool_success_path) if tool_success_path else None,
+        "verbalized_2s": {
+            "rows": len(verbalized_2s),
+            "parsed": sum(
+                1
+                for r in verbalized_2s.values()
+                if r.get("verbalized_2s_confidence") is not None
+            ),
+            "errors": dict(
+                Counter(r.get("verbalized_2s_error", "") for r in verbalized_2s.values())
+            ),
+        },
         "outputs": [
             "final_logprob_bayes_quality.csv",
             "final_logprob_bayes_quality.jsonl",
