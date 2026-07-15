@@ -282,6 +282,63 @@ def _is_context_overflow_error(exc: Exception) -> bool:
     )
 
 
+def _openrouter_logprobs_provider_routing(client: Any) -> dict[str, Any] | None:
+    """OpenRouter provider routing so logprobs requests only hit capable providers.
+
+    Many OpenRouter providers for a given model do not return logprobs. Setting
+    ``provider.require_parameters=true`` makes OpenRouter route only to providers
+    that support every parameter in the request (here: logprobs/top_logprobs).
+    Optionally pin/prefer providers via ``OPENROUTER_PROVIDER_ORDER`` (comma list,
+    e.g. "DeepSeek,Fireworks,Parasail"). No-op for non-OpenRouter clients.
+    """
+    base = str(getattr(client, "base_url", "") or "")
+    if "openrouter" not in base:
+        return None
+    routing: dict[str, Any] = {"require_parameters": True}
+    order = os.environ.get("OPENROUTER_PROVIDER_ORDER", "").strip()
+    if order:
+        routing["order"] = [p.strip() for p in order.split(",") if p.strip()]
+        routing["allow_fallbacks"] = (
+            os.environ.get("OPENROUTER_ALLOW_FALLBACKS", "1").strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+    return {"provider": routing}
+
+
+def _create_completion(deps: AgentDeps, params: dict[str, Any], *, tries: int = 6) -> Any:
+    """chat.completions.create with backoff on transient upstream errors.
+
+    OpenRouter frequently returns 429 (provider rate-limited upstream) or 5xx.
+    Retry those with exponential backoff instead of crashing a long run.
+    Non-transient errors (e.g. 400 context overflow) propagate immediately so
+    the caller's context-window handling still applies.
+    """
+    last: Exception | None = None
+    for i in range(tries):
+        try:
+            return deps.llm_client.chat.completions.create(**params)
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            status = getattr(exc, "status_code", None)
+            name = type(exc).__name__
+            transient = status in (429, 500, 502, 503, 529) or name in {
+                "RateLimitError", "APITimeoutError", "APIConnectionError",
+                "InternalServerError",
+            }
+            if not transient or i == tries - 1:
+                raise
+            wait = min(2 ** i, 30)
+            print(
+                f"transient API error {name} (status={status}); "
+                f"retry {i + 1}/{tries} in {wait}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(wait)
+    assert last is not None
+    raise last
+
+
 def _chat(
     deps: AgentDeps,
     messages: list[dict[str, str]],
@@ -302,10 +359,13 @@ def _chat(
         params["logprobs"] = True
         if deps.top_logprobs > 0:
             params["top_logprobs"] = deps.top_logprobs
+        routing = _openrouter_logprobs_provider_routing(deps.llm_client)
+        if routing:
+            extra_body = {**(extra_body or {}), **routing}
     if extra_body:
         params["extra_body"] = extra_body
     try:
-        resp = deps.llm_client.chat.completions.create(**params)
+        resp = _create_completion(deps, params)
     except Exception as exc:
         retry_max_tokens = _retry_max_tokens_for_context_error(exc, max_tokens)
         if retry_max_tokens is None or retry_max_tokens >= max_tokens:
@@ -319,7 +379,24 @@ def _chat(
             flush=True,
         )
         params["max_tokens"] = retry_max_tokens
-        resp = deps.llm_client.chat.completions.create(**params)
+        resp = _create_completion(deps, params)
+    logprobs_val = _response_logprobs(resp) if include_logprobs else None
+    # OpenRouter can route a logprobs request to a provider that returns an
+    # empty logprobs payload (or transiently drops it). Rather than fail the
+    # whole run, re-request a couple of times; provider routing keeps us on a
+    # logprobs-capable provider.
+    if include_logprobs and not logprobs_val:
+        for attempt in range(2):
+            print(
+                f"logprobs missing from response, retrying generation "
+                f"({attempt + 1}/2)",
+                file=sys.stderr,
+                flush=True,
+            )
+            resp = _create_completion(deps, params)
+            logprobs_val = _response_logprobs(resp)
+            if logprobs_val:
+                break
     if content_only:
         text = _message_content_text(resp.choices[0].message)
     else:
@@ -330,7 +407,7 @@ def _chat(
         prompt_tokens,
         completion_tokens,
         cost_for_call(deps.model_id, prompt_tokens, completion_tokens),
-        _response_logprobs(resp) if include_logprobs else None,
+        logprobs_val,
     )
 
 

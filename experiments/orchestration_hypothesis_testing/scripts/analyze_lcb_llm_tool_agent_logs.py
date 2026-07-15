@@ -33,12 +33,15 @@ DEFAULT_KERNEL = {"p_fix_broken": 0.50, "p_break_correct": 0.05}
 
 
 def configure_hf_cache() -> None:
-    root = Path(
-        os.environ.get(
-            "ORCH_HF_CACHE_DIR",
-            "/capstor/store/cscs/swissai/a0142/hf_cache",
-        )
-    )
+    override = os.environ.get("ORCH_HF_CACHE_DIR")
+    root = Path(override or "/capstor/store/cscs/swissai/a0142/hf_cache")
+    # Fall back to the standard local HF cache when the configured root is not
+    # usable (e.g. the CSCS /capstor path when running on a laptop).
+    if override is None:
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            root = Path.home() / ".cache" / "huggingface"
     for name, path in {
         "HF_HOME": root,
         "HF_HUB_CACHE": root / "hub",

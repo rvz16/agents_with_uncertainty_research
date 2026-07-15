@@ -25,6 +25,8 @@ GENERATORS: dict[str, tuple[str, str, Optional[str]]] = {
     "gpt_oss_20b_local": ("openai/gpt-oss-20b",         "gpt-oss-20b (open-weight, local vLLM)",       os.environ.get("GPT_OSS_20B_BASE_URL", "http://127.0.0.1:8000/v1")),
     "gpt_oss_120b_local": ("openai/gpt-oss-120b",       "gpt-oss-120b (open-weight, local vLLM)",      os.environ.get("GPT_OSS_120B_BASE_URL", "http://127.0.0.1:8000/v1")),
     "gpt_oss_20b": ("openai/gpt-oss-20b:free",          "gpt-oss-20b",                                None),
+    "deepseek_v4_pro":   ("deepseek/deepseek-v4-pro",   "DeepSeek V4 Pro (OpenRouter, logprobs)",     None),
+    "deepseek_v4_flash": ("deepseek/deepseek-v4-flash", "DeepSeek V4 Flash (OpenRouter, logprobs)",   None),
 }
 
 
