@@ -1802,10 +1802,18 @@ def main() -> None:
         args.actions_output.unlink(missing_ok=True)
 
     llm_client = _make_client(generator)
-    try:
-        reviewer_client = _make_client(None)
-    except SystemExit:
-        reviewer_client = None
+    # REVIEWER_BASE_URL points the L3 reviewer at a local OpenAI-compatible
+    # endpoint (e.g. the same local vLLM) so the whole pipeline runs offline;
+    # pair with L3_REVIEW_MODEL. Falls back to the OpenRouter reviewer.
+    reviewer_base_url = os.environ.get("REVIEWER_BASE_URL", "").strip()
+    if reviewer_base_url:
+        from openai import OpenAI
+        reviewer_client = OpenAI(api_key="EMPTY", base_url=reviewer_base_url)
+    else:
+        try:
+            reviewer_client = _make_client(None)
+        except SystemExit:
+            reviewer_client = None
     deps = AgentDeps(
         adapter=adapter,
         llm_client=llm_client,

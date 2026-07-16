@@ -69,7 +69,7 @@ def critic_L3_review(problem: str, code: str, client) -> tuple[bool, float]:
     )
     try:
         resp = client.chat.completions.create(
-            model="anthropic/claude-haiku-4.5",
+            model=os.environ.get("L3_REVIEW_MODEL", "anthropic/claude-haiku-4.5"),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0, max_tokens=10,
         )
