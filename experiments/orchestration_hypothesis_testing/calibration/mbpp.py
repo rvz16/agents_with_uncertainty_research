@@ -66,10 +66,26 @@ log = logging.getLogger("mbpp_cal")
 def load_mbpp_plus(n_instances: int, seed: int = 42) -> list[dict]:
     # HF_HOME falls back to the system default (~/.cache/huggingface) when unset.
     # Override via env var if a different cache location is desired.
-    from datasets import load_dataset
-    ds = load_dataset("evalplus/mbppplus", split="test")
-    log.info("loaded %d MBPP+ problems", len(ds))
-    rows = list(ds)
+    try:
+        from datasets import load_dataset
+        ds = load_dataset("evalplus/mbppplus", split="test")
+        rows = list(ds)
+    except Exception as exc:
+        # datasets>=5 dropped some legacy dataset loading paths (TypeError on
+        # evalplus/mbppplus). Fall back to reading the parquet shard directly;
+        # same schema, works offline once cached.
+        log.warning("load_dataset failed (%s); reading parquet directly", type(exc).__name__)
+        import glob
+        import pyarrow.parquet as pq
+        from huggingface_hub import snapshot_download
+        root = snapshot_download("evalplus/mbppplus", repo_type="dataset")
+        files = sorted(glob.glob(f"{root}/**/*.parquet", recursive=True))
+        if not files:
+            raise RuntimeError(f"no parquet under {root}") from exc
+        rows = []
+        for fp in files:
+            rows.extend(pq.read_table(fp).to_pylist())
+    log.info("loaded %d MBPP+ problems", len(rows))
     if n_instances and n_instances < len(rows):
         import random
         random.Random(seed).shuffle(rows)
