@@ -87,13 +87,21 @@ Episodes are deterministically split into calibration and test sets. Thresholds,
 Platt calibration, class-conditional UQ distributions, and the success prior
 are fitted on calibration only.
 
-The analysis compares the prior; all trajectory aggregations (`last`, `mean`,
-`min`, `max`, `median`, EWMA, uncertain fraction, last-k mean, and CVaR);
-binary Bayes; continuous Bayes; and tempered continuous Bayes. It writes:
+The analysis compares the prior; a critic `bayes_state` fitted from ReAct format
+validity, action admissibility, and repeated-action fallback; all trajectory
+aggregations (`last`, `mean`, `min`, `max`, `median`, EWMA, uncertain fraction,
+last-k mean, and CVaR); binary Bayes; continuous Bayes; tempered continuous
+Bayes; and each UQ Bayes update fused on top of the critic state. It also reports
+a `stepwise_bayes_state` that calibrates and applies the three proxy critics at
+every generation, matching the sequential update mechanics of `uq_exps` (but
+without a transition kernel, since ALFWorld has no intermediate correctness
+label). It writes:
 
-- `metrics.csv` with AUROC, AUPRC, Brier, NLL, and ECE;
+- `metrics.csv` with AUROC, AUPRC, PRR@0.5, Brier, NLL, and ECE;
 - `prefix_metrics.csv` for 25%, 50%, 75%, and 100% prefixes;
 - `risk_coverage.csv` and `model_parameters.csv`;
+- `critic_likelihoods.csv` with calibration-only critic likelihoods;
+- `bayes_states.csv` with critic observations and the resulting state per episode;
 - belief JSONL and four PNG diagnostic plots;
 - `report.md` with run coverage and endpoint limitations.
 

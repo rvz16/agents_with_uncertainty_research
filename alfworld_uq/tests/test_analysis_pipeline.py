@@ -73,9 +73,23 @@ def test_full_posthoc_analysis_from_jsonl(tmp_path: Path) -> None:
 
     assert (output_dir / "metrics.csv").stat().st_size > 200
     assert (output_dir / "prefix_metrics.csv").stat().st_size > 200
+    assert "prr_at_0_5" in (output_dir / "metrics.csv").read_text().splitlines()[0]
+    assert "prr_at_0_5" in (
+        output_dir / "prefix_metrics.csv"
+    ).read_text().splitlines()[0]
     assert (output_dir / "risk_coverage.csv").stat().st_size > 200
     assert (output_dir / "model_parameters.csv").stat().st_size > 200
+    assert (output_dir / "critic_likelihoods.csv").stat().st_size > 100
+    assert (output_dir / "bayes_states.csv").stat().st_size > 200
     assert (output_dir / "belief_trajectories.jsonl").stat().st_size > 0
+    assert "| Model | AUROC | AUPRC | PRR@0.5 |" in (
+        output_dir / "report.md"
+    ).read_text()
+    metrics_text = (output_dir / "metrics.csv").read_text()
+    assert "bayes_state" in metrics_text
+    assert "bayes_state_plus_tempered" in metrics_text
+    assert "stepwise_bayes_state" in metrics_text
+    assert "stepwise_bayes_state_plus_tempered" in metrics_text
     for name in (
         "prefix_metrics.png",
         "belief_by_outcome.png",

@@ -8,6 +8,7 @@ import math
 import os
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +22,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from belief.binary_bayes import BinaryBayesUQ
+from belief.binary_bayes import BinaryBayesUQ, DoubleBinaryBayesUQ
 from belief.continuous_bayes import ContinuousBayesUQ
+from belief.critic_bayes import CriticBayesState
 from uq.aggregation import aggregate_trajectory
 
 
@@ -47,6 +49,12 @@ AGGREGATIONS = (
 )
 PREFIXES = (0.25, 0.5, 0.75, 1.0)
 EPS = 1e-6
+EPISODE_CRITIC_NAMES = (
+    "all_formats_valid",
+    "all_actions_valid",
+    "no_repeated_fallback",
+)
+STEP_CRITIC_NAMES = ("format_valid", "action_valid", "no_repeated_fallback")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -106,6 +114,31 @@ def _sequence(
     return values
 
 
+def _critic_observations(rows: list[dict[str, Any]]) -> dict[str, bool]:
+    """Summarize cheap pre-outcome checks once per episode."""
+    return {
+        "all_formats_valid": all(row.get("format_valid") is True for row in rows),
+        "all_actions_valid": all(row.get("action_valid") is True for row in rows),
+        "no_repeated_fallback": all(
+            row.get("fallback_reason") != "repeated_action" for row in rows
+        ),
+    }
+
+
+def _step_critic_observation(row: dict[str, Any]) -> dict[str, bool]:
+    return {
+        "format_valid": row.get("format_valid") is True,
+        "action_valid": row.get("action_valid") is True,
+        "no_repeated_fallback": row.get("fallback_reason") != "repeated_action",
+    }
+
+
+def _predict_from_belief(model: Any, sequence: list[float], belief: float) -> float:
+    for value in sequence:
+        belief = model.update(belief, value)
+    return belief
+
+
 def _prefix(sequence: list[float], fraction: float) -> list[float]:
     count = max(1, math.ceil(len(sequence) * fraction))
     return sequence[:count]
@@ -142,6 +175,84 @@ def auprc(labels: list[int], scores: list[float]) -> float | None:
     return sum(precisions) / positives
 
 
+def prediction_rejection_area(
+    uncertainty: list[float], labels: list[int], max_rejection: float
+) -> float | None:
+    """Area under retained accuracy while rejecting uncertain predictions."""
+    pairs = [
+        (float(value), int(label))
+        for value, label in zip(uncertainty, labels)
+        if value is not None and math.isfinite(float(value))
+    ]
+    if len(pairs) < 2:
+        return None
+    uncertainty_array = np.asarray([value for value, _ in pairs], dtype=float)
+    outcomes = np.asarray([label for _, label in pairs], dtype=float)
+    minimum, maximum = np.min(outcomes), np.max(outcomes)
+    if np.isclose(minimum, maximum):
+        minimum -= 1.0
+        maximum += 1.0
+    outcomes = (outcomes - minimum) / (maximum - minimum)
+    ranked = outcomes[np.argsort(uncertainty_array)]
+    rejected = int(max_rejection * len(ranked))
+    if rejected <= 0:
+        return None
+    cumulative = np.cumsum(ranked)[-rejected:]
+    retained = np.arange((len(ranked) - rejected) + 1, len(ranked) + 1)
+    return float(np.sum((cumulative / retained)[::-1]) / rejected)
+
+
+@lru_cache(maxsize=None)
+def _prr_references(
+    labels: tuple[int, ...], max_rejection: float
+) -> tuple[float | None, float | None]:
+    outcomes = list(labels)
+    oracle = prediction_rejection_area(
+        [-float(label) for label in outcomes], outcomes, max_rejection
+    )
+    rng = np.random.RandomState(42)
+    random_order = np.arange(len(outcomes))
+    random_areas = []
+    for _ in range(1000):
+        rng.shuffle(random_order)
+        area = prediction_rejection_area(
+            random_order.tolist(), outcomes, max_rejection
+        )
+        if area is not None:
+            random_areas.append(area)
+    random = float(np.mean(random_areas)) if random_areas else None
+    return oracle, random
+
+
+def prr(
+    confidence: list[float], labels: list[int], max_rejection: float = 0.5
+) -> float | None:
+    """Prediction Rejection Ratio normalized by random and oracle rankings."""
+    pairs = [
+        (float(value), int(label))
+        for value, label in zip(confidence, labels)
+        if value is not None and math.isfinite(float(value))
+    ]
+    if len(pairs) < 2:
+        return None
+    filtered_confidence = [value for value, _ in pairs]
+    filtered_labels = [label for _, label in pairs]
+    area = prediction_rejection_area(
+        [-value for value in filtered_confidence],
+        filtered_labels,
+        max_rejection,
+    )
+    oracle, random = _prr_references(tuple(filtered_labels), max_rejection)
+    if (
+        area is None
+        or oracle is None
+        or random is None
+        or abs(oracle - random) < 1e-12
+    ):
+        return None
+    return (area - random) / (oracle - random)
+
+
 def ece(labels: list[int], probabilities: list[float], bins: int = 10) -> float:
     labels_array = np.asarray(labels, dtype=float)
     probabilities_array = np.asarray(probabilities, dtype=float)
@@ -172,6 +283,7 @@ def metric_values(labels: list[int], probabilities: list[float]) -> dict[str, An
         "n_success": int(np.sum(outcomes)),
         "auroc": auroc(labels, probabilities),
         "auprc": auprc(labels, probabilities),
+        "prr_at_0_5": prr(probabilities, labels, 0.5),
         "brier": float(np.mean((clipped - outcomes) ** 2)),
         "nll": float(
             -np.mean(outcomes * np.log(clipped) + (1.0 - outcomes) * np.log(1.0 - clipped))
@@ -377,6 +489,14 @@ def _plot_risk_coverage(rows: list[dict[str, Any]], output_dir: Path) -> None:
             "binary_bayes",
             "continuous_bayes",
             "tempered_continuous_bayes",
+            "bayes_state",
+            "bayes_state_plus_binary",
+            "bayes_state_plus_sep",
+            "bayes_state_plus_tempered",
+            "stepwise_bayes_state",
+            "stepwise_bayes_state_plus_binary",
+            "stepwise_bayes_state_plus_sep",
+            "stepwise_bayes_state_plus_tempered",
         }
     ]
     for model in sorted({row["model"] for row in primary}):
@@ -409,7 +529,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--threshold-quantile", type=float, default=0.9)
     parser.add_argument(
-        "--threshold-mode", choices=["quantile", "grid"], default="quantile"
+        "--threshold-mode",
+        choices=["quantile", "grid", "sep", "lr_pos", "lr_neg"],
+        default="quantile",
     )
     parser.add_argument("--tempered-lambda", type=float, default=0.25)
     parser.add_argument("--ewma-alpha", type=float, default=0.3)
@@ -468,6 +590,74 @@ def main() -> None:
         1.0 - EPS,
         max(EPS, sum(labels[i] for i in calibration_ids) / len(calibration_ids)),
     )
+    critic_observations = {
+        episode_id: _critic_observations(trajectories[episode_id])
+        for episode_id in episode_ids
+    }
+    critic_bayes = CriticBayesState.fit(
+        [critic_observations[i] for i in calibration_ids],
+        [labels[i] for i in calibration_ids],
+    )
+    bayes_states = {
+        episode_id: critic_bayes.predict(critic_observations[episode_id])
+        for episode_id in episode_ids
+    }
+    step_critic_sequences = {
+        episode_id: [
+            _step_critic_observation(row) for row in trajectories[episode_id]
+        ]
+        for episode_id in episode_ids
+    }
+    step_calibration_observations = [
+        observation
+        for episode_id in calibration_ids
+        for observation in step_critic_sequences[episode_id]
+    ]
+    step_calibration_labels = [
+        labels[episode_id]
+        for episode_id in calibration_ids
+        for _ in step_critic_sequences[episode_id]
+    ]
+    stepwise_critic_bayes = CriticBayesState.fit(
+        step_calibration_observations,
+        step_calibration_labels,
+        prior=prior,
+    )
+    stepwise_bayes_states = {
+        episode_id: stepwise_critic_bayes.predict_sequence(
+            step_critic_sequences[episode_id]
+        )
+        for episode_id in episode_ids
+    }
+    bayes_state_rows = [
+        {
+            "episode_id": episode_id,
+            "split": "calibration" if episode_id in calibration_ids else "test",
+            "final_success": labels[episode_id],
+            **critic_observations[episode_id],
+            "bayes_state": bayes_states[episode_id],
+            "stepwise_bayes_state": stepwise_bayes_states[episode_id],
+        }
+        for episode_id in episode_ids
+    ]
+    critic_likelihood_rows = []
+    for state_model, model, critic_names in (
+        ("episode", critic_bayes, EPISODE_CRITIC_NAMES),
+        ("stepwise_uq_exps", stepwise_critic_bayes, STEP_CRITIC_NAMES),
+    ):
+        for critic in critic_names:
+            likelihood = model.likelihoods[critic]
+            critic_likelihood_rows.append(
+                {
+                    "state_model": state_model,
+                    "critic": critic,
+                    "p_pass_success": likelihood.p_pass_success,
+                    "p_pass_failure": likelihood.p_pass_failure,
+                    "informativeness": (
+                        likelihood.p_pass_success - likelihood.p_pass_failure
+                    ),
+                }
+            )
     test_labels = [labels[i] for i in test_ids]
     global_prior_predictions = [prior] * len(test_ids)
     metric_rows.append(
@@ -486,6 +676,44 @@ def main() -> None:
             target="all",
             method="none",
             model="prior",
+        )
+    )
+    global_stepwise_predictions = [stepwise_bayes_states[i] for i in test_ids]
+    metric_rows.append(
+        _metric_row(
+            target="all",
+            method="stepwise_critics",
+            model="stepwise_bayes_state",
+            labels=test_labels,
+            probabilities=global_stepwise_predictions,
+        )
+    )
+    risk_rows.extend(
+        _risk_coverage(
+            test_labels,
+            global_stepwise_predictions,
+            target="all",
+            method="stepwise_critics",
+            model="stepwise_bayes_state",
+        )
+    )
+    global_bayes_predictions = [bayes_states[i] for i in test_ids]
+    metric_rows.append(
+        _metric_row(
+            target="all",
+            method="critics",
+            model="bayes_state",
+            labels=test_labels,
+            probabilities=global_bayes_predictions,
+        )
+    )
+    risk_rows.extend(
+        _risk_coverage(
+            test_labels,
+            global_bayes_predictions,
+            target="all",
+            method="critics",
+            model="bayes_state",
         )
     )
 
@@ -577,6 +805,29 @@ def main() -> None:
                 threshold_mode=args.threshold_mode,
                 higher_is_uncertain=higher_is_uncertain,
             )
+            binary_sep = BinaryBayesUQ.fit(
+                calibration_sequences,
+                calibration_labels,
+                threshold_mode="sep",
+                higher_is_uncertain=higher_is_uncertain,
+            )
+            binary_lr_pos = BinaryBayesUQ.fit(
+                calibration_sequences,
+                calibration_labels,
+                threshold_mode="lr_pos",
+                higher_is_uncertain=higher_is_uncertain,
+            )
+            binary_lr_neg = BinaryBayesUQ.fit(
+                calibration_sequences,
+                calibration_labels,
+                threshold_mode="lr_neg",
+                higher_is_uncertain=higher_is_uncertain,
+            )
+            binary_double = DoubleBinaryBayesUQ.fit(
+                calibration_sequences,
+                calibration_labels,
+                higher_is_uncertain=higher_is_uncertain,
+            )
             continuous = ContinuousBayesUQ.fit(
                 calibration_sequences, calibration_labels, lambda_=1.0
             )
@@ -587,6 +838,10 @@ def main() -> None:
             )
             bayes_models = {
                 "binary_bayes": binary,
+                "binary_bayes_sep": binary_sep,
+                "binary_bayes_lr_pos": binary_lr_pos,
+                "binary_bayes_lr_neg": binary_lr_neg,
+                "binary_bayes_double": binary_double,
                 "continuous_bayes": continuous,
                 "tempered_continuous_bayes": tempered,
             }
@@ -599,6 +854,15 @@ def main() -> None:
                     "prior": binary.prior,
                     "p_certain_success": binary.p_certain_success,
                     "p_certain_failure": binary.p_certain_failure,
+                    "binary_sep_threshold": binary_sep.threshold,
+                    "binary_lr_pos_threshold": binary_lr_pos.threshold,
+                    "binary_lr_neg_threshold": binary_lr_neg.threshold,
+                    "binary_double_positive_threshold": (
+                        binary_double.positive.threshold
+                    ),
+                    "binary_double_negative_threshold": (
+                        binary_double.negative.threshold
+                    ),
                     "continuous_success_mean": continuous.success_mean,
                     "continuous_success_std": continuous.success_std,
                     "continuous_failure_mean": continuous.failure_mean,
@@ -626,6 +890,112 @@ def main() -> None:
                         target=target,
                         method=method,
                         model=model_name,
+                    )
+                )
+
+            base_predictions = [bayes_states[i] for i in test_available]
+            metric_rows.append(
+                _metric_row(
+                    target=target,
+                    method=method,
+                    model="bayes_state",
+                    labels=outcomes,
+                    probabilities=base_predictions,
+                )
+            )
+            risk_rows.extend(
+                _risk_coverage(
+                    outcomes,
+                    base_predictions,
+                    target=target,
+                    method=method,
+                    model="bayes_state",
+                )
+            )
+            fusion_names = {
+                "binary_bayes": "bayes_state_plus_binary",
+                "binary_bayes_sep": "bayes_state_plus_sep",
+                "binary_bayes_lr_pos": "bayes_state_plus_lr_pos",
+                "binary_bayes_lr_neg": "bayes_state_plus_lr_neg",
+                "binary_bayes_double": "bayes_state_plus_double",
+                "continuous_bayes": "bayes_state_plus_continuous",
+                "tempered_continuous_bayes": "bayes_state_plus_tempered",
+            }
+            for source_name, fused_name in fusion_names.items():
+                model = bayes_models[source_name]
+                predictions = [
+                    _predict_from_belief(model, sequences[i], bayes_states[i])
+                    for i in test_available
+                ]
+                metric_rows.append(
+                    _metric_row(
+                        target=target,
+                        method=method,
+                        model=fused_name,
+                        labels=outcomes,
+                        probabilities=predictions,
+                    )
+                )
+                risk_rows.extend(
+                    _risk_coverage(
+                        outcomes,
+                        predictions,
+                        target=target,
+                        method=method,
+                        model=fused_name,
+                    )
+                )
+
+            stepwise_base_predictions = [
+                stepwise_bayes_states[i] for i in test_available
+            ]
+            metric_rows.append(
+                _metric_row(
+                    target=target,
+                    method=method,
+                    model="stepwise_bayes_state",
+                    labels=outcomes,
+                    probabilities=stepwise_base_predictions,
+                )
+            )
+            risk_rows.extend(
+                _risk_coverage(
+                    outcomes,
+                    stepwise_base_predictions,
+                    target=target,
+                    method=method,
+                    model="stepwise_bayes_state",
+                )
+            )
+            for source_name, episode_fused_name in fusion_names.items():
+                model = bayes_models[source_name]
+                fused_name = episode_fused_name.replace(
+                    "bayes_state_plus_", "stepwise_bayes_state_plus_"
+                )
+                predictions = [
+                    _predict_from_belief(
+                        model,
+                        sequences[i],
+                        stepwise_bayes_states[i],
+                    )
+                    for i in test_available
+                ]
+                metric_rows.append(
+                    _metric_row(
+                        target=target,
+                        method=method,
+                        model=fused_name,
+                        labels=outcomes,
+                        probabilities=predictions,
+                    )
+                )
+                risk_rows.extend(
+                    _risk_coverage(
+                        outcomes,
+                        predictions,
+                        target=target,
+                        method=method,
+                        model=fused_name,
                     )
                 )
 
@@ -764,6 +1134,7 @@ def main() -> None:
         "n_success",
         "auroc",
         "auprc",
+        "prr_at_0_5",
         "brier",
         "nll",
         "ece",
@@ -795,11 +1166,39 @@ def main() -> None:
             "prior",
             "p_certain_success",
             "p_certain_failure",
+            "binary_sep_threshold",
+            "binary_lr_pos_threshold",
+            "binary_lr_neg_threshold",
+            "binary_double_positive_threshold",
+            "binary_double_negative_threshold",
             "continuous_success_mean",
             "continuous_success_std",
             "continuous_failure_mean",
             "continuous_failure_std",
             "tempered_lambda",
+        ],
+    )
+    _write_csv(
+        args.output_dir / "critic_likelihoods.csv",
+        critic_likelihood_rows,
+        [
+            "state_model",
+            "critic",
+            "p_pass_success",
+            "p_pass_failure",
+            "informativeness",
+        ],
+    )
+    _write_csv(
+        args.output_dir / "bayes_states.csv",
+        bayes_state_rows,
+        [
+            "episode_id",
+            "split",
+            "final_success",
+            *EPISODE_CRITIC_NAMES,
+            "bayes_state",
+            "stepwise_bayes_state",
         ],
     )
     with (args.output_dir / "belief_trajectories.jsonl").open(
@@ -835,8 +1234,28 @@ def main() -> None:
         "feature_mean",
         "feature_max",
         "binary_bayes",
+        "binary_bayes_sep",
+        "binary_bayes_lr_pos",
+        "binary_bayes_lr_neg",
+        "binary_bayes_double",
         "continuous_bayes",
         "tempered_continuous_bayes",
+        "bayes_state",
+        "bayes_state_plus_binary",
+        "bayes_state_plus_sep",
+        "bayes_state_plus_lr_pos",
+        "bayes_state_plus_lr_neg",
+        "bayes_state_plus_double",
+        "bayes_state_plus_continuous",
+        "bayes_state_plus_tempered",
+        "stepwise_bayes_state",
+        "stepwise_bayes_state_plus_binary",
+        "stepwise_bayes_state_plus_sep",
+        "stepwise_bayes_state_plus_lr_pos",
+        "stepwise_bayes_state_plus_lr_neg",
+        "stepwise_bayes_state_plus_double",
+        "stepwise_bayes_state_plus_continuous",
+        "stepwise_bayes_state_plus_tempered",
     }
     primary_metrics = [
         row
@@ -845,13 +1264,68 @@ def main() -> None:
         and row["uq_method"] == "perplexity"
         and row["model"] in primary_models
     ]
+    thought_fusion_models = {
+        "bayes_state",
+        "bayes_state_plus_binary",
+        "bayes_state_plus_sep",
+        "bayes_state_plus_lr_pos",
+        "bayes_state_plus_lr_neg",
+        "bayes_state_plus_double",
+        "bayes_state_plus_continuous",
+        "bayes_state_plus_tempered",
+    }
+    thought_fusion_metrics = [
+        row
+        for row in metric_rows
+        if row["target"] == "thought"
+        and row["uq_method"] == "sum_logprob"
+        and row["model"] in thought_fusion_models
+    ]
+    thought_fusion_base = next(
+        (row for row in thought_fusion_metrics if row["model"] == "bayes_state"),
+        None,
+    )
+    stepwise_fusion_models = {
+        model for model in primary_models if model.startswith("stepwise_bayes_state")
+    }
+    stepwise_fusion_metrics = [
+        row
+        for row in metric_rows
+        if row["target"] == "thought"
+        and row["uq_method"] == "sum_logprob"
+        and row["model"] in stepwise_fusion_models
+    ]
+    stepwise_fusion_base = next(
+        (
+            row
+            for row in stepwise_fusion_metrics
+            if row["model"] == "stepwise_bayes_state"
+        ),
+        None,
+    )
     comparable_metrics = [
         row
         for row in metric_rows
         if row["uq_method"] != "none" and row["auroc"] is not None
     ]
-    best_auroc = max(comparable_metrics, key=lambda row: float(row["auroc"]))
-    best_brier = min(comparable_metrics, key=lambda row: float(row["brier"]))
+    best_auroc = max(
+        comparable_metrics,
+        key=lambda row: float(row["auroc"]),
+        default=None,
+    )
+    best_brier = min(
+        comparable_metrics,
+        key=lambda row: float(row["brier"]),
+        default=None,
+    )
+    prr_metrics = [
+        row for row in comparable_metrics if row["prr_at_0_5"] is not None
+    ]
+    best_prr = max(
+        prr_metrics,
+        key=lambda row: float(row["prr_at_0_5"]),
+        default=None,
+    )
     task_counts = defaultdict(lambda: [0, 0])
     for episode_id in episode_ids:
         task_type = summaries[episode_id]["task_type"]
@@ -873,15 +1347,32 @@ def main() -> None:
         f"- Available target/method pairs: {len(available_methods)}",
         f"- Metric rows: {len(metric_rows)}",
         "",
+        "## Critic Bayes state",
+        "",
+        "Episode state applies each summarized critic once; stepwise_uq_exps applies all critics after every generation.",
+        "",
+        "| State model | Critic | P(pass | success) | P(pass | failure) | Informativeness |",
+        "|---|---|---:|---:|---:|",
+    ]
+    for row in critic_likelihood_rows:
+        report.append(
+            f"| {row['state_model']} | {row['critic']} | "
+            f"{row['p_pass_success']:.4f} | "
+            f"{row['p_pass_failure']:.4f} | {row['informativeness']:+.4f} |"
+        )
+    report.extend(
+        [
+            "",
         "## Combined perplexity",
         "",
-        "| Model | AUROC | AUPRC | Brier | NLL | ECE |",
-        "|---|---:|---:|---:|---:|---:|",
-    ]
+        "| Model | AUROC | AUPRC | PRR@0.5 | Brier | NLL | ECE |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
     for row in sorted(primary_metrics, key=lambda item: item["model"]):
         values = [
             "NA" if row[name] is None else f"{float(row[name]):.4f}"
-            for name in ("auroc", "auprc", "brier", "nll", "ece")
+            for name in ("auroc", "auprc", "prr_at_0_5", "brier", "nll", "ece")
         ]
         report.append(f"| {row['model']} | {' | '.join(values)} |")
     report.extend(
@@ -891,17 +1382,85 @@ def main() -> None:
             f"{len(test_ids)} test episodes with {sum(labels[i] for i in test_ids)} "
             "positive outcome(s). They validate the pipeline but are not stable "
             "performance estimates.",
-            "",
-            "## Best observed features",
-            "",
-            f"- Best AUROC: `{best_auroc['target']}/{best_auroc['uq_method']}/"
-            f"{best_auroc['model']}` = {float(best_auroc['auroc']):.4f} "
-            f"(Brier {float(best_auroc['brier']):.4f}).",
-            f"- Best Brier: `{best_brier['target']}/{best_brier['uq_method']}/"
-            f"{best_brier['model']}` = {float(best_brier['brier']):.4f} "
-            f"(AUROC {float(best_brier['auroc']):.4f}).",
+        ]
+    )
+    if thought_fusion_metrics:
+        report.extend(
+            [
+                "",
+                "## Bayes state + thought sum_logprob",
+                "",
+                "| Model | AUROC | Delta AUROC | PRR@0.5 | Delta PRR@0.5 | Brier | Delta Brier | NLL | Delta NLL |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for row in sorted(thought_fusion_metrics, key=lambda item: item["model"]):
+            assert thought_fusion_base is not None
+            report.append(
+                f"| {row['model']} | {float(row['auroc']):.4f} | "
+                f"{float(row['auroc']) - float(thought_fusion_base['auroc']):+.4f} | "
+                f"{float(row['prr_at_0_5']):.4f} | "
+                f"{float(row['prr_at_0_5']) - float(thought_fusion_base['prr_at_0_5']):+.4f} | "
+                f"{float(row['brier']):.4f} | "
+                f"{float(row['brier']) - float(thought_fusion_base['brier']):+.4f} | "
+                f"{float(row['nll']):.4f} | "
+                f"{float(row['nll']) - float(thought_fusion_base['nll']):+.4f} |"
+            )
+    if stepwise_fusion_metrics:
+        report.extend(
+            [
+                "",
+                "## Stepwise uq_exps-style state + thought sum_logprob",
+                "",
+                "| Model | AUROC | Delta AUROC | PRR@0.5 | Delta PRR@0.5 | Brier | Delta Brier | NLL | Delta NLL |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for row in sorted(stepwise_fusion_metrics, key=lambda item: item["model"]):
+            assert stepwise_fusion_base is not None
+            report.append(
+                f"| {row['model']} | {float(row['auroc']):.4f} | "
+                f"{float(row['auroc']) - float(stepwise_fusion_base['auroc']):+.4f} | "
+                f"{float(row['prr_at_0_5']):.4f} | "
+                f"{float(row['prr_at_0_5']) - float(stepwise_fusion_base['prr_at_0_5']):+.4f} | "
+                f"{float(row['brier']):.4f} | "
+                f"{float(row['brier']) - float(stepwise_fusion_base['brier']):+.4f} | "
+                f"{float(row['nll']):.4f} | "
+                f"{float(row['nll']) - float(stepwise_fusion_base['nll']):+.4f} |"
+            )
+        report.extend(
+            [
+                "",
+                "The stepwise variant is a mechanics-matching stress test: proxy critics "
+                "are correlated and failed episodes contribute more observations because "
+                "they are usually longer.",
+            ]
+        )
+    report.extend(["", "## Best observed features", ""])
+    if best_auroc is not None and best_brier is not None:
+        report.extend(
+            [
+                f"- Best AUROC: `{best_auroc['target']}/{best_auroc['uq_method']}/"
+                f"{best_auroc['model']}` = {float(best_auroc['auroc']):.4f} "
+                f"(Brier {float(best_auroc['brier']):.4f}).",
+                f"- Best Brier: `{best_brier['target']}/{best_brier['uq_method']}/"
+                f"{best_brier['model']}` = {float(best_brier['brier']):.4f} "
+                f"(AUROC {float(best_brier['auroc']):.4f}).",
+            ]
+        )
+        if best_prr is not None:
+            report.append(
+                f"- Best PRR@0.5: `{best_prr['target']}/{best_prr['uq_method']}/"
+                f"{best_prr['model']}` = {float(best_prr['prr_at_0_5']):.4f}."
+            )
+        report.append(
             "- Sum log-probability is length-sensitive; compare it against normalized "
-            "mean token log-probability/perplexity before treating it as epistemic UQ.",
+            "mean token log-probability/perplexity before treating it as epistemic UQ."
+        )
+    else:
+        report.append("No comparable UQ features were available for ranking.")
+    report.extend(
+        [
             "",
             "## Success by task type",
             "",

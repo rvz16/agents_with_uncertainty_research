@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from belief.binary_bayes import BinaryBayesUQ
+from belief.binary_bayes import BinaryBayesUQ, DoubleBinaryBayesUQ
 from belief.continuous_bayes import ContinuousBayesUQ
 
 
@@ -37,3 +37,27 @@ def test_continuous_bayes_and_tempering() -> None:
 def test_continuous_bayes_rejects_negative_lambda() -> None:
     with pytest.raises(ValueError):
         ContinuousBayesUQ.fit([[1.0], [2.0]], [1, 0], lambda_=-0.1)
+
+
+@pytest.mark.parametrize("mode", ["sep", "lr_pos", "lr_neg"])
+def test_binary_bayes_likelihood_ratio_threshold_modes(mode: str) -> None:
+    model = BinaryBayesUQ.fit(
+        [[0.1, 0.2], [0.2, 0.3], [0.8, 0.9], [0.9, 1.0]],
+        [1, 1, 0, 0],
+        threshold_mode=mode,
+        higher_is_uncertain=True,
+    )
+    assert model.predict([0.15]) > model.prior
+    assert model.predict([0.95]) < model.prior
+
+
+def test_double_binary_bayes_applies_both_thresholds() -> None:
+    model = DoubleBinaryBayesUQ.fit(
+        [[0.1, 0.2], [0.2, 0.3], [0.8, 0.9], [0.9, 1.0]],
+        [1, 1, 0, 0],
+        higher_is_uncertain=True,
+    )
+    manual = model.negative.update(
+        model.positive.update(model.prior, 0.15), 0.15
+    )
+    assert model.predict([0.15]) == pytest.approx(manual)
