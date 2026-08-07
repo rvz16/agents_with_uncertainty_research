@@ -43,6 +43,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -1577,6 +1578,78 @@ def _swe_eval_progress_snapshot(work_dir: Path, run_id: str) -> str:
     return " | ".join([f"run_id={run_id}", _swe_build_progress(work_dir), *chunks])
 
 
+def _docker_api_ping(env: dict[str, str]) -> bool:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import docker; c=docker.from_env(); c.ping()",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        log.warning("Docker API ping failed:\n%s", proc.stderr[-1000:])
+    return proc.returncode == 0
+
+
+def _ensure_podman_service(env: dict[str, str]) -> None:
+    """Make the rootless Podman Docker API socket available for SWE harness."""
+    docker_host = env.get("DOCKER_HOST", "")
+    if not ("podman" in docker_host.lower() or env.get("SWEBENCH_PODMAN_COMPAT")):
+        return
+    if _docker_api_ping(env):
+        return
+
+    podman_root = env.get("PODMAN_ROOT")
+    podman_runroot = env.get("PODMAN_RUNROOT")
+    podman_tmpdir = env.get("PODMAN_TMPDIR") or env.get("SWEBENCH_LOCAL_TMPDIR")
+    podman_log = env.get("PODMAN_SERVICE_LOG")
+    if not (podman_root and podman_runroot and podman_tmpdir and podman_log):
+        raise RuntimeError("Podman Docker API is unavailable and restart env vars are missing")
+
+    socket_path = docker_host.removeprefix("unix://")
+    if not socket_path:
+        raise RuntimeError(f"Unsupported DOCKER_HOST for podman restart: {docker_host}")
+    Path(socket_path).parent.mkdir(parents=True, exist_ok=True)
+    for path in (podman_root, podman_runroot, podman_tmpdir):
+        Path(path).mkdir(parents=True, exist_ok=True)
+    try:
+        Path(socket_path).unlink()
+    except FileNotFoundError:
+        pass
+
+    log.warning("Restarting Podman Docker API service at %s", docker_host)
+    log_fh = open(podman_log, "a", buffering=1)
+    subprocess.Popen(
+        [
+            "podman",
+            "--root",
+            podman_root,
+            "--runroot",
+            podman_runroot,
+            "--tmpdir",
+            podman_tmpdir,
+            "--events-backend=file",
+            "system",
+            "service",
+            "--time=0",
+            docker_host,
+        ],
+        env={**env, "TMPDIR": podman_tmpdir},
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    for _ in range(30):
+        if Path(socket_path).is_socket() and _docker_api_ping(env):
+            return
+        time.sleep(1)
+    raise RuntimeError(f"Podman Docker API socket did not become ready: {docker_host}")
+
+
 def run_swebench_eval(
     predictions_path: Path,
     run_id: str,
@@ -1609,6 +1682,7 @@ def run_swebench_eval(
         if local_tmpdir:
             Path(local_tmpdir).mkdir(parents=True, exist_ok=True)
             env["TMPDIR"] = local_tmpdir
+        _ensure_podman_service(env)
 
     cmd = [
         sys.executable, "-m", "swebench.harness.run_evaluation",

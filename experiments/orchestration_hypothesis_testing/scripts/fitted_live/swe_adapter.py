@@ -2,11 +2,37 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .common import Candidate, CriticResult, VerifyResult, feedback_block
+
+
+def _truncate_middle(text: str, max_chars: int) -> str:
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    marker = "\n\n...[truncated for context length]...\n\n"
+    keep = max(0, max_chars - len(marker))
+    if keep <= 0:
+        return text[:max_chars]
+    head = keep // 2
+    tail = keep - head
+    return text[:head] + marker + (text[-tail:] if tail else "")
+
+
+def _cap_oracle_files(oracle_files: dict[str, str], budget: int) -> dict[str, str]:
+    if budget <= 0 or not oracle_files:
+        return {}
+    total = sum(len(content) for content in oracle_files.values())
+    if total <= budget:
+        return dict(oracle_files)
+    per_file = max(2000, budget // max(1, len(oracle_files)))
+    return {
+        path: _truncate_middle(content, per_file)
+        for path, content in oracle_files.items()
+    }
 
 
 @dataclass
@@ -52,7 +78,34 @@ class SWEAdapter:
     ) -> str:
         import spot_check_generators as scg
 
-        return scg.make_prompt(instance, self._oracle_files(instance)) + feedback_block(previous, action_log)
+        max_prompt_chars = int(os.getenv("SWE_AGENT_PROMPT_MAX_CHARS", "45000"))
+        if max_prompt_chars <= 0:
+            return scg.make_prompt(instance, self._oracle_files(instance)) + feedback_block(
+                previous,
+                action_log,
+            )
+
+        prompt_instance = dict(instance)
+        problem_cap = int(os.getenv("SWE_AGENT_PROBLEM_MAX_CHARS", "16000"))
+        hints_cap = int(os.getenv("SWE_AGENT_HINTS_MAX_CHARS", "3000"))
+        prompt_instance["problem_statement"] = _truncate_middle(
+            str(prompt_instance.get("problem_statement", "")),
+            problem_cap,
+        )
+        if prompt_instance.get("hints_text"):
+            prompt_instance["hints_text"] = _truncate_middle(
+                str(prompt_instance.get("hints_text", "")),
+                hints_cap,
+            )
+
+        non_file_chars = (
+            len(str(prompt_instance.get("problem_statement", "")))
+            + len(str(prompt_instance.get("hints_text", "")))
+            + 8000
+        )
+        file_budget = max(8000, max_prompt_chars - non_file_chars)
+        oracle_files = _cap_oracle_files(self._oracle_files(instance), file_budget)
+        return scg.make_prompt(prompt_instance, oracle_files) + feedback_block(previous, action_log)
 
     def extract_candidate(self, instance: dict, response_text: str) -> Candidate:
         import spot_check_generators as scg
@@ -144,4 +197,3 @@ def make_swe_adapter(
         output_dir=output_dir,
         harness_workers=harness_workers,
     )
-

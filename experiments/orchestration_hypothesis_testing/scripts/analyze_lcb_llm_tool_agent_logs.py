@@ -615,7 +615,14 @@ def main() -> None:
     out_dir = args.output_dir or root
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    results = read_jsonl(root / f"{stem}.jsonl")
+    raw_results = [r for r in read_jsonl(root / f"{stem}.jsonl") if r.get("split") == "test"]
+    results_by_id: dict[str, dict[str, Any]] = {}
+    for row in raw_results:
+        iid = str(row.get("instance_id"))
+        if iid in results_by_id:
+            del results_by_id[iid]
+        results_by_id[iid] = row
+    results = list(results_by_id.values())
     actions = [r for r in read_jsonl(root / f"{stem}.actions.jsonl") if r.get("split") == "test"]
     prior_rows = read_jsonl(root / f"{stem}.train_prior_calibration.jsonl")
     logprobs = load_logprob_stats(root / f"{stem}.generation_logprobs.jsonl")
@@ -667,9 +674,12 @@ def main() -> None:
     final_rows, traj_rows, path_rows = [], [], []
     for result in results:
         iid = str(result["instance_id"])
+        result_actions = result.get("trajectory")
+        if not isinstance(result_actions, list) or not result_actions:
+            result_actions = actions_by_id.get(iid, [])
         trace, final, path = simulate_instance(
             result,
-            actions_by_id.get(iid, []),
+            result_actions,
             logprobs,
             generator=args.generator,
             prior=float(prior["prior_Y1"]),

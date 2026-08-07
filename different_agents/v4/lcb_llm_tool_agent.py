@@ -260,16 +260,31 @@ def _retry_max_tokens_for_context_error(exc: Exception, requested: int) -> int |
         return None
     if "maximum context length" not in text:
         return None
+    available = None
     match = re.search(
         r"maximum context length is (\d+) tokens and your request has (\d+) input tokens",
         text,
+        flags=re.IGNORECASE,
     )
-    if not match:
+    if match:
+        available = int(match.group(1)) - int(match.group(2))
+    match = re.search(
+        r"maximum context length is (\d+) tokens.*?request has (\d+) input tokens",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if available is None and match:
+        available = int(match.group(1)) - int(match.group(2))
+    if available is None:
         return None
-    available = int(match.group(1)) - int(match.group(2))
-    for candidate in (2048, 1024, 512, 256):
-        if candidate <= available - 64:
-            return min(requested, candidate)
+    if available <= 32:
+        return None
+    limit = min(requested - 1, available - 16)
+    for candidate in (2048, 1024, 512, 256, 128, 64, 32):
+        if candidate <= limit:
+            return candidate
+    if limit >= 16:
+        return limit
     return None
 
 
@@ -280,7 +295,6 @@ def _is_context_overflow_error(exc: Exception) -> bool:
         or "max_tokens must be at least 1" in text
         or "max_completion_tokens must be at least 1" in text
     )
-
 
 def _openrouter_logprobs_provider_routing(client: Any) -> dict[str, Any] | None:
     """OpenRouter provider routing so logprobs requests only hit capable providers.
@@ -337,6 +351,14 @@ def _create_completion(deps: AgentDeps, params: dict[str, Any], *, tries: int = 
             time.sleep(wait)
     assert last is not None
     raise last
+
+def _resume_row_is_complete(row: dict[str, Any]) -> bool:
+    final_action = str(row.get("final_action", "")).lower()
+    if final_action == "context_overflow_skip":
+        return False
+    if final_action.startswith("exception"):
+        return False
+    return True
 
 
 def _chat(
@@ -1785,9 +1807,12 @@ def main() -> None:
             if not line.strip():
                 continue
             try:
-                done.add(str(json.loads(line).get("instance_id")))
+                row = json.loads(line)
             except json.JSONDecodeError:
                 pass
+            else:
+                if _resume_row_is_complete(row):
+                    done.add(str(row.get("instance_id")))
         test_instances = [
             inst for inst in test_instances if adapter.instance_id(inst) not in done
         ]
