@@ -1,0 +1,118 @@
+from types import SimpleNamespace
+
+from agents.react_agent import ReActAgent, parse_react_response
+
+
+class FakeCompletions:
+    def __init__(self, response):
+        self.response = response
+        self.kwargs = None
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        return self.response
+
+
+class SequencedCompletions:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.max_tokens = []
+
+    def create(self, **kwargs):
+        self.max_tokens.append(kwargs["max_tokens"])
+        return next(self.responses)
+
+
+def _client(text: str):
+    token_strings = ["Thought:", " inspect", "\n", "Action:", " look"]
+    token_items = [
+        SimpleNamespace(token=token, logprob=-0.1 * (index + 1))
+        for index, token in enumerate(token_strings)
+    ]
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=text),
+                logprobs=SimpleNamespace(content=token_items),
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=20, completion_tokens=5, total_tokens=25
+        ),
+    )
+    completions = FakeCompletions(response)
+    return SimpleNamespace(chat=SimpleNamespace(completions=completions)), completions
+
+
+def test_parse_react_response() -> None:
+    parsed = parse_react_response("Thought: inspect\nAction: look")
+    assert parsed.valid
+    assert parsed.thought == "inspect"
+    assert parsed.action == "look"
+    assert not parse_react_response("look").valid
+
+
+def test_agent_records_segmented_logprobs() -> None:
+    client, completions = _client("Thought: inspect\nAction: look")
+    agent = ReActAgent(
+        base_url="http://unused",
+        api_key="unused",
+        model="test",
+        client=client,
+        extra_body={"provider": {"require_parameters": True}},
+    )
+    result = agent.act("inspect", [], ["look", "inventory"])
+    assert result.action == "look"
+    assert result.logprobs_available
+    assert result.uq["thought"]["num_tokens"] > 0
+    assert result.uq["action"]["num_tokens"] > 0
+    assert result.uq["combined"]["num_tokens"] == 5
+    assert completions.kwargs["logprobs"] is True
+    assert completions.kwargs["extra_body"]["provider"]["require_parameters"] is True
+
+
+def test_agent_falls_back_for_invalid_action() -> None:
+    client, _ = _client("Thought: inspect\nAction: teleport")
+    agent = ReActAgent(
+        base_url="http://unused",
+        api_key="unused",
+        model="test",
+        client=client,
+    )
+    result = agent.act("inspect", [], ["look", "inventory"])
+    assert result.action == "look"
+    assert not result.action_valid
+    assert result.fallback_reason == "inadmissible_action"
+
+
+def test_agent_retries_empty_reasoning_response_with_larger_limit() -> None:
+    empty_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=""),
+                logprobs=SimpleNamespace(content=[]),
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=20, completion_tokens=512, total_tokens=532
+        ),
+    )
+    valid_client, _ = _client("Thought: inspect\nAction: look")
+    valid_response = valid_client.chat.completions.response
+    completions = SequencedCompletions([empty_response, valid_response])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = ReActAgent(
+        base_url="http://unused",
+        api_key="unused",
+        model="test",
+        client=client,
+        max_tokens=512,
+        max_empty_response_retries=1,
+    )
+    result = agent.act("inspect", [], ["look"])
+    assert result.action == "look"
+    assert result.empty_response_retries == 1
+    assert result.request_attempts == 2
+    assert result.generation_token_limit == 1024
+    assert result.total_tokens == 557
+    assert completions.max_tokens == [512, 1024]
