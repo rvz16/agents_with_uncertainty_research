@@ -27,18 +27,17 @@ from __future__ import annotations
 
 import argparse
 import ast
-import base64
 import json
 import logging
 import os
 import pickle
+import zlib
+import base64
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
-import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -114,7 +113,43 @@ log = logging.getLogger("lcb_cal")
 
 # ---------- LCB dataset loader ----------
 
-CACHED_LCB = Path("/mnt/data/users/vlad.smirnov/hf_cache/hub/datasets--livecodebench--code_generation_lite/snapshots/0fe84c3912ea0c4d4a78037083943e8f0c4dd505/test.jsonl")
+
+def _run_script(code: str, stdin: str, timeout: float):
+    """Run a candidate as a standalone script, feeding input through stdin.
+
+    Input goes through stdin rather than argv: LiveCodeBench Hard test inputs
+    run to megabytes and hit ARG_MAX, and the process then dies before the
+    solution is ever executed -- which is indistinguishable from a wrong answer.
+    """
+    import tempfile
+    from types import SimpleNamespace
+
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
+        fh.write(code)
+        script = fh.name
+    try:
+        proc = subprocess.run(
+            [TEST_PYTHON, script], input=stdin, capture_output=True, text=True,
+            timeout=timeout,
+        )
+        return SimpleNamespace(stdout=proc.stdout, stderr=proc.stderr,
+                               returncode=proc.returncode, timed_out=False)
+    except subprocess.TimeoutExpired:
+        return SimpleNamespace(stdout="", stderr="timeout", returncode=124,
+                               timed_out=True)
+    finally:
+        os.unlink(script)
+
+def lcb_cache_dir() -> Path | None:
+    """Directory holding the LiveCodeBench ``test*.jsonl`` files, if any.
+
+    Set ``LCB_CACHE_DIR`` to run offline. Without it the loader falls back to
+    downloading from the Hub, which is fine for a prefetch step but not for a
+    run that is supposed to have no network access -- hence the explicit knob
+    rather than a path hard-coded to whichever machine last ran this.
+    """
+    configured = os.environ.get("LCB_CACHE_DIR", "").strip()
+    return Path(configured) if configured else None
 
 
 def load_lcb(difficulty: str = "hard", platform: str = "leetcode",
@@ -140,9 +175,10 @@ def load_lcb(difficulty: str = "hard", platform: str = "leetcode",
 
     raw = []
     seen_ids = set()
+    cache_dir = lcb_cache_dir()
     for fname in files:
-        cached_path = CACHED_LCB.parent / fname
-        if cached_path.exists():
+        cached_path = (cache_dir / fname) if cache_dir else None
+        if cached_path is not None and cached_path.exists():
             path = cached_path
             log.info("using cached LCB %s", path)
         else:
@@ -175,6 +211,7 @@ def load_lcb(difficulty: str = "hard", platform: str = "leetcode",
     return out
 
 
+
 def decode_private_tests(encoded: str) -> list[dict]:
     """LCB encodes private_test_cases as zlib-compressed pickled JSON."""
     if not encoded:
@@ -204,20 +241,10 @@ def run_solution_stdin(code: str, stdin: str) -> tuple[bool, str]:
     """Run code as standalone script with stdin input. Returns (passed, output)."""
     if not code:
         return False, ""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-        f.write(code)
-        script = f.name
-    try:
-        proc = subprocess.run(
-            [TEST_PYTHON, script], input=stdin, capture_output=True, text=True, timeout=TIMEOUT_S,
-        )
-        return proc.returncode == 0, proc.stdout
-    except subprocess.TimeoutExpired:
+    result = _run_script(code, stdin=stdin, timeout=TIMEOUT_S)
+    if result.timed_out:
         return False, ""
-    except Exception:
-        return False, ""
-    finally:
-        os.unlink(script)
+    return result.returncode == 0, result.stdout
 
 
 def _parse_lcb_test_input(input_str: str) -> list:
@@ -273,38 +300,30 @@ def run_solution_functional(code: str, input_str: str, expected_output: str,
         return False
 
     # Build a small driver script that imports the model code, calls the method, prints JSON.
+    # Arguments arrive on stdin rather than argv: LCB Hard test inputs run to
+    # megabytes and overflow ARG_MAX, which fails the process before the
+    # solution ever runs -- and looks like a wrong answer.
     driver = f"""
 import sys, json
 {code}
 
 try:
     sol = Solution()
-    args = json.loads(sys.argv[1])
+    args = json.loads(sys.stdin.read())
     result = sol.{method_name}(*args)
     print(json.dumps(result))
 except Exception as e:
     print(f"ERROR: {{e}}", file=sys.stderr)
     sys.exit(1)
 """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-        f.write(driver)
-        script = f.name
-    try:
-        proc = subprocess.run(
-            [TEST_PYTHON, script, json.dumps(args)],
-            capture_output=True, text=True, timeout=TIMEOUT_S,
-        )
-        if proc.returncode != 0:
-            return False
-        try:
-            actual = json.loads(proc.stdout.strip())
-        except json.JSONDecodeError:
-            actual = proc.stdout.strip()
-        return actual == expected
-    except (subprocess.TimeoutExpired, Exception):
+    result = _run_script(driver, stdin=json.dumps(args), timeout=TIMEOUT_S)
+    if result.timed_out or result.returncode != 0:
         return False
-    finally:
-        os.unlink(script)
+    try:
+        actual = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        actual = result.stdout.strip()
+    return actual == expected
 
 
 def check_tests(code: str, tests: list[dict], starter_code: str = "") -> tuple[int, int]:

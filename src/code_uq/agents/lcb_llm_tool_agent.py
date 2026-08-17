@@ -20,7 +20,10 @@ import os
 import random
 import re
 import sys
+import threading
 import time
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
@@ -102,6 +105,7 @@ class AgentState(TypedDict, total=False):
     max_steps: int
     max_generations: int
     max_verifications: int
+    final_verify: bool
     candidate_payload: str
     candidate_raw: str
     candidate_kind: str
@@ -117,6 +121,20 @@ class AgentState(TypedDict, total=False):
     completion_tokens: int
     api_cost_usd: float
     fixed: bool
+    #: False when no verifier could produce a terminal label for this episode.
+    #: `fixed` is then meaningless and the row must be excluded from any metric
+    #: that needs ground truth.
+    label_available: bool
+    unavailable_actions: tuple[str, ...]
+    #: Show the controller what each action does, what evidence it already has
+    #: on this candidate, and the prior. Off by default -- the original prompt
+    #: says none of this.
+    describe_actions: bool
+    #: Drop `generate`/`verify` from the action space once their budget is
+    #: spent, instead of offering an action that can only refuse.
+    hide_exhausted_actions: bool
+    #: Withhold `verify` when the oracle has already ruled on this candidate.
+    no_repeat_verify: bool
     done: bool
     final_action: str
     error: str
@@ -199,10 +217,22 @@ def _response_logprobs(resp: Any) -> Any:
     return _dump_jsonable(logprobs)
 
 
-def _message_text(message: Any) -> str:
+def _message_text_with_source(message: Any) -> tuple[str, str]:
+    """Return the message text and where it came from.
+
+    The source matters. Reasoning models emit the answer on a separate channel
+    from their thinking (harmony channels for gpt-oss, ``<think>`` tags for
+    Qwen3), and when a generation is cut off mid-thought the answer channel is
+    simply absent. Falling back to the reasoning text then hands the caller a
+    monologue to parse as if it were an action or a patch -- it is not a
+    low-confidence answer, it is the absence of one.
+
+    Callers use the source to abstain instead of guessing; see
+    :func:`_message_text` for the plain-text shorthand.
+    """
     content = getattr(message, "content", None)
     if isinstance(content, str) and content:
-        return content
+        return content, "content"
     if isinstance(content, list):
         parts = []
         for item in content:
@@ -213,27 +243,38 @@ def _message_text(message: Any) -> str:
             elif item:
                 parts.append(str(item))
         if parts:
-            return "\n".join(parts)
+            return "\n".join(parts), "content"
 
     for attr in ("reasoning_content", "reasoning"):
         value = getattr(message, attr, None)
         if isinstance(value, str) and value:
-            return value
+            return value, "reasoning"
 
     extra = getattr(message, "model_extra", None) or {}
     if isinstance(extra, dict):
         for key in ("reasoning_content", "reasoning"):
             value = extra.get(key)
             if isinstance(value, str) and value:
-                return value
+                return value, "reasoning"
 
     kwargs = getattr(message, "additional_kwargs", None) or {}
     if isinstance(kwargs, dict):
         for key in ("reasoning_content", "reasoning"):
             value = kwargs.get(key)
             if isinstance(value, str) and value:
-                return value
-    return ""
+                return value, "reasoning"
+    return "", "none"
+
+
+def _message_text(message: Any) -> str:
+    return _message_text_with_source(message)[0]
+
+
+def _finish_reason(resp: Any) -> str:
+    try:
+        return str(getattr(resp.choices[0], "finish_reason", "") or "")
+    except (AttributeError, IndexError):
+        return ""
 
 
 def _message_content_text(message: Any) -> str:
@@ -347,7 +388,11 @@ def _chat(
     include_logprobs: bool = False,
     content_only: bool = False,
     extra_body: dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> tuple[str, int, int, float, Any]:
+    """Call the model. When ``meta`` is given it receives ``finish_reason``,
+    ``text_source`` and ``truncated`` for the response, so callers can tell a
+    real answer from a cut-off one."""
     params: dict[str, Any] = {
         "model": deps.model_id,
         "messages": messages,
@@ -398,9 +443,14 @@ def _chat(
                 break
     if content_only:
         text = _message_content_text(resp.choices[0].message)
+        source = "content" if text else "none"
     else:
-        text = _message_text(resp.choices[0].message)
+        text, source = _message_text_with_source(resp.choices[0].message)
     prompt_tokens, completion_tokens = _usage(resp)
+    if meta is not None:
+        meta["finish_reason"] = _finish_reason(resp)
+        meta["text_source"] = source
+        meta["truncated"] = meta["finish_reason"] == "length" or source == "reasoning"
     return (
         text,
         prompt_tokens,
@@ -576,6 +626,92 @@ def run_verbalized_2s(
         }
 
 
+def verdicts_on_current_candidate(state: AgentState) -> dict[str, str]:
+    """PASS/FAIL per critic for the candidate in hand, most recent verdict wins."""
+    trajectory = state.get("trajectory") or []
+    last_generation = -1
+    for index, step in enumerate(trajectory):
+        if step.get("action") == "generate" and not step.get("skipped"):
+            last_generation = index
+    return {
+        str(step["action"]): ("PASS" if step["passed"] else "FAIL")
+        for step in trajectory[last_generation + 1:]
+        if step.get("action") in CRITIC_ACTIONS and isinstance(step.get("passed"), bool)
+    }
+
+
+def verified_current_candidate(state: AgentState) -> bool:
+    """Whether the oracle has already ruled on the candidate now in hand.
+
+    Re-verifying unchanged code is deterministic -- same code, same hidden
+    tests, same answer -- so the second call buys nothing and costs the most
+    expensive action in the space. Measured on a 76-episode run: 55 of 149
+    verifier calls were repeats of a candidate that had not changed.
+    """
+    trajectory = state.get("trajectory") or []
+    last_generation = -1
+    for index, step in enumerate(trajectory):
+        if step.get("action") == "generate" and not step.get("skipped"):
+            last_generation = index
+    return any(
+        step.get("action") in ("verify", "final_verify")
+        and isinstance(step.get("passed"), bool)
+        for step in trajectory[last_generation + 1:]
+    )
+
+
+def critics_on_current_candidate(state: AgentState) -> set[str]:
+    """Distinct critics already run on the candidate now in hand.
+
+    Counted from the last real generation onwards: verdicts recorded before it
+    describe a candidate that has since been replaced.
+    """
+    trajectory = state.get("trajectory") or []
+    last_generation = -1
+    for index, step in enumerate(trajectory):
+        if step.get("action") == "generate" and not step.get("skipped"):
+            last_generation = index
+    return {
+        str(step.get("action"))
+        for step in trajectory[last_generation + 1:]
+        if step.get("action") in CRITIC_ACTIONS and isinstance(step.get("passed"), bool)
+    }
+
+
+def available_actions(state: AgentState) -> tuple[str, ...]:
+    """The action space for this episode, minus what it cannot or should not do.
+
+    Two filters. The first is capability: SWE-Bench has no public-test critic,
+    and without a container runtime it has no verifier either. Offering those
+    anyway would spend the step budget on actions that can only report their
+    own absence.
+
+    The second is policy: with ``min_critics_before_verify`` set, the verifier
+    stays out of the action space until that many distinct critics have run on
+    the current candidate. The point is to stop the controller from going
+    straight to the oracle -- which is what it does by default, leaving the
+    critics almost never consulted and the belief state with nothing to
+    aggregate. The quota is capped by how many critics this environment
+    actually has, so it can never lock the verifier away for good.
+    """
+    unavailable = set(state.get("unavailable_actions") or ())
+
+    if state.get("hide_exhausted_actions"):
+        # An action whose budget is spent can only report that fact, and the
+        # report costs a step like any other. Leaving them on the menu is not
+        # free: measured over a 76-episode run, 50 of 299 `generate` choices
+        # and 13 of 108 `verify` choices were no-ops -- 11% of every step taken.
+        if int(state.get("n_generations", 0)) >= int(state.get("max_generations", 0)):
+            unavailable = unavailable | {"generate"}
+        if int(state.get("n_verifications", 0)) >= int(state.get("max_verifications", 0)):
+            unavailable = unavailable | {"verify"}
+
+    if state.get("no_repeat_verify") and verified_current_candidate(state):
+        unavailable = unavailable | {"verify"}
+
+    return tuple(action for action in ACTION_SPACE if action not in unavailable)
+
+
 def _decision_prompt(state: AgentState) -> str:
     candidate_chars = len(state.get("candidate_payload") or "")
     remaining = {
@@ -583,21 +719,102 @@ def _decision_prompt(state: AgentState) -> str:
         "generations": state["max_generations"] - state.get("n_generations", 0),
         "verifications": state["max_verifications"] - state.get("n_verifications", 0),
     }
-    return f"""Choose one next tool action for a LiveCodeBench coding episode.
+    actions = available_actions(state)
+
+    # Per-tool budgets. `budget_remaining` above is grouped by resource, which
+    # leaves the controller to work out for itself that "generations" is the
+    # cap on `generate` and that the critics are not capped at all. Spelling it
+    # out per action costs nothing and removes the inference.
+    calls_left: dict[str, Any] = {}
+    for action in actions:
+        if action == "generate":
+            calls_left[action] = remaining["generations"]
+        elif action == "verify":
+            calls_left[action] = remaining["verifications"]
+        else:
+            calls_left[action] = "unlimited"
+    action_list = ", ".join(actions)
+    action_union = "|".join(actions)
+
+    described = ""
+    evidence = ""
+    if state.get("describe_actions"):
+        # The original prompt names the actions and stops there, so a
+        # controller told only "critic_L0" cannot know it is a syntax check or
+        # that `verify` runs the hidden tests. Those meanings exist in the
+        # codebase only inside ACTION_ALIASES, which parses the model's reply
+        # and is never shown to it.
+        # Statements of fact only. Calling a critic "the most informative
+        # signal" or the verifier "expensive" tells the model which action to
+        # prefer, and it obliges -- a pilot with that wording moved the
+        # controller onto whichever critic the sentence praised. That is the
+        # prompt steering the result rather than measuring the model.
+        catalogue = {
+            "generate": "produce a new candidate solution, replacing the current one",
+            "critic_L0": "check the candidate parses (ast.parse)",
+            "critic_L1": "static lint: undefined names, redefinitions",
+            "critic_L2": "run the public example tests",
+            "critic_L3": "ask a reviewer model for a PASS/FAIL opinion",
+            "verify": "run the hidden test suite; the episode ends if it passes",
+            "think": "record a note without calling any tool",
+            "finish": "stop and submit the current candidate",
+        }
+        lines = "\n".join(f"- {a}: {catalogue[a]}" for a in actions if a in catalogue)
+        described = f"\nWhat each action does:\n{lines}\n"
+
+        # One-verification setup: the controller cannot call the oracle at all,
+        # but a terminal check still happens. Left unsaid, the model reads the
+        # missing action as "there is no test suite" and submits its first
+        # draft. This states the arrangement and nothing else -- no advice on
+        # how careful to be, which would be the prompt steering the result.
+        if "verify" not in actions and state.get("final_verify"):
+            described += (
+                "\nThe hidden test suite is not an action you can call. "
+                "Whatever candidate you hold when the episode ends is run "
+                "against it exactly once, and that single result is final. "
+                "You will not see its output.\n"
+            )
+
+        # Evidence about the candidate in hand. `_trajectory_brief` shows raw
+        # log lines from which the model cannot tell which verdicts describe
+        # the current candidate and which describe one already thrown away.
+        seen = critics_on_current_candidate(state)
+        verdicts = verdicts_on_current_candidate(state)
+        not_run = [a for a in actions if a in CRITIC_ACTIONS and a not in seen]
+        evidence = (
+            f"\nEvidence on the CURRENT candidate: {json.dumps(verdicts)}\n"
+            f"verifier_already_ran_on_this_candidate: "
+            f"{json.dumps(verified_current_candidate(state))}\n"
+            f"critics_not_yet_run: {json.dumps(not_run)}\n"
+            f"prior_P(correct) for a fresh candidate: "
+            f"{float(state.get('prior_Y1', 0.5)):.3f}\n"
+        )
+
+    gate = ""
+    quota = int(state.get("min_critics_before_verify") or 0)
+    if quota > 0:
+        already = sorted(critics_on_current_candidate(state))
+        gate = (
+            f"\ncritics_run_on_current_candidate: {json.dumps(already)}\n"
+            f"verify_unlocks_after: {quota} distinct critics on this candidate\n"
+        )
+
+    return f"""Choose one next tool action for a coding episode.
 
 You are only routing tools. Do not solve the programming task and do not write code.
 
 Valid actions:
-generate, critic_L0, critic_L1, critic_L2, critic_L3, verify, think, finish
+{action_list}
 
 Return exactly one compact JSON object and nothing else:
-{{"action":"generate|critic_L0|critic_L1|critic_L2|critic_L3|verify|think|finish","reasoning":"short reason"}}
+{{"action":"{action_union}","reasoning":"short reason"}}
 
 State:
 candidate_exists: {bool(candidate_chars)}
 candidate_chars: {candidate_chars}
 budget_remaining: {json.dumps(remaining)}
-
+calls_left_per_action: {json.dumps(calls_left)}
+{described}{evidence}{gate}
 Recent trajectory:
 {_trajectory_brief(state.get("trajectory", []))}
 """
@@ -694,11 +911,17 @@ def _parse_decision(text: str) -> tuple[str, str]:
 
 
 def fallback_decision_after_parse_failure(state: AgentState) -> tuple[str, str]:
+    allowed = set(available_actions(state))
     if not (state.get("candidate_payload") or ""):
         return "generate", "fallback: decision parse failed and no candidate exists"
-    if int(state.get("n_critic_runs", 0)) == 0:
+    if int(state.get("n_critic_runs", 0)) == 0 and "critic_L2" in allowed:
         return "critic_L2", "fallback: decision parse failed after candidate generation"
-    if int(state.get("n_verifications", 0)) < int(state.get("max_verifications", 0)):
+    if int(state.get("n_critic_runs", 0)) == 0 and "critic_L0" in allowed:
+        return "critic_L0", "fallback: decision parse failed after candidate generation"
+    if (
+        "verify" in allowed
+        and int(state.get("n_verifications", 0)) < int(state.get("max_verifications", 0))
+    ):
         return "verify", "fallback: decision parse failed after critics"
     if int(state.get("n_generations", 0)) < int(state.get("max_generations", 0)):
         return "generate", "fallback: decision parse failed after verification budget"
@@ -788,6 +1011,21 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     step_next = int(state.get("step", 0)) + 1
     candidate = _candidate_from_state(state)
 
+    if action in VALID_ACTIONS and action not in set(available_actions(state)):
+        # Reached only if the model names an action the prompt did not offer.
+        # Recorded with passed=None: the action produced no evidence either way.
+        return {
+            "step": step_next,
+            "trajectory": _record(
+                state,
+                action=action,
+                reasoning=reasoning,
+                observation=f"skipped: {action} is unavailable in this environment",
+                passed=None,
+                skipped=True,
+            ),
+        }
+
     if action == "finish":
         return {
             "step": step_next,
@@ -819,6 +1057,7 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             candidate,
             _adapter_log(state.get("trajectory", [])),
         )
+        generation_meta: dict[str, Any] = {}
         try:
             raw, pt, ct, cost, logprobs = _chat(
                 deps,
@@ -826,6 +1065,7 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 temperature=deps.generation_temperature,
                 max_tokens=deps.max_tokens_generation,
                 include_logprobs=deps.save_generation_logprobs,
+                meta=generation_meta,
             )
         except ContextOverflowError as exc:
             return {
@@ -848,6 +1088,30 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 "generation logprobs were requested but the model endpoint "
                 "returned no logprobs"
             )
+        if generation_meta.get("text_source") == "reasoning":
+            # The answer channel never arrived: the generation was cut off
+            # mid-thought. Parsing the reasoning would manufacture a candidate
+            # out of the model's deliberation, and that candidate would then be
+            # scored as if the model had committed to it.
+            return {
+                **_merge_usage(state, pt, ct, cost),
+                "step": step_next,
+                "trajectory": _record(
+                    state,
+                    action=action,
+                    reasoning=reasoning,
+                    observation=(
+                        "skipped: generation truncated before the answer channel "
+                        f"(finish_reason={generation_meta.get('finish_reason', '')})"
+                    ),
+                    skipped=True,
+                    truncated=True,
+                    finish_reason=generation_meta.get("finish_reason", ""),
+                    prompt_tokens=pt,
+                    completion_tokens=ct,
+                    api_cost_usd=cost,
+                ),
+            }
         new_candidate = deps.adapter.extract_candidate(state["instance"], raw)
         logprobs_saved = False
         generation_index = int(state.get("n_generations", 0))
@@ -890,6 +1154,8 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                     api_cost_usd=cost,
                     logprobs_saved=logprobs_saved,
                     logprobs_output=str(deps.logprobs_output) if deps.logprobs_output else "",
+                    finish_reason=generation_meta.get("finish_reason", ""),
+                    truncated=bool(generation_meta.get("truncated", False)),
                 ),
             }
         )
@@ -978,11 +1244,29 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
         )
         result: VerifyResult = deps.adapter.verify(state["instance"], candidate, run_id)
         elapsed = time.perf_counter() - started
+        if not result.available:
+            # No verdict was produced. Leave `fixed` untouched so the episode
+            # ends without a terminal label rather than with a false negative.
+            return {
+                "step": step_next,
+                "label_available": False,
+                "trajectory": _record(
+                    state,
+                    action=action,
+                    reasoning=reasoning,
+                    observation=result.detail,
+                    passed=None,
+                    detail=result.detail,
+                    verifier_available=False,
+                    wall_clock_s=round(elapsed, 4),
+                ),
+            }
         passed = bool(result.passed)
         return {
             "step": step_next,
             "done": passed,
             "fixed": passed,
+            "label_available": True,
             "final_action": "verify_pass" if passed else state.get("final_action", ""),
             "n_verifications": int(state.get("n_verifications", 0)) + 1,
             "trajectory": _record(
@@ -992,6 +1276,7 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 observation=result.detail,
                 passed=passed,
                 detail=result.detail,
+                verifier_available=True,
                 wall_clock_s=round(elapsed, 4),
             ),
         }
@@ -1148,16 +1433,22 @@ class SageActionToolExecutor:
         )
 
 
-def sage_tool_schemas() -> list[ToolSchema]:
+def sage_tool_schemas(state: AgentState | None = None) -> list[ToolSchema]:
+    """Tool schemas offered to the SAGE controller.
+
+    Mirrors the action space the decision prompt advertises, so the two
+    backends cannot disagree about which actions exist.
+    """
+    actions = available_actions(state) if state is not None else ACTION_SPACE
     return [
         ToolSchema(name=action, parameters={}, required=frozenset())
-        for action in ACTION_SPACE
+        for action in actions
     ]
 
 
 def run_sage_agent_episode(state: AgentState, deps: AgentDeps) -> AgentState:
-    """Run the LCB episode using the repo's SAGE-Agent LangGraph wrapper."""
-    tool_schemas = sage_tool_schemas()
+    """Run the episode using the repo's SAGE-Agent LangGraph wrapper."""
+    tool_schemas = sage_tool_schemas(state)
     while not state.get("done") and int(state.get("step", 0)) < state["max_steps"]:
         if (
             not (state.get("candidate_payload") or "")
@@ -1221,18 +1512,30 @@ def split_instances(
     return train, test, split
 
 
-def load_prior_rows(path: Path) -> list[dict[str, Any]]:
+def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
+    """Records of a JSONL file, skipping blank and unparseable lines.
+
+    Iterating the file is not the same as `read_text().splitlines()`, which is
+    what this used to do: `splitlines` also breaks on \\v, \\f, \\x1c and
+    U+2028, and these files hold raw model text written with
+    `ensure_ascii=False`, so those characters survive into the line. One
+    measured sidecar held 14 of them, which turned 150 records into 164
+    fragments and silently lost 16% of the data.
+    """
     if not path.exists():
-        return []
-    rows = []
-    for line in path.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return rows
+        return
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+def load_prior_rows(path: Path) -> list[dict[str, Any]]:
+    return list(iter_jsonl(path))
 
 
 def summarize_prior(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1283,6 +1586,7 @@ def calibrate_prior(
     actions_output_path: Path | None,
     resume: bool,
     print_each: bool,
+    workers: int = 1,
 ) -> dict[str, Any]:
     existing_rows = load_prior_rows(output_path) if resume else []
     done = {
@@ -1293,115 +1597,45 @@ def calibrate_prior(
     rows = list(existing_rows)
     total_jobs = len(train_instances) * max(0, prior_patches)
     completed_now = 0
-    for instance in train_instances:
+    jobs = [
+        (instance, patch_id)
+        for instance in train_instances
+        for patch_id in range(prior_patches)
+        if (deps.adapter.instance_id(instance), patch_id) not in done
+    ]
+    progress_lock = threading.Lock()
+
+    def _record_prior(row: dict[str, Any], inst_id: str, patch_id: int) -> None:
+        """Shared bookkeeping for one finished calibration patch."""
+        nonlocal completed_now
+        with progress_lock:
+            done.add((inst_id, patch_id))
+            completed_now += 1
+
+    def calibrate_one(job: tuple[dict[str, Any], int]) -> dict[str, Any] | None:
+        nonlocal completed_now
+        instance, patch_id = job
         inst_id = deps.adapter.instance_id(instance)
-        for patch_id in range(prior_patches):
-            if (inst_id, patch_id) in done:
-                continue
-            started = time.perf_counter()
-            prompt = deps.adapter.build_prompt(instance, None, [])
-            try:
-                raw, pt, ct, cost, logprobs = _chat(
-                    deps,
-                    [{"role": "user", "content": prompt}],
-                    temperature=deps.generation_temperature,
-                    max_tokens=deps.max_tokens_generation,
-                    include_logprobs=deps.save_generation_logprobs,
-                )
-            except ContextOverflowError as exc:
-                wall_s = time.perf_counter() - started
-                actions = [
-                    {
-                        "step": 0,
-                        "action": "generate",
-                        "observation": "skipped: context overflow",
-                        "skipped": True,
-                        "error": str(exc),
-                    }
-                ]
-                row = {
-                    "split": "train_calibration",
-                    "benchmark": benchmark,
-                    "instance_id": inst_id,
-                    "patch_id": patch_id,
-                    "model_id": deps.model_id,
-                    "passed": None,
-                    "detail": "skipped_context_overflow",
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "api_cost_usd": 0.0,
-                    "wall_clock_s": round(wall_s, 4),
-                    "actions": actions,
-                    "code": "",
-                    "error": str(exc),
-                }
-                append_jsonl(output_path, row)
-                append_actions(
-                    actions_output_path,
-                    split="train_calibration",
-                    benchmark=benchmark,
-                    instance_id=inst_id,
-                    model_id=deps.model_id,
-                    actions=actions,
-                    extra={"patch_id": patch_id},
-                )
-                rows.append(row)
-                done.add((inst_id, patch_id))
-                completed_now += 1
-                if print_each:
-                    print(
-                        f"[prior {completed_now}/{total_jobs}] {inst_id} p{patch_id} "
-                        "passed=None detail=skipped_context_overflow"
-                    )
-                continue
-            if deps.require_generation_logprobs and logprobs is None:
-                raise RuntimeError(
-                    "train prior calibration requested generation logprobs, "
-                    "but the model endpoint returned none"
-                )
-            candidate = deps.adapter.extract_candidate(instance, raw)
-            if deps.save_generation_logprobs and logprobs_output_path is not None:
-                append_jsonl(
-                    logprobs_output_path,
-                    {
-                        "split": "train_calibration",
-                        "benchmark": benchmark,
-                        "instance_id": inst_id,
-                        "patch_id": patch_id,
-                        "model_id": deps.model_id,
-                        "prompt_tokens": pt,
-                        "completion_tokens": ct,
-                        "api_cost_usd": cost,
-                        "top_logprobs": deps.top_logprobs,
-                        "raw_text": raw,
-                        "code": candidate.payload,
-                        "logprobs": logprobs,
-                    },
-                )
-            verify_started = time.perf_counter()
-            run_id = safe_stem(f"{benchmark}__prior__{inst_id}__p{patch_id}", 180)
-            verify = deps.adapter.verify(instance, candidate, run_id)
-            verify_s = time.perf_counter() - verify_started
+        started = time.perf_counter()
+        prompt = deps.adapter.build_prompt(instance, None, [])
+        try:
+            raw, pt, ct, cost, logprobs = _chat(
+                deps,
+                [{"role": "user", "content": prompt}],
+                temperature=deps.generation_temperature,
+                max_tokens=deps.max_tokens_generation,
+                include_logprobs=deps.save_generation_logprobs,
+            )
+        except ContextOverflowError as exc:
             wall_s = time.perf_counter() - started
             actions = [
                 {
                     "step": 0,
                     "action": "generate",
-                    "observation": f"generated {len(candidate.payload)} chars",
-                    "candidate_chars": len(candidate.payload),
-                    "prompt_tokens": pt,
-                    "completion_tokens": ct,
-                    "api_cost_usd": cost,
-                    "logprobs_saved": bool(deps.save_generation_logprobs and logprobs_output_path),
-                },
-                {
-                    "step": 1,
-                    "action": "verify",
-                    "passed": bool(verify.passed),
-                    "detail": verify.detail,
-                    "observation": verify.detail,
-                    "wall_clock_s": round(verify_s, 4),
-                },
+                    "observation": "skipped: context overflow",
+                    "skipped": True,
+                    "error": str(exc),
+                }
             ]
             row = {
                 "split": "train_calibration",
@@ -1409,14 +1643,15 @@ def calibrate_prior(
                 "instance_id": inst_id,
                 "patch_id": patch_id,
                 "model_id": deps.model_id,
-                "passed": bool(verify.passed),
-                "detail": verify.detail,
-                "prompt_tokens": pt,
-                "completion_tokens": ct,
-                "api_cost_usd": cost,
+                "passed": None,
+                "detail": "skipped_context_overflow",
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "api_cost_usd": 0.0,
                 "wall_clock_s": round(wall_s, 4),
                 "actions": actions,
-                "code": candidate.payload[: deps.max_code_chars],
+                "code": "",
+                "error": str(exc),
             }
             append_jsonl(output_path, row)
             append_actions(
@@ -1428,14 +1663,126 @@ def calibrate_prior(
                 actions=actions,
                 extra={"patch_id": patch_id},
             )
-            rows.append(row)
-            done.add((inst_id, patch_id))
-            completed_now += 1
+            _record_prior(row, inst_id, patch_id)
             if print_each:
                 print(
                     f"[prior {completed_now}/{total_jobs}] {inst_id} p{patch_id} "
-                    f"passed={bool(verify.passed)} detail={verify.detail}"
+                    "passed=None detail=skipped_context_overflow"
                 )
+            return row
+        if deps.require_generation_logprobs and logprobs is None:
+            raise RuntimeError(
+                "train prior calibration requested generation logprobs, "
+                "but the model endpoint returned none"
+            )
+        candidate = deps.adapter.extract_candidate(instance, raw)
+        if deps.save_generation_logprobs and logprobs_output_path is not None:
+            append_jsonl(
+                logprobs_output_path,
+                {
+                    "split": "train_calibration",
+                    "benchmark": benchmark,
+                    "instance_id": inst_id,
+                    "patch_id": patch_id,
+                    "model_id": deps.model_id,
+                    "prompt_tokens": pt,
+                    "completion_tokens": ct,
+                    "api_cost_usd": cost,
+                    "top_logprobs": deps.top_logprobs,
+                    "raw_text": raw,
+                    "code": candidate.payload,
+                    "logprobs": logprobs,
+                },
+            )
+        verify_started = time.perf_counter()
+        run_id = safe_stem(f"{benchmark}__prior__{inst_id}__p{patch_id}", 180)
+        verify = deps.adapter.verify(instance, candidate, run_id)
+        verify_s = time.perf_counter() - verify_started
+        wall_s = time.perf_counter() - started
+        actions = [
+            {
+                "step": 0,
+                "action": "generate",
+                "observation": f"generated {len(candidate.payload)} chars",
+                "candidate_chars": len(candidate.payload),
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
+                "api_cost_usd": cost,
+                "logprobs_saved": bool(deps.save_generation_logprobs and logprobs_output_path),
+            },
+            {
+                "step": 1,
+                "action": "verify",
+                "passed": bool(verify.passed) if verify.available else None,
+                "detail": verify.detail,
+                "observation": verify.detail,
+                "verifier_available": verify.available,
+                "wall_clock_s": round(verify_s, 4),
+            },
+        ]
+        row = {
+            "split": "train_calibration",
+            "benchmark": benchmark,
+            "instance_id": inst_id,
+            "patch_id": patch_id,
+            "model_id": deps.model_id,
+            # None rather than False when nothing verified it: the prior is
+            # a base rate, and counting unverifiable patches as failures
+            # would drag it toward zero for purely infrastructural reasons.
+            "passed": bool(verify.passed) if verify.available else None,
+            "label_available": verify.available,
+            "detail": verify.detail,
+            "prompt_tokens": pt,
+            "completion_tokens": ct,
+            "api_cost_usd": cost,
+            "wall_clock_s": round(wall_s, 4),
+            "actions": actions,
+            "code": candidate.payload[: deps.max_code_chars],
+        }
+        append_jsonl(output_path, row)
+        append_actions(
+            actions_output_path,
+            split="train_calibration",
+            benchmark=benchmark,
+            instance_id=inst_id,
+            model_id=deps.model_id,
+            actions=actions,
+            extra={"patch_id": patch_id},
+        )
+        _record_prior(row, inst_id, patch_id)
+        if print_each:
+            print(
+                f"[prior {completed_now}/{total_jobs}] {inst_id} p{patch_id} "
+                f"passed={bool(verify.passed)} detail={verify.detail}"
+            )
+        return row
+
+    def calibrate_one_guarded(job: tuple[dict[str, Any], int]) -> dict[str, Any] | None:
+        """One bad instance must not take the whole calibration down with it.
+
+        `calibrate_one` already returns None for instances it cannot use, so a
+        failure here is expressible without inventing a label. It is logged
+        loudly rather than swallowed: a run that quietly drops instances is
+        worse than one that reports how many it dropped.
+        """
+        try:
+            return calibrate_one(job)
+        except Exception:
+            inst_id = deps.adapter.instance_id(job[0])
+            log.exception("[prior] instance %s failed; skipping it", inst_id)
+            return None
+
+    if workers > 1 and len(jobs) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            produced = list(pool.map(calibrate_one_guarded, jobs))
+    else:
+        produced = [calibrate_one_guarded(job) for job in jobs]
+    dropped = sum(1 for row in produced if row is None)
+    if dropped:
+        log.warning("[prior] %d of %d calibration instances were dropped",
+                    dropped, len(jobs))
+    rows.extend(row for row in produced if row is not None)
+
     summary = summarize_prior(rows)
     summary.update(
         {
@@ -1456,11 +1803,29 @@ def initial_state(
     max_generations: int,
     max_verifications: int,
     prior_summary: dict[str, Any] | None = None,
+    unavailable_actions: tuple[str, ...] = (),
+    describe_actions: bool = False,
+    hide_exhausted_actions: bool = False,
+    no_repeat_verify: bool = False,
+    final_verify: bool = False,
 ) -> AgentState:
     state: AgentState = {
         "instance": instance,
         "instance_id": instance_id,
         "benchmark": benchmark,
+        "unavailable_actions": unavailable_actions,
+        "describe_actions": describe_actions,
+        "hide_exhausted_actions": hide_exhausted_actions,
+        "no_repeat_verify": no_repeat_verify,
+        # The prompt needs this: when `verify` is not an action the model can
+        # call but a terminal check still happens, saying so is the honest
+        # description of the setup. Left unsaid, the model reads the missing
+        # action as "there is no test suite" and submits its first draft.
+        "final_verify": final_verify,
+        # When the environment has no verifier at all, the episode starts
+        # without a label and never acquires one. Defaulting to True here would
+        # mark every SWE-Bench row as carrying ground truth it never had.
+        "label_available": "verify" not in unavailable_actions,
         "step": 0,
         "max_steps": max_steps,
         "max_generations": max_generations,
@@ -1511,6 +1876,11 @@ def result_record(
         "prior_calibration_correct": prior_summary.get("prior_calibration_correct", 0),
         "prior_smoothing": prior_summary.get("prior_smoothing", ""),
         "fixed": bool(state.get("fixed", False)),
+        # Downstream analysis must filter on this before using `fixed`: an
+        # episode whose verifier never ran has no ground truth, and counting it
+        # as a negative is the difference between a measurement and a fiction.
+        "label_available": bool(state.get("label_available", True)),
+        "unavailable_actions": list(state.get("unavailable_actions") or ()),
         "final_action": state.get("final_action") or "max_steps",
         "n_steps": int(state.get("step", 0)),
         "n_decisions": int(state.get("n_decisions", 0)),
@@ -1541,14 +1911,37 @@ def maybe_final_verify(state: AgentState, deps: AgentDeps) -> AgentState:
     )
     result: VerifyResult = deps.adapter.verify(state["instance"], candidate, run_id)
     elapsed = time.perf_counter() - started
-    passed = bool(result.passed)
     previous_final = str(state.get("final_action") or "max_steps")
     verified_state: AgentState = dict(state)
+
+    if not result.available:
+        verified_state.update(
+            {
+                "step": int(state.get("step", 0)) + 1,
+                "label_available": False,
+                "final_action": "final_verify_unavailable",
+                "trajectory": _record(
+                    state,
+                    action="final_verify",
+                    reasoning=f"terminal verification after {previous_final}",
+                    observation=result.detail,
+                    passed=None,
+                    detail=result.detail,
+                    verifier_available=False,
+                    wall_clock_s=round(elapsed, 4),
+                    previous_final_action=previous_final,
+                ),
+            }
+        )
+        return verified_state
+
+    passed = bool(result.passed)
     verified_state.update(
         {
             "step": int(state.get("step", 0)) + 1,
             "done": passed,
             "fixed": passed,
+            "label_available": True,
             "final_action": "final_verify_pass" if passed else "final_verify_fail",
             "n_verifications": int(state.get("n_verifications", 0)) + 1,
             "trajectory": _record(
@@ -1558,6 +1951,7 @@ def maybe_final_verify(state: AgentState, deps: AgentDeps) -> AgentState:
                 observation=result.detail,
                 passed=passed,
                 detail=result.detail,
+                verifier_available=True,
                 wall_clock_s=round(elapsed, 4),
                 previous_final_action=previous_final,
             ),
@@ -1566,13 +1960,22 @@ def maybe_final_verify(state: AgentState, deps: AgentDeps) -> AgentState:
     return verified_state
 
 
+#: Serialises every JSONL append. Episodes run concurrently and several of
+#: them write to the same files (results, actions, generation logprobs,
+#: verbalized scores); interleaved partial lines would corrupt all of them.
+_WRITE_LOCK = threading.Lock()
+
+
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    payload = json.dumps(row, ensure_ascii=False) + "\n"
+    with _WRITE_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(payload)
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
+    """Kept separate from parsing so tests can inspect the flags."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--benchmark",
@@ -1581,6 +1984,7 @@ def parse_args() -> argparse.Namespace:
             "lcb_medium",
             "lcb_med",
             "lcb_hard",
+            "lcb_all",
             "mbpp",
             "humaneval",
             "swebench_lite",
@@ -1600,12 +2004,45 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip-prior-calibration", action="store_true")
     p.add_argument("--platform", default="leetcode", choices=["leetcode", "atcoder", "codeforces", "all"])
     p.add_argument("--lcb-version", default="all", choices=["v1", "all"])
-    p.add_argument("--private-test-cap", type=int, default=12, help="0 = all private tests")
+    p.add_argument(
+        "--private-test-cap",
+        type=int,
+        default=0,
+        help=(
+            "Cap on private tests used for the label; 0 means all of them. A cap "
+            "checks a weaker condition than the benchmark defines: at 12 against "
+            "a median suite of 35 the measured success rate was 0.93, well above "
+            "the real one. Cap only when profiling runtime."
+        ),
+    )
     p.add_argument("--plus-input-cap", type=int, default=200)
     p.add_argument("--swe-harness-workers", type=int, default=1)
-    p.add_argument("--max-steps", type=int, default=12)
-    p.add_argument("--max-generations", type=int, default=3)
-    p.add_argument("--max-verifications", type=int, default=2)
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=25,
+        help=(
+            "Step ceiling per episode. One generation plus a sweep of four "
+            "critics plus the terminal check already costs six, so 12 left room "
+            "for two candidates and the loop could not be observed. Measured: "
+            "the last generation of a successful episode lands by step 22."
+        ),
+    )
+    p.add_argument("--max-generations", type=int, default=10)
+    p.add_argument(
+        "--max-verifications",
+        type=int,
+        default=0,
+        help=(
+            "Oracle calls the controller may spend. Zero by default because an "
+            "episode ends the moment the oracle passes: with a budget above "
+            "zero, 'how many steps were taken' and 'did verify ever fail' become "
+            "structurally equivalent to the label, and any estimator reading the "
+            "trajectory gets part of the answer for free. Measured: the belief "
+            "state scores 0.915 with that leak and 0.224 without, while agent "
+            "quality is unchanged. Raise it only to study the leak itself."
+        ),
+    )
     p.add_argument(
         "--agent-backend",
         choices=["sage", "langgraph"],
@@ -1613,14 +2050,31 @@ def parse_args() -> argparse.Namespace:
         help="sage uses sage_agent.langgraph.SAGEGraph; langgraph uses the old local two-node loop.",
     )
     p.add_argument(
-        "--final-verify",
-        action="store_true",
-        help="Always run one terminal hidden-test verification if a candidate exists.",
+        "--no-final-verify",
+        dest="final_verify",
+        action="store_false",
+        help=(
+            "Skip the single automatic terminal verification. It runs by "
+            "default: with --max-verifications 0 it is the only source of a "
+            "label, and being automatic is the point -- a verdict the controller "
+            "cannot schedule cannot leak into the trajectory."
+        ),
     )
     p.add_argument("--decision-temperature", type=float, default=0.2)
     p.add_argument("--generation-temperature", type=float, default=0.7)
     p.add_argument("--max-tokens-decision", type=int, default=128)
-    p.add_argument("--max-tokens-generation", type=int, default=4000)
+    p.add_argument(
+        "--max-tokens-generation",
+        type=int,
+        default=32768,
+        help=(
+            "Token ceiling for one generation: a circuit breaker for degenerate "
+            "loops, not a budget. At 4000 about 10 percent of steps were "
+            "truncated, and a truncated generation yields no extractable code, "
+            "so it scored as a wrong answer. At 32768 truncation is nil and the "
+            "average cost barely moves -- only the tail pays."
+        ),
+    )
     p.add_argument("--max-code-chars", type=int, default=20000)
     p.add_argument(
         "--save-generation-logprobs",
@@ -1693,7 +2147,72 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--resume", action="store_true")
     p.add_argument("--print-each", action="store_true")
-    return p.parse_args()
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Episodes to run concurrently. Each episode is an independent "
+            "sequence of API calls, and vLLM batches concurrent requests, so "
+            "the wall clock drops roughly linearly until the server saturates. "
+            "1 (default) keeps the original sequential behaviour."
+        ),
+    )
+    p.add_argument(
+        "--allow-repeat-verify",
+        dest="no_repeat_verify",
+        action="store_false",
+        help=(
+            "Keep offering `verify` after the oracle has ruled on the current "
+            "candidate. Withheld by default: re-verifying unchanged code returns "
+            "the same answer, so the call is pure cost -- 55 of 149 verifier "
+            "calls in a measured run were such repeats."
+        ),
+    )
+    p.add_argument(
+        "--offer-exhausted-actions",
+        dest="hide_exhausted_actions",
+        action="store_false",
+        help=(
+            "Keep offering `generate`/`verify` after their budget is spent. "
+            "Hidden by default: on a 76-episode run 11%% of all steps went to "
+            "picking an action that could only answer 'budget exhausted', and a "
+            "no-op recorded as a step distorts both cost and trajectory shape."
+        ),
+    )
+    p.add_argument(
+        "--bare-action-names",
+        dest="describe_actions",
+        action="store_false",
+        help=(
+            "List bare action names in the prompt, as the original did, instead "
+            "of describing what each action does, which critics have already "
+            "judged the current candidate, and the prior. Descriptions are on by "
+            "default: without them the controller goes straight from generate to "
+            "verify and no pre-oracle evidence exists at all -- 13 episodes out "
+            "of 76 had any, against 6 of 6 in a pilot with descriptions."
+        ),
+    )
+    p.add_argument(
+        "--run-config-output",
+        type=Path,
+        default=None,
+        help="JSON path recording the run settings. "
+             "Default: <output stem>.run_config.json.",
+    )
+    return p
+
+
+def parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
+
+
+
+
+def adapter_unavailable_actions(adapter: BenchmarkAdapter) -> set[str]:
+    """Actions the adapter cannot perform. Adapters may omit the method."""
+    getter = getattr(adapter, "unavailable_actions", None)
+    return set(getter()) if callable(getter) else set()
 
 
 def make_adapter(args: argparse.Namespace) -> BenchmarkAdapter:
@@ -1748,12 +2267,34 @@ def main() -> None:
         )
     if args.actions_output is None:
         args.actions_output = args.output.with_name(args.output.stem + ".actions.jsonl")
+    if args.run_config_output is None:
+        args.run_config_output = args.output.with_name(
+            args.output.stem + ".run_config.json"
+        )
 
     generator = canonical_generator_key(args.generator)
     model_id = GENERATORS[generator][0]
     if generator == "gpt_oss_120b_local":
         model_id = os.environ.get("GPT_OSS_120B_MODEL", model_id)
     benchmark = "lcb_medium" if args.benchmark == "lcb_med" else args.benchmark
+
+    args.run_config_output.parent.mkdir(parents=True, exist_ok=True)
+    args.run_config_output.write_text(
+        json.dumps(
+            {
+                "benchmark": benchmark,
+                "generator": generator,
+                "model_id": model_id,
+                "agent_backend": args.agent_backend,
+                "args": {
+                    key: str(value) if isinstance(value, Path) else value
+                    for key, value in sorted(vars(args).items())
+                },
+            },
+            indent=2,
+        )
+    )
+
     adapter = make_adapter(args)
     instances = adapter.load_instances()
 
@@ -1768,14 +2309,9 @@ def main() -> None:
     args.split_output.write_text(json.dumps(split_summary, indent=2))
 
     if args.resume and args.output.exists():
-        done = set()
-        for line in args.output.read_text().splitlines():
-            if not line.strip():
-                continue
-            try:
-                done.add(str(json.loads(line).get("instance_id")))
-            except json.JSONDecodeError:
-                pass
+        # A record lost here does not merely disappear: it reads as "this
+        # instance is not done yet" and the episode is silently run again.
+        done = {str(row.get("instance_id")) for row in iter_jsonl(args.output)}
         test_instances = [
             inst for inst in test_instances if adapter.instance_id(inst) not in done
         ]
@@ -1845,15 +2381,29 @@ def main() -> None:
             actions_output_path=args.actions_output,
             resume=args.resume,
             print_each=args.print_each,
+            workers=args.workers,
         )
 
     graph = build_agent_graph(deps) if args.agent_backend == "langgraph" else None
+
+    blocked_actions = tuple(sorted(adapter_unavailable_actions(adapter)))
 
     print(
         f"LCB LLM tool-agent: benchmark={benchmark} backend={args.agent_backend} model={model_id} "
         f"train={split_summary['n_train']} test={split_summary['n_test']} "
         f"remaining_test={len(test_instances)} output={args.output}"
     )
+    if blocked_actions:
+        print(
+            f"unavailable actions in this environment: {', '.join(blocked_actions)} "
+            f"(removed from the action space)"
+        )
+        if "verify" in blocked_actions:
+            print(
+                "NOTE: no verifier -> episodes carry no terminal label; rows are "
+                "written with label_available=false and must be excluded from "
+                "any metric that needs ground truth."
+            )
     print(
         f"prior_Y1={prior_summary['prior_Y1']:.3f} "
         f"n={prior_summary['prior_calibration_n']} "
@@ -1867,7 +2417,8 @@ def main() -> None:
         print(f"prior_calibration_logprobs={args.prior_calibration_logprobs_output}")
     if args.save_verbalized_2s:
         print(f"verbalized_2s={args.verbalized_2s_output}")
-    for idx, instance in enumerate(test_instances, start=1):
+    def run_one_episode(indexed: tuple[int, dict[str, Any]]) -> None:
+        idx, instance = indexed
         inst_id = adapter.instance_id(instance)
         started = time.perf_counter()
         state = initial_state(
@@ -1878,6 +2429,11 @@ def main() -> None:
             max_generations=args.max_generations,
             max_verifications=args.max_verifications,
             prior_summary=prior_summary,
+            unavailable_actions=blocked_actions,
+            describe_actions=args.describe_actions,
+            hide_exhausted_actions=args.hide_exhausted_actions,
+            no_repeat_verify=args.no_repeat_verify,
+            final_verify=args.final_verify,
         )
         try:
             if args.agent_backend == "sage":
@@ -1948,6 +2504,19 @@ def main() -> None:
                 f"fixed={row.get('fixed')} final={row.get('final_action')} "
                 f"steps={row.get('n_steps', 0)} cost=${row.get('api_cost_usd', 0.0):.4f}"
             )
+
+
+    work = list(enumerate(test_instances, start=1))
+    if args.workers > 1 and len(work) > 1:
+        # Episodes share nothing but append-only output files, which
+        # `append_jsonl` serialises, so they parallelise directly. The server
+        # batches the concurrent requests; the test subprocesses are
+        # independent by construction.
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            list(pool.map(run_one_episode, work))
+    else:
+        for item in work:
+            run_one_episode(item)
 
     print(f"done: {args.output}")
 

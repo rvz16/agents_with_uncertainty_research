@@ -141,30 +141,22 @@ def critic_L3_llm_review(
     problem_statement: str,
     diff_text: str,
     client,
-) -> tuple[bool, float]:
-    """Haiku gives PASS/FAIL on the diff. Returns (passed, cost_usd)."""
+) -> tuple[bool | None, float]:
+    """A reviewer model gives PASS/FAIL on the diff. Returns (passed, cost_usd).
+
+    The model is read from ``L3_REVIEW_MODEL`` so the judge can be pointed at
+    the local vLLM endpoint. It used to be hard-coded to a hosted model, which
+    on an offline host meant every call raised, every verdict came back False,
+    and L3 degenerated into a constant critic without any visible error.
+    """
     prompt = (
         "You are a senior software engineer reviewing a bug fix.\n\n"
         f"## Issue\n{problem_statement[:3000]}\n\n"
         f"## Proposed Fix (unified diff)\n```diff\n{diff_text[:8000]}\n```\n\n"
-        "Does this patch correctly fix the issue? Respond with exactly one word: "
-        "PASS or FAIL. No explanation."
+        "Does this patch correctly fix the issue? Answer with exactly one "
+        "word: PASS or FAIL."
     )
-    try:
-        resp = client.chat.completions.create(
-            model="anthropic/claude-haiku-4.5",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=10,
-        )
-        text = resp.choices[0].message.content.strip().upper()
-        usage = resp.usage
-        # OpenRouter Haiku 4.5: roughly $1/M input, $5/M output
-        cost = (usage.prompt_tokens / 1_000_000) * 1.0 + (usage.completion_tokens / 1_000_000) * 5.0
-        return ("PASS" in text and "FAIL" not in text), cost
-    except Exception as e:
-        log.warning("L3 LLM review failed for %s: %s", instance_id, e)
-        return False, 0.0
+    return _judge_verdict(client, prompt, label=instance_id)
 
 
 # ----------------------------------------------------------------------

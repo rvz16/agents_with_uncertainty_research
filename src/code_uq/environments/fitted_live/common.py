@@ -42,12 +42,27 @@ class CriticResult:
 class VerifyResult:
     passed: bool
     detail: str = ""
+    #: False when the verifier could not run at all -- a missing harness, an
+    #: absent container runtime, an infrastructure error.  This is *not* the
+    #: same as a candidate failing its tests, and collapsing the two would
+    #: quietly relabel every episode on a host without the harness as a
+    #: negative, poisoning the terminal label the whole analysis rests on.
+    available: bool = True
 
 
 class BenchmarkAdapter(Protocol):
     """Protocol implemented by benchmark-specific live adapters."""
 
     benchmark: str
+
+    def unavailable_actions(self) -> set[str]:
+        """Actions this environment cannot perform, e.g. ``{"critic_L2"}``.
+
+        The controller drops these from the action space rather than letting
+        the model spend steps on them and read the resulting failures as
+        evidence. Adapters that support everything may omit this method.
+        """
+        ...
 
     def load_instances(self) -> list[dict]:
         ...
@@ -128,15 +143,23 @@ def load_jsonl_keys(path: Path) -> set[tuple[str, str]]:
         return keys
     import json
 
-    for line in path.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        inst = rec.get("instance_id")
-        pol = rec.get("policy")
-        if inst and pol:
-            keys.add((str(inst), str(pol)))
+    # Iterate the file rather than `read_text().splitlines()`: splitlines
+    # also breaks on \v, \f, \x1c and U+2028, and these records hold raw
+    # model text written with ensure_ascii=False, so those characters
+    # survive into the line. On a logprob sidecar that silently dropped 16%
+    # of the records. The cost here is worse than data loss: a record that
+    # fails to parse reads as "this instance is not done", so the episode is
+    # quietly run a second time.
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            inst = rec.get("instance_id")
+            pol = rec.get("policy")
+            if inst and pol:
+                keys.add((str(inst), str(pol)))
     return keys

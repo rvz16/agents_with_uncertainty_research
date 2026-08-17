@@ -49,17 +49,34 @@ def latest_by_instance(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(latest.values())
 
 
-def is_success(action: dict[str, Any]) -> bool:
+def _verdict(action: dict[str, Any]) -> bool | None:
     value = action.get("passed")
     if value is None:
         value = action.get("ok")
-    return value is True
+    return value if isinstance(value, bool) else None
+
+
+def has_verdict(action: dict[str, Any]) -> bool:
+    """Whether this action actually produced a pass/fail answer.
+
+    An action can appear in a trajectory without having decided anything: a
+    critic whose judge was unreachable, a verifier with no harness. Those must
+    stay out of the denominator -- counting them as failures makes a broken
+    tool look like a strict one, and the resulting success rate describes the
+    infrastructure rather than the model.
+    """
+    return _verdict(action) is not None
+
+
+def is_success(action: dict[str, Any]) -> bool:
+    return _verdict(action) is True
 
 
 def summarize_row(row: dict[str, Any]) -> dict[str, Any]:
     counts = Counter()
     success = Counter()
     skipped = Counter()
+    no_verdict = Counter()
     counts_before_verify_pass = Counter()
     success_before_verify_pass = Counter()
     skipped_before_verify_pass = Counter()
@@ -72,6 +89,13 @@ def summarize_row(row: dict[str, Any]) -> dict[str, Any]:
         elif name in VERIFY_ACTIONS:
             group = "verifier"
         else:
+            continue
+
+        if not has_verdict(action):
+            no_verdict[group] += 1
+            no_verdict[f"{group}:{name}"] += 1
+            if name in NON_FINAL_VERIFY_ACTIONS:
+                no_verdict["verifier_no_final"] += 1
             continue
 
         counts[group] += 1
@@ -205,6 +229,7 @@ def main() -> None:
     counts = Counter()
     success = Counter()
     skipped = Counter()
+    no_verdict = Counter()
     counts_before_verify_pass = Counter()
     success_before_verify_pass = Counter()
     skipped_before_verify_pass = Counter()
@@ -218,6 +243,13 @@ def main() -> None:
             elif name in VERIFY_ACTIONS:
                 group = "verifier"
             else:
+                continue
+
+            if not has_verdict(action):
+                no_verdict[group] += 1
+                no_verdict[f"{group}:{name}"] += 1
+                if name in NON_FINAL_VERIFY_ACTIONS:
+                    no_verdict["verifier_no_final"] += 1
                 continue
 
             counts[group] += 1
@@ -274,7 +306,8 @@ def main() -> None:
         print(
             f"{group:8s} {ok:4d}/{n:<4d} success_rate={rate:.3f} "
             f"success_per_all={(ok / total if total else 0.0):.3f} "
-            f"attempt_share={(n / total if total else 0.0):.3f} skipped={skip}"
+            f"attempt_share={(n / total if total else 0.0):.3f} skipped={skip} "
+            f"no_verdict={no_verdict[group]}"
         )
     n = counts["verifier_no_final"]
     ok = success["verifier_no_final"]
@@ -298,6 +331,15 @@ def main() -> None:
         f"success_rate={(total_success_no_final_before_verify_pass / total_no_final_before_verify_pass if total_no_final_before_verify_pass else 0.0):.3f} "
         f"skipped={skipped_before_verify_pass['critic'] + skipped_before_verify_pass['verifier_no_final']}"
     )
+
+    stalled = {k: v for k, v in no_verdict.items() if ":" in k and v}
+    if stalled:
+        print(
+            "\nactions that produced no verdict (excluded from the rates above; "
+            "a tool that never answers is not a strict tool):"
+        )
+        for key, value in sorted(stalled.items()):
+            print(f"{key:26s} {value:4d}")
 
     print("\nby action:")
     for key in sorted(k for k in counts if ":" in k):

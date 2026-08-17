@@ -24,7 +24,38 @@ CRITIC_SHORT = {
     "L2_public_tests": "L2",
     "L3_llm_review": "L3",
 }
+#: Marked "initial uninformative" where it was introduced: these are placeholders
+#: meant to be replaced by measured values, and `common/kernel.py` exists to
+#: measure them. Until `--kernel` is passed they are what the belief state is
+#: actually built on, so every run that omits the flag says so out loud (see
+#: `resolve_run_kernel`) and records it in `analysis_summary.json`.
 DEFAULT_KERNEL = {"p_fix_broken": 0.50, "p_break_correct": 0.05}
+
+#: Printed once per run rather than logged: a warning nobody sees is the same as
+#: no warning, and the number it qualifies goes straight into a table.
+_UNCALIBRATED_KERNEL_NOTICE = (
+    "WARNING: no --kernel given, so the belief state uses the placeholder "
+    f"transition kernel {DEFAULT_KERNEL}, marked 'initial uninformative' in the "
+    "sources and never calibrated. Measured on this project's runs p_fix_broken "
+    "is about 0.11, four times lower. p_break_correct cannot be measured at all "
+    "from these runs: an episode ends the moment the oracle passes, so there is "
+    "no observed transition out of the correct state. Treat bayes_state as "
+    "uncalibrated unless --kernel points at a measured file."
+)
+
+
+def resolve_run_kernel(kernel_path: Path | None) -> tuple[dict[str, float], str]:
+    """The transition kernel to use, plus where it came from.
+
+    The provenance is returned rather than inferred later because it is the
+    difference between a calibrated number and a placeholder one, and both look
+    identical in the output CSV.
+    """
+    if kernel_path is None:
+        print(_UNCALIBRATED_KERNEL_NOTICE)
+        return dict(DEFAULT_KERNEL), "hardcoded_uninformative_default"
+    raw = json.loads(kernel_path.read_text())
+    return dict(raw.get("kernel_all", raw)), str(kernel_path)
 
 
 def configure_hf_cache() -> None:
@@ -636,10 +667,7 @@ def main() -> None:
         theta_source = str(likelihood_path)
     theta = normalize_theta(table)
 
-    kernel = dict(DEFAULT_KERNEL)
-    if args.kernel:
-        raw_kernel = json.loads(args.kernel.read_text())
-        kernel = raw_kernel.get("kernel_all", raw_kernel)
+    kernel, kernel_source = resolve_run_kernel(args.kernel)
 
     actions_by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in actions:
@@ -747,6 +775,7 @@ def main() -> None:
         "theta_source": theta_source,
         "theta": theta,
         "kernel": kernel,
+        "kernel_source": kernel_source,
         "action_counts": dict(Counter(r.get("action") for r in actions)),
         "tool_success_source": str(tool_success_path) if tool_success_path else None,
         "verbalized_2s": {

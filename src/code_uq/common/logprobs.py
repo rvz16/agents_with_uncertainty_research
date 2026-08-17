@@ -124,6 +124,23 @@ def extract_completion_logprobs(resp: Any, *, requested: bool = True) -> dict[st
     return payload
 
 
+def split_channels(content: list[dict]) -> dict[str, list[dict]]:
+    """Split a harmony completion into reasoning and answer token spans."""
+    boundaries = [
+        index for index, token in enumerate(content)
+        if str(token.get("token")) == "<|channel|>"
+    ]
+    if len(boundaries) < 2:
+        return {"all": content, "answer": content, "reasoning": []}
+    cut = boundaries[-1]
+    # skip `<|channel|> final <|message|>`
+    return {
+        "all": content,
+        "reasoning": content[:cut],
+        "answer": content[cut + 3:],
+    }
+
+
 def logprob_summary_fields(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}

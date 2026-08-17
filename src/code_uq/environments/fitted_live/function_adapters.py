@@ -68,11 +68,17 @@ class LCBAdapter:
                     tests = json.loads(tests)
                 except Exception:
                     tests = []
-            passed, total = check_tests(code, tests, starter_code=instance.get("starter_code", "") or "")
-            return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
+            starter = instance.get("starter_code", "") or ""
+            passed, total = check_tests(code, tests, starter_code=starter)
+            return CriticResult((passed == total) and total > 0,
+                                detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("question_content", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            return CriticResult(
+                None if ok is None else bool(ok),
+                detail="" if ok is not None else "reviewer_unavailable",
+                api_cost_usd=float(cost),
+            )
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -133,7 +139,11 @@ class MBPPAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("prompt", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            return CriticResult(
+                None if ok is None else bool(ok),
+                detail="" if ok is not None else "reviewer_unavailable",
+                api_cost_usd=float(cost),
+            )
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -193,7 +203,11 @@ class HumanEvalPlusAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("prompt", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            return CriticResult(
+                None if ok is None else bool(ok),
+                detail="" if ok is not None else "reviewer_unavailable",
+                api_cost_usd=float(cost),
+            )
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -259,7 +273,11 @@ class HumanEvalFixAdapter:
             return CriticResult(bool(ok))
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("prompt", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            return CriticResult(
+                None if ok is None else bool(ok),
+                detail="" if ok is not None else "reviewer_unavailable",
+                api_cost_usd=float(cost),
+            )
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -338,7 +356,11 @@ class CodeContestsAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("description", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            return CriticResult(
+                None if ok is None else bool(ok),
+                detail="" if ok is not None else "reviewer_unavailable",
+                api_cost_usd=float(cost),
+            )
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -347,6 +369,7 @@ class CodeContestsAdapter:
         inputs, outputs = self._oracle_tests(instance)
         passed, total = run_stdio_tests(candidate.payload, inputs, outputs)
         return VerifyResult((passed == total) and total > 0, detail=f"{passed}/{total}")
+
 
 
 def make_function_adapter(
