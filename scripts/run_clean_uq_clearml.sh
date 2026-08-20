@@ -62,7 +62,7 @@ export MAX_VERIFICATIONS="${MAX_VERIFICATIONS:-1}"   # terminal single final ver
 export PRIVATE_TEST_CAP="${PRIVATE_TEST_CAP:-0}"     # use ALL private tests => real balance (student PR §9)
 export MAX_GENERATIONS="${MAX_GENERATIONS:-5}"
 export MAX_STEPS="${MAX_STEPS:-20}"
-export FINAL_VERIFY="${FINAL_VERIFY:-1}"
+export FINAL_VERIFY="${FINAL_VERIFY:-0}"
 export SAVE_VERBALIZED_2S="${SAVE_VERBALIZED_2S:-1}"
 export RUN_ANALYSIS="${RUN_ANALYSIS:-1}"
 export RUN_ROOT="${RUN_ROOT:-${REPO_DIR}/runs/code_uq_clean/gpt_oss_20b_local}"
