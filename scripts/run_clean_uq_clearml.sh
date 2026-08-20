@@ -16,6 +16,7 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-$(pwd)}"
 cd "${REPO_DIR}"
 echo "[wrapper] repo=${REPO_DIR}"
+command -v python >/dev/null 2>&1 || ln -sf "$(command -v python3)" /usr/local/bin/python
 
 MODEL="${MODEL:-openai/gpt-oss-20b}"
 PORT="${VLLM_PORT:-8010}"
