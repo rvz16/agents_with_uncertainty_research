@@ -72,7 +72,8 @@ class LCBAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("question_content", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            detail = "PASS" if ok is True else "FAIL" if ok is False else "review_error_or_unparseable"
+            return CriticResult(ok, detail=detail, api_cost_usd=float(cost))
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -133,7 +134,8 @@ class MBPPAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("prompt", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            detail = "PASS" if ok is True else "FAIL" if ok is False else "review_error_or_unparseable"
+            return CriticResult(ok, detail=detail, api_cost_usd=float(cost))
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -193,7 +195,8 @@ class HumanEvalPlusAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("prompt", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            detail = "PASS" if ok is True else "FAIL" if ok is False else "review_error_or_unparseable"
+            return CriticResult(ok, detail=detail, api_cost_usd=float(cost))
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -259,7 +262,8 @@ class HumanEvalFixAdapter:
             return CriticResult(bool(ok))
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("prompt", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            detail = "PASS" if ok is True else "FAIL" if ok is False else "review_error_or_unparseable"
+            return CriticResult(ok, detail=detail, api_cost_usd=float(cost))
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
@@ -338,7 +342,8 @@ class CodeContestsAdapter:
             return CriticResult((passed == total) and total > 0, detail=f"{passed}/{total}")
         if critic == "L3":
             ok, cost = critic_L3_review(instance.get("description", "")[:3000], code, reviewer_client)
-            return CriticResult(bool(ok), api_cost_usd=float(cost))
+            detail = "PASS" if ok is True else "FAIL" if ok is False else "review_error_or_unparseable"
+            return CriticResult(ok, detail=detail, api_cost_usd=float(cost))
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:

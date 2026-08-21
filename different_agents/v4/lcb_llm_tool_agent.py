@@ -48,18 +48,14 @@ from sage_agent.langgraph import SAGEGraph, SAGEGraphConfig  # noqa: E402
 ACTION_SPACE: tuple[str, ...] = (
     "generate",
     "critic_L0",
-    "critic_L1",
     "critic_L2",
     "critic_L3",
-    "verify",
-    "think",
     "finish",
 )
 VALID_ACTIONS: set[str] = set(ACTION_SPACE)
 
 CRITIC_ACTIONS = {
     "critic_L0": "L0",
-    "critic_L1": "L1",
     "critic_L2": "L2",
     "critic_L3": "L3",
 }
@@ -73,9 +69,6 @@ ACTION_ALIASES = {
     "l0": "critic_L0",
     "syntax": "critic_L0",
     "syntax_check": "critic_L0",
-    "critic_l1": "critic_L1",
-    "l1": "critic_L1",
-    "lint": "critic_L1",
     "critic_l2": "critic_L2",
     "l2": "critic_L2",
     "public_tests": "critic_L2",
@@ -85,11 +78,6 @@ ACTION_ALIASES = {
     "l3": "critic_L3",
     "llm_review": "critic_L3",
     "review": "critic_L3",
-    "verify": "verify",
-    "verifier": "verify",
-    "hidden_tests": "verify",
-    "private_tests": "verify",
-    "think": "think",
     "finish": "finish",
     "stop": "finish",
 }
@@ -599,27 +587,66 @@ def run_verbalized_2s(
         }
 
 
+def _used_critic_actions(state: AgentState) -> set[str]:
+    used: set[str] = set()
+    for item in reversed(state.get("trajectory", [])):
+        action = str(item.get("action") or "")
+        if action == "generate" and not item.get("skipped"):
+            break
+        if action in CRITIC_ACTIONS:
+            used.add(action)
+    return used
+
+
+def _available_actions(state: AgentState) -> tuple[str, ...]:
+    has_candidate = bool(state.get("candidate_payload") or "")
+    can_generate = int(state.get("n_generations", 0)) < int(
+        state.get("max_generations", 0)
+    )
+    if not has_candidate:
+        return ("generate",) if can_generate else ("finish",)
+
+    used_critics = _used_critic_actions(state)
+    return tuple(
+        action
+        for action in ACTION_SPACE
+        if (
+            action == "finish"
+            or (action == "generate" and can_generate)
+            or (action in CRITIC_ACTIONS and action not in used_critics)
+        )
+    )
+
+
 def _decision_prompt(state: AgentState) -> str:
     candidate_chars = len(state.get("candidate_payload") or "")
+    available_actions = _available_actions(state)
+    action_choices = "|".join(available_actions)
     remaining = {
         "steps": state["max_steps"] - state.get("step", 0),
         "generations": state["max_generations"] - state.get("n_generations", 0),
-        "verifications": state["max_verifications"] - state.get("n_verifications", 0),
     }
     return f"""Choose one next tool action for a LiveCodeBench coding episode.
 
 You are only routing tools. Do not solve the programming task and do not write code.
 
 Valid actions:
-generate, critic_L0, critic_L1, critic_L2, critic_L3, verify, think, finish
+{", ".join(available_actions)}
+
+Tool meanings:
+critic_L0: cheap Python syntax check
+critic_L2: public example tests
+critic_L3: paid LLM semantic review
+finish: return the current candidate without observing the hidden-test result
 
 Return exactly one compact JSON object and nothing else:
-{{"action":"generate|critic_L0|critic_L1|critic_L2|critic_L3|verify|think|finish","reasoning":"short reason"}}
+{{"action":"{action_choices}","reasoning":"short reason"}}
 
 State:
 candidate_exists: {bool(candidate_chars)}
 candidate_chars: {candidate_chars}
 budget_remaining: {json.dumps(remaining)}
+critics_already_used_for_current_candidate: {sorted(_used_critic_actions(state))}
 
 Recent trajectory:
 {_trajectory_brief(state.get("trajectory", []))}
@@ -717,15 +744,11 @@ def _parse_decision(text: str) -> tuple[str, str]:
 
 
 def fallback_decision_after_parse_failure(state: AgentState) -> tuple[str, str]:
-    if not (state.get("candidate_payload") or ""):
-        return "generate", "fallback: decision parse failed and no candidate exists"
-    if int(state.get("n_critic_runs", 0)) == 0:
-        return "critic_L2", "fallback: decision parse failed after candidate generation"
-    if int(state.get("n_verifications", 0)) < int(state.get("max_verifications", 0)):
-        return "verify", "fallback: decision parse failed after critics"
-    if int(state.get("n_generations", 0)) < int(state.get("max_generations", 0)):
-        return "generate", "fallback: decision parse failed after verification budget"
-    return "finish", "fallback: decision parse failed and no useful budget remains"
+    available = _available_actions(state)
+    for action in ("critic_L2", "critic_L0", "critic_L3", "generate", "finish"):
+        if action in available:
+            return action, f"fallback: decision parse failed; selected available {action}"
+    return "finish", "fallback: decision parse failed and no useful action remains"
 
 
 def _merge_usage(state: AgentState, pt: int, ct: int, cost: float) -> dict[str, Any]:
@@ -764,7 +787,7 @@ def decide_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             "error": str(exc),
             "trajectory": _record(
                 state,
-                action="think",
+                action="context_overflow_skip",
                 reasoning="context overflow",
                 observation="skipped: context overflow",
                 skipped=True,
@@ -772,7 +795,7 @@ def decide_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             ),
         }
     action, reasoning = _parse_decision(raw)
-    if not action:
+    if action not in _available_actions(state):
         action, reasoning = fallback_decision_after_parse_failure(state)
     updates = _merge_usage(state, pt, ct, cost)
     updates.update(
@@ -806,7 +829,7 @@ def _record(
 
 
 def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
-    action = state.get("chosen_action", "think")
+    action = state.get("chosen_action", "finish")
     reasoning = state.get("chosen_reasoning", "")
     step_next = int(state.get("step", 0)) + 1
     candidate = _candidate_from_state(state)
@@ -816,12 +839,6 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             "step": step_next,
             "done": True,
             "final_action": "finish",
-            "trajectory": _record(state, action=action, reasoning=reasoning),
-        }
-
-    if action == "think":
-        return {
-            "step": step_next,
             "trajectory": _record(state, action=action, reasoning=reasoning),
         }
 
@@ -931,6 +948,17 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
         }
 
     if action in CRITIC_ACTIONS:
+        if action in _used_critic_actions(state):
+            return {
+                "step": step_next,
+                "trajectory": _record(
+                    state,
+                    action=action,
+                    reasoning=reasoning,
+                    observation="skipped: critic already used for current candidate",
+                    skipped=True,
+                ),
+            }
         critic = CRITIC_ACTIONS[action]
         if critic == "L3" and deps.reviewer_client is None:
             return {
@@ -1004,9 +1032,9 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
         passed = bool(result.passed)
         return {
             "step": step_next,
-            "done": passed,
+            "done": True,
             "fixed": passed,
-            "final_action": "verify_pass" if passed else state.get("final_action", ""),
+            "final_action": "verify_pass" if passed else "verify_fail",
             "n_verifications": int(state.get("n_verifications", 0)) + 1,
             "trajectory": _record(
                 state,
@@ -1113,7 +1141,7 @@ class SageActionCandidateGenerator:
                     "error": str(exc),
                     "trajectory": _record(
                         self.state,
-                        action="think",
+                        action="context_overflow_skip",
                         reasoning="context overflow",
                         observation="skipped: context overflow",
                         skipped=True,
@@ -1123,7 +1151,7 @@ class SageActionCandidateGenerator:
             )
             return [ToolCallCandidate(tool_name="finish", arguments={"reasoning": "context overflow"})]
         action, reasoning = _parse_decision(raw)
-        if not action:
+        if action not in _available_actions(self.state):
             action, reasoning = fallback_decision_after_parse_failure(self.state)
         updates = _merge_usage(self.state, pt, ct, cost)
         updates.update(
@@ -1171,16 +1199,15 @@ class SageActionToolExecutor:
         )
 
 
-def sage_tool_schemas() -> list[ToolSchema]:
+def sage_tool_schemas(state: AgentState) -> list[ToolSchema]:
     return [
         ToolSchema(name=action, parameters={}, required=frozenset())
-        for action in ACTION_SPACE
+        for action in _available_actions(state)
     ]
 
 
 def run_sage_agent_episode(state: AgentState, deps: AgentDeps) -> AgentState:
     """Run the LCB episode using the repo's SAGE-Agent LangGraph wrapper."""
-    tool_schemas = sage_tool_schemas()
     while not state.get("done") and int(state.get("step", 0)) < state["max_steps"]:
         if (
             not (state.get("candidate_payload") or "")
@@ -1189,7 +1216,7 @@ def run_sage_agent_episode(state: AgentState, deps: AgentDeps) -> AgentState:
             state.update({"done": True, "final_action": "no_candidate"})
             break
         graph = SAGEGraph(
-            tool_schemas=tool_schemas,
+            tool_schemas=sage_tool_schemas(state),
             candidate_generator=SageActionCandidateGenerator(deps, state),
             question_generator=NoQuestionGenerator(),
             question_asker=NoQuestionAsker(),
@@ -1295,6 +1322,45 @@ def append_actions(
         append_jsonl(path, row)
 
 
+def replace_calibration_actions(
+    path: Path | None,
+    *,
+    benchmark: str,
+    model_id: str,
+    rows: list[dict[str, Any]],
+) -> None:
+    if path is None or not rows:
+        return
+    keys = {
+        (str(row["instance_id"]), int(row.get("patch_id", 0) or 0))
+        for row in rows
+    }
+    existing = load_prior_rows(path) if path.exists() else []
+    kept = [
+        row
+        for row in existing
+        if not (
+            row.get("split") == "train_calibration"
+            and (str(row.get("instance_id")), int(row.get("patch_id", 0) or 0))
+            in keys
+        )
+    ]
+    rebuilt = []
+    for row in rows:
+        for action in row.get("actions", []):
+            rebuilt.append(
+                {
+                    "split": "train_calibration",
+                    "benchmark": benchmark,
+                    "instance_id": str(row["instance_id"]),
+                    "model_id": model_id,
+                    **action,
+                    "patch_id": int(row.get("patch_id", 0) or 0),
+                }
+            )
+    write_jsonl_atomic(path, kept + rebuilt)
+
+
 def calibrate_prior(
     *,
     train_instances: list[dict[str, Any]],
@@ -1304,10 +1370,81 @@ def calibrate_prior(
     output_path: Path,
     logprobs_output_path: Path | None,
     actions_output_path: Path | None,
+    calibrate_l3: bool,
     resume: bool,
     print_each: bool,
 ) -> dict[str, Any]:
     existing_rows = load_prior_rows(output_path) if resume else []
+    if calibrate_l3:
+        if deps.reviewer_client is None:
+            raise RuntimeError(
+                "L3 train calibration requires a reviewer client; set OPENROUTER_API_KEY "
+                "or REVIEWER_BASE_URL"
+            )
+        instances_by_id = {
+            deps.adapter.instance_id(instance): instance for instance in train_instances
+        }
+        attempted = 0
+        backfilled_rows = []
+        for row in existing_rows:
+            if row.get("passed") not in (True, False):
+                continue
+            if row.get("L3_llm_review") in (True, False):
+                continue
+            inst_id = str(row.get("instance_id"))
+            instance = instances_by_id.get(inst_id)
+            code = str(row.get("code") or "")
+            if instance is None or not code:
+                continue
+            candidate = Candidate(
+                payload=code,
+                raw_text=code,
+                kind="diff" if benchmark.startswith("swebench") else "code",
+            )
+            started = time.perf_counter()
+            l3 = deps.adapter.run_critic("L3", instance, candidate, deps.reviewer_client)
+            attempted += 1
+            row["L3_llm_review"] = l3.passed
+            row["L3_llm_review_detail"] = l3.detail
+            row["L3_llm_review_api_cost_usd"] = l3.api_cost_usd
+            row["L3_llm_review_wall_clock_s"] = round(time.perf_counter() - started, 4)
+            row["api_cost_usd"] = float(row.get("api_cost_usd") or 0.0) + float(
+                l3.api_cost_usd
+            )
+            l3_action = {
+                "step": 1,
+                "action": "critic_L3",
+                "passed": l3.passed,
+                "detail": l3.detail,
+                "observation": l3.detail,
+                "wall_clock_s": row["L3_llm_review_wall_clock_s"],
+                "api_cost_usd": l3.api_cost_usd,
+            }
+            actions = [
+                action
+                for action in row.get("actions", [])
+                if action.get("action") != "critic_L3"
+            ]
+            verify_index = next(
+                (i for i, action in enumerate(actions) if action.get("action") == "verify"),
+                len(actions),
+            )
+            actions.insert(verify_index, l3_action)
+            for step, action in enumerate(actions):
+                action["step"] = step
+            row["actions"] = actions
+            if l3.passed in (True, False):
+                backfilled_rows.append(row)
+            if print_each:
+                print(f"[prior L3 {attempted}] {inst_id} passed={l3.passed}")
+        if attempted:
+            write_jsonl_atomic(output_path, existing_rows)
+        replace_calibration_actions(
+            actions_output_path,
+            benchmark=benchmark,
+            model_id=deps.model_id,
+            rows=backfilled_rows,
+        )
     done = {
         (str(row.get("instance_id")), int(row.get("patch_id", 0)))
         for row in existing_rows
@@ -1401,6 +1538,14 @@ def calibrate_prior(
                         "logprobs": logprobs,
                     },
                 )
+            l3 = None
+            l3_s = 0.0
+            if calibrate_l3:
+                l3_started = time.perf_counter()
+                l3 = deps.adapter.run_critic(
+                    "L3", instance, candidate, deps.reviewer_client
+                )
+                l3_s = time.perf_counter() - l3_started
             verify_started = time.perf_counter()
             run_id = safe_stem(f"{benchmark}__prior__{inst_id}__p{patch_id}", 180)
             verify = deps.adapter.verify(instance, candidate, run_id)
@@ -1417,8 +1562,23 @@ def calibrate_prior(
                     "api_cost_usd": cost,
                     "logprobs_saved": bool(deps.save_generation_logprobs and logprobs_output_path),
                 },
+                *(
+                    [
+                        {
+                            "step": 1,
+                            "action": "critic_L3",
+                            "passed": l3.passed,
+                            "detail": l3.detail,
+                            "observation": l3.detail,
+                            "wall_clock_s": round(l3_s, 4),
+                            "api_cost_usd": l3.api_cost_usd,
+                        }
+                    ]
+                    if l3 is not None
+                    else []
+                ),
                 {
-                    "step": 1,
+                    "step": 2 if l3 is not None else 1,
                     "action": "verify",
                     "passed": bool(verify.passed),
                     "detail": verify.detail,
@@ -1436,7 +1596,12 @@ def calibrate_prior(
                 "detail": verify.detail,
                 "prompt_tokens": pt,
                 "completion_tokens": ct,
-                "api_cost_usd": cost,
+                "api_cost_usd": cost + float(l3.api_cost_usd if l3 else 0.0),
+                "generation_api_cost_usd": cost,
+                "L3_llm_review": l3.passed if l3 else None,
+                "L3_llm_review_detail": l3.detail if l3 else "",
+                "L3_llm_review_api_cost_usd": l3.api_cost_usd if l3 else 0.0,
+                "L3_llm_review_wall_clock_s": round(l3_s, 4),
                 "wall_clock_s": round(wall_s, 4),
                 "actions": actions,
                 "code": candidate.payload[: deps.max_code_chars],
@@ -1465,6 +1630,7 @@ def calibrate_prior(
             "prior_calibration_output": str(output_path),
             "prior_calibration_logprobs_output": str(logprobs_output_path or ""),
             "prior_patches": prior_patches,
+            "calibrate_l3": calibrate_l3,
         }
     )
     return summary
@@ -1487,7 +1653,7 @@ def initial_state(
         "step": 0,
         "max_steps": max_steps,
         "max_generations": max_generations,
-        "max_verifications": max_verifications,
+        "max_verifications": min(max(int(max_verifications), 0), 1),
         "trajectory": [],
         "n_decisions": 0,
         "n_generations": 0,
@@ -1551,7 +1717,9 @@ def result_record(
 
 def maybe_final_verify(state: AgentState, deps: AgentDeps) -> AgentState:
     """Run one terminal hidden-test verification when a candidate exists."""
-    if state.get("fixed"):
+    if state.get("fixed") or int(state.get("n_verifications", 0)) >= int(
+        state.get("max_verifications", 0)
+    ):
         return state
     candidate = _candidate_from_state(state)
     if candidate is None:
@@ -1595,6 +1763,14 @@ def append_jsonl(path: Path, row: dict[str, Any]) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def write_jsonl_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
@@ -1621,6 +1797,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-train", type=int, default=None)
     p.add_argument("--prior-patches", type=int, default=1)
     p.add_argument("--skip-prior-calibration", action="store_true")
+    p.add_argument(
+        "--calibrate-l3",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the L3 reviewer on train-calibration candidates (default: enabled).",
+    )
     p.add_argument("--platform", default="leetcode", choices=["leetcode", "atcoder", "codeforces", "all"])
     p.add_argument("--lcb-version", default="all", choices=["v1", "all"])
     p.add_argument("--private-test-cap", type=int, default=12, help="0 = all private tests")
@@ -1628,7 +1810,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--swe-harness-workers", type=int, default=1)
     p.add_argument("--max-steps", type=int, default=12)
     p.add_argument("--max-generations", type=int, default=3)
-    p.add_argument("--max-verifications", type=int, default=2)
+    p.add_argument("--max-verifications", type=int, default=1)
     p.add_argument(
         "--agent-backend",
         choices=["sage", "langgraph"],
@@ -1644,7 +1826,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--generation-temperature", type=float, default=0.7)
     p.add_argument("--max-tokens-decision", type=int, default=128)
     p.add_argument("--max-tokens-generation", type=int, default=4000)
-    p.add_argument("--max-code-chars", type=int, default=20000)
+    p.add_argument("--max-code-chars", type=int, default=131072)
     p.add_argument(
         "--save-generation-logprobs",
         action="store_true",
@@ -1880,6 +2062,7 @@ def main() -> None:
                 else None
             ),
             actions_output_path=args.actions_output,
+            calibrate_l3=args.calibrate_l3,
             resume=args.resume,
             print_each=args.print_each,
         )

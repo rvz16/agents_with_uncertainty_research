@@ -1,7 +1,7 @@
 """Language-agnostic Python critics (L0 syntax, L1 lint, L3 LLM review).
 
 These critics take a Python `code` string and return a bool (or for L3,
-a (bool, cost_usd) tuple). They are independent of benchmark format -- a
+a (bool | None, cost_usd) tuple). They are independent of benchmark format -- a
 critic doesn't know if it's reviewing an LCB solution or a MBPP function.
 
 Originally lived inside lcb_calibrate.py; extracted here so every
@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import logging
 import os
+import re
 import subprocess
 import tempfile
 
@@ -52,12 +53,12 @@ def critic_L1_lint(code: str) -> bool:
         os.unlink(tmp)
 
 
-def critic_L3_review(problem: str, code: str, client) -> tuple[bool, float]:
+def critic_L3_review(problem: str, code: str, client) -> tuple[bool | None, float]:
     """L3: small-model PASS/FAIL judgment on (problem, code).
 
     Default reviewer model is claude-haiku-4.5. Caller passes an
     OpenAI-compatible client (typically the OpenRouter client). Returns
-    (passed, cost_usd); on any API exception returns (False, 0.0) and
+    (passed, cost_usd); on an API or parsing failure returns (None, cost) and
     logs a warning.
     """
     prompt = (
@@ -71,12 +72,17 @@ def critic_L3_review(problem: str, code: str, client) -> tuple[bool, float]:
         resp = client.chat.completions.create(
             model=os.environ.get("L3_REVIEW_MODEL", "anthropic/claude-haiku-4.5"),
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0, max_tokens=10,
+            temperature=0.0, max_tokens=256,
         )
-        text = resp.choices[0].message.content.strip().upper()
+        message = resp.choices[0].message
+        text = (message.content or getattr(message, "reasoning_content", "") or "").strip().upper()
+        verdicts = re.findall(r"\b(PASS|FAIL)\b", text)
         usage = resp.usage
         cost = (usage.prompt_tokens / 1_000_000) * 1.0 + (usage.completion_tokens / 1_000_000) * 5.0
-        return ("PASS" in text and "FAIL" not in text), cost
+        if not verdicts:
+            log.warning("L3 returned no PASS/FAIL verdict")
+            return None, cost
+        return verdicts[-1] == "PASS", cost
     except Exception as e:
         log.warning("L3 failed: %s", e)
-        return False, 0.0
+        return None, 0.0
