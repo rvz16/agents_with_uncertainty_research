@@ -64,7 +64,7 @@ def create(args: argparse.Namespace) -> None:
     params = {
         "Args/BENCHMARKS": benchmarks,
         "Args/N_INSTANCES": n_instances,
-        "Args/MAX_VERIFICATIONS": "1",   # terminal single final verify => no oracle leak
+        "Args/MAX_VERIFICATIONS": "0",   # terminal single final verify => no oracle leak
         "Args/PRIVATE_TEST_CAP": "0",    # all private tests => real balance
         "Args/MAX_GENERATIONS": "5",
         "Args/MAX_STEPS": "20",

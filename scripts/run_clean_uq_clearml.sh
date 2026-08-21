@@ -57,7 +57,7 @@ export GPT_OSS_20B_BASE_URL="http://127.0.0.1:${PORT}/v1"
 
 export BENCHMARKS="${BENCHMARKS:-lcb_hard}"
 export N_INSTANCES="${N_INSTANCES:-0}"
-export MAX_VERIFICATIONS="${MAX_VERIFICATIONS:-1}"   # terminal single final verify => NO oracle leak
+export MAX_VERIFICATIONS="${MAX_VERIFICATIONS:-0}"   # terminal single final verify => NO oracle leak
 export PRIVATE_TEST_CAP="${PRIVATE_TEST_CAP:-0}"     # use ALL private tests => real balance (student PR §9)
 export MAX_GENERATIONS="${MAX_GENERATIONS:-5}"
 export MAX_STEPS="${MAX_STEPS:-20}"
