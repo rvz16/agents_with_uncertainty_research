@@ -25,7 +25,7 @@ VLLM_LOG="${VLLM_LOG:-${REPO_DIR}/vllm_serve.log}"
 
 # ---------------------------------------------------------------- deps
 echo "[wrapper] installing package deps (excluding vllm/torch)"
-python -m pip install --no-cache-dir -e . >/dev/null
+python -m pip install --no-cache-dir -e ".[code]" >/dev/null
 # code extras minus torch/vllm (image ships them); ignore transient resolver noise
 python -m pip install --no-cache-dir datasets docker evalplus >/dev/null || true
 python -c "import vllm, torch; print('[wrapper] vllm', vllm.__version__, 'torch', torch.__version__)"
