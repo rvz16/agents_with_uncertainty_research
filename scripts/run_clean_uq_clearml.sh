@@ -35,7 +35,6 @@ echo "[wrapper] starting vLLM: ${MODEL} on :${PORT}"
 vllm serve "${MODEL}" \
   --host 127.0.0.1 --port "${PORT}" \
   --max-model-len "${MAX_MODEL_LEN}" \
-  --served-model-name gpt-oss-20b \
   >"${VLLM_LOG}" 2>&1 &
 VLLM_PID=$!
 trap 'echo "[wrapper] stopping vLLM ${VLLM_PID}"; kill ${VLLM_PID} 2>/dev/null || true' EXIT
