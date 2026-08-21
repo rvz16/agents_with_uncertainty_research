@@ -245,6 +245,7 @@ def fit_train_likelihoods(
     }
     instances = {adapter.instance_id(inst): inst for inst in adapter.load_instances()}
     records = []
+    missing_l3 = []
     for iid in sorted(train_ids):
         row = by_train_row.get(iid)
         inst = instances.get(iid)
@@ -267,8 +268,26 @@ def fit_train_likelihoods(
                 rec[critic] = None
                 rec[f"{critic}_error"] = f"{type(exc).__name__}: {exc}"
         if include_l3:
-            rec["L3_llm_review"] = None
+            l3 = row.get("L3_llm_review")
+            if l3 not in (True, False):
+                for action in row.get("actions", []):
+                    if action.get("action") == "critic_L3" and action.get("passed") in (
+                        True,
+                        False,
+                    ):
+                        l3 = action["passed"]
+                        break
+            rec["L3_llm_review"] = l3 if l3 in (True, False) else None
+            if rec["L3_llm_review"] is None:
+                missing_l3.append(iid)
         records.append(rec)
+
+    if include_l3 and missing_l3:
+        examples = ", ".join(missing_l3[:5])
+        raise RuntimeError(
+            f"missing saved L3 train-calibration results for {len(missing_l3)} "
+            f"instances ({examples}); resume the agent with --calibrate-l3 first"
+        )
 
     table = fit_likelihood_table(records, generator)
     output_path.write_text(json.dumps(table, indent=2))
@@ -456,6 +475,16 @@ def load_verbalized_2s(path: Path) -> dict[str, dict[str, Any]]:
     return out
 
 
+def load_uhead(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
+    return {
+        (str(row.get("instance_id")), int(row.get("generation_index", 0))): {
+            "uhead_confidence": finite_or_none(row.get("uhead_confidence")),
+            "uhead_uncertainty": finite_or_none(row.get("uhead_uncertainty")),
+        }
+        for row in read_jsonl(path)
+    }
+
+
 def simulate_instance(
     result: dict[str, Any],
     actions: list[dict[str, Any]],
@@ -540,6 +569,8 @@ def simulate_instance(
         "llm_perplexity": final_stats.get("llm_perplexity"),
         "perplexity": final_stats.get("perplexity"),
         "llm_log_seq_prob": final_stats.get("llm_log_seq_prob"),
+        "uhead_confidence": final_stats.get("uhead_confidence"),
+        "uhead_uncertainty": final_stats.get("uhead_uncertainty"),
         "bayes_state": before_final_label,
         "bayes_state_before_final_label": before_final_label,
         "bayes_state_after_final_label": after_final_label,
@@ -574,6 +605,7 @@ def build_metrics(final_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ("bayes_state_after_generation", True),
         ("tool_success", True),
         ("verbalized_2s_confidence", True),
+        ("uhead_confidence", True),
     ]
     rows = []
     for name, higher_is_better in specs:
@@ -607,7 +639,12 @@ def main() -> None:
     p.add_argument("--private-test-cap", type=int, default=12)
     p.add_argument("--plus-input-cap", type=int, default=200)
     p.add_argument("--swe-harness-workers", type=int, default=1)
-    p.add_argument("--include-l3-train-likelihood", action="store_true")
+    p.add_argument(
+        "--include-l3-train-likelihood",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fit L3 from saved train-calibration reviews (default: enabled).",
+    )
     args = p.parse_args()
 
     stem = f"{args.benchmark}__{args.generator}"
@@ -626,6 +663,9 @@ def main() -> None:
     actions = [r for r in read_jsonl(root / f"{stem}.actions.jsonl") if r.get("split") == "test"]
     prior_rows = read_jsonl(root / f"{stem}.train_prior_calibration.jsonl")
     logprobs = load_logprob_stats(root / f"{stem}.generation_logprobs.jsonl")
+    uhead = load_uhead(root / f"{stem}.uhead.jsonl")
+    for key, score in uhead.items():
+        logprobs.setdefault(key, logprob_stats(None)).update(score)
     verbalized_2s = load_verbalized_2s(root / f"{stem}.verbalized_2s.jsonl")
     prior = prior_from_train(prior_rows)
     tool_success_path = args.tool_success_csv
@@ -724,6 +764,8 @@ def main() -> None:
             "instance_id": r["instance_id"],
             "llm_perplexity": r["llm_perplexity"],
             "llm_log_seq_prob": r["llm_log_seq_prob"],
+            "uhead_confidence": r["uhead_confidence"],
+            "uhead_uncertainty": r["uhead_uncertainty"],
             "bayes_state": r["bayes_state"],
             "quality": r["quality"],
             "bayes_state_after_generation": r["bayes_state_after_generation"],
@@ -778,6 +820,7 @@ def main() -> None:
         "kernel": kernel,
         "action_counts": dict(Counter(r.get("action") for r in actions)),
         "tool_success_source": str(tool_success_path) if tool_success_path else None,
+        "uhead_rows": len(uhead),
         "verbalized_2s": {
             "rows": len(verbalized_2s),
             "parsed": sum(

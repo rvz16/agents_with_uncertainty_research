@@ -211,6 +211,28 @@ section.
 
 ## Common gotchas
 
+### Post-hoc UHead scores for SAGE trajectories
+
+`scripts/score_sage_uhead.py` reconstructs the exact prompt and completion token
+IDs saved by `different_agents/v4/lcb_llm_tool_agent.py`, captures hidden states
+with vLLM, and writes one UHead score per generation to
+`<benchmark>__<generator>.uhead.jsonl`. Validate trajectory/logprob alignment
+without loading the model first:
+
+```bash
+python scripts/score_sage_uhead.py \
+    --run-root /path/to/run \
+    --benchmark lcb_hard \
+    --generator gpt_oss_20b_local \
+    --dry-run
+```
+
+The full scorer must run in the project UHead environment with `torch`,
+`transformers`, `vllm`, `lm-polygraph`, `luh`, and
+`utils.hook_hs_extension.HookHiddenStatesExtension` available. GPT-OSS uses the
+default compatible head; pass `--uhead` explicitly for Qwen or another head.
+The analysis script automatically consumes the sibling `.uhead.jsonl` file.
+
 - **Path note (post-refactor):** Old `python scripts/X.py` invocations
 are now `python -m <pkg>.<X>` (e.g. `python -m calibration.lcb`,
 `python -m iter.refine`). CLI args are unchanged.

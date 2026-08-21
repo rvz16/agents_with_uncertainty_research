@@ -24,6 +24,7 @@ METHODS = [
     ("verbalized_2s_confidence", "Verb."),
     ("tool_success", "Tool Success Rate"),
     ("bayes_state", "Bayes Belief State"),
+    ("uhead_confidence", "UHead"),
 ]
 
 DEFAULT_RUNS = {
