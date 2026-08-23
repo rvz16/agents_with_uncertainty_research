@@ -31,7 +31,7 @@
 set -euo pipefail
 
 GEN="${1:?usage: $0 <generator> <subset_ids.json> [cal_cap refine_cap spotcheck_cap]}"
-SUBSET_IN="${2:?subset ids json (flat list or {\"instance_ids\":[...]})}"
+SUBSET_IN="${2:?usage - pass the subset ids json path as arg 2}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
