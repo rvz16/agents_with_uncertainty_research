@@ -10,6 +10,9 @@ N_TRAIN="${N_TRAIN:-}"
 TRAIN_FRACTION="${TRAIN_FRACTION:-0.25}"
 SPLIT_SEED="${SPLIT_SEED:-42}"
 PRIOR_PATCHES="${PRIOR_PATCHES:-1}"
+# Length of the sequential refinement chain on the train split used to measure
+# the transition kernel. 0 keeps the uncalibrated placeholder {0.50, 0.05}.
+KERNEL_CHAIN="${KERNEL_CHAIN:-0}"
 LCB_PLATFORM="${LCB_PLATFORM:-leetcode}"
 LCB_VERSION="${LCB_VERSION:-all}"
 PRIVATE_TEST_CAP="${PRIVATE_TEST_CAP:-12}"
@@ -57,6 +60,9 @@ run_one() {
     --split-seed "${SPLIT_SEED}" \
     "${train_args[@]}" \
     --prior-patches "${PRIOR_PATCHES}" \
+    --kernel-calibration-chain "${KERNEL_CHAIN}" \
+    --kernel-calibration-output "${RUN_ROOT}/${stem}.train_kernel_calibration.jsonl" \
+    --kernel-output "${RUN_ROOT}/${stem}.kernel.json" \
     --platform "${LCB_PLATFORM}" \
     --lcb-version "${LCB_VERSION}" \
     --private-test-cap "${PRIVATE_TEST_CAP}" \
@@ -82,6 +88,14 @@ run_one() {
     python -m code_uq.analysis.summarize_tool_action_success \
       "${output}" \
       --per-instance-csv "${readable}/tool_success_by_instance.csv"
+    local kernel_args=()
+    if [[ "${KERNEL_CHAIN}" != "0" && -f "${RUN_ROOT}/${stem}.kernel.json" ]]; then
+      kernel_args=(--kernel "${RUN_ROOT}/${stem}.kernel.json")
+    else
+      echo "[run_code_uq] WARNING: no measured kernel for ${stem}; the belief state"
+      echo "[run_code_uq]          will use the uncalibrated placeholder {0.50, 0.05}."
+      echo "[run_code_uq]          Set KERNEL_CHAIN=3 to measure it on the train split."
+    fi
     python -m code_uq.analysis.analyze_lcb_llm_tool_agent_logs \
       --run-root "${RUN_ROOT}" \
       --benchmark "${bench}" \
@@ -93,7 +107,8 @@ run_one() {
       --lcb-version "${LCB_VERSION}" \
       --private-test-cap "${PRIVATE_TEST_CAP}" \
       --plus-input-cap "${PLUS_INPUT_CAP}" \
-      --swe-harness-workers "${SWE_HARNESS_WORKERS}"
+      --swe-harness-workers "${SWE_HARNESS_WORKERS}" \
+      ${kernel_args[@]+"${kernel_args[@]}"}
   fi
 }
 

@@ -22,6 +22,9 @@ import re
 import sys
 import threading
 import time
+import logging
+
+log = logging.getLogger("code_uq.agent")
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -1794,6 +1797,188 @@ def calibrate_prior(
     return summary
 
 
+def calibrate_kernel(
+    *,
+    train_instances: list[dict[str, Any]],
+    benchmark: str,
+    deps: AgentDeps,
+    chain_length: int,
+    output_path: Path,
+    actions_output_path: Path | None,
+    resume: bool,
+    print_each: bool,
+    workers: int = 1,
+) -> dict[str, Any]:
+    """Measure the transition kernel on the TRAIN split.
+
+    The kernel describes what a regeneration does to correctness:
+        p_fix_broken    = P(Y_{t+1}=1 | Y_t=0)
+        p_break_correct = P(Y_{t+1}=0 | Y_t=1)
+
+    Until now no run ever passed ``--kernel``, so the belief state used the
+    placeholder {0.50, 0.05} marked "initial uninformative" in the sources. Its
+    fixed point is 0.909, so it dragged every belief toward 0.91 on each
+    generation regardless of evidence.
+
+    Two properties make this a separate pass rather than a by-product of the
+    main loop:
+
+    * The chain must be **sequential**. ``calibrate_prior`` draws its patches
+      i.i.d. from the same prompt, which measures a base rate, not a
+      transition; here patch k+1 is regenerated from patch k's candidate and
+      its verifier verdict, which is what the kernel is about.
+    * The chain must **not stop at the first success**. p_break_correct is only
+      observable when a correct candidate is followed by another attempt, and
+      the main loop terminates there — which is exactly why that constant was
+      never measurable from run logs.
+
+    Runs on the train split only, so the verifier calls here never touch the
+    instances the belief is later scored on.
+    """
+    from code_uq.common.kernel import compute_transition_kernel_from_pairs
+
+    existing_rows = load_prior_rows(output_path) if resume else []
+    done = {
+        (str(row.get("instance_id")), int(row.get("patch_id", 0)))
+        for row in existing_rows
+        if row.get("instance_id") is not None
+    }
+    rows = list(existing_rows)
+    n_instances = len(train_instances)
+    progress_lock = threading.Lock()
+    completed_now = 0
+
+    def chain_one(instance: dict[str, Any]) -> list[dict[str, Any]]:
+        nonlocal completed_now
+        inst_id = deps.adapter.instance_id(instance)
+        produced: list[dict[str, Any]] = []
+        previous: Any = None
+        action_log: list[dict[str, Any]] = []
+        # A chain cannot be resumed from the middle: skipping a finished patch
+        # would leave `previous` unset and the next one would be generated with
+        # no feedback, so the recorded pair would link two independent draws
+        # rather than a transition. Either the whole chain is already on disk,
+        # or it is redone; pair extraction keeps the last row per patch.
+        if all((inst_id, k) in done for k in range(chain_length)):
+            return produced
+        for patch_id in range(chain_length):
+            started = time.perf_counter()
+            prompt = deps.adapter.build_prompt(instance, previous, action_log)
+            try:
+                raw, pt, ct, cost, _lp = _chat(
+                    deps,
+                    [{"role": "user", "content": prompt}],
+                    temperature=deps.generation_temperature,
+                    max_tokens=deps.max_tokens_generation,
+                )
+            except ContextOverflowError as exc:
+                log.warning("[kernel] %s p%d: context overflow, chain stops", inst_id, patch_id)
+                break
+            candidate = deps.adapter.extract_candidate(instance, raw)
+            run_id = safe_stem(f"{benchmark}__kernel__{inst_id}__p{patch_id}", 180)
+            verify = deps.adapter.verify(instance, candidate, run_id)
+            wall_s = time.perf_counter() - started
+            passed = bool(verify.passed) if verify.available else None
+            actions = [
+                {
+                    "step": 2 * patch_id,
+                    "action": "generate",
+                    "observation": f"generated {len(candidate.payload)} chars",
+                    "candidate_chars": len(candidate.payload),
+                    "prompt_tokens": pt,
+                    "completion_tokens": ct,
+                    "api_cost_usd": cost,
+                },
+                {
+                    "step": 2 * patch_id + 1,
+                    "action": "verify",
+                    "passed": passed,
+                    "detail": verify.detail,
+                    "observation": verify.detail,
+                    "verifier_available": verify.available,
+                },
+            ]
+            row = {
+                "split": "train_kernel_calibration",
+                "benchmark": benchmark,
+                "instance_id": inst_id,
+                "patch_id": patch_id,
+                "model_id": deps.model_id,
+                "passed": passed,
+                "label_available": verify.available,
+                "detail": verify.detail,
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
+                "api_cost_usd": cost,
+                "wall_clock_s": round(wall_s, 4),
+                "actions": actions,
+                "code": candidate.payload[: deps.max_code_chars],
+            }
+            append_jsonl(output_path, row)
+            append_actions(
+                actions_output_path,
+                split="train_kernel_calibration",
+                benchmark=benchmark,
+                instance_id=inst_id,
+                model_id=deps.model_id,
+                actions=actions,
+                extra={"patch_id": patch_id},
+            )
+            produced.append(row)
+            # The next attempt sees this candidate and its verdict. The chain
+            # continues even on success, so transitions out of the correct
+            # state are observable.
+            previous = candidate
+            action_log = [{"action": "verify", "passed": passed, "detail": verify.detail}]
+            if print_each:
+                print(f"[kernel {inst_id} p{patch_id}] passed={passed} detail={verify.detail}")
+        with progress_lock:
+            completed_now += 1
+            if print_each:
+                print(f"[kernel] chain {completed_now}/{n_instances} done ({inst_id})")
+        return produced
+
+    def chain_one_guarded(instance: dict[str, Any]) -> list[dict[str, Any]]:
+        try:
+            return chain_one(instance)
+        except Exception:
+            log.exception("[kernel] instance %s failed; skipping it",
+                          deps.adapter.instance_id(instance))
+            return []
+
+    if workers > 1 and len(train_instances) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            produced = list(pool.map(chain_one_guarded, train_instances))
+    else:
+        produced = [chain_one_guarded(inst) for inst in train_instances]
+    for batch in produced:
+        rows.extend(batch)
+
+    # Last row wins per (instance, patch): a redone chain appends rather than
+    # rewrites, and counting both copies would invent transitions.
+    latest: dict[tuple[str, int], int] = {}
+    for row in rows:
+        if row.get("passed") is None:
+            continue
+        latest[(str(row["instance_id"]), int(row.get("patch_id", 0)))] = int(bool(row["passed"]))
+    by_instance: dict[str, list[tuple[int, int]]] = {}
+    for (inst, patch), passed in latest.items():
+        by_instance.setdefault(inst, []).append((patch, passed))
+    pairs: list[tuple[int, int]] = []
+    for seq in by_instance.values():
+        ordered = [y for _, y in sorted(seq)]
+        pairs.extend(zip(ordered, ordered[1:]))
+
+    kernel = compute_transition_kernel_from_pairs(pairs)
+    return {
+        "kernel_all": kernel,
+        "n_pairs": len(pairs),
+        "n_instances": len(by_instance),
+        "chain_length": chain_length,
+        "kernel_calibration_output": str(output_path),
+    }
+
+
 def initial_state(
     *,
     instance: dict[str, Any],
@@ -2001,6 +2186,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--train-fraction", type=float, default=0.5)
     p.add_argument("--n-train", type=int, default=None)
     p.add_argument("--prior-patches", type=int, default=1)
+    p.add_argument(
+        "--kernel-calibration-chain",
+        type=int,
+        default=0,
+        help=(
+            "Length of the sequential refinement chain run on the TRAIN split to "
+            "measure the transition kernel. 0 disables it and the belief keeps the "
+            "uncalibrated placeholder {0.50, 0.05}. 3 is the smallest chain that "
+            "yields two transitions per instance."
+        ),
+    )
+    p.add_argument("--kernel-calibration-output", type=Path, default=None)
+    p.add_argument("--kernel-output", type=Path, default=None,
+                   help="Where to write the measured kernel; pass this file to the "
+                        "analyzer as --kernel.")
     p.add_argument("--skip-prior-calibration", action="store_true")
     p.add_argument("--platform", default="leetcode", choices=["leetcode", "atcoder", "codeforces", "all"])
     p.add_argument("--lcb-version", default="all", choices=["v1", "all"])
@@ -2383,6 +2583,53 @@ def main() -> None:
             print_each=args.print_each,
             workers=args.workers,
         )
+    # --- transition kernel, measured on the train split -----------------
+    # Without this the belief state runs on the placeholder {0.50, 0.05},
+    # whose fixed point is 0.909: it pulls every belief toward 0.91 on each
+    # generation no matter what the critics said.
+    if args.kernel_calibration_chain > 0:
+        # `.with_suffix` would eat the ".train_prior_calibration" part of the name
+        # and land on the test results file, so the marker is swapped in the full
+        # name instead. The guard covers a hand-passed path too: appending
+        # calibration rows there would feed train episodes to the analyzer as if
+        # they were test ones.
+        kernel_rows_path = args.kernel_calibration_output or (
+            args.prior_calibration_output.with_name(
+                args.prior_calibration_output.name.replace(
+                    "train_prior_calibration", "train_kernel_calibration"
+                )
+            )
+        )
+        if kernel_rows_path.resolve() == Path(args.output).resolve():
+            raise SystemExit(
+                "--kernel-calibration-output points at the test results file "
+                f"({args.output}); calibration rows must go to their own file"
+            )
+        kernel_summary = calibrate_kernel(
+            train_instances=train_instances,
+            benchmark=benchmark,
+            deps=deps,
+            chain_length=args.kernel_calibration_chain,
+            output_path=kernel_rows_path,
+            actions_output_path=args.actions_output,
+            resume=args.resume,
+            print_each=args.print_each,
+            workers=args.workers,
+        )
+        kernel_path = args.kernel_output or kernel_rows_path.with_name(
+            kernel_rows_path.stem + ".kernel.json"
+        )
+        kernel_path.parent.mkdir(parents=True, exist_ok=True)
+        kernel_path.write_text(json.dumps(kernel_summary, indent=2))
+        k_all = kernel_summary["kernel_all"]
+        print(
+            f"[kernel] measured on {kernel_summary['n_instances']} train instances, "
+            f"{kernel_summary['n_pairs']} transitions: "
+            f"p_fix_broken={k_all['P_fix_given_broken']:.3f} "
+            f"p_break_correct={k_all['P_break_given_correct']:.3f} "
+            f"-> {kernel_path}"
+        )
+        prior_summary["kernel_output"] = str(kernel_path)
 
     graph = build_agent_graph(deps) if args.agent_backend == "langgraph" else None
 
