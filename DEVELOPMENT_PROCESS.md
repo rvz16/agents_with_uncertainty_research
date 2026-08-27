@@ -811,3 +811,32 @@ Either outcome strengthens the paper. The headline finding from running
   and reviewable. Worth a follow-up PR if the SWE_HEAVY analysis lands
   well.
 
+---
+
+## 2026-08-22 — SWE-Bench Verified expansion 200 → 489 (per-generator runner)
+
+**Problem.** SWE-Bench Verified cells were calibrated on the stratified
+200-instance subset (`verified_200_instance_ids.json`) for sonnet45,
+qwen3_coder, and haiku45; gpt5_mini's Verified runs are broken (~12% resolve,
+vs 74% on the old 27-instance smoke run). Expanding to the full 489-instance
+working pool (500 − 11 build-errored) can't reuse `run_swebench_pipeline.sh`:
+it runs Lite+Verified end-to-end, and `refine_swe.py` is not per-instance
+resume-safe, so it would re-run and clobber the finished Lite baselines.
+
+**Change.** Artifacts under `experiments/orchestration_hypothesis_testing/`:
+
+- **`scripts_pipeline/run_verified_expand.sh <gen> <subset.json>`** — Verified-only
+  incremental runner: Cal → from_spotcheck → SR → eval → backfill → Rfx → eval
+  → backfill, scoped via `--instance-ids-file`, writing to fresh `*_exp` dirs so
+  the existing 200-instance `*_full` cells are untouched (merged offline after).
+  Per-generator cost caps; `MAX_REFINE_WORKERS=8` default (PR #12).
+- **`data/swebench_verified_calibration_full/verified_missing_289.json`** (289
+  ids, shared by sonnet45/qwen3_coder/haiku45 — all three used the same
+  stratified subset) and **`verified_gpt5_mini_missing_489.json`** (489 ids,
+  gpt5_mini full clean run).
+
+Done-sets verified from cluster disk (Artem-1) and W&B calibration artifacts.
+See `scripts_pipeline/README_verified_expansion.md` for the run + merge recipe
+and the who-runs-what split (Vlad: sonnet45 + qwen3_coder; Viktor: haiku45 +
+gpt5_mini).
+
