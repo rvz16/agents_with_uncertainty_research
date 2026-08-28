@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Create and enqueue a ClearML task for a SAGE uncertainty run.
+
+    python create_task.py --benchmarks lcb_hard --smoke
+    python create_task.py --benchmarks codecontests
+
+The agent clones this repo/branch itself, so the branch has to be pushed first.
+Queue notes (checked 2026-08-27): high_q_80 -> aiagent01:gpu0/gpu1, aiagent02:gpu0;
+high_q_2xA100_80 -> aiagent02:gpu1,2. aiagent01:gpu0 pulls tasks and then dies with
+"No CUDA GPUs are available"; aiagent03 (high_q / sience) strips --entrypoint=, so
+the vLLM image runs its own entrypoint and the task fails immediately.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+
+from clearml import Task
+
+REPO = "https://github.com/rvz16/agents_with_uncertainty_research.git"
+DOCKER_IMAGE = "vllm/vllm-openai:v0.12.0"
+# --entrypoint= : the image's entrypoint is `vllm`; clear it so ClearML runs python.
+# --network=host: the client reaches the in-container endpoint on 127.0.0.1.
+DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g"
+SETUP = """
+df -h /
+apt-get update -qq --allow-insecure-repositories || true
+apt-get install -y -qq --no-install-recommends git curl || true
+nvidia-smi || echo "no nvidia-smi"
+"""
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--project", default="agentic-uq")
+    p.add_argument("--name", default=None, help="defaults to 'sage-uq <benchmarks>'")
+    p.add_argument("--queue", default="high_q_2xA100_80")
+    p.add_argument("--branch", default="joint_exps_clearml")
+    p.add_argument("--benchmarks", default="lcb_hard")
+    p.add_argument("--n-instances", type=int, default=0, help="0 = all")
+    p.add_argument("--max-verifications", type=int, default=0,
+                   help="0 keeps the belief free of the oracle; see JOINT_RUN_CONFIG.md")
+    p.add_argument("--smoke", action="store_true", help="6 instances, end-to-end check")
+    a = p.parse_args()
+
+    docker_args = DOCKER_ARGS
+    if key := os.environ.get("OPENROUTER_API_KEY", ""):
+        docker_args += f" -e OPENROUTER_API_KEY={key}"
+        print("OPENROUTER_API_KEY: injected (L3 critic enabled)")
+    else:
+        print("WARNING: OPENROUTER_API_KEY unset -> the L3 critic will be skipped")
+
+    task = Task.create(
+        project_name=a.project,
+        task_name=a.name or f"sage-uq {a.benchmarks}",
+        repo=REPO,
+        branch=a.branch,
+        script="experiments/orchestration_hypothesis_testing/scripts/clearml/entry.py",
+        docker=f"{DOCKER_IMAGE} {docker_args}",
+        docker_bash_setup_script=SETUP,
+        packages=["clearml"],
+    )
+    params = {
+        "Args/BENCHMARKS": a.benchmarks,
+        "Args/N_INSTANCES": "6" if a.smoke else str(a.n_instances),
+        "Args/MAX_VERIFICATIONS": str(a.max_verifications),
+    }
+    task.set_parameters(params)
+    print(f"Created task {task.id}")
+    for k, v in params.items():
+        print(f"  {k}={v}")
+    Task.enqueue(task, queue_name=a.queue)
+    print(f"Enqueued to '{a.queue}'")
+
+
+if __name__ == "__main__":
+    main()
