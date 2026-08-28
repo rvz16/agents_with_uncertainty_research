@@ -56,6 +56,10 @@ export RUN_ROOT="${RUN_ROOT:-${REPO_DIR}/runs/sage_uq/${GENERATOR_KEY}}"
 # varies are surfaced here.
 export BENCHMARKS="${BENCHMARKS:-lcb_hard}"
 export N_INSTANCES="${N_INSTANCES:-0}"
+# The analysis step refits the critic likelihoods on the train split and needs
+# L3 verdicts there, which the generation pass does not produce on its own:
+#   RuntimeError: missing saved L3 train-calibration results for N instances
+export CALIBRATE_L3="${CALIBRATE_L3:-1}"
 
 echo "[wrapper] BENCHMARKS=${BENCHMARKS} N_INSTANCES=${N_INSTANCES}"
 echo "[wrapper] MAX_VERIFICATIONS=${MAX_VERIFICATIONS:-<script default: 0>}"

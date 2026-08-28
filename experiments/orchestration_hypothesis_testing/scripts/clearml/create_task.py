@@ -39,8 +39,9 @@ def main() -> None:
     p.add_argument("--branch", default="joint_exps_clearml")
     p.add_argument("--benchmarks", default="lcb_hard")
     p.add_argument("--n-instances", type=int, default=0, help="0 = all")
-    p.add_argument("--max-verifications", type=int, default=0,
-                   help="0 keeps the belief free of the oracle; see JOINT_RUN_CONFIG.md")
+    p.add_argument("--max-verifications", type=int, default=1,
+                   help="budget for the TERMINAL verification; 0 skips it and the run "
+                        "produces no labels at all. See JOINT_RUN_CONFIG.md")
     p.add_argument("--smoke", action="store_true", help="6 instances, end-to-end check")
     a = p.parse_args()
 
