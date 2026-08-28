@@ -5,7 +5,10 @@ Artifacts go to the ClearML File Store rather than the s3 bucket: the bucket
 (api.blackhole2.../clearml-example) is full and returns XMinioStorageFull, which
 surfaces only after the run finishes — losing hours of GPU time at the last step.
 """
-from __future__ import annotations
+
+# No `from __future__ import annotations` here: ClearML prepends its own code
+# to the entry script before running it, which makes the __future__ import stop
+# being the first statement and the task dies with SyntaxError.
 
 import os
 import subprocess
