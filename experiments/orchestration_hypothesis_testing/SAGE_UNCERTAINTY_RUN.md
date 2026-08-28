@@ -102,6 +102,8 @@ python different_agents/v4/lcb_llm_tool_agent.py \
   --n-instances 0 \
   --train-fraction 0.25 \
   --prior-patches 1 \
+  --private-test-cap 0 \
+  --max-tokens-decision 4096 \
   --max-steps 20 \
   --max-generations 5 \
   --agent-backend sage \
