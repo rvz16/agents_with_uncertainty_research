@@ -299,7 +299,7 @@ class CodeContestsAdapter:
     seed: int
 
     def load_instances(self) -> list[dict]:
-        from codecontests_calibrate import load_codecontests
+        from calibration.codecontests import load_codecontests
 
         return load_codecontests(self.n_instances, seed=self.seed)
 
@@ -312,17 +312,17 @@ class CodeContestsAdapter:
         previous: Candidate | None,
         action_log: list[dict[str, Any]],
     ) -> str:
-        from codecontests_calibrate import build_prompt
+        from calibration.codecontests import build_prompt
 
         return build_prompt(instance) + feedback_block(previous, action_log)
 
     def extract_candidate(self, instance: dict, response_text: str) -> Candidate:
-        from lcb_calibrate import extract_code
+        from calibration.lcb import extract_code
 
         return Candidate(payload=extract_code(response_text), raw_text=response_text, kind="code")
 
     def _public_tests(self, instance: dict) -> tuple[list, list]:
-        from codecontests_calibrate import PUBLIC_TEST_CAP
+        from calibration.codecontests import PUBLIC_TEST_CAP
 
         tests = instance.get("public_tests") or {}
         return (
@@ -331,7 +331,7 @@ class CodeContestsAdapter:
         )
 
     def _oracle_tests(self, instance: dict) -> tuple[list, list]:
-        from codecontests_calibrate import ORACLE_TEST_CAP
+        from calibration.codecontests import ORACLE_TEST_CAP
 
         public_in, public_out = self._public_tests(instance)
         private = instance.get("private_tests") or {}
@@ -341,8 +341,8 @@ class CodeContestsAdapter:
         return inputs[:ORACLE_TEST_CAP], outputs[:ORACLE_TEST_CAP]
 
     def run_critic(self, critic: str, instance: dict, candidate: Candidate, reviewer_client) -> CriticResult:
-        from codecontests_calibrate import run_stdio_tests
-        from lcb_calibrate import critic_L0_syntax, critic_L1_lint
+        from calibration.codecontests import run_stdio_tests
+        from calibration.lcb import critic_L0_syntax, critic_L1_lint
 
         code = candidate.payload
         if critic == "L0":
@@ -358,7 +358,7 @@ class CodeContestsAdapter:
         raise ValueError(f"unknown critic: {critic}")
 
     def verify(self, instance: dict, candidate: Candidate, run_id: str) -> VerifyResult:
-        from codecontests_calibrate import run_stdio_tests
+        from calibration.codecontests import run_stdio_tests
 
         inputs, outputs = self._oracle_tests(instance)
         passed, total = run_stdio_tests(candidate.payload, inputs, outputs)
