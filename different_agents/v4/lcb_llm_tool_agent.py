@@ -15,6 +15,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import random
@@ -476,7 +477,16 @@ def _trajectory_brief(trajectory: list[dict[str, Any]]) -> str:
     if not trajectory:
         return "No actions yet."
     rows = []
-    for item in trajectory[-10:]:
+    inferred_version = 0
+    versioned_items = []
+    for item in trajectory:
+        action = item.get("action")
+        if action == "generate" and not item.get("skipped"):
+            inferred_version += 1
+        versioned_items.append(
+            (item, int(item.get("candidate_version", inferred_version) or 0))
+        )
+    for item, candidate_version in versioned_items[-10:]:
         action = item.get("action")
         status = ""
         if "passed" in item:
@@ -484,7 +494,8 @@ def _trajectory_brief(trajectory: list[dict[str, Any]]) -> str:
         obs = str(item.get("observation") or item.get("detail") or "")[:300]
         reasoning = str(item.get("reasoning") or "")[:200]
         rows.append(
-            f"- step={item.get('step')} action={action}{status} "
+            f"- step={item.get('step')} candidate=v{candidate_version} "
+            f"action={action}{status} "
             f"reason={reasoning!r} observation={obs!r}"
         )
     return "\n".join(rows)
@@ -639,14 +650,21 @@ critic_L2: public example tests
 critic_L3: paid LLM semantic review
 finish: return the current candidate without observing the hidden-test result
 
-Return exactly one compact JSON object and nothing else:
-{{"action":"{action_choices}","reasoning":"short reason"}}
+Reason briefly first, then choose the action. Return exactly one compact JSON
+object with the keys in this order and nothing else:
+{{"reasoning":"short reason, at most two sentences","action":"{action_choices}"}}
 
 State:
 candidate_exists: {bool(candidate_chars)}
 candidate_chars: {candidate_chars}
+current_candidate_version: v{int(state.get("n_generations", 0))}
 budget_remaining: {json.dumps(remaining)}
 critics_already_used_for_current_candidate: {sorted(_used_critic_actions(state))}
+
+Critic evidence is version-specific. A critic result applies only to the
+candidate version shown on that trajectory row. After generate creates a new
+version, do not treat critic failures from an older version as evidence against
+the current candidate.
 
 Recent trajectory:
 {_trajectory_brief(state.get("trajectory", []))}
@@ -658,7 +676,8 @@ def _decision_messages(state: AgentState) -> list[dict[str, str]]:
         {
             "role": "system",
             "content": (
-                "You are a tool-routing controller. Return only valid JSON. "
+                "You are a tool-routing controller. Return only valid JSON with "
+                "reasoning first and action second. "
                 "Never solve the coding problem. Never output code."
             ),
         },
@@ -817,11 +836,15 @@ def _record(
     observation: str = "",
     **extra: Any,
 ) -> list[dict[str, Any]]:
+    candidate_version = int(state.get("n_generations", 0))
+    if action == "generate" and not extra.get("skipped"):
+        candidate_version += 1
     row = {
         "step": state.get("step", 0),
+        "candidate_version": candidate_version,
         "action": action,
         "reasoning": reasoning,
-        "decision_raw": str(state.get("decision_raw") or "")[:2000],
+        "decision_raw": str(state.get("decision_raw") or "")[:16000],
         "observation": observation,
     }
     row.update(extra)
@@ -866,6 +889,7 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 temperature=deps.generation_temperature,
                 max_tokens=deps.max_tokens_generation,
                 include_logprobs=deps.save_generation_logprobs,
+                content_only=True,
             )
         except ContextOverflowError as exc:
             return {
@@ -888,6 +912,21 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                 "generation logprobs were requested but the model endpoint "
                 "returned no logprobs"
             )
+        if not raw.strip():
+            return {
+                **_merge_usage(state, pt, ct, cost),
+                "step": step_next,
+                "trajectory": _record(
+                    state,
+                    action=action,
+                    reasoning=reasoning,
+                    observation="skipped: generation returned no answer content",
+                    skipped=True,
+                    prompt_tokens=pt,
+                    completion_tokens=ct,
+                    api_cost_usd=cost,
+                ),
+            }
         new_candidate = deps.adapter.extract_candidate(state["instance"], raw)
         logprobs_saved = False
         generation_index = int(state.get("n_generations", 0))
@@ -995,6 +1034,9 @@ def execute_action_node(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
                     detail=result.detail,
                     wall_clock_s=round(elapsed, 4),
                     api_cost_usd=result.api_cost_usd,
+                    prompt_tokens=result.prompt_tokens,
+                    completion_tokens=result.completion_tokens,
+                    critic_raw_response=result.raw_response,
                 ),
             }
         except Exception as exc:
@@ -1758,17 +1800,49 @@ def maybe_final_verify(state: AgentState, deps: AgentDeps) -> AgentState:
 
 
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    payload = (json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8")
+    transient_errnos = {errno.EIO, errno.ESTALE, errno.ENOTCONN}
+    for attempt in range(8):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "ab") as f:
+                f.write(payload)
+            return
+        except OSError as exc:
+            if exc.errno not in transient_errnos or attempt == 7:
+                raise
+            delay_s = min(30, 2**attempt)
+            print(
+                f"[WARN] transient write error for {path}: {exc}; "
+                f"retrying in {delay_s}s ({attempt + 1}/8)",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(delay_s)
 
 
 def write_jsonl_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    os.replace(tmp, path)
+    tmp = path.with_suffix(f"{path.suffix}.{os.getpid()}.tmp")
+    transient_errnos = {errno.EIO, errno.ESTALE, errno.ENOTCONN}
+    for attempt in range(8):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, "w") as f:
+                for row in rows:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            os.replace(tmp, path)
+            return
+        except OSError as exc:
+            if exc.errno not in transient_errnos or attempt == 7:
+                raise
+            delay_s = min(30, 2**attempt)
+            print(
+                f"[WARN] transient atomic-write error for {path}: {exc}; "
+                f"retrying in {delay_s}s ({attempt + 1}/8)",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(delay_s)
 
 
 def parse_args() -> argparse.Namespace:
@@ -1824,7 +1898,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--decision-temperature", type=float, default=0.2)
     p.add_argument("--generation-temperature", type=float, default=0.7)
-    p.add_argument("--max-tokens-decision", type=int, default=128)
+    p.add_argument("--max-tokens-decision", type=int, default=4096)
     p.add_argument("--max-tokens-generation", type=int, default=4000)
     p.add_argument("--max-code-chars", type=int, default=131072)
     p.add_argument(

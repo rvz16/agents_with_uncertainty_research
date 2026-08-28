@@ -36,6 +36,7 @@ class CriticResult:
     api_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    raw_response: str = ""
 
 
 @dataclass
@@ -140,4 +141,3 @@ def load_jsonl_keys(path: Path) -> set[tuple[str, str]]:
         if inst and pol:
             keys.add((str(inst), str(pol)))
     return keys
-
