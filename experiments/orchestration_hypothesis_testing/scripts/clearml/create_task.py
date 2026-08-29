@@ -42,15 +42,24 @@ def main() -> None:
     p.add_argument("--max-verifications", type=int, default=1,
                    help="budget for the TERMINAL verification; 0 skips it and the run "
                         "produces no labels at all. See JOINT_RUN_CONFIG.md")
+    p.add_argument("--l3-model", default=None,
+                   help="reviewer model for the L3 critic; default anthropic/claude-haiku-4.5")
+    p.add_argument("--calibrate-l3", type=int, default=1, choices=[0, 1],
+                   help="0 lets the analysis finish when the reviewer is unavailable")
     p.add_argument("--smoke", action="store_true", help="6 instances, end-to-end check")
     a = p.parse_args()
 
     docker_args = DOCKER_ARGS
     if key := os.environ.get("OPENROUTER_API_KEY", ""):
+        # The agent echoes the whole docker command into the task console, so the
+        # key ends up readable by anyone with access to the task.
         docker_args += f" -e OPENROUTER_API_KEY={key}"
         print("OPENROUTER_API_KEY: injected (L3 critic enabled)")
     else:
         print("WARNING: OPENROUTER_API_KEY unset -> the L3 critic will be skipped")
+    if a.l3_model:
+        docker_args += f" -e L3_REVIEW_MODEL={a.l3_model}"
+        print(f"L3 reviewer model: {a.l3_model}")
 
     task = Task.create(
         project_name=a.project,
@@ -66,6 +75,7 @@ def main() -> None:
         "Args/BENCHMARKS": a.benchmarks,
         "Args/N_INSTANCES": "6" if a.smoke else str(a.n_instances),
         "Args/MAX_VERIFICATIONS": str(a.max_verifications),
+        "Args/CALIBRATE_L3": str(a.calibrate_l3),
     }
     task.set_parameters(params)
     print(f"Created task {task.id}")

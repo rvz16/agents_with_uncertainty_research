@@ -20,6 +20,27 @@ PORT="${VLLM_PORT:-8010}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 VLLM_LOG="${VLLM_LOG:-${REPO_DIR}/vllm_serve.log}"
 
+# Preflight the reviewer before spending ~8 min loading the model. A dead or
+# restricted key surfaces only as `critic_L3 0/N success_rate=0.000` hours later,
+# and httpx logs the status line without the body, so the reason is invisible.
+# The body is printed here; the key never is.
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  echo "[wrapper] preflight: OpenRouter reviewer (${L3_REVIEW_MODEL:-anthropic/claude-haiku-4.5})"
+  code=$(curl -s -o /tmp/l3_preflight.json -w '%{http_code}' \
+    https://openrouter.ai/api/v1/chat/completions \
+    -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\":\"${L3_REVIEW_MODEL:-anthropic/claude-haiku-4.5}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":8}" || echo 000)
+  echo "[wrapper] preflight HTTP ${code}"
+  if [ "${code}" != "200" ]; then
+    echo "[wrapper] preflight body:"; head -c 800 /tmp/l3_preflight.json; echo
+    echo "[wrapper] WARNING: the L3 critic will return None for every candidate."
+    echo "[wrapper]          Set CALIBRATE_L3=0 to let the analysis finish without it."
+  fi
+else
+  echo "[wrapper] OPENROUTER_API_KEY unset -> L3 disabled"
+fi
+
 echo "[wrapper] installing deps (vllm/torch already in the image)"
 python -m pip install --no-cache-dir -e '.[langgraph,openrouter]' >/dev/null
 python -m pip install --no-cache-dir \

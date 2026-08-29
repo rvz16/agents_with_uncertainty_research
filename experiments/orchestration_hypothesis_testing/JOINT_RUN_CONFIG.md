@@ -103,6 +103,16 @@ Note the key is passed as a docker `-e` argument and the agent echoes the full
 docker command into the task console, where it is readable by anyone with access
 to the task.
 
+The container wrapper preflights the reviewer before loading the model and prints
+the response body on a non-200, so the reason is visible in the first minute
+rather than inferred from `critic_L3 0/N` hours later. If the reviewer is
+unavailable, `--calibrate-l3 0` lets the analysis finish on L0+L2;
+`--l3-model` swaps the reviewer without touching the code.
+
+A key that works from a laptop can still fail from the cluster: the same key,
+endpoint and model returned 200 locally and 403 from the CSCS agent, so treat the
+preflight body as the authority.
+
 ## L1 is not part of this branch's belief
 
 `ACTION_SPACE` has no `critic_L1`, so the lint channel never enters the belief
