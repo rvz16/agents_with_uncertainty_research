@@ -96,6 +96,9 @@ export CALIBRATE_L3="${CALIBRATE_L3:-1}"
 if [ "${L3_LOCAL:-0}" = "1" ]; then
   export REVIEWER_BASE_URL="http://127.0.0.1:${PORT}/v1"
   export L3_REVIEW_MODEL="${MODEL}"
+  # A reasoning reviewer needs room to deliberate before emitting the verdict;
+  # at the built-in 4096 it never gets there and the review is unparseable.
+  export L3_MAX_TOKENS="${L3_MAX_TOKENS:-32768}"
   echo "[wrapper] L3 reviewer: LOCAL self-review (${MODEL}) — not an independent judge"
 fi
 

@@ -117,18 +117,14 @@ RuntimeError: missing saved L3 train-calibration results for 2 instances
 (2921, 3682); resume the agent with --calibrate-l3 first
 ```
 
-<<<<<<< HEAD
 So a run that reaches analysis needs `--calibrate-l3` in the generation command.
-=======
 So a run that reaches analysis needs `--calibrate-l3` in the generation command;
 the run script passes it whenever `CALIBRATE_L3=1`, which is the default.
->>>>>>> joint_exps
 
 Note the key is passed as a docker `-e` argument and the agent echoes the full
 docker command into the task console, where it is readable by anyone with access
 to the task.
 
-<<<<<<< HEAD
 The container wrapper preflights the reviewer before loading the model and prints
 the response body on a non-200, so the reason is visible in the first minute
 rather than inferred from `critic_L3 0/N` hours later. If the reviewer is
@@ -136,7 +132,6 @@ unavailable, `--calibrate-l3 0` lets the analysis finish on L0+L2;
 `--l3-model` swaps the reviewer without touching the code.
 
 The cluster blocks the reviewer outright. The preflight from a CSCS agent returns
-=======
 Before a long run, ping the reviewer yourself — a dead or blocked key otherwise
 surfaces only as `critic_L3 0/N success_rate=0.000` with `cost=$0.0000` hours
 later, because httpx logs the status line without the body:
@@ -149,13 +144,11 @@ curl -s -w '\nHTTP %{http_code}\n' https://openrouter.ai/api/v1/chat/completions
 
 A key that works from a laptop can still fail from a cluster. From the CSCS
 agents the same key, endpoint and model return
->>>>>>> joint_exps
 
 ```json
 { "success": false, "error": "Access denied by security policy." }
 ```
 
-<<<<<<< HEAD
 which is not OpenRouter's error shape — that is the egress filter answering, with
 the same key that returns 200 from a laptop. Three ways out, in order of how much
 they cost the experiment:
@@ -167,7 +160,6 @@ they cost the experiment:
    never pool them with OpenRouter-reviewed ones;
 3. `--calibrate-l3 0` — no L3 at all; the belief is built from L0 and L2, which
    is what our three earlier runs used.
-=======
 which is not OpenRouter's error shape — that is an egress filter answering, not
 the API, so no key or account change fixes it. Three ways out, in order of how
 much they cost the experiment:
@@ -190,7 +182,6 @@ and never reached the JSON verdict, so 4 of 11 reviews came back
 is fatal, since the analyzer refuses to fit likelihoods when any train instance
 lacks a verdict. `L3_MAX_TOKENS=32768` gives it room. This is the same failure
 as the generation ceiling above, in a different place.
->>>>>>> joint_exps
 
 ## L1 is not part of this branch's belief
 
