@@ -2089,7 +2089,13 @@ def main() -> None:
     reviewer_base_url = os.environ.get("REVIEWER_BASE_URL", "").strip()
     if reviewer_base_url:
         from openai import OpenAI
-        reviewer_client = OpenAI(api_key="EMPTY", base_url=reviewer_base_url)
+        # "EMPTY" suits a local endpoint that ignores auth; a hosted reviewer
+        # (Anthropic's OpenAI-compatible endpoint, say) needs a real key, so it
+        # comes from REVIEWER_API_KEY when set.
+        reviewer_client = OpenAI(
+            api_key=os.environ.get("REVIEWER_API_KEY", "").strip() or "EMPTY",
+            base_url=reviewer_base_url,
+        )
     else:
         try:
             reviewer_client = _make_client(None)
