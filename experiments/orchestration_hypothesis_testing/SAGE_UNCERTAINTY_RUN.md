@@ -104,6 +104,7 @@ python different_agents/v4/lcb_llm_tool_agent.py \
   --prior-patches 1 \
   --private-test-cap 0 \
   --max-tokens-decision 4096 \
+  --max-tokens-generation 32768 \
   --max-verifications 1 \
   --max-steps 20 \
   --max-generations 5 \

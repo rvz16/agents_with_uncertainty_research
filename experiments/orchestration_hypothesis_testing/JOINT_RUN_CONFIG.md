@@ -80,6 +80,26 @@ its outcome into the belief before the final label. There 0 is required, and
 `verbalized` (0.466 vs 0.465) and `seqprob:mean` (0.620 vs 0.563) barely moved.
 Runs from the two lineages are not comparable on the belief signals.
 
+## `--max-tokens-generation` must be passed, not defaulted
+
+The agent's own default is 4000. For gpt-oss-20b that is a budget rather than a
+circuit breaker: the model spends 12k-30k tokens reasoning before it emits the
+answer channel, so at 4000 the answer never arrives, `raw` comes back empty, and
+the generation is recorded as `skipped: generation returned no answer content`.
+Skipped generations do not count against `--max-generations`, so the agent
+retries until `--max-steps` and the episode ends with no candidate and no label.
+
+A smoke run hit this on 1 of 4 instances: all 20 steps of instance 3674 were
+empty generations at exactly 4000 completion tokens. The same instance on the
+extraction branch produced 5 candidates at 6.9k-30.8k tokens. Across the same
+four instances, old branch solved 3 and this configuration solved 1.
+
+The extraction branch had already raised its default to 32768 with the rationale
+"at 4000 about 10 percent of steps were truncated ... at 32768 truncation is nil
+and the average cost barely moves — only the tail pays". The run script now
+passes the value explicitly so it does not depend on which lineage the agent
+came from.
+
 ## L3 needs a working key and its own calibration pass
 
 Two independent things bite here, and both did on the first smoke run.
@@ -109,9 +129,23 @@ rather than inferred from `critic_L3 0/N` hours later. If the reviewer is
 unavailable, `--calibrate-l3 0` lets the analysis finish on L0+L2;
 `--l3-model` swaps the reviewer without touching the code.
 
-A key that works from a laptop can still fail from the cluster: the same key,
-endpoint and model returned 200 locally and 403 from the CSCS agent, so treat the
-preflight body as the authority.
+The cluster blocks the reviewer outright. The preflight from a CSCS agent returns
+
+```json
+{ "success": false, "error": "Access denied by security policy." }
+```
+
+which is not OpenRouter's error shape — that is the egress filter answering, with
+the same key that returns 200 from a laptop. Three ways out, in order of how much
+they cost the experiment:
+
+1. have the cluster whitelist `openrouter.ai` — keeps L3 an independent judge;
+2. `--l3-local 1` — the reviewer becomes the container's own vLLM. The channel
+   works offline, but it is now the generator reviewing **its own** output, which
+   is a weaker and differently-biased signal. Label such runs as self-review and
+   never pool them with OpenRouter-reviewed ones;
+3. `--calibrate-l3 0` — no L3 at all; the belief is built from L0 and L2, which
+   is what our three earlier runs used.
 
 ## L1 is not part of this branch's belief
 

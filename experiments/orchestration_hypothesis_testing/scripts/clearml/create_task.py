@@ -44,6 +44,10 @@ def main() -> None:
                         "produces no labels at all. See JOINT_RUN_CONFIG.md")
     p.add_argument("--l3-model", default=None,
                    help="reviewer model for the L3 critic; default anthropic/claude-haiku-4.5")
+    p.add_argument("--l3-local", type=int, default=0, choices=[0, 1],
+                   help="1 points the L3 reviewer at the container's own vLLM instead of "
+                        "OpenRouter, which the cluster egress filter blocks. Makes L3 a "
+                        "SELF-review by the generator, not an independent judge")
     p.add_argument("--calibrate-l3", type=int, default=1, choices=[0, 1],
                    help="0 lets the analysis finish when the reviewer is unavailable")
     p.add_argument("--smoke", action="store_true", help="6 instances, end-to-end check")
@@ -76,6 +80,7 @@ def main() -> None:
         "Args/N_INSTANCES": "6" if a.smoke else str(a.n_instances),
         "Args/MAX_VERIFICATIONS": str(a.max_verifications),
         "Args/CALIBRATE_L3": str(a.calibrate_l3),
+        "Args/L3_LOCAL": str(a.l3_local),
     }
     task.set_parameters(params)
     print(f"Created task {task.id}")

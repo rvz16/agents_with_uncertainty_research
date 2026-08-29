@@ -44,6 +44,17 @@ MAX_VERIFICATIONS="${MAX_VERIFICATIONS:-1}"
 AGENT_BACKEND="${AGENT_BACKEND:-sage}"
 FINAL_VERIFY="${FINAL_VERIFY:-1}"
 MAX_TOKENS_DECISION="${MAX_TOKENS_DECISION:-4096}"
+# The agent default is 4000, which is a budget rather than a circuit breaker for
+# this model: gpt-oss-20b spends 12k-30k tokens reasoning before it emits the
+# answer channel, so at 4000 the answer never arrives, the generation is skipped
+# as empty and the step is wasted. A smoke run hit this on 1 of 4 instances,
+# where all 20 steps came back "generation returned no answer content" at exactly
+# 4000 completion tokens and the episode produced no candidate and no label. The
+# same instance on the extraction branch generated 5 candidates at 6.9k-30.8k
+# tokens. That branch had already raised its own default to 32768 for this exact
+# reason; the flag is passed explicitly here so the value does not depend on which
+# lineage the agent came from.
+MAX_TOKENS_GENERATION="${MAX_TOKENS_GENERATION:-32768}"
 # The analysis step refits critic likelihoods on the train split and needs L3
 # verdicts there; without this it aborts with "missing saved L3 train-calibration
 # results". Costs one reviewer call per train candidate.
@@ -108,6 +119,7 @@ run_one() {
     --max-generations "${MAX_GENERATIONS}" \
     --max-verifications "${MAX_VERIFICATIONS}" \
     --max-tokens-decision "${MAX_TOKENS_DECISION}" \
+    --max-tokens-generation "${MAX_TOKENS_GENERATION}" \
     ${CALIBRATE_L3:+$([ "${CALIBRATE_L3}" = "1" ] && echo --calibrate-l3)} \
     --agent-backend "${AGENT_BACKEND}" \
     "${final_verify_args[@]}" \

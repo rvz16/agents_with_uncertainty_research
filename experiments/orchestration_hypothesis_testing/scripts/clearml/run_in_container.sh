@@ -24,7 +24,9 @@ VLLM_LOG="${VLLM_LOG:-${REPO_DIR}/vllm_serve.log}"
 # restricted key surfaces only as `critic_L3 0/N success_rate=0.000` hours later,
 # and httpx logs the status line without the body, so the reason is invisible.
 # The body is printed here; the key never is.
-if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+if [ "${L3_LOCAL:-0}" = "1" ]; then
+  echo "[wrapper] preflight skipped: reviewer is local"
+elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
   echo "[wrapper] preflight: OpenRouter reviewer (${L3_REVIEW_MODEL:-anthropic/claude-haiku-4.5})"
   code=$(curl -s -o /tmp/l3_preflight.json -w '%{http_code}' \
     https://openrouter.ai/api/v1/chat/completions \
@@ -81,6 +83,21 @@ export N_INSTANCES="${N_INSTANCES:-0}"
 # L3 verdicts there, which the generation pass does not produce on its own:
 #   RuntimeError: missing saved L3 train-calibration results for N instances
 export CALIBRATE_L3="${CALIBRATE_L3:-1}"
+
+# The CSCS egress filter blocks openrouter.ai — the preflight comes back
+#   { "success": false, "error": "Access denied by security policy." }
+# which is the appliance talking, not OpenRouter. L3_LOCAL=1 points the reviewer
+# at the vLLM already running in this container, so the channel works offline.
+#
+# This changes what L3 measures: the generator reviews its own output instead of
+# an independent model judging it. That is a weaker and differently-biased
+# signal, so runs made with L3_LOCAL=1 must be labelled as self-review and never
+# pooled with OpenRouter-reviewed runs.
+if [ "${L3_LOCAL:-0}" = "1" ]; then
+  export REVIEWER_BASE_URL="http://127.0.0.1:${PORT}/v1"
+  export L3_REVIEW_MODEL="${MODEL}"
+  echo "[wrapper] L3 reviewer: LOCAL self-review (${MODEL}) — not an independent judge"
+fi
 
 echo "[wrapper] BENCHMARKS=${BENCHMARKS} N_INSTANCES=${N_INSTANCES}"
 echo "[wrapper] MAX_VERIFICATIONS=${MAX_VERIFICATIONS:-<script default: 0>}"
