@@ -156,6 +156,14 @@ much they cost the experiment:
 
 `L3_REVIEW_MODEL` also swaps the reviewer model without touching the code.
 
+A reviewer that reasons before answering needs a bigger budget than the built-in
+4096: gpt-oss-20b reviewing its own output spent the whole budget deliberating
+and never reached the JSON verdict, so 4 of 11 reviews came back
+`review_error_or_unparseable` and the train calibration lost an instance — which
+is fatal, since the analyzer refuses to fit likelihoods when any train instance
+lacks a verdict. `L3_MAX_TOKENS=32768` gives it room. This is the same failure
+as the generation ceiling above, in a different place.
+
 ## L1 is not part of this branch's belief
 
 `ACTION_SPACE` has no `critic_L1`, so the lint channel never enters the belief

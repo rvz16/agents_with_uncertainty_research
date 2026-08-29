@@ -113,7 +113,13 @@ def critic_L3_review_detailed(problem: str, code: str, client) -> L3ReviewResult
         resp = client.chat.completions.create(
             model=os.environ.get("L3_REVIEW_MODEL", "anthropic/claude-haiku-4.5"),
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0, max_tokens=4096,
+            temperature=0.0,
+            # 4096 is ample for a non-reasoning judge, but a local reasoning model
+            # spends its budget deliberating and the JSON verdict never arrives:
+            # the review comes back unparseable, and the analyzer refuses to fit
+            # likelihoods when any train instance lacks a verdict. Raise it via
+            # L3_MAX_TOKENS when the reviewer reasons before answering.
+            max_tokens=int(os.environ.get("L3_MAX_TOKENS", "4096")),
         )
         message = resp.choices[0].message
         text = (message.content or getattr(message, "reasoning_content", "") or "").strip()
