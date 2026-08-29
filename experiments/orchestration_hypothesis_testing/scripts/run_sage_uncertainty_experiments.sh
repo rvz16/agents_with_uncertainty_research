@@ -59,6 +59,11 @@ MAX_TOKENS_GENERATION="${MAX_TOKENS_GENERATION:-32768}"
 # verdicts there; without this it aborts with "missing saved L3 train-calibration
 # results". Costs one reviewer call per train candidate.
 CALIBRATE_L3="${CALIBRATE_L3:-1}"
+# Token budget for one L3 review. The default suits a non-reasoning judge; a
+# local reasoning model needs room to deliberate before it emits the JSON
+# verdict, otherwise the review is unparseable and the instance is lost.
+L3_MAX_TOKENS="${L3_MAX_TOKENS:-4096}"
+export L3_MAX_TOKENS
 
 TOP_LOGPROBS="${TOP_LOGPROBS:-20}"
 SAVE_VERBALIZED_2S="${SAVE_VERBALIZED_2S:-1}"
