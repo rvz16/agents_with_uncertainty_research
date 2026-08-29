@@ -32,19 +32,33 @@ SWE_HARNESS_WORKERS="${SWE_HARNESS_WORKERS:-1}"
 
 MAX_STEPS="${MAX_STEPS:-20}"
 MAX_GENERATIONS="${MAX_GENERATIONS:-5}"
-# 0, not 2. An intermediate `verify` runs the private tests -- the same tests
-# that produce the label -- and analyze_lcb_llm_tool_agent_logs folds its
-# outcome into the belief before the final label (it collapses the belief to
-# 0.05 on a failed verify). Measured on gpt-oss-20b / lcb_hard: with 1
-# intermediate verify bayes_state scores PRR@0.5 = 0.995 and tool_success
-# 0.947; with 0 they drop to 0.241 and 0.251, while every logprob-based
-# signal stays put. The near-oracle number was the leak, not the method.
-# Note initial_state clamps this to at most 1, so 2 never had an effect
-# beyond 1 anyway.
-MAX_VERIFICATIONS="${MAX_VERIFICATIONS:-0}"
+# 1, and it must not be 0. On this branch `verify` is not in ACTION_SPACE, so
+# the router cannot call it mid-episode and there is no intermediate-verify
+# leak to close. What this budget gates is the *terminal* verification in
+# maybe_final_verify, whose guard reads
+#     n_verifications >= max_verifications -> return
+# so 0 skips it, no label is produced, and every episode records fixed=False.
+# A smoke run with 0 came back 0/4 solved with final_action=finish/max_steps
+# and no final_verify in any trajectory.
+MAX_VERIFICATIONS="${MAX_VERIFICATIONS:-1}"
 AGENT_BACKEND="${AGENT_BACKEND:-sage}"
 FINAL_VERIFY="${FINAL_VERIFY:-1}"
 MAX_TOKENS_DECISION="${MAX_TOKENS_DECISION:-4096}"
+# The agent default is 4000, which is a budget rather than a circuit breaker for
+# this model: gpt-oss-20b spends 12k-30k tokens reasoning before it emits the
+# answer channel, so at 4000 the answer never arrives, the generation is skipped
+# as empty and the step is wasted. A smoke run hit this on 1 of 4 instances,
+# where all 20 steps came back "generation returned no answer content" at exactly
+# 4000 completion tokens and the episode produced no candidate and no label. The
+# same instance on the extraction branch generated 5 candidates at 6.9k-30.8k
+# tokens. That branch had already raised its own default to 32768 for this exact
+# reason; the flag is passed explicitly here so the value does not depend on which
+# lineage the agent came from.
+MAX_TOKENS_GENERATION="${MAX_TOKENS_GENERATION:-32768}"
+# The analysis step refits critic likelihoods on the train split and needs L3
+# verdicts there; without this it aborts with "missing saved L3 train-calibration
+# results". Costs one reviewer call per train candidate.
+CALIBRATE_L3="${CALIBRATE_L3:-1}"
 
 TOP_LOGPROBS="${TOP_LOGPROBS:-20}"
 SAVE_VERBALIZED_2S="${SAVE_VERBALIZED_2S:-1}"
@@ -105,6 +119,8 @@ run_one() {
     --max-generations "${MAX_GENERATIONS}" \
     --max-verifications "${MAX_VERIFICATIONS}" \
     --max-tokens-decision "${MAX_TOKENS_DECISION}" \
+    --max-tokens-generation "${MAX_TOKENS_GENERATION}" \
+    ${CALIBRATE_L3:+$([ "${CALIBRATE_L3}" = "1" ] && echo --calibrate-l3)} \
     --agent-backend "${AGENT_BACKEND}" \
     "${final_verify_args[@]}" \
     --save-generation-logprobs \
