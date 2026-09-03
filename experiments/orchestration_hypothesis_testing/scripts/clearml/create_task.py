@@ -50,6 +50,12 @@ def main() -> None:
                         "SELF-review by the generator, not an independent judge")
     p.add_argument("--calibrate-l3", type=int, default=1, choices=[0, 1],
                    help="0 lets the analysis finish when the reviewer is unavailable")
+    p.add_argument("--lcb-platform", default=None,
+                   choices=["leetcode", "atcoder", "codeforces", "all"],
+                   help="LCB source platform. Difficulty comes from the benchmark name, so "
+                        "lcb_hard + codeforces is a different task pool from lcb_hard + leetcode")
+    p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
+                   help="extra environment variable for the run; repeatable")
     p.add_argument("--smoke", action="store_true", help="6 instances, end-to-end check")
     a = p.parse_args()
 
@@ -82,6 +88,12 @@ def main() -> None:
         "Args/CALIBRATE_L3": str(a.calibrate_l3),
         "Args/L3_LOCAL": str(a.l3_local),
     }
+    if a.lcb_platform:
+        params["Args/LCB_PLATFORM"] = a.lcb_platform
+    for item in a.env:
+        key, _, value = item.partition("=")
+        if key:
+            params[f"Args/{key.strip()}"] = value.strip()
     task.set_parameters(params)
     print(f"Created task {task.id}")
     for k, v in params.items():
