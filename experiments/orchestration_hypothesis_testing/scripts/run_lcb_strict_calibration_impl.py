@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict multi-step train calibration followed by frozen LCB test replay."""
+"""Strict multi-step train calibration followed by frozen benchmark test replay."""
 from __future__ import annotations
 
 import argparse
@@ -39,7 +39,11 @@ ACTION_CRITIC = {
 
 def args_parser() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--benchmark", choices=["lcb_medium", "lcb_hard"], required=True)
+    p.add_argument(
+        "--benchmark",
+        choices=["lcb_medium", "lcb_hard", "codecontests"],
+        required=True,
+    )
     p.add_argument("--generator", default="gpt_oss_20b_local")
     p.add_argument("--source-run-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
@@ -126,6 +130,22 @@ def make_adapter(a: argparse.Namespace):
         lcb_private_test_cap=0,
         platform="leetcode",
     )
+
+
+def label_protocol(benchmark: str) -> dict[str, Any]:
+    if benchmark == "codecontests":
+        from calibration.codecontests import ORACLE_TEST_CAP, PUBLIC_TEST_CAP
+
+        return {
+            "oracle_source": "private + generated + public tests",
+            "oracle_test_cap": ORACLE_TEST_CAP,
+            "public_test_cap": PUBLIC_TEST_CAP,
+        }
+    return {
+        "oracle_source": "private tests",
+        "oracle_test_cap": 0,
+        "public_test_cap": None,
+    }
 
 
 def make_deps(a: argparse.Namespace, adapter: Any, logprobs: Path) -> agent.AgentDeps:
@@ -537,7 +557,7 @@ def fit_params(
             "max_generations": a.max_generations,
             "max_tokens_decision": a.max_tokens_decision,
             "max_tokens_generation": a.max_tokens_generation,
-            "private_test_cap": 0,
+            "label_protocol": label_protocol(a.benchmark),
             "generator": agent.canonical_generator_key(a.generator),
         },
     }
@@ -631,10 +651,14 @@ def fmt(value: Any) -> str:
 
 def write_report(path: Path, params: dict[str, Any], metrics: list[dict[str, Any]]) -> None:
     kernel = params["transition_kernel"]["aggregate"]
+    labels = params["config"]["label_protocol"]
+    cap = labels["oracle_test_cap"]
+    cap_text = "all available" if not cap else f"the first {cap}"
     lines = [
         f"# Strict calibration: {params['benchmark']}",
         "",
-        "All train candidates use all private tests and exhaustive L0/L1/L2/L3 labels. "
+        f"Train candidates use {cap_text} {labels['oracle_source']} for oracle labels "
+        "and exhaustive L0/L1/L2/L3 critic labels. "
         "No test label was used while fitting.",
         "",
         "## PRR",
