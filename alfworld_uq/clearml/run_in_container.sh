@@ -41,11 +41,17 @@ export ALFWORLD_DATA="${ALFWORLD_DATA:-/root/.cache/alfworld}"
 
 # ---------------------------------------------------------------- deps
 echo "[wrapper] installing ALFWorld + agent deps (vllm/torch stay untouched)"
-# Same broken NVIDIA apt repo as in the task setup script: drop it, or the
-# update fails and none of these packages arrive.
+# The agent mounts the host's /var/cache/apt/archives into the container, and on
+# some workers that cache is corrupt: every repository, not just NVIDIA's, then
+# fails with "At least one invalid signature was encountered", apt installs
+# nothing, and the agent dies with `Cannot find "git" executable` before it can
+# clone the repo. Dropping the NVIDIA list, clearing the stale package lists and
+# pointing the archive cache at /tmp bypasses the mounted cache entirely.
 rm -f /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d/nvidia*.list || true
-apt-get update -qq -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true
-apt-get install -y -qq --no-install-recommends build-essential libffi-dev unzip >/dev/null 2>&1 || true
+rm -rf /var/lib/apt/lists/* || true
+mkdir -p /tmp/aptcache/partial
+apt-get -o Dir::Cache::archives=/tmp/aptcache -o Acquire::AllowInsecureRepositories=true update -qq >/dev/null 2>&1 || true
+apt-get -o Dir::Cache::archives=/tmp/aptcache install -y -qq --no-install-recommends --allow-unauthenticated build-essential libffi-dev unzip >/dev/null 2>&1 || true
 python -m pip install --no-cache-dir \
   "alfworld==0.4.2" "textworld[pddl]==1.7.0" "openai==2.50.0" \
   "python-dotenv==1.2.2" "smolagents==1.26.0" >/dev/null

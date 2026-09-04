@@ -22,17 +22,20 @@ DOCKER_IMAGE = "vllm/vllm-openai:v0.12.0"
 # --entrypoint= : the image's entrypoint is `vllm`; clear it so ClearML runs python.
 # --network=host: the client reaches the in-container endpoint on 127.0.0.1.
 DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g"
-# The image ships an NVIDIA apt repo whose GPG signature fails on some agents.
-# `apt-get update` then exits non-zero, git never gets installed, and the agent
-# dies with `Cannot find "git" executable` before it can clone the repo -- which
-# reads like a broken worker rather than a broken package list. Dropping the
-# repo file first is what makes the install actually happen.
 SETUP = """
 df -h /
+# The agent mounts the host's /var/cache/apt/archives into the container, and on
+# some workers that cache is corrupt: every repository, not just NVIDIA's, then
+# fails with "At least one invalid signature was encountered", apt installs
+# nothing, and the agent dies with `Cannot find "git" executable` before it can
+# clone the repo. Dropping the NVIDIA list, clearing the stale package lists and
+# pointing the archive cache at /tmp bypasses the mounted cache entirely.
 rm -f /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d/nvidia*.list || true
-apt-get update -qq -o Acquire::AllowInsecureRepositories=true || true
-apt-get install -y -qq --no-install-recommends git curl unzip || true
-command -v git || echo "FATAL: git is still missing, the agent cannot clone"
+rm -rf /var/lib/apt/lists/* || true
+mkdir -p /tmp/aptcache/partial
+apt-get -o Dir::Cache::archives=/tmp/aptcache -o Acquire::AllowInsecureRepositories=true update -qq || true
+apt-get -o Dir::Cache::archives=/tmp/aptcache install -y -qq --no-install-recommends --allow-unauthenticated git curl unzip || true
+command -v git || echo "FATAL: git is still missing, the agent cannot clone the repo"
 nvidia-smi || echo "no nvidia-smi"
 """
 
