@@ -41,7 +41,10 @@ export ALFWORLD_DATA="${ALFWORLD_DATA:-/root/.cache/alfworld}"
 
 # ---------------------------------------------------------------- deps
 echo "[wrapper] installing ALFWorld + agent deps (vllm/torch stay untouched)"
-apt-get update -qq >/dev/null 2>&1 || true
+# Same broken NVIDIA apt repo as in the task setup script: drop it, or the
+# update fails and none of these packages arrive.
+rm -f /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d/nvidia*.list || true
+apt-get update -qq -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true
 apt-get install -y -qq --no-install-recommends build-essential libffi-dev unzip >/dev/null 2>&1 || true
 python -m pip install --no-cache-dir \
   "alfworld==0.4.2" "textworld[pddl]==1.7.0" "openai==2.50.0" \

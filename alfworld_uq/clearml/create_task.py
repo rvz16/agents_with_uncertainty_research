@@ -22,10 +22,17 @@ DOCKER_IMAGE = "vllm/vllm-openai:v0.12.0"
 # --entrypoint= : the image's entrypoint is `vllm`; clear it so ClearML runs python.
 # --network=host: the client reaches the in-container endpoint on 127.0.0.1.
 DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g"
+# The image ships an NVIDIA apt repo whose GPG signature fails on some agents.
+# `apt-get update` then exits non-zero, git never gets installed, and the agent
+# dies with `Cannot find "git" executable` before it can clone the repo -- which
+# reads like a broken worker rather than a broken package list. Dropping the
+# repo file first is what makes the install actually happen.
 SETUP = """
 df -h /
-apt-get update -qq --allow-insecure-repositories || true
+rm -f /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d/nvidia*.list || true
+apt-get update -qq -o Acquire::AllowInsecureRepositories=true || true
 apt-get install -y -qq --no-install-recommends git curl unzip || true
+command -v git || echo "FATAL: git is still missing, the agent cannot clone"
 nvidia-smi || echo "no nvidia-smi"
 """
 
