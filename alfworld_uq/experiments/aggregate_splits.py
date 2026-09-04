@@ -38,6 +38,10 @@ HEADLINE = [
     ("thought", "sum_logprob", "bayes_state_plus_sep"),
     ("thought", "sum_logprob", "bayes_state_plus_tempered"),
     ("combined", "sum_logprob", "bayes_state_plus_sep"),
+    # With --judge-scores the semantic critic joins the state.
+    ("all", "critics_plus_llm_judge", "llm_judge_state"),
+    ("all", "critics_plus_llm_judge", "bayes_state_plus_judge"),
+    ("thought", "sum_logprob", "bayes_state_plus_judge_plus_tempered"),
 ]
 
 
