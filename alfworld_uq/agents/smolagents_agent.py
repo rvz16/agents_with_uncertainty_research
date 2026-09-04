@@ -282,6 +282,7 @@ class SmolagentsPolicy:
                     "provider": None,
                     "admissible": list(session.admissible),
                     "observation": session.observation,
+                    "progress": session.progress,
                     "env_steps": [],
                     "latency_seconds": 0.0,
                     "request_attempts": 1,
@@ -500,6 +501,7 @@ class SmolagentsPolicy:
             raw_text = generation["raw_text"]
             thought_span, action_span, code = _response_spans(raw_text)
             uq = metrics_by_span(
+                raw_text,
                 generation["token_records"],
                 {"thought": thought_span, "action": action_span},
             )
@@ -539,8 +541,11 @@ class SmolagentsPolicy:
                 action = ""
                 proposed_action = ""
                 observation = generation["observation"]
-                progress = session.progress
-                done = session.done
+                progress = generation["progress"]
+                # No environment transition happened in this generation, so it
+                # carries the state it started from -- `session` here holds the
+                # end-of-episode state, which would mark middle rows done.
+                done = False
 
             combined = uq["combined"]
             records.append(

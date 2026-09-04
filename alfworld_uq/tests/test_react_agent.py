@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
-from agents.react_agent import ReActAgent, parse_react_response
+from agents.react_agent import (
+    ReActAgent,
+    _segment_logprobs,
+    parse_react_response,
+)
 
 
 class FakeCompletions:
@@ -116,3 +120,29 @@ def test_agent_retries_empty_reasoning_response_with_larger_limit() -> None:
     assert result.generation_token_limit == 1024
     assert result.total_tokens == 557
     assert completions.max_tokens == [512, 1024]
+
+
+def test_segments_survive_tokens_the_provider_dropped() -> None:
+    """OpenRouter/Novita omits a few percent of tokens from `logprobs`.
+
+    Concatenating what survives shifts every later token to the left, which
+    used to leave the action segment empty and fill the thought segment with
+    the wrong tokens; positions are searched for in the response text instead.
+    """
+    raw = "Thought: inspect\nAction: look"
+    # " inspect" is the token the provider dropped.
+    kept = ["Thought", ":", "\n", "Action", ":", " look"]
+    records = [
+        {"token": token, "logprob": -1.0 if token == " look" else -0.1}
+        for token in kept
+    ]
+    uq = _segment_logprobs(raw, parse_react_response(raw), records)
+
+    assert uq["combined"]["num_tokens"] == len(kept)
+    # The action segment holds exactly the action token, at its real position.
+    assert uq["action"]["num_tokens"] == 1
+    assert uq["action"]["sum_logprob"] == -1.0
+    # The thought segment keeps only its surviving token, and never the
+    # "Action" ones that the concatenated offsets used to slide into it.
+    assert uq["thought"]["num_tokens"] == 1
+    assert uq["thought"]["sum_logprob"] == -0.1

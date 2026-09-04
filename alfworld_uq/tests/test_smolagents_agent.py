@@ -304,3 +304,27 @@ def test_transient_endpoint_failure_is_retried_inside_the_episode() -> None:
 
     assert result.stop_reason == "success"
     assert len(result.records) == 1
+
+
+def test_generation_without_env_action_carries_its_own_state() -> None:
+    """`done`/`progress` are per-row, not the end-of-episode state."""
+    env = FakeEnv(
+        [
+            _step("You arrive.", ["look"], progress=0.5),
+            _step("You win.", ["look"], done=True, won=True, progress=1.0),
+        ]
+    )
+    policy = ScriptedPolicy(
+        [
+            'Thought: act\n```python\nprint(take_action("look"))\n```',
+            "prose with no code at all",
+            'Thought: act\n```python\nprint(take_action("look"))\n```',
+        ]
+    )
+    result = policy.run_episode(env, _initial(["look"]), max_steps=30)
+
+    middle = result.records[1]
+    assert middle["env_actions"] == []
+    assert middle["done"] is False
+    assert middle["progress"] == 0.5  # state when that generation was made
+    assert result.records[-1]["done"] is True

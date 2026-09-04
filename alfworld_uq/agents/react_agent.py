@@ -93,23 +93,45 @@ def _metric_bundle(logprobs: list[float]) -> dict[str, float | int | None]:
     }
 
 
-def metrics_by_span(
-    token_records: list[dict[str, Any]],
-    spans: dict[str, tuple[int, int] | None],
-) -> dict[str, dict[str, float | int | None]]:
-    """UQ bundles for character spans over the concatenated response tokens.
+def token_offsets(
+    raw_text: str, token_records: list[dict[str, Any]]
+) -> list[tuple[int, int, float]]:
+    """Locate every scored token inside the response text.
 
-    `combined` always covers the whole generation; every other segment is the
-    subset of tokens overlapping its span. Shared with the smolagents policy,
-    which segments a code-action response instead of a ReAct one.
+    Providers may omit tokens from the logprobs array -- OpenRouter/Novita
+    drops a few percent of them -- and simply concatenating what survives then
+    shifts every later token to the left, which silently mis-assigns the
+    thought/action segments. Each token is searched for from the end of the
+    previous one instead, so a gap costs only the dropped token.
     """
     offsets: list[tuple[int, int, float]] = []
     cursor = 0
     for record in token_records:
         token = str(record["token"])
-        start = cursor
-        cursor += len(token)
-        offsets.append((start, cursor, float(record["logprob"])))
+        start = raw_text.find(token, cursor) if token else -1
+        if start < 0:
+            # Not locatable (dropped or rewritten by the provider): keep it
+            # zero-width so it counts in `combined` but in no segment.
+            start = end = cursor
+        else:
+            end = start + len(token)
+        offsets.append((start, end, float(record["logprob"])))
+        cursor = end
+    return offsets
+
+
+def metrics_by_span(
+    raw_text: str,
+    token_records: list[dict[str, Any]],
+    spans: dict[str, tuple[int, int] | None],
+) -> dict[str, dict[str, float | int | None]]:
+    """UQ bundles for character spans of the response text.
+
+    `combined` always covers the whole generation; every other segment is the
+    subset of tokens overlapping its span. Shared with the smolagents policy,
+    which segments a code-action response instead of a ReAct one.
+    """
+    offsets = token_offsets(raw_text, token_records)
 
     def select(span: tuple[int, int] | None) -> list[float]:
         if span is None:
@@ -130,6 +152,7 @@ def _segment_logprobs(
     token_records: list[dict[str, Any]],
 ) -> dict[str, dict[str, float | int | None]]:
     return metrics_by_span(
+        raw_text,
         token_records,
         {"thought": parsed.thought_span, "action": parsed.action_span},
     )
