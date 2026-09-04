@@ -39,7 +39,22 @@ def build_parser() -> argparse.ArgumentParser:
         default="valid_seen",
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--policy", choices=["llm", "random"], default="llm")
+    parser.add_argument(
+        "--policy", choices=["llm", "random", "smolagents"], default="llm"
+    )
+    parser.add_argument("--api-timeout", type=float, default=60.0)
+    parser.add_argument(
+        "--smol-code-tags",
+        choices=["markdown", "xml"],
+        default="markdown",
+        help="Action format for --policy smolagents.",
+    )
+    parser.add_argument(
+        "--agent-max-steps",
+        type=int,
+        default=0,
+        help="Generation budget for --policy smolagents; 0 uses --max-steps.",
+    )
     parser.add_argument("--max-generation-tokens", type=int, default=1024)
     parser.add_argument("--empty-response-retries", type=int, default=1)
     parser.add_argument("--provider-order", default="")
@@ -108,6 +123,12 @@ def main() -> None:
                 str(args.max_generation_tokens),
                 "--empty-response-retries",
                 str(args.empty_response_retries),
+                "--agent-max-steps",
+                str(args.agent_max_steps),
+                "--smol-code-tags",
+                args.smol_code_tags,
+                "--api-timeout",
+                str(args.api_timeout),
             ]
             if args.provider_order:
                 command.extend(["--provider-order", args.provider_order])
@@ -179,6 +200,8 @@ def main() -> None:
         "split": args.split,
         "seed": args.seed,
         "policy": args.policy,
+        "agent_max_steps": args.agent_max_steps,
+        "smol_code_tags": args.smol_code_tags,
         "max_generation_tokens": args.max_generation_tokens,
         "empty_response_retries": args.empty_response_retries,
         "provider_order": args.provider_order,

@@ -93,11 +93,16 @@ def _metric_bundle(logprobs: list[float]) -> dict[str, float | int | None]:
     }
 
 
-def _segment_logprobs(
-    raw_text: str,
-    parsed: ParsedResponse,
+def metrics_by_span(
     token_records: list[dict[str, Any]],
+    spans: dict[str, tuple[int, int] | None],
 ) -> dict[str, dict[str, float | int | None]]:
+    """UQ bundles for character spans over the concatenated response tokens.
+
+    `combined` always covers the whole generation; every other segment is the
+    subset of tokens overlapping its span. Shared with the smolagents policy,
+    which segments a code-action response instead of a ReAct one.
+    """
     offsets: list[tuple[int, int, float]] = []
     cursor = 0
     for record in token_records:
@@ -112,12 +117,22 @@ def _segment_logprobs(
         start, end = span
         return [lp for left, right, lp in offsets if right > start and left < end]
 
-    combined = [float(record["logprob"]) for record in token_records]
-    return {
-        "thought": _metric_bundle(select(parsed.thought_span)),
-        "action": _metric_bundle(select(parsed.action_span)),
-        "combined": _metric_bundle(combined),
-    }
+    bundles = {name: _metric_bundle(select(span)) for name, span in spans.items()}
+    bundles["combined"] = _metric_bundle(
+        [float(record["logprob"]) for record in token_records]
+    )
+    return bundles
+
+
+def _segment_logprobs(
+    raw_text: str,
+    parsed: ParsedResponse,
+    token_records: list[dict[str, Any]],
+) -> dict[str, dict[str, float | int | None]]:
+    return metrics_by_span(
+        token_records,
+        {"thought": parsed.thought_span, "action": parsed.action_span},
+    )
 
 
 def _extract_token_records(response: Any) -> list[dict[str, Any]]:
@@ -139,6 +154,46 @@ def _extract_token_records(response: Any) -> list[dict[str, Any]]:
 def _usage(response: Any, name: str) -> int:
     value = getattr(getattr(response, "usage", None), name, 0)
     return int(value or 0)
+
+
+def is_transient_error(exc: Exception) -> bool:
+    """Whether an endpoint failure is worth retrying rather than failing on."""
+    status = getattr(exc, "status_code", None)
+    return status in {408, 409, 429, 500, 502, 503, 504, 529} or type(exc).__name__ in {
+        "APIConnectionError",
+        "APITimeoutError",
+        "RateLimitError",
+        "InternalServerError",
+    }
+
+
+def resolve_action(
+    proposed: str,
+    admissible: list[str],
+    history: list[dict[str, str]],
+    *,
+    rng: random.Random,
+    repeat_action_limit: int,
+) -> tuple[str, bool, str | None]:
+    """Map a proposed action onto the admissible set, with the repeat fallback.
+
+    Returns (action, action_valid, fallback_reason). Shared by every policy so
+    the mechanical critics mean the same thing across runs.
+    """
+    by_lower = {action.lower(): action for action in admissible}
+    action = by_lower.get(proposed.strip().lower())
+    if action is None:
+        fallback = by_lower.get("look") or (admissible[0] if admissible else "look")
+        return fallback, False, "inadmissible_action"
+
+    recent = [item["action"] for item in history[-repeat_action_limit:]]
+    if len(recent) == repeat_action_limit and all(
+        previous == action for previous in recent
+    ):
+        alternatives = [candidate for candidate in admissible if candidate != action]
+        if alternatives:
+            return rng.choice(alternatives), True, "repeated_action"
+    return action, True, None
 
 
 class ReActAgent:
@@ -197,13 +252,7 @@ class ReActAgent:
 
     @staticmethod
     def _is_transient(exc: Exception) -> bool:
-        status = getattr(exc, "status_code", None)
-        return status in {408, 409, 429, 500, 502, 503, 504, 529} or type(exc).__name__ in {
-            "APIConnectionError",
-            "APITimeoutError",
-            "RateLimitError",
-            "InternalServerError",
-        }
+        return is_transient_error(exc)
 
     @staticmethod
     def _logprobs_unsupported(exc: Exception) -> bool:
@@ -269,21 +318,13 @@ class ReActAgent:
         admissible: list[str],
         history: list[dict[str, str]],
     ) -> tuple[str, bool, str | None]:
-        by_lower = {action.lower(): action for action in admissible}
-        action = by_lower.get(proposed.strip().lower())
-        if action is None:
-            fallback = by_lower.get("look") or (admissible[0] if admissible else "look")
-            return fallback, False, "inadmissible_action"
-
-        recent = [item["action"] for item in history[-self.repeat_action_limit :]]
-        if (
-            len(recent) == self.repeat_action_limit
-            and all(previous == action for previous in recent)
-        ):
-            alternatives = [candidate for candidate in admissible if candidate != action]
-            if alternatives:
-                return self.rng.choice(alternatives), True, "repeated_action"
-        return action, True, None
+        return resolve_action(
+            proposed,
+            admissible,
+            history,
+            rng=self.rng,
+            repeat_action_limit=self.repeat_action_limit,
+        )
 
     def act(
         self,

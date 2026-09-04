@@ -13,6 +13,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from agents.react_agent import AgentError, RandomAdmissibleAgent, ReActAgent
+from agents.smolagents_agent import SmolagentsPolicy
 from environments.alfworld_env import ALFWorldTextEnv
 
 
@@ -58,6 +59,26 @@ def _build_agent(args: argparse.Namespace) -> Any:
             provider["allow_fallbacks"] = args.allow_provider_fallbacks
         extra_body = {"provider": provider}
 
+    if args.policy == "smolagents":
+        return SmolagentsPolicy(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            timeout=args.api_timeout,
+            max_retries=args.api_retries,
+            max_tokens=args.max_generation_tokens,
+            request_logprobs=not args.no_logprobs,
+            repeat_action_limit=args.repeat_action_limit,
+            seed=args.seed,
+            extra_body=extra_body,
+            agent_max_steps=args.agent_max_steps or args.max_steps,
+            empty_response_retries=args.empty_response_retries,
+            stop_sequences=None if args.smol_stop_sequences else [],
+            code_block_tags=(
+                None if args.smol_code_tags == "xml" else args.smol_code_tags
+            ),
+        )
+
     return ReActAgent(
         base_url=base_url,
         api_key=api_key,
@@ -73,9 +94,110 @@ def _build_agent(args: argparse.Namespace) -> Any:
     )
 
 
+def _run_react_episode(
+    agent: Any,
+    env: ALFWorldTextEnv,
+    initial: Any,
+    max_steps: int,
+) -> tuple[list[dict[str, Any]], bool, str, int]:
+    """Runner-driven ReAct loop: one generation per environment step."""
+    observation = initial.observation
+    admissible = initial.admissible_actions
+    history: list[dict[str, str]] = []
+    records: list[dict[str, Any]] = []
+    total_tokens = 0
+    stop_reason = "max_steps"
+    final_success = False
+
+    for step_number in range(1, max_steps + 1):
+        try:
+            generation = agent.act(initial.task, history, admissible)
+        except AgentError as exc:
+            records.append(
+                {
+                    "episode_id": initial.episode_id,
+                    "task_type": initial.task_type,
+                    "task": initial.task,
+                    "step": step_number,
+                    "thought": "",
+                    "action": "",
+                    "observation": observation,
+                    "admissible_actions": admissible,
+                    "token_logprobs": [],
+                    "perplexity": None,
+                    "seqprob": None,
+                    "verb": None,
+                    "progress": None,
+                    "done": True,
+                    "final_success": False,
+                    "error": str(exc),
+                    "uq": {},
+                }
+            )
+            stop_reason = "api_error"
+            break
+
+        result = env.step(generation.action)
+        combined_uq = generation.uq.get("combined", {})
+        record = {
+            "episode_id": initial.episode_id,
+            "task_type": initial.task_type,
+            "task": initial.task,
+            "step": step_number,
+            "thought": generation.thought,
+            "action": generation.action,
+            "proposed_action": generation.proposed_action,
+            "observation": result.observation,
+            "admissible_actions": admissible,
+            "token_logprobs": generation.token_logprobs,
+            "perplexity": combined_uq.get("perplexity"),
+            "seqprob": combined_uq.get("sequence_probability"),
+            "verb": combined_uq.get("verbalized_confidence"),
+            "progress": result.progress,
+            "done": result.done,
+            "final_success": False,
+            "format_valid": generation.format_valid,
+            "action_valid": generation.action_valid,
+            "fallback_reason": generation.fallback_reason,
+            "raw_response": generation.raw_text,
+            "logprobs_available": generation.logprobs_available,
+            "provider": generation.provider,
+            "uq": generation.uq,
+            "usage": {
+                "prompt_tokens": generation.prompt_tokens,
+                "completion_tokens": generation.completion_tokens,
+                "total_tokens": generation.total_tokens,
+                "request_attempts": generation.request_attempts,
+                "empty_response_retries": generation.empty_response_retries,
+                "generation_token_limit": generation.generation_token_limit,
+            },
+        }
+        records.append(record)
+        total_tokens += generation.total_tokens
+        history.append(
+            {
+                "thought": generation.thought,
+                "action": generation.action,
+                "observation": result.observation,
+            }
+        )
+        observation = result.observation
+        admissible = result.admissible_actions
+        if result.done:
+            final_success = result.won
+            if result.won:
+                stop_reason = "success"
+            elif step_number >= max_steps:
+                stop_reason = "max_steps"
+            else:
+                stop_reason = "environment_done"
+            break
+    return records, final_success, stop_reason, total_tokens
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Collect ReAct trajectories from text-only ALFWorld."
+        description="Collect agent trajectories from text-only ALFWorld."
     )
     parser.add_argument("--config", type=Path)
     parser.add_argument("--num-episodes", type=int, default=10)
@@ -98,7 +220,28 @@ def build_parser() -> argparse.ArgumentParser:
         default="valid_seen",
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--policy", choices=["llm", "random"], default="llm")
+    parser.add_argument(
+        "--policy", choices=["llm", "random", "smolagents"], default="llm"
+    )
+    parser.add_argument(
+        "--smol-code-tags",
+        choices=["markdown", "xml"],
+        default="markdown",
+        help="Action format for --policy smolagents: markdown fences (default, "
+        "gpt-oss follows them far more reliably) or the framework's <code> tags.",
+    )
+    parser.add_argument(
+        "--smol-stop-sequences",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Keep the code close tag as a stop sequence for --policy smolagents.",
+    )
+    parser.add_argument(
+        "--agent-max-steps",
+        type=int,
+        default=0,
+        help="Generation budget for --policy smolagents; 0 uses --max-steps.",
+    )
     parser.add_argument("--env-file", type=Path, default=PROJECT_ROOT / ".env")
     parser.add_argument("--api-timeout", type=float, default=60.0)
     parser.add_argument("--api-retries", type=int, default=3)
@@ -169,6 +312,7 @@ def main() -> None:
         "split": args.split,
         "seed": args.seed,
         "policy": args.policy,
+        "agent_max_steps": args.agent_max_steps,
         "model": model,
         "request_logprobs": not args.no_logprobs,
         "empty_response_retries": args.empty_response_retries,
@@ -195,97 +339,16 @@ def main() -> None:
         for episode_index in range(args.num_episodes):
             started = time.monotonic()
             initial = env.reset()
-            observation = initial.observation
-            admissible = initial.admissible_actions
-            history: list[dict[str, str]] = []
-            records: list[dict[str, Any]] = []
-            total_tokens = 0
-            stop_reason = "max_steps"
-            final_success = False
-
-            for step_number in range(1, args.max_steps + 1):
-                try:
-                    generation = agent.act(initial.task, history, admissible)
-                except AgentError as exc:
-                    records.append(
-                        {
-                            "episode_id": initial.episode_id,
-                            "task_type": initial.task_type,
-                            "task": initial.task,
-                            "step": step_number,
-                            "thought": "",
-                            "action": "",
-                            "observation": observation,
-                            "admissible_actions": admissible,
-                            "token_logprobs": [],
-                            "perplexity": None,
-                            "seqprob": None,
-                            "verb": None,
-                            "progress": None,
-                            "done": True,
-                            "final_success": False,
-                            "error": str(exc),
-                            "uq": {},
-                        }
-                    )
-                    stop_reason = "api_error"
-                    break
-
-                result = env.step(generation.action)
-                combined_uq = generation.uq.get("combined", {})
-                record = {
-                    "episode_id": initial.episode_id,
-                    "task_type": initial.task_type,
-                    "task": initial.task,
-                    "step": step_number,
-                    "thought": generation.thought,
-                    "action": generation.action,
-                    "proposed_action": generation.proposed_action,
-                    "observation": result.observation,
-                    "admissible_actions": admissible,
-                    "token_logprobs": generation.token_logprobs,
-                    "perplexity": combined_uq.get("perplexity"),
-                    "seqprob": combined_uq.get("sequence_probability"),
-                    "verb": combined_uq.get("verbalized_confidence"),
-                    "progress": result.progress,
-                    "done": result.done,
-                    "final_success": False,
-                    "format_valid": generation.format_valid,
-                    "action_valid": generation.action_valid,
-                    "fallback_reason": generation.fallback_reason,
-                    "raw_response": generation.raw_text,
-                    "logprobs_available": generation.logprobs_available,
-                    "provider": generation.provider,
-                    "uq": generation.uq,
-                    "usage": {
-                        "prompt_tokens": generation.prompt_tokens,
-                        "completion_tokens": generation.completion_tokens,
-                        "total_tokens": generation.total_tokens,
-                        "request_attempts": generation.request_attempts,
-                        "empty_response_retries": generation.empty_response_retries,
-                        "generation_token_limit": generation.generation_token_limit,
-                    },
-                }
-                records.append(record)
-                total_tokens += generation.total_tokens
-                history.append(
-                    {
-                        "thought": generation.thought,
-                        "action": generation.action,
-                        "observation": result.observation,
-                    }
+            if args.policy == "smolagents":
+                episode = agent.run_episode(env, initial, args.max_steps)
+                records = episode.records
+                final_success = episode.final_success
+                stop_reason = episode.stop_reason
+                total_tokens = episode.total_tokens
+            else:
+                records, final_success, stop_reason, total_tokens = (
+                    _run_react_episode(agent, env, initial, args.max_steps)
                 )
-                observation = result.observation
-                admissible = result.admissible_actions
-                if result.done:
-                    final_success = result.won
-                    if result.won:
-                        stop_reason = "success"
-                    elif step_number >= args.max_steps:
-                        stop_reason = "max_steps"
-                    else:
-                        stop_reason = "environment_done"
-                    break
 
             for record in records:
                 record["final_success"] = final_success

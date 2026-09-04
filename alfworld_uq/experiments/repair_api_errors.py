@@ -13,6 +13,10 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+# `api_error` comes from the ReAct loop, `agent_error` from the smolagents one.
+REPAIRABLE_STOP_REASONS = frozenset({"api_error", "agent_error"})
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
@@ -48,7 +52,7 @@ def replace_episodes(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Sequentially rerun api_error episodes and replace them atomically."
+        description="Sequentially rerun failed-endpoint episodes and replace them atomically."
     )
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--max-repair-attempts", type=int, default=3)
@@ -66,10 +70,10 @@ def main() -> None:
     failed_indices = [
         index
         for index, summary in enumerate(episodes)
-        if summary.get("stop_reason") == "api_error"
+        if summary.get("stop_reason") in REPAIRABLE_STOP_REASONS
     ]
     if not failed_indices:
-        print("No api_error episodes to repair.")
+        print("No failed-endpoint episodes to repair.")
         return
 
     repairs_root = args.run_dir / "repairs"
@@ -106,6 +110,8 @@ def main() -> None:
                 str(config["max_generation_tokens"]),
                 "--empty-response-retries",
                 str(config["empty_response_retries"]),
+                "--agent-max-steps",
+                str(config.get("agent_max_steps", 0)),
             ]
             provider_order = config.get("provider_order", "")
             if provider_order:
@@ -136,7 +142,7 @@ def main() -> None:
                 f"attempt={attempt}: {repaired_summary['stop_reason']}",
                 flush=True,
             )
-            if repaired_summary["stop_reason"] == "api_error":
+            if repaired_summary["stop_reason"] in REPAIRABLE_STOP_REASONS:
                 continue
             repaired_rows = _read_jsonl(attempt_dir / "trajectories.jsonl")
             if repaired_summary["episode_id"] != original["episode_id"]:
@@ -168,8 +174,13 @@ def main() -> None:
     repaired_episodes, repaired_trajectories = replace_episodes(
         episodes, trajectories, replacements
     )
-    if any(row.get("stop_reason") == "api_error" for row in repaired_episodes):
-        raise RuntimeError("api_error remains after repair; original files were not changed")
+    if any(
+        row.get("stop_reason") in REPAIRABLE_STOP_REASONS
+        for row in repaired_episodes
+    ):
+        raise RuntimeError(
+            "endpoint failure remains after repair; original files were not changed"
+        )
     backup_episodes = args.run_dir / "episodes.pre_repair.jsonl"
     backup_trajectories = args.run_dir / "trajectories.pre_repair.jsonl"
     if not backup_episodes.exists():

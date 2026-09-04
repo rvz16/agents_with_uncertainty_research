@@ -27,6 +27,19 @@ MODEL_NAME=openai/gpt-oss-20b
 ALFWorld defaults to `~/.cache/alfworld`. Override it with `--data-root` or
 `ALFWORLD_DATA`.
 
+`alfworld-download` fetches two archives; the second one carries
+`initial_state.pddl` and the pre-generated `game.tw-pddl` files. A connection
+that drops mid-archive still exits leaving only `traj_data.json`, and the
+environment then reports `0 supported games`. Check before running anything:
+
+```bash
+find ~/.cache/alfworld/json_2.1.1 -name game.tw-pddl | wc -l   # expect ~4000
+```
+
+Re-run `alfworld-download` if it is zero. Generating those files locally with
+`alfworld-generate` also needs `~/.cache/alfworld/logic/alfred.{pddl,twl2}`,
+which ships inside the installed package (`alfworld/data/`).
+
 ## Collect trajectories
 
 Run the 10-episode pilot:
@@ -74,6 +87,71 @@ served provider is stored on every step.
 the model's hidden reasoning before it emits the visible ReAct response. If a
 response is still empty, the default `--empty-response-retries 1` repeats that
 step once with a doubled limit and includes both attempts in token accounting.
+
+## smolagents policy
+
+`--policy smolagents` swaps the runner-driven ReAct loop for a smolagents
+`CodeAgent` that owns the episode: the model writes Python that calls
+`take_action("<admissible action>")`, so one generation can take zero, one, or
+several environment steps. The environment, the admissible-action resolution,
+the repeated-action fallback and the trajectory schema are shared with the
+ReAct policy, so both runs feed the same analysis.
+
+```bash
+.venv/bin/python -m experiments.run_alfworld \
+  --policy smolagents \
+  --num-episodes 10 \
+  --max-steps 30 \
+  --max-generation-tokens 2048 \
+  --provider-order Novita --no-allow-provider-fallbacks \
+  --output-dir runs/smol_baseline_10
+```
+
+`--max-steps` stays the environment budget. `--agent-max-steps` is the separate
+generation budget for the framework loop (default: the same number). The
+episode ends the moment the environment reports `done` or the step budget runs
+out, so a solved episode never pays for extra generations.
+
+Differences a reader of the trajectories should know:
+
+- **Rows are per generation, not per environment step.** `env_actions` lists
+  what that generation actually did; `env_action_count` is 0 for a generation
+  that only reasoned, printed, or called `final_answer`.
+- **UQ segments follow the code-action format.** `thought` is the text before
+  the code block and `action` is the code itself; `combined` is the whole
+  response, as before. When the close tag is a stop sequence the response ends
+  without it, so end-of-text closes the block — the same thing smolagents' own
+  parser does when it re-appends the missing tag.
+- **`format_valid`** means the generation produced a code block (or a bare code
+  blob that parses, which smolagents also accepts). **`action_valid`** means
+  every environment action in the generation was admissible; a lone
+  `final_answer` counts as a deliberate stop, anything else with no environment
+  action is recorded as `no_env_action`.
+- **Log-probabilities are not free here.** `OpenAIServerModel` drops them, so
+  the model is subclassed to send `logprobs=True` and keep each raw response.
+  It also repeats a generation with a doubled token limit when the endpoint
+  returns empty content (`--empty-response-retries`).
+
+Two settings exist because of what gpt-oss-20b does with the stock smolagents
+configuration; both are worth re-checking for a new model:
+
+- **Stop sequences.** smolagents stops generation on `["Observation:",
+  "Calling tools:", <code close tag>]`. The first two are words a reasoning
+  model uses while it thinks, and a hit inside hidden reasoning ends the turn
+  with *empty content* — in a 2-episode pilot that silently wasted a quarter of
+  all generations (empty response, no log-probabilities, counted as a malformed
+  step). Only the framework's own code-tag rule is kept. Pass
+  `--no-smol-stop-sequences` to drop stops entirely; that lets a model
+  hallucinate a second code block, which the framework's parser concatenates
+  and executes.
+- **Action format.** `--smol-code-tags markdown` (default) uses ```` ```python ````
+  fences instead of the framework's `<code>` tags: gpt-oss-20b frequently
+  answered with a bare `Thought:` line and no `<code>` block at all. Use
+  `--smol-code-tags xml` for the stock format.
+
+`stop_reason` gains two smolagents-only values: `agent_stopped` (the framework
+called `final_answer` or ran out of generations) and `agent_error` (the
+framework raised after at least one generation).
 
 ## Analyze without LLM calls
 
