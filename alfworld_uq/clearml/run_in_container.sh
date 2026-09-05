@@ -93,6 +93,30 @@ done
 echo "[wrapper] ALFWorld game files: ${games}"
 [ "${games}" -gt 1000 ] || { echo "[wrapper] FATAL: dataset incomplete"; exit 1; }
 
+# ---------------------------------------------------------------- cuda toolkit
+# vLLM 0.28 samples through FlashInfer, which JIT-compiles its kernels with
+# nvcc. A plain python image has none -- torch wheels carry the CUDA runtime,
+# not the compiler -- and the engine dies with "Could not find nvcc and default
+# cuda_home='/usr/local/cuda' doesn't exist". Two independent guards:
+# the PyTorch sampler needs no compilation at all, and a pip-installed toolkit
+# satisfies anything else that still wants to build.
+export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
+if ! command -v nvcc >/dev/null 2>&1 && [ ! -d /usr/local/cuda ]; then
+  echo "[wrapper] no nvcc in the image, installing the pip CUDA toolkit"
+  python -m pip install "nvidia-cuda-nvcc-cu12" "nvidia-cuda-runtime-cu12" >/dev/null 2>&1 || true
+  nvcc_root=$(python -c "import pathlib,nvidia; print(pathlib.Path(nvidia.__file__).parent)" 2>/dev/null || true)
+  if [ -n "${nvcc_root}" ] && [ -x "${nvcc_root}/cuda_nvcc/bin/nvcc" ]; then
+    mkdir -p /usr/local/cuda
+    ln -sfn "${nvcc_root}/cuda_nvcc/bin" /usr/local/cuda/bin
+    ln -sfn "${nvcc_root}/cuda_runtime/include" /usr/local/cuda/include
+    export CUDA_HOME=/usr/local/cuda
+    export PATH="/usr/local/cuda/bin:${PATH}"
+    echo "[wrapper] nvcc at $(command -v nvcc || echo missing)"
+  else
+    echo "[wrapper] pip CUDA toolkit unavailable; relying on the PyTorch sampler"
+  fi
+fi
+
 # ---------------------------------------------------------------- serve
 # No --served-model-name: the client addresses the model by its HF id.
 echo "[wrapper] serving ${MODEL} on :${PORT} (tp=${TENSOR_PARALLEL_SIZE})"
