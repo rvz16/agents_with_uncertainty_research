@@ -114,12 +114,12 @@ for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS}"); do
     echo "[wrapper] vLLM healthy after ${i}x5s"; break
   fi
   if ! kill -0 ${VLLM_PID} 2>/dev/null; then
-    echo "[wrapper] FATAL: vLLM died. Last log lines:"; tail -n 60 "${VLLM_LOG}"; exit 1
+    echo "[wrapper] FATAL: vLLM died. Last log lines:"; tail -n 300 "${VLLM_LOG}"; exit 1
   fi
   sleep 5
 done
 curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null || {
-  echo "[wrapper] FATAL: health never came up"; tail -n 60 "${VLLM_LOG}"; exit 1; }
+  echo "[wrapper] FATAL: health never came up"; tail -n 300 "${VLLM_LOG}"; exit 1; }
 
 # The runner reads the endpoint from .env / the environment. `logprobs` is a
 # plain OpenAI parameter here, so none of the OpenRouter provider routing

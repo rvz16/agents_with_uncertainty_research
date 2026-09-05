@@ -52,6 +52,13 @@ def main() -> int:
         print(f"[entry] uploaded {run_root}", flush=True)
     else:
         print(f"[entry] nothing to upload: {run_root} does not exist", flush=True)
+
+    # The engine's real error scrolls out of the console's rolling window, and
+    # the container is gone by the time anyone reads the task, so keep the file.
+    serve_log = project / "vllm_serve.log"
+    if serve_log.exists():
+        task.upload_artifact("vllm_serve_log", artifact_object=serve_log, wait_on_upload=True)
+        print(f"[entry] uploaded {serve_log}", flush=True)
     return rc
 
 
