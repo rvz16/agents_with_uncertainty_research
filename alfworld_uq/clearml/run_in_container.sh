@@ -69,16 +69,23 @@ python -c "import vllm, torch, smolagents, alfworld; print('[wrapper] vllm', vll
 # and the pre-generated game.tw-pddl files. A dropped connection still exits 0
 # and leaves a tree the environment reports as "0 supported games", so the game
 # files are counted and the download retried.
-games=0
+# `find` exits non-zero before the first download because the directory does not
+# exist yet, and under `set -euo pipefail` that killed the whole script right
+# here -- silently, since the failing command was a command substitution.
+count_games() {
+  local found
+  found=$(find "${ALFWORLD_DATA}/json_2.1.1" -name game.tw-pddl 2>/dev/null | wc -l | tr -d ' ') || found=0
+  echo "${found:-0}"
+}
+
+echo "[wrapper] ALFWORLD_DATA=${ALFWORLD_DATA}"
+games=$(count_games)
 for attempt in 1 2 3; do
-  games=$(find "${ALFWORLD_DATA}/json_2.1.1" -name game.tw-pddl 2>/dev/null | wc -l | tr -d ' ')
   if [ "${games}" -gt 1000 ]; then break; fi
   echo "[wrapper] alfworld-download attempt ${attempt} (games so far: ${games})"
   alfworld-download || true
+  games=$(count_games)
 done
-if [ "${games}" -le 1000 ]; then
-  games=$(find "${ALFWORLD_DATA}/json_2.1.1" -name game.tw-pddl 2>/dev/null | wc -l | tr -d ' ')
-fi
 echo "[wrapper] ALFWorld game files: ${games}"
 [ "${games}" -gt 1000 ] || { echo "[wrapper] FATAL: dataset incomplete"; exit 1; }
 
