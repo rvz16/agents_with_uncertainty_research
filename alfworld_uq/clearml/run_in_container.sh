@@ -55,6 +55,13 @@ apt-get -o Dir::Cache::archives=/tmp/aptcache install -y -qq --no-install-recomm
 python -m pip install --no-cache-dir \
   "alfworld==0.4.2" "textworld[pddl]==1.7.0" "openai==2.50.0" \
   "python-dotenv==1.2.2" "smolagents==1.26.0" >/dev/null
+# Images without vLLM (used on agents that strip --entrypoint) get it from pip;
+# the wheel brings its own torch and CUDA runtime, so only the driver matters.
+if ! python -c "import vllm" >/dev/null 2>&1; then
+  echo "[wrapper] no vLLM in the image, installing vllm==${VLLM_VERSION:-0.12.0}"
+  python -m pip install "vllm==${VLLM_VERSION:-0.12.0}" || {
+    echo "[wrapper] FATAL: could not install vLLM"; exit 1; }
+fi
 python -c "import vllm, torch, smolagents, alfworld; print('[wrapper] vllm', vllm.__version__, 'torch', torch.__version__, 'smolagents', smolagents.__version__)"
 
 # ---------------------------------------------------------------- data

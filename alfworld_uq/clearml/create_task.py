@@ -19,6 +19,13 @@ from clearml import Task
 
 REPO = "https://github.com/rvz16/agents_with_uncertainty_research.git"
 DOCKER_IMAGE = "vllm/vllm-openai:v0.12.0"
+# aiagent03's agent prints "ignoring docker argument(s) --entrypoint" and strips
+# it, so the vLLM image runs its own `vllm` entrypoint and the agent's startup
+# script lands in vllm serve's argv. An image whose entrypoint is a shell works
+# there; the wrapper pip-installs vLLM when the image does not ship it, and the
+# torch/vLLM wheels bring their own CUDA runtime, so only the driver is needed.
+# `python:3.12` also ships git, which the corrupt apt on aiagent01 cannot install.
+FALLBACK_IMAGE = "python:3.12"
 # --entrypoint= : the image's entrypoint is `vllm`; clear it so ClearML runs python.
 # --network=host: the client reaches the in-container endpoint on 127.0.0.1.
 DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g"
@@ -70,6 +77,11 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--tensor-parallel-size", type=int, default=1)
     p.add_argument("--max-model-len", type=int, default=32768)
+    p.add_argument("--image", default=DOCKER_IMAGE,
+                   help=f"docker image; use {FALLBACK_IMAGE} on agents that strip "
+                        "--entrypoint or cannot apt-install git")
+    p.add_argument("--vllm-version", default="0.12.0",
+                   help="pip-installed when the image does not already ship vLLM")
     p.add_argument("--run-name", default=None)
     p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
                    help="extra environment variable for the run; repeatable")
@@ -85,7 +97,7 @@ def main() -> None:
         repo=REPO,
         branch=a.branch,
         script="alfworld_uq/clearml/entry.py",
-        docker=f"{DOCKER_IMAGE} {DOCKER_ARGS}",
+        docker=f"{a.image} {DOCKER_ARGS}",
         docker_bash_setup_script=SETUP,
         packages=["clearml"],
     )
@@ -102,6 +114,7 @@ def main() -> None:
         "Args/SEED": str(a.seed),
         "Args/TENSOR_PARALLEL_SIZE": str(a.tensor_parallel_size),
         "Args/MAX_MODEL_LEN": str(a.max_model_len),
+        "Args/VLLM_VERSION": a.vllm_version,
         "Args/RUN_NAME": f"{run_name}_smoke" if a.smoke else run_name,
     }
     for item in a.env:
