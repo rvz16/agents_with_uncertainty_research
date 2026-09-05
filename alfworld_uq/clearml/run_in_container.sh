@@ -22,6 +22,10 @@ PORT="${VLLM_PORT:-8010}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
 VLLM_LOG="${VLLM_LOG:-${PROJECT_DIR}/vllm_serve.log}"
+GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-}"
+# A 72 GB checkpoint has to be downloaded before the server can answer, which
+# takes far longer than loading an already-cached one.
+HEALTH_TIMEOUT_STEPS="${HEALTH_TIMEOUT_STEPS:-240}"
 
 POLICY="${POLICY:-smolagents}"
 SPLIT="${SPLIT:-valid_seen}"
@@ -92,16 +96,20 @@ echo "[wrapper] ALFWorld game files: ${games}"
 # ---------------------------------------------------------------- serve
 # No --served-model-name: the client addresses the model by its HF id.
 echo "[wrapper] serving ${MODEL} on :${PORT} (tp=${TENSOR_PARALLEL_SIZE})"
-vllm serve "${MODEL}" \
-  --host 127.0.0.1 --port "${PORT}" \
-  --max-model-len "${MAX_MODEL_LEN}" \
-  --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
-  >"${VLLM_LOG}" 2>&1 &
+serve_args=(
+  --host 127.0.0.1 --port "${PORT}"
+  --max-model-len "${MAX_MODEL_LEN}"
+  --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}"
+)
+if [ -n "${GPU_MEMORY_UTILIZATION}" ]; then
+  serve_args+=(--gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}")
+fi
+vllm serve "${MODEL}" "${serve_args[@]}" >"${VLLM_LOG}" 2>&1 &
 VLLM_PID=$!
 trap 'echo "[wrapper] stopping vLLM ${VLLM_PID}"; kill ${VLLM_PID} 2>/dev/null || true' EXIT
 
-echo "[wrapper] waiting for /health (up to 20 min)"
-for i in $(seq 1 240); do
+echo "[wrapper] waiting for /health (up to $((HEALTH_TIMEOUT_STEPS * 5 / 60)) min)"
+for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS}"); do
   if curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
     echo "[wrapper] vLLM healthy after ${i}x5s"; break
   fi

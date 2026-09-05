@@ -77,6 +77,12 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--tensor-parallel-size", type=int, default=1)
     p.add_argument("--max-model-len", type=int, default=32768)
+    p.add_argument("--gpu-memory-utilization", default=None,
+                   help="vLLM fraction of VRAM; raise it for a checkpoint that "
+                        "barely fits, leave unset for the vLLM default")
+    p.add_argument("--health-timeout-steps", type=int, default=240,
+                   help="5-second polls to wait for /health; a 72 GB checkpoint "
+                        "needs downloading before the server answers")
     p.add_argument("--image", default=DOCKER_IMAGE,
                    help=f"docker image; use {FALLBACK_IMAGE} on agents that strip "
                         "--entrypoint or cannot apt-install git")
@@ -115,8 +121,11 @@ def main() -> None:
         "Args/TENSOR_PARALLEL_SIZE": str(a.tensor_parallel_size),
         "Args/MAX_MODEL_LEN": str(a.max_model_len),
         "Args/VLLM_VERSION": a.vllm_version,
+        "Args/HEALTH_TIMEOUT_STEPS": str(a.health_timeout_steps),
         "Args/RUN_NAME": f"{run_name}_smoke" if a.smoke else run_name,
     }
+    if a.gpu_memory_utilization:
+        params["Args/GPU_MEMORY_UTILIZATION"] = a.gpu_memory_utilization
     for item in a.env:
         key, _, value = item.partition("=")
         if key:

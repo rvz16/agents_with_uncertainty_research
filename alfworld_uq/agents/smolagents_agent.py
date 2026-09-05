@@ -22,10 +22,12 @@ from typing import Any
 
 from agents.react_agent import (
     _extract_token_records,
+    _metric_bundle,
     _usage,
     is_transient_error,
     metrics_by_span,
     resolve_action,
+    split_reasoning_tokens,
 )
 from uq.verbalized import parse_verbalized_confidence
 
@@ -500,10 +502,18 @@ class SmolagentsPolicy:
         for index, generation in enumerate(generations, start=1):
             raw_text = generation["raw_text"]
             thought_span, action_span, code = _response_spans(raw_text)
+            # A locally served model may score its hidden reasoning channel too;
+            # keep it out of `combined` and report it as its own target.
+            reasoning, content = split_reasoning_tokens(
+                raw_text, generation["token_records"]
+            )
             uq = metrics_by_span(
                 raw_text,
-                generation["token_records"],
+                content,
                 {"thought": thought_span, "action": action_span},
+            )
+            uq["reasoning"] = _metric_bundle(
+                [float(record["logprob"]) for record in reasoning]
             )
             verbalized = parse_verbalized_confidence(raw_text)
             for segment in uq.values():
@@ -572,7 +582,7 @@ class SmolagentsPolicy:
                     "action_valid": action_valid,
                     "fallback_reason": fallback_reason,
                     "raw_response": raw_text,
-                    "logprobs_available": bool(generation["token_records"]),
+                    "logprobs_available": bool(content),
                     "provider": generation["provider"],
                     "uq": uq,
                     "usage": {
@@ -588,6 +598,8 @@ class SmolagentsPolicy:
                         ],
                     },
                     "code_action": code,
+                    "reasoning_tokens": len(reasoning),
+                    "content_tokens": len(content),
                     "env_actions": [step.action for step in env_steps],
                     "env_action_count": len(env_steps),
                     "latency_seconds": generation["latency_seconds"],

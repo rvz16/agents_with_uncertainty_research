@@ -35,7 +35,9 @@ UQ_METHODS = {
     "sequence_probability": False,
     "verbalized_confidence": False,
 }
-TARGETS = ("thought", "action", "combined")
+# `reasoning` exists only for locally served models that return log-probabilities
+# for their hidden channel; it is empty for hosted endpoints and drops out then.
+TARGETS = ("thought", "action", "combined", "reasoning")
 AGGREGATIONS = (
     "last",
     "mean",

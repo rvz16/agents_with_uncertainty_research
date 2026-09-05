@@ -93,6 +93,68 @@ def _metric_bundle(logprobs: list[float]) -> dict[str, float | int | None]:
     }
 
 
+_SPECIAL_TOKEN = re.compile(r"^<\|.*\|>$")
+
+
+def split_reasoning_tokens(
+    raw_text: str, token_records: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate hidden-reasoning tokens from the tokens of the visible answer.
+
+    A locally served gpt-oss returns log-probabilities for its whole harmony
+    stream -- `<|channel|>analysis<|message|>` reasoning included -- while
+    `message.content` holds only the final channel. Scoring all of it as one
+    generation would silently make `combined` a different quantity here than on
+    a hosted endpoint that returns the visible answer alone, and would drown the
+    answer's ~30 tokens in ~1000 tokens of reasoning.
+
+    Returns (reasoning, content). Endpoints that already return only the answer
+    yield an empty reasoning list.
+    """
+    if not token_records:
+        return [], []
+    tokens = [str(record["token"]) for record in token_records]
+    if not any(_SPECIAL_TOKEN.match(token) for token in tokens):
+        return [], list(token_records)
+
+    def concat(records: list[dict[str, Any]]) -> str:
+        return "".join(
+            str(record["token"])
+            for record in records
+            if not _SPECIAL_TOKEN.match(str(record["token"]))
+        )
+
+    # Structural split: the visible answer follows the last `<|message|>`.
+    for index in range(len(tokens) - 1, -1, -1):
+        if tokens[index] == "<|message|>":
+            content = [
+                record
+                for record in token_records[index + 1 :]
+                if not _SPECIAL_TOKEN.match(str(record["token"]))
+            ]
+            if concat(content) == raw_text:
+                return token_records[: index + 1], content
+            break
+
+    # Fallback: the shortest suffix of ordinary tokens that spells the answer.
+    plain = [
+        record
+        for record in token_records
+        if not _SPECIAL_TOKEN.match(str(record["token"]))
+    ]
+    accumulated = ""
+    for position in range(len(plain) - 1, -1, -1):
+        accumulated = str(plain[position]["token"]) + accumulated
+        if accumulated == raw_text:
+            return plain[:position], plain[position:]
+        if len(accumulated) > len(raw_text) + 64:
+            break
+    # Harmony markers are present but the answer cannot be located: the
+    # generation is reasoning that never reached a visible answer (an empty
+    # content). Counting it as content would put reasoning into `combined`.
+    return list(token_records), []
+
+
 def token_offsets(
     raw_text: str, token_records: list[dict[str, Any]]
 ) -> list[tuple[int, int, float]]:
@@ -372,7 +434,11 @@ class ReActAgent:
             fallback_reason = "invalid_format"
 
         token_records = _extract_token_records(response)
-        uq = _segment_logprobs(raw_text, parsed, token_records)
+        reasoning, content = split_reasoning_tokens(raw_text, token_records)
+        uq = _segment_logprobs(raw_text, parsed, content)
+        uq["reasoning"] = _metric_bundle(
+            [float(record["logprob"]) for record in reasoning]
+        )
         verbalized = parse_verbalized_confidence(raw_text)
         for segment in uq.values():
             segment["verbalized_confidence"] = verbalized
@@ -390,7 +456,7 @@ class ReActAgent:
             prompt_tokens=request_metadata["prompt_tokens"],
             completion_tokens=request_metadata["completion_tokens"],
             total_tokens=request_metadata["total_tokens"],
-            logprobs_available=bool(token_records),
+            logprobs_available=bool(content),
             provider=str(
                 getattr(response, "provider", None)
                 or (getattr(response, "model_extra", None) or {}).get("provider")

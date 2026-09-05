@@ -146,3 +146,36 @@ def test_segments_survive_tokens_the_provider_dropped() -> None:
     # "Action" ones that the concatenated offsets used to slide into it.
     assert uq["thought"]["num_tokens"] == 1
     assert uq["thought"]["sum_logprob"] == -0.1
+
+
+def test_hidden_reasoning_is_scored_separately_from_the_answer() -> None:
+    """A locally served gpt-oss returns log-probabilities for its whole stream.
+
+    The visible answer is only the final channel, so counting the reasoning as
+    part of the generation would make `combined` mean something different than
+    it does on a hosted endpoint that returns the answer alone.
+    """
+    from agents.react_agent import split_reasoning_tokens
+
+    raw = "Thought: inspect\nAction: look"
+    stream = (
+        ["<|channel|>", "analysis", "<|message|>", "We", " should", " look"]
+        + ["<|end|>", "<|start|>", "assistant", "<|channel|>", "final", "<|message|>"]
+        + ["Thought", ":", " inspect", "\n", "Action", ":", " look"]
+        + ["<|return|>"]
+    )
+    records = [{"token": token, "logprob": -0.2} for token in stream]
+
+    reasoning, content = split_reasoning_tokens(raw, records)
+    assert "".join(r["token"] for r in content) == raw
+    assert any(r["token"] == "analysis" for r in reasoning)
+    assert not any(r["token"].startswith("<|") for r in content)
+
+
+def test_a_plain_endpoint_has_no_reasoning_to_split() -> None:
+    from agents.react_agent import split_reasoning_tokens
+
+    records = [{"token": t, "logprob": -0.1} for t in ["Thought", ": ", "look"]]
+    reasoning, content = split_reasoning_tokens("Thought: look", records)
+    assert reasoning == []
+    assert content == records
