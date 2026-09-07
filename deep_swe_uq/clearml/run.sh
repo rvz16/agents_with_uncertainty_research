@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Full DeepSWE run on a ClearML agent: serve the model in this task, let Pier
+# drive its own containers through the mounted host daemon, grade in a pristine
+# container. The probe (probe.sh) established every step here; this only adds
+# the knobs a real run needs.
+set -uo pipefail
+
+echo "=== [1/6] docker reachable from inside the task container? ==="
+ls -la /var/run/docker.sock 2>&1 | head -2
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[run] no docker client, installing"
+  (apt-get update -qq -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true)
+  (apt-get install -y -qq --no-install-recommends docker.io >/dev/null 2>&1 || true)
+  command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || true
+fi
+docker version --format '{{.Server.Version}}' 2>&1 | head -2
+docker info --format 'containers={{.Containers}} images={{.Images}} driver={{.Driver}}' 2>&1 | head -2
+if ! docker ps >/dev/null 2>&1; then
+  echo "[run] VERDICT: docker daemon unreachable -- Pier cannot run here"
+  exit 20
+fi
+echo "[run] docker reachable"
+
+echo "=== [2/6] deps ==="
+python -m pip install --no-cache-dir "datacurve-pier==0.3.0" >/dev/null 2>&1 || {
+  echo "[run] VERDICT: pier install failed"; exit 21; }
+python -c "import pier; print('[probe] pier', pier.__version__ if hasattr(pier,'__version__') else 'ok')"
+
+echo "=== [3/6] tasks ==="
+# The task containers are started by the *host* daemon through the mounted
+# socket, so every bind mount it resolves is a host path. Anything living only
+# inside this container is invisible to them: the first attempt cloned to
+# /tmp/deep-swe and both trials died in `docker compose` with empty mounts.
+# SHARED is bind-mounted at the same path on both sides, so it resolves alike.
+SHARED="${RUN_ROOT:-/tmp/probe_runs}"
+mkdir -p "${SHARED}"
+# SHARED is bind-mounted from the host, so it survives between tasks: a clone
+# into it fails the second time. Reuse what is already there.
+if [ -d "${SHARED}/deep-swe/tasks" ]; then
+  echo "[run] tasks already present from an earlier run, reusing"
+else
+  git clone --depth 1 https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" >/dev/null 2>&1 || {
+    echo "[run] VERDICT: task clone failed"; exit 22; }
+fi
+echo "[run] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) under ${SHARED}"
+
+echo "=== [4/6] can we pull a task image? ==="
+IMAGE=$(grep -ho 'public.ecr.aws[^"]*' "${SHARED}"/deep-swe/tasks/*/environment/Dockerfile 2>/dev/null | head -1)
+echo "[run] image: ${IMAGE:-<none found>}"
+if [ -n "${IMAGE}" ]; then
+  timeout 900 docker pull "${IMAGE}" >/dev/null 2>&1 && echo "[run] pull OK" || echo "[run] pull FAILED (registry throttling was the local failure mode)"
+fi
+
+echo "=== [5/6] serve the model locally ==="
+# The cluster's egress filter answers OpenRouter with HTTP 403 ("Access denied
+# by security policy"), so the agent cannot reach a hosted endpoint at all.
+# Serving the model here removes the outbound call and, as a bonus, is the only
+# way we ever got complete token log-probabilities.
+SERVE_MODEL="${SERVE_MODEL:-openai/gpt-oss-20b}"
+PORT="${VLLM_PORT:-8010}"
+python -m pip install --no-cache-dir "vllm==${VLLM_VERSION:-0.28.0}" >/dev/null 2>&1 || {
+  echo "[run] VERDICT: vllm install failed"; exit 23; }
+export VLLM_USE_FLASHINFER_SAMPLER=0
+# 0.0.0.0, not localhost: this task runs with --network=host, so the port lands
+# in the host namespace where Pier's task containers can reach it.
+vllm serve "${SERVE_MODEL}" --host 0.0.0.0 --port "${PORT}" \
+  --max-model-len "${MAX_MODEL_LEN:-32768}" \
+  --tensor-parallel-size "${TENSOR_PARALLEL_SIZE:-1}" > /tmp/vllm.log 2>&1 &
+VLLM_PID=$!
+trap 'kill ${VLLM_PID} 2>/dev/null || true' EXIT
+for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS:-360}"); do
+  curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && break
+  kill -0 ${VLLM_PID} 2>/dev/null || { echo "[run] VERDICT: vLLM died"; tail -n 40 /tmp/vllm.log; exit 24; }
+  sleep 5
+done
+curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null || { echo "[run] VERDICT: vLLM never healthy"; exit 24; }
+echo "[run] vLLM healthy"
+
+# A task container's own localhost is not ours; reach the host over the bridge.
+GATEWAY=$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1)
+BASE_URL="http://${GATEWAY}:${PORT}/v1"
+echo "[run] agents will call ${BASE_URL}"
+curl -sf "${BASE_URL}/models" >/dev/null && echo "[run] endpoint reachable via gateway" || echo "[run] WARNING: gateway address not reachable from here"
+
+echo "=== [6/7] which litellm entry point returns logprobs? ==="
+# The agent's own config showed {"drop_params": true, "logprobs": true}: litellm
+# silently drops parameters it believes the provider does not support, and a
+# locally served model is absent from its registry. This asks litellm directly,
+# so one probe cycle settles whether the client or the server is at fault.
+python -m pip install --no-cache-dir litellm >/dev/null 2>&1 || true
+python - <<PY
+import json
+try:
+    import litellm
+    # The adapter picks litellm_response for an openai/ model, and that path calls
+    # litellm.responses() -- the Responses API, which has no logprobs at all. The
+    # completion path does. This prints the difference rather than assuming it.
+    try:
+        r = litellm.completion(
+            model="openai/${SERVE_MODEL}", api_base="${BASE_URL}", api_key="local",
+            messages=[{"role": "user", "content": "say ok"}], max_tokens=8, logprobs=True,
+        )
+        print(f"[probe] litellm.completion: logprobs={'PRESENT' if r.choices[0].logprobs else 'ABSENT'}")
+    except Exception as exc:
+        print(f"[probe] litellm.completion FAILED {type(exc).__name__}: {str(exc)[:120]}")
+    try:
+        r = litellm.responses(
+            model="openai/${SERVE_MODEL}", api_base="${BASE_URL}", api_key="local",
+            input="say ok", max_output_tokens=16,
+        )
+        print("[probe] litellm.responses: returned, logprobs are not part of that API")
+    except Exception as exc:
+        print(f"[probe] litellm.responses FAILED {type(exc).__name__}: {str(exc)[:120]}")
+except Exception as exc:
+    print("[probe] litellm unavailable:", exc)
+PY
+
+echo "=== [7/7] two real tasks through pier ==="
+timeout "${RUN_TIMEOUT_SEC:-21600}" pier run \
+  --path "${SHARED}/deep-swe/tasks" \
+  --model "openai/${SERVE_MODEL}" \
+  --n-tasks "${N_TASKS:-113}" --sample-seed "${SAMPLE_SEED:-0}" --n-concurrent "${N_CONCURRENT:-4}" \
+  --jobs-dir "${SHARED}/jobs" --env docker --yes \
+  --agent mini-swe-agent \
+  --agent-kwarg 'model_kwargs={"logprobs":true}' \
+  --agent-kwarg model_class=litellm \
+  --agent-env "OPENAI_API_KEY=local" \
+  --agent-env "OPENAI_API_BASE=${BASE_URL}" \
+  --agent-env "OPENAI_BASE_URL=${BASE_URL}" \
+  --job-name "${RUN_NAME:-deepswe}"
+rc=$?
+echo "[run] pier rc=${rc}"
+exit ${rc}
