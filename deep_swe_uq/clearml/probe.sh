@@ -26,12 +26,19 @@ python -m pip install --no-cache-dir "datacurve-pier==0.3.0" >/dev/null 2>&1 || 
 python -c "import pier; print('[probe] pier', pier.__version__ if hasattr(pier,'__version__') else 'ok')"
 
 echo "=== [3/5] tasks ==="
-git clone --depth 1 https://github.com/datacurve-ai/deep-swe /tmp/deep-swe >/dev/null 2>&1 || {
+# The task containers are started by the *host* daemon through the mounted
+# socket, so every bind mount it resolves is a host path. Anything living only
+# inside this container is invisible to them: the first attempt cloned to
+# /tmp/deep-swe and both trials died in `docker compose` with empty mounts.
+# SHARED is bind-mounted at the same path on both sides, so it resolves alike.
+SHARED="${RUN_ROOT:-/tmp/probe_runs}"
+mkdir -p "${SHARED}"
+git clone --depth 1 https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" >/dev/null 2>&1 || {
   echo "[probe] VERDICT: task clone failed"; exit 22; }
-echo "[probe] tasks: $(ls /tmp/deep-swe/tasks | wc -l)"
+echo "[probe] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) under ${SHARED}"
 
 echo "=== [4/5] can we pull a task image? ==="
-IMAGE=$(grep -ho 'public.ecr.aws[^"]*' /tmp/deep-swe/tasks/*/environment/Dockerfile 2>/dev/null | head -1)
+IMAGE=$(grep -ho 'public.ecr.aws[^"]*' "${SHARED}"/deep-swe/tasks/*/environment/Dockerfile 2>/dev/null | head -1)
 echo "[probe] image: ${IMAGE:-<none found>}"
 if [ -n "${IMAGE}" ]; then
   timeout 900 docker pull "${IMAGE}" >/dev/null 2>&1 && echo "[probe] pull OK" || echo "[probe] pull FAILED (registry throttling was the local failure mode)"
@@ -40,10 +47,10 @@ fi
 echo "=== [5/5] two real tasks through pier ==="
 export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 timeout "${PROBE_TIMEOUT_SEC:-3600}" pier run \
-  --path /tmp/deep-swe/tasks \
+  --path "${SHARED}/deep-swe/tasks" \
   --model "${MODEL:-openrouter/openai/gpt-oss-20b}" \
   --n-tasks "${N_TASKS:-2}" --sample-seed 0 --n-concurrent 1 \
-  --jobs-dir "${RUN_ROOT:-/tmp/probe_runs}" --env docker --yes \
+  --jobs-dir "${SHARED}/jobs" --env docker --yes \
   --agent mini-swe-agent \
   --agent-kwarg 'model_kwargs={"logprobs":true}' \
   --job-name probe

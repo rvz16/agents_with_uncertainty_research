@@ -24,9 +24,12 @@ def main() -> int:
     rc = subprocess.call(["bash", str(script)], cwd=str(repo))
     print(f"[entry] probe rc={rc}", flush=True)
 
-    if run_root.exists() and any(run_root.iterdir()):
-        task.upload_artifact("probe_runs", artifact_object=run_root, wait_on_upload=True)
-        print(f"[entry] uploaded {run_root}", flush=True)
+    # Upload only the job results: the shared directory also holds the cloned
+    # task repository, which the host daemon needs but nobody needs afterwards.
+    jobs = run_root / "jobs"
+    if jobs.exists() and any(jobs.iterdir()):
+        task.upload_artifact("probe_runs", artifact_object=jobs, wait_on_upload=True)
+        print(f"[entry] uploaded {jobs}", flush=True)
     return rc
 
 
