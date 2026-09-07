@@ -108,6 +108,19 @@ echo "=== [5/6] serve the model locally ==="
 # by security policy"), so the agent cannot reach a hosted endpoint at all.
 # Serving the model here removes the outbound call and, as a bonus, is the only
 # way we ever got complete token log-probabilities.
+# A worker whose disk is full kills the run 25 minutes in, inside vLLM's engine
+# startup, as "I/O error: No space left on device". Both gpt-oss runs died that
+# way on a node with 7.9G left of 1.1T. Check first: it costs a second.
+MIN_FREE_GB="${MIN_FREE_GB:-40}"
+find "${HF_HOME:-$HOME/.cache/huggingface}" -name '*.incomplete' -delete 2>/dev/null || true
+FREE_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
+echo "[run] free space on /: ${FREE_GB:-?}G (need ${MIN_FREE_GB}G)"
+if [ -n "${FREE_GB}" ] && [ "${FREE_GB}" -lt "${MIN_FREE_GB}" ]; then
+  echo "[run] VERDICT: not enough disk for the model weights on this worker"
+  df -h / || true
+  exit 30
+fi
+
 SERVE_MODEL="${SERVE_MODEL:-openai/gpt-oss-20b}"
 # Two tasks on one worker share the host network, so a fixed port makes the
 # second one adopt the first one's server: its health check passes, and the

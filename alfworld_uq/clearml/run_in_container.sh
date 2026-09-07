@@ -150,6 +150,19 @@ fi
 
 # ---------------------------------------------------------------- serve
 # No --served-model-name: the client addresses the model by its HF id.
+# A worker whose disk is full kills the run 25 minutes in, inside vLLM's engine
+# startup, as "I/O error: No space left on device". Both gpt-oss runs died that
+# way on a node with 7.9G left of 1.1T. Check first: it costs a second.
+MIN_FREE_GB="${MIN_FREE_GB:-40}"
+find "${HF_HOME:-$HOME/.cache/huggingface}" -name '*.incomplete' -delete 2>/dev/null || true
+FREE_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
+echo "[wrapper] free space on /: ${FREE_GB:-?}G (need ${MIN_FREE_GB}G)"
+if [ -n "${FREE_GB}" ] && [ "${FREE_GB}" -lt "${MIN_FREE_GB}" ]; then
+  echo "[wrapper] VERDICT: not enough disk for the model weights on this worker"
+  df -h / || true
+  exit 30
+fi
+
 echo "[wrapper] serving ${MODEL} on :${PORT} (tp=${TENSOR_PARALLEL_SIZE})"
 serve_args=(
   --host 127.0.0.1 --port "${PORT}"
