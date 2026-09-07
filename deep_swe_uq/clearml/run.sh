@@ -189,6 +189,19 @@ print(f"[run] agent exit statuses: {statuses}")
 PYSUM
 }
 
+# mini-swe-agent gives up after three CONSECUTIVE malformed responses. gpt-oss
+# leaks harmony markers into the tool name ("bash<|channel|>commentary") and
+# emits truncated JSON arguments every so often, interleaved with dozens of
+# perfectly good calls -- 33 successful tool calls and then an exit. The default
+# assumes a model whose tool calling never slips; raise it and the agent reads
+# the format-error message and carries on.
+AGENT_CONFIG=/tmp/mswea_custom.yaml
+cat > "${AGENT_CONFIG}" <<YAML
+agent:
+  max_consecutive_format_errors: ${MAX_FORMAT_ERRORS:-20}
+YAML
+echo "[run] agent config: $(tr '\n' ' ' < ${AGENT_CONFIG})"
+
 echo "=== [7/7] two real tasks through pier ==="
 timeout "${RUN_TIMEOUT_SEC:-21600}" pier run \
   --path "${SHARED}/deep-swe/tasks" \
@@ -198,6 +211,7 @@ timeout "${RUN_TIMEOUT_SEC:-21600}" pier run \
   --agent mini-swe-agent \
   --agent-kwarg 'model_kwargs={"logprobs":true}' \
   --agent-kwarg model_class=litellm \
+  --agent-kwarg "config_file=${AGENT_CONFIG}" \
   --agent-env "OPENAI_API_KEY=local" \
   --agent-env "OPENAI_API_BASE=${BASE_URL}" \
   --agent-env "OPENAI_BASE_URL=${BASE_URL}" \

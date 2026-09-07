@@ -47,6 +47,10 @@ def main() -> None:
     p.add_argument("--model", default="openrouter/openai/gpt-oss-20b")
     p.add_argument("--serve-model", default="Qwen/Qwen3.6-35B-A3B",
                    help="served locally with vLLM; the cluster blocks hosted endpoints")
+    p.add_argument("--max-format-errors", type=int, default=20,
+                   help="consecutive malformed responses mini-swe-agent tolerates "
+                        "before giving up; its default of 3 ends a gpt-oss run "
+                        "that is otherwise making progress")
     p.add_argument("--tool-call-parser", default=None,
                    help="vLLM parser for tool_choice=auto, which mini-swe-agent "
                         "always sends. Defaults to openai for gpt-oss and hermes "
@@ -88,6 +92,7 @@ def main() -> None:
         "Args/RUN_NAME": a.run_name,
         "Args/SERVE_MODEL": a.serve_model,
         "Args/TOOL_CALL_PARSER": a.tool_call_parser,
+        "Args/MAX_FORMAT_ERRORS": str(a.max_format_errors),
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })
