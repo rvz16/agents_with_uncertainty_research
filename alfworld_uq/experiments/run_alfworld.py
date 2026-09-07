@@ -12,7 +12,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from agents.react_agent import AgentError, RandomAdmissibleAgent, ReActAgent
+from agents.judge_tool import JudgeTool
+from agents.react_agent import (
+    JUDGE_TOOL_ACTION,
+    AgentError,
+    RandomAdmissibleAgent,
+    ReActAgent,
+)
 from agents.smolagents_agent import SmolagentsPolicy
 from environments.alfworld_env import ALFWorldTextEnv
 
@@ -26,7 +32,7 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
 
 
-def _build_agent(args: argparse.Namespace) -> Any:
+def _build_agent(args: argparse.Namespace, judge_tool: Any = None) -> Any:
     if args.policy == "random":
         return RandomAdmissibleAgent(seed=args.seed)
 
@@ -77,6 +83,7 @@ def _build_agent(args: argparse.Namespace) -> Any:
             code_block_tags=(
                 None if args.smol_code_tags == "xml" else args.smol_code_tags
             ),
+            judge_tool=judge_tool,
         )
 
     return ReActAgent(
@@ -93,6 +100,27 @@ def _build_agent(args: argparse.Namespace) -> Any:
         max_empty_response_retries=args.empty_response_retries,
         top_logprobs=args.top_logprobs,
         verbalized=args.verbalized,
+        judge_tool_budget=args.judge_tool_budget,
+    )
+
+
+def _build_judge_tool(args: argparse.Namespace) -> Any | None:
+    if not args.judge_tool_budget:
+        return None
+    load_dotenv(args.env_file)
+    base_url = args.judge_tool_base_url or os.getenv("OPENAI_BASE_URL", "")
+    api_key = os.getenv("JUDGE_API_KEY") or os.getenv("OPENAI_API_KEY", "local")
+    if not base_url:
+        raise SystemExit(
+            "--judge-tool-budget needs an endpoint: pass --judge-tool-base-url "
+            "or set OPENAI_BASE_URL in the env file."
+        )
+    return JudgeTool.build(
+        base_url=base_url,
+        api_key=api_key,
+        model=args.judge_tool_model,
+        budget=args.judge_tool_budget,
+        timeout=args.api_timeout,
     )
 
 
@@ -101,6 +129,7 @@ def _run_react_episode(
     env: ALFWorldTextEnv,
     initial: Any,
     max_steps: int,
+    judge_tool: Any = None,
 ) -> tuple[list[dict[str, Any]], bool, str, int, dict[str, Any] | None]:
     """Runner-driven ReAct loop: one generation per environment step."""
     observation = initial.observation
@@ -138,6 +167,68 @@ def _run_react_episode(
             )
             stop_reason = "api_error"
             break
+
+        # A judge call is a step of the agent, not of the world: the
+        # environment does not advance, the action budget is untouched, and the
+        # verdict enters the history as the observation of that step. Counting
+        # it as an environment step would make an agent that checks itself look
+        # like one that ran out of budget.
+        if judge_tool is not None and generation.action == JUDGE_TOOL_ACTION:
+            verdict = judge_tool.check(initial.task, history, step=step_number)
+            observation_text = verdict.as_observation()
+            records.append(
+                {
+                    "episode_id": initial.episode_id,
+                    "task_type": initial.task_type,
+                    "task": initial.task,
+                    "step": step_number,
+                    "thought": generation.thought,
+                    "action": JUDGE_TOOL_ACTION,
+                    "proposed_action": generation.proposed_action,
+                    "observation": observation_text,
+                    "admissible_actions": admissible,
+                    "token_logprobs": generation.token_logprobs,
+                    "perplexity": generation.uq.get("combined", {}).get("perplexity"),
+                    "seqprob": generation.uq.get("combined", {}).get(
+                        "sequence_probability"
+                    ),
+                    "verb": generation.uq.get("combined", {}).get(
+                        "verbalized_confidence"
+                    ),
+                    "progress": None,
+                    "done": False,
+                    "final_success": False,
+                    "format_valid": generation.format_valid,
+                    "action_valid": True,
+                    "fallback_reason": None,
+                    "tool_success": True,
+                    "state_changed": False,
+                    "env_action_count": 0,
+                    "judge_call": verdict.as_record(),
+                    "raw_response": generation.raw_text,
+                    "logprobs_available": generation.logprobs_available,
+                    "provider": generation.provider,
+                    "uq": generation.uq,
+                    "usage": {
+                        "prompt_tokens": generation.prompt_tokens,
+                        "completion_tokens": generation.completion_tokens,
+                        "total_tokens": generation.total_tokens,
+                        "judge_tokens": verdict.total_tokens,
+                        "request_attempts": generation.request_attempts,
+                        "empty_response_retries": generation.empty_response_retries,
+                        "generation_token_limit": generation.generation_token_limit,
+                    },
+                }
+            )
+            total_tokens += generation.total_tokens + verdict.total_tokens
+            history.append(
+                {
+                    "thought": generation.thought,
+                    "action": JUDGE_TOOL_ACTION,
+                    "observation": observation_text,
+                }
+            )
+            continue
 
         result = env.step(generation.action)
         combined_uq = generation.uq.get("combined", {})
@@ -299,6 +390,27 @@ def build_parser() -> argparse.ArgumentParser:
         "Hosted endpoints often ignore it, a locally served vLLM does not.",
     )
     parser.add_argument(
+        "--judge-tool-budget",
+        type=int,
+        default=0,
+        help="Let the agent call the LLM judge itself, at most this many times "
+        "per episode; 0 keeps the judge offline. A judge call costs no "
+        "environment step, and its verdict enters the agent's context -- so a "
+        "run with it is a different experiment, not a better one.",
+    )
+    parser.add_argument(
+        "--judge-tool-model",
+        default="anthropic/claude-haiku-4.5",
+        help="Reviewer for --judge-tool-budget.",
+    )
+    parser.add_argument(
+        "--judge-tool-base-url",
+        default="",
+        help="Endpoint for the reviewer; defaults to the agent's own, which "
+        "makes the check a self-assessment rather than an outside opinion. "
+        "The cluster blocks hosted endpoints, so there it can only be local.",
+    )
+    parser.add_argument(
         "--verbalized",
         action="store_true",
         help="Ask the policy for a confidence on every step and once more, "
@@ -354,7 +466,8 @@ def main() -> None:
         trajectories_path.unlink(missing_ok=True)
         episodes_path.unlink(missing_ok=True)
 
-    agent = _build_agent(args)
+    judge_tool = _build_judge_tool(args)
+    agent = _build_agent(args, judge_tool)
     model = (
         os.getenv("MODEL_NAME", "openai/gpt-oss-20b")
         if args.policy == "llm"
@@ -374,6 +487,8 @@ def main() -> None:
         "request_logprobs": not args.no_logprobs,
         "top_logprobs": args.top_logprobs,
         "verbalized": args.verbalized,
+        "judge_tool_budget": args.judge_tool_budget,
+        "judge_tool_model": args.judge_tool_model if args.judge_tool_budget else None,
         "empty_response_retries": args.empty_response_retries,
         "require_api_parameters": args.require_api_parameters,
         "provider_order": args.provider_order,
@@ -406,8 +521,12 @@ def main() -> None:
                 total_tokens = episode.total_tokens
                 final_confidence = None
             else:
+                if judge_tool is not None:
+                    judge_tool.reset()
                 records, final_success, stop_reason, total_tokens, final_confidence = (
-                    _run_react_episode(agent, env, initial, args.max_steps)
+                    _run_react_episode(
+                        agent, env, initial, args.max_steps, judge_tool=judge_tool
+                    )
                 )
 
             for record in records:
@@ -432,6 +551,17 @@ def main() -> None:
                     final_confidence.get("verbalized_confidence")
                     if final_confidence
                     else None
+                ),
+                "judge_tool_calls": sum(
+                    1 for row in records if row.get("judge_call")
+                ),
+                "judge_tool_last_pass": next(
+                    (
+                        row["judge_call"]["judge_pass"]
+                        for row in reversed(records)
+                        if row.get("judge_call")
+                    ),
+                    None,
                 ),
                 "final_verbalized_raw": (
                     final_confidence.get("raw_response") if final_confidence else None

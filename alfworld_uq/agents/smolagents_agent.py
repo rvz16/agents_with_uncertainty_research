@@ -121,8 +121,10 @@ class _EnvSession:
         self.max_steps = max_steps
         self.repeat_action_limit = max(1, repeat_action_limit)
         self.rng = random.Random(seed)
+        self.task = initial.task
         self.observation = initial.observation
         self.admissible = list(initial.admissible_actions)
+        self.judge_calls: list[Any] = []
         self.history: list[dict[str, str]] = []
         self.pending: list[_EnvStep] = []
         self.env_steps = 0
@@ -192,6 +194,42 @@ class _EnvSession:
         pending, self.pending = self.pending, []
         return pending
 
+    def drain_judge_calls(self) -> list[Any]:
+        """Calls belong to the generation that made them, not to every later one."""
+        pending, self.judge_calls = self.judge_calls, []
+        return pending
+
+
+def _build_judge_tool(session: _EnvSession, judge: Any) -> Any:
+    """The reviewer as a tool the CodeAgent may call from its own Python.
+
+    It sits beside `take_action` with no advice attached about when to use it:
+    the interesting measurement is when the agent decides it needs an outside
+    opinion, and a description that says "call this when unsure" would be
+    measuring our instruction instead.
+    """
+    from smolagents import Tool
+
+    class CheckProgress(Tool):
+        name = "check_progress"
+        description = (
+            "Ask an independent reviewer whether the task looks complete, given "
+            "everything that has happened so far. Returns the reviewer's verdict "
+            "as a string. Costs no environment action. The number of calls per "
+            "episode is limited."
+        )
+        inputs: dict[str, Any] = {}
+        output_type = "string"
+
+        def forward(self) -> str:
+            verdict = judge.check(
+                session.task, session.history, step=session.env_steps
+            )
+            session.judge_calls.append(verdict)
+            return verdict.as_observation()
+
+    return CheckProgress()
+
 
 def _build_tool(session: _EnvSession) -> Any:
     from smolagents import Tool
@@ -247,6 +285,7 @@ class SmolagentsPolicy:
         empty_response_retries: int = 1,
         stop_sequences: list[str] | None = None,
         code_block_tags: str | None = DEFAULT_CODE_BLOCK_TAGS,
+        judge_tool: Any = None,
     ) -> None:
         self.base_url = base_url
         self.api_key = api_key
@@ -264,6 +303,8 @@ class SmolagentsPolicy:
         # None derives the framework's own code-tag rule; [] removes stops.
         self.stop_sequences = stop_sequences
         self.code_block_tags = code_block_tags
+        # When set, `check_progress` joins `take_action` in the tool list.
+        self.judge_tool = judge_tool
 
     # -- model ---------------------------------------------------------------
 
@@ -282,6 +323,9 @@ class SmolagentsPolicy:
                 # the generation that requested them.
                 if generations:
                     generations[-1]["env_steps"].extend(session.drain())
+                    generations[-1]["judge_calls"].extend(
+                        session.drain_judge_calls()
+                    )
                 entry: dict[str, Any] = {
                     "raw_text": "",
                     "token_records": [],
@@ -293,6 +337,7 @@ class SmolagentsPolicy:
                     "observation": session.observation,
                     "progress": session.progress,
                     "env_steps": [],
+                    "judge_calls": [],
                     "latency_seconds": 0.0,
                     "request_attempts": 1,
                     "empty_response_retries": 0,
@@ -417,8 +462,12 @@ class SmolagentsPolicy:
         )
         generations: list[dict[str, Any]] = []
         model = self._build_model(session, generations)
+        tools = [_build_tool(session)]
+        if self.judge_tool is not None:
+            self.judge_tool.reset()
+            tools.append(_build_judge_tool(session, self.judge_tool))
         agent = CodeAgent(
-            tools=[_build_tool(session)],
+            tools=tools,
             model=model,
             max_steps=self.agent_max_steps,
             code_block_tags=self.code_block_tags,
@@ -437,6 +486,7 @@ class SmolagentsPolicy:
             error = f"{type(exc).__name__}: {exc}"
         if generations:
             generations[-1]["env_steps"].extend(session.drain())
+            generations[-1]["judge_calls"].extend(session.drain_judge_calls())
 
         records = self._records(initial, generations, session)
         stop_reason = self._stop_reason(session, generations, error)
@@ -527,6 +577,9 @@ class SmolagentsPolicy:
                 segment["verbalized_confidence"] = verbalized
 
             env_steps: list[_EnvStep] = generation["env_steps"]
+            judge_calls = [
+                verdict.as_record() for verdict in generation.get("judge_calls", [])
+            ]
             format_valid = action_span is not None
             if env_steps:
                 fallbacks = [
@@ -590,6 +643,7 @@ class SmolagentsPolicy:
                     "fallback_reason": fallback_reason,
                     # One generation may issue several actions here, so the
                     # tool call succeeds only if every action in it did.
+                    "judge_calls": judge_calls,
                     "tool_success": bool(env_steps) and all(
                         step.action_valid for step in env_steps
                     ),

@@ -35,6 +35,20 @@ Confidence: <number between 0.00 and 1.00>
 Confidence is your probability that you will finish the whole task successfully,
 not your confidence in this single action. Do not add any other fields."""
 
+# The judge as an action the agent may choose. It is described as a review by
+# someone else, with no instruction about what to do with the answer: an agent
+# told "check when unsure" would be following our advice, and the point is to
+# measure its own decision.
+JUDGE_TOOL_ACTION = "check progress"
+JUDGE_TOOL_SYSTEM_PROMPT = """You are a text-only household agent. Solve the task by
+reasoning briefly and selecting exactly one action.
+Return exactly:
+Thought: <brief reasoning>
+Action: <one admissible action, or `check progress`>
+Besides the admissible actions you may choose `check progress`, which asks an
+independent reviewer whether the task looks complete and costs no environment
+step. You may use it at most {budget} times in this episode."""
+
 # Asked once, after the episode has ended, with the trajectory in the prompt.
 FINAL_VERB_SYSTEM_PROMPT = """You are reviewing your own attempt at a household task.
 Answer with exactly one line:
@@ -362,6 +376,11 @@ def resolve_action(
     """
     by_lower = {_normalise_action(action): action for action in admissible}
     action = by_lower.get(_normalise_action(proposed))
+    if action is None and _normalise_action(proposed) == _normalise_action(
+        JUDGE_TOOL_ACTION
+    ):
+        # A meta-action: valid, but not something the environment can execute.
+        return JUDGE_TOOL_ACTION, True, None
     if action is None:
         fallback = by_lower.get("look") or (admissible[0] if admissible else "look")
         return fallback, False, "inadmissible_action"
@@ -393,6 +412,7 @@ class ReActAgent:
         max_empty_response_retries: int = 1,
         top_logprobs: int = 0,
         verbalized: bool = False,
+        judge_tool_budget: int = 0,
         client: Any | None = None,
     ) -> None:
         self.client = client or OpenAI(
@@ -411,6 +431,19 @@ class ReActAgent:
         self.max_empty_response_retries = max(0, max_empty_response_retries)
         self.top_logprobs = max(0, int(top_logprobs))
         self.verbalized = bool(verbalized)
+        self.judge_tool_budget = max(0, int(judge_tool_budget))
+
+    def _system_prompt(self) -> str:
+        """The two switches compose: either can be on without losing the other."""
+        if not self.judge_tool_budget:
+            return VERBALIZED_SYSTEM_PROMPT if self.verbalized else SYSTEM_PROMPT
+        prompt = JUDGE_TOOL_SYSTEM_PROMPT.format(budget=self.judge_tool_budget)
+        if self.verbalized:
+            prompt += (
+                "\nAlso add a third line, `Confidence: <number between 0.00 and "
+                "1.00>`, your probability of finishing the whole task successfully."
+            )
+        return prompt
 
     def final_confidence(
         self, task: str, history: list[dict[str, str]]
@@ -556,10 +589,7 @@ class ReActAgent:
         admissible_actions: list[str],
     ) -> AgentGeneration:
         messages = [
-            {
-                "role": "system",
-                "content": VERBALIZED_SYSTEM_PROMPT if self.verbalized else SYSTEM_PROMPT,
-            },
+            {"role": "system", "content": self._system_prompt()},
             {
                 "role": "user",
                 "content": self._prompt(task, history, admissible_actions),
