@@ -84,6 +84,8 @@ def _build_agent(args: argparse.Namespace, judge_tool: Any = None) -> Any:
                 None if args.smol_code_tags == "xml" else args.smol_code_tags
             ),
             judge_tool=judge_tool,
+            top_logprobs=args.top_logprobs,
+            verbalized=args.verbalized,
         )
 
     return ReActAgent(

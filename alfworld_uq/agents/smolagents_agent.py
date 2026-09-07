@@ -125,6 +125,7 @@ class _EnvSession:
         self.observation = initial.observation
         self.admissible = list(initial.admissible_actions)
         self.judge_calls: list[Any] = []
+        self.verbalized = False
         self.history: list[dict[str, str]] = []
         self.pending: list[_EnvStep] = []
         self.env_steps = 0
@@ -286,6 +287,8 @@ class SmolagentsPolicy:
         stop_sequences: list[str] | None = None,
         code_block_tags: str | None = DEFAULT_CODE_BLOCK_TAGS,
         judge_tool: Any = None,
+        top_logprobs: int = 0,
+        verbalized: bool = False,
     ) -> None:
         self.base_url = base_url
         self.api_key = api_key
@@ -305,6 +308,8 @@ class SmolagentsPolicy:
         self.code_block_tags = code_block_tags
         # When set, `check_progress` joins `take_action` in the tool list.
         self.judge_tool = judge_tool
+        self.top_logprobs = max(0, int(top_logprobs))
+        self.verbalized = bool(verbalized)
 
     # -- model ---------------------------------------------------------------
 
@@ -413,6 +418,8 @@ class SmolagentsPolicy:
         }
         if policy.request_logprobs:
             completion_kwargs["logprobs"] = True
+            if policy.top_logprobs:
+                completion_kwargs["top_logprobs"] = int(policy.top_logprobs)
         if policy.extra_body:
             completion_kwargs["extra_body"] = policy.extra_body
         return RecordingModel(
@@ -432,7 +439,16 @@ class SmolagentsPolicy:
             f"Task: {initial.task}\n\n"
             f"Initial observation:\n{initial.observation}\n\n"
             f"Admissible actions right now:\n{session.render_actions()}\n\n"
-            "Rules:\n"
+            + (
+                "Begin every code block with a comment line\n"
+                "# Confidence: <number between 0.00 and 1.00>\n"
+                "giving your probability that you will finish the whole task "
+                "successfully. It is about the task, not about the line you are "
+                "writing.\n\n"
+                if session.verbalized
+                else ""
+            )
+            + "Rules:\n"
             '- Call take_action("<action>") with exactly ONE admissible action, '
             "copied verbatim from the admissible list.\n"
             "- Make exactly ONE take_action call per code block, then stop and read "
@@ -460,6 +476,7 @@ class SmolagentsPolicy:
             repeat_action_limit=self.repeat_action_limit,
             seed=self.seed,
         )
+        session.verbalized = self.verbalized
         generations: list[dict[str, Any]] = []
         model = self._build_model(session, generations)
         tools = [_build_tool(session)]

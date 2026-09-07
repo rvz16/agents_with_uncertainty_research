@@ -328,3 +328,30 @@ def test_generation_without_env_action_carries_its_own_state() -> None:
     assert middle["done"] is False
     assert middle["progress"] == 0.5  # state when that generation was made
     assert result.records[-1]["done"] is True
+
+
+def test_the_confidence_request_appears_only_when_asked_for() -> None:
+    """The ReAct policy asks for a Confidence line; smolagents needs its own.
+
+    The framework owns its system prompt, so the request goes into the task
+    prompt as a comment line the existing parser already recognises.
+    """
+    from agents.smolagents_agent import SmolagentsPolicy, _EnvSession
+
+    initial = SimpleNamespace(
+        episode_id="e", task_type="t", task="put a mug on the desk",
+        observation="a room", admissible_actions=["look"], gamefile="g",
+    )
+    session = _EnvSession(
+        env=SimpleNamespace(), initial=initial, max_steps=30,
+        repeat_action_limit=2, seed=0,
+    )
+
+    plain = SmolagentsPolicy._task_prompt(initial, session)
+    assert "Confidence" not in plain
+
+    session.verbalized = True
+    asked = SmolagentsPolicy._task_prompt(initial, session)
+    assert "# Confidence: <number between 0.00 and 1.00>" in asked
+    # the rules survive the insertion
+    assert "take_action" in asked and "Rules:" in asked
