@@ -74,6 +74,11 @@ def main() -> None:
                    help="let the agent call the judge itself, at most N times "
                         "per episode; 0 keeps the judge offline")
     p.add_argument("--judge-tool-model", default="anthropic/claude-haiku-4.5")
+    p.add_argument("--judge-serve-model", default="",
+                   help="serve this model beside the agent as the reviewer; the "
+                        "cluster blocks hosted endpoints, and a model reviewing "
+                        "itself answered 0.99 to everything in the probe")
+    p.add_argument("--judge-gpu-fraction", default="0.25")
     p.add_argument("--judge-tool-base-url", default="",
                    help="reviewer endpoint; empty uses the served model itself")
     p.add_argument("--verbalized", action="store_true",
@@ -137,6 +142,8 @@ def main() -> None:
         "Args/TOP_LOGPROBS": str(a.top_logprobs),
         "Args/JUDGE_TOOL_BUDGET": str(a.judge_tool_budget),
         "Args/JUDGE_TOOL_MODEL": a.judge_tool_model,
+        "Args/JUDGE_SERVE_MODEL": a.judge_serve_model,
+        "Args/JUDGE_GPU_FRACTION": a.judge_gpu_fraction,
         "Args/JUDGE_TOOL_BASE_URL": a.judge_tool_base_url,
         "Args/VERBALIZED": "1" if a.verbalized else "0",
         "Args/SPLIT": a.split,

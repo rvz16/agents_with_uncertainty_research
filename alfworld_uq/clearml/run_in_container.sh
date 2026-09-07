@@ -52,6 +52,13 @@ SMOL_CODE_TAGS="${SMOL_CODE_TAGS:-markdown}"
 TOP_LOGPROBS="${TOP_LOGPROBS:-0}"
 VERBALIZED="${VERBALIZED:-0}"
 JUDGE_TOOL_BUDGET="${JUDGE_TOOL_BUDGET:-0}"
+# A reviewer served next to the agent on the same GPU. The probe showed why it
+# is needed: gpt-oss reviewing itself answered 0.99 to everything, five PASS
+# verdicts on an episode that failed and five FAIL verdicts on another, never
+# once expressing doubt. A second model is the cheapest thing that is not the
+# agent's own opinion, and the cluster blocks every hosted endpoint.
+JUDGE_SERVE_MODEL="${JUDGE_SERVE_MODEL:-}"
+JUDGE_GPU_FRACTION="${JUDGE_GPU_FRACTION:-0.25}"
 JUDGE_TOOL_MODEL="${JUDGE_TOOL_MODEL:-}"
 JUDGE_TOOL_BASE_URL="${JUDGE_TOOL_BASE_URL:-}"
 # A smolagents turn carries a multi-thousand-token prompt; 60s is too tight.
@@ -203,6 +210,33 @@ common_args=(
   --top-logprobs "${TOP_LOGPROBS}"
   --overwrite
 )
+if [ -n "${JUDGE_SERVE_MODEL}" ] && [ "${JUDGE_TOOL_BUDGET}" != "0" ]; then
+  JUDGE_PORT=$(python - <<'PYPORT'
+import socket
+sock = socket.socket(); sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1]); sock.close()
+PYPORT
+)
+  echo "[wrapper] serving reviewer ${JUDGE_SERVE_MODEL} on :${JUDGE_PORT}"
+  vllm serve "${JUDGE_SERVE_MODEL}" --host 127.0.0.1 --port "${JUDGE_PORT}" \
+    --max-model-len 32768 \
+    --gpu-memory-utilization "${JUDGE_GPU_FRACTION}" \
+    > /tmp/vllm_judge.log 2>&1 &
+  JUDGE_PID=$!
+  for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS:-240}"); do
+    curl -sf "http://127.0.0.1:${JUDGE_PORT}/health" >/dev/null 2>&1 && break
+    kill -0 ${JUDGE_PID} 2>/dev/null || { echo "[wrapper] reviewer died"; tail -n 40 /tmp/vllm_judge.log; break; }
+    sleep 5
+  done
+  if curl -sf "http://127.0.0.1:${JUDGE_PORT}/health" >/dev/null 2>&1; then
+    JUDGE_TOOL_BASE_URL="http://127.0.0.1:${JUDGE_PORT}/v1"
+    JUDGE_TOOL_MODEL="${JUDGE_SERVE_MODEL}"
+    echo "[wrapper] reviewer ready: ${JUDGE_TOOL_MODEL} (independent of the agent)"
+  else
+    echo "[wrapper] reviewer failed to start; the judge falls back to self-assessment"
+  fi
+fi
+
 if [ "${JUDGE_TOOL_BUDGET}" != "0" ]; then
   # The cluster answers hosted endpoints with 403, so an outside reviewer is
   # only available if egress happens to be open. Check rather than assume: a
