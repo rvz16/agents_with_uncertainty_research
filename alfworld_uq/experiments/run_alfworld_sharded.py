@@ -65,6 +65,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--top-logprobs", type=int, default=0)
     parser.add_argument("--verbalized", action="store_true")
+    parser.add_argument("--judge-tool-budget", type=int, default=0)
+    parser.add_argument("--judge-tool-model", default="")
+    parser.add_argument("--judge-tool-base-url", default="")
     parser.add_argument("--overwrite", action="store_true")
     return parser
 
@@ -140,6 +143,16 @@ def main() -> None:
                 command.extend(["--top-logprobs", str(args.top_logprobs)])
             if args.verbalized:
                 command.append("--verbalized")
+            if args.judge_tool_budget:
+                command.extend(
+                    ["--judge-tool-budget", str(args.judge_tool_budget)]
+                )
+                if args.judge_tool_model:
+                    command.extend(["--judge-tool-model", args.judge_tool_model])
+                if args.judge_tool_base_url:
+                    command.extend(
+                        ["--judge-tool-base-url", args.judge_tool_base_url]
+                    )
             if args.overwrite:
                 command.append("--overwrite")
             process = subprocess.Popen(
