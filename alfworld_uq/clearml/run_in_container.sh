@@ -51,6 +51,9 @@ MAX_GENERATION_TOKENS="${MAX_GENERATION_TOKENS:-2048}"
 SMOL_CODE_TAGS="${SMOL_CODE_TAGS:-markdown}"
 TOP_LOGPROBS="${TOP_LOGPROBS:-0}"
 VERBALIZED="${VERBALIZED:-0}"
+JUDGE_TOOL_BUDGET="${JUDGE_TOOL_BUDGET:-0}"
+JUDGE_TOOL_MODEL="${JUDGE_TOOL_MODEL:-}"
+JUDGE_TOOL_BASE_URL="${JUDGE_TOOL_BASE_URL:-}"
 # A smolagents turn carries a multi-thousand-token prompt; 60s is too tight.
 API_TIMEOUT="${API_TIMEOUT:-300}"
 EMPTY_RESPONSE_RETRIES="${EMPTY_RESPONSE_RETRIES:-1}"
@@ -182,7 +185,7 @@ export MODEL_NAME="${MODEL}"
 echo "[wrapper] config: policy=${POLICY} model=${MODEL} split=${SPLIT}"
 echo "  NUM_EPISODES=${NUM_EPISODES} MAX_STEPS=${MAX_STEPS} AGENT_MAX_STEPS=${AGENT_MAX_STEPS}"
 echo "  MAX_GENERATION_TOKENS=${MAX_GENERATION_TOKENS} WORKERS=${WORKERS}"
-echo "  TOP_LOGPROBS=${TOP_LOGPROBS} VERBALIZED=${VERBALIZED}"
+echo "  TOP_LOGPROBS=${TOP_LOGPROBS} VERBALIZED=${VERBALIZED} JUDGE_TOOL_BUDGET=${JUDGE_TOOL_BUDGET}"
 echo "  RUN_ROOT=${RUN_ROOT}"
 
 common_args=(
@@ -200,6 +203,31 @@ common_args=(
   --top-logprobs "${TOP_LOGPROBS}"
   --overwrite
 )
+if [ "${JUDGE_TOOL_BUDGET}" != "0" ]; then
+  # The cluster answers hosted endpoints with 403, so an outside reviewer is
+  # only available if egress happens to be open. Check rather than assume: a
+  # judge served by the same local model is a self-assessment, and the run has
+  # to say which of the two it was.
+  JUDGE_URL="${JUDGE_TOOL_BASE_URL}"
+  if [ -n "${JUDGE_URL}" ]; then
+    if curl -sf --max-time 20 "${JUDGE_URL}/models" >/dev/null 2>&1; then
+      echo "[wrapper] judge reviewer: ${JUDGE_TOOL_MODEL} at ${JUDGE_URL} (independent)"
+    else
+      echo "[wrapper] judge reviewer: ${JUDGE_URL} unreachable, falling back to the local model (self-assessment)"
+      JUDGE_URL=""
+    fi
+  fi
+  if [ -z "${JUDGE_URL}" ]; then
+    JUDGE_URL="${LLM_BASE_URI}"
+    JUDGE_TOOL_MODEL="${MODEL}"
+    echo "[wrapper] judge reviewer: ${MODEL} on the local endpoint (self-assessment)"
+  fi
+  common_args+=(
+    --judge-tool-budget "${JUDGE_TOOL_BUDGET}"
+    --judge-tool-model "${JUDGE_TOOL_MODEL}"
+    --judge-tool-base-url "${JUDGE_URL}"
+  )
+fi
 # A locally served vLLM honours top_logprobs and the confidence prompt; both are
 # off by default so an existing run reproduces byte for byte.
 case "${VERBALIZED}" in

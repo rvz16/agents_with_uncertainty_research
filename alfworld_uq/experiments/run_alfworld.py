@@ -108,8 +108,13 @@ def _build_judge_tool(args: argparse.Namespace) -> Any | None:
     if not args.judge_tool_budget:
         return None
     load_dotenv(args.env_file)
-    base_url = args.judge_tool_base_url or os.getenv("OPENAI_BASE_URL", "")
-    api_key = os.getenv("JUDGE_API_KEY") or os.getenv("OPENAI_API_KEY", "local")
+    base_url = args.judge_tool_base_url or os.getenv("LLM_BASE_URI", "")
+    # A hosted reviewer needs its own key; the locally served one needs none.
+    api_key = os.getenv("JUDGE_API_KEY") or (
+        os.getenv("OPENROUTER_API_KEY", "")
+        if "openrouter" in base_url
+        else os.getenv("LLM_API_KEY", "")
+    ) or "local"
     if not base_url:
         raise SystemExit(
             "--judge-tool-budget needs an endpoint: pass --judge-tool-base-url "

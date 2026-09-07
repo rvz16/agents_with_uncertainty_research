@@ -70,6 +70,12 @@ def main() -> None:
     p.add_argument("--max-generation-tokens", type=int, default=2048)
     p.add_argument("--top-logprobs", type=int, default=0,
                    help="alternatives per token; needed for mean token entropy")
+    p.add_argument("--judge-tool-budget", type=int, default=0,
+                   help="let the agent call the judge itself, at most N times "
+                        "per episode; 0 keeps the judge offline")
+    p.add_argument("--judge-tool-model", default="anthropic/claude-haiku-4.5")
+    p.add_argument("--judge-tool-base-url", default="",
+                   help="reviewer endpoint; empty uses the served model itself")
     p.add_argument("--verbalized", action="store_true",
                    help="ask the policy for a confidence per step and once at the end")
     p.add_argument("--smol-code-tags", default="markdown", choices=["markdown", "xml"],
@@ -129,6 +135,9 @@ def main() -> None:
         "Args/MAX_GENERATION_TOKENS": str(a.max_generation_tokens),
         "Args/SMOL_CODE_TAGS": a.smol_code_tags,
         "Args/TOP_LOGPROBS": str(a.top_logprobs),
+        "Args/JUDGE_TOOL_BUDGET": str(a.judge_tool_budget),
+        "Args/JUDGE_TOOL_MODEL": a.judge_tool_model,
+        "Args/JUDGE_TOOL_BASE_URL": a.judge_tool_base_url,
         "Args/VERBALIZED": "1" if a.verbalized else "0",
         "Args/SPLIT": a.split,
         "Args/WORKERS": str(a.workers),

@@ -32,11 +32,18 @@ from experiments.analyze_trajectories import (
     metric_values,
 )
 
-SIGNALS = ("mean_token_logprob", "perplexity", "sum_logprob", "sequence_probability")
+SIGNALS = (
+    "mean_token_logprob",
+    "perplexity",
+    "sum_logprob",
+    "sequence_probability",
+    "mean_token_entropy",
+    "verbalized_confidence",
+)
 AGGREGATIONS = ("mean", "last", "min", "max")
-# Lower perplexity means more confident, so its sign is flipped to keep every
-# score oriented the same way: larger is more likely to succeed.
-DESCENDING = {"perplexity"}
+# Lower is more confident for these two, so their sign is flipped to keep every
+# score oriented the same way: larger means more likely to succeed.
+DESCENDING = {"perplexity", "mean_token_entropy"}
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -161,15 +168,27 @@ def report(run: Path, prefix_steps: int, seeds: int, fraction: float) -> dict[st
     lengths = [-int(cohort["episodes"][i]["num_steps"]) for i in cohort["ids"]]
 
     best = None
+    per_signal: dict[str, dict[str, Any]] = {}
     for target in ("combined", "thought"):
         for signal in SIGNALS:
             for how in AGGREGATIONS:
                 scores = _signal_scores(cohort, signal, how, target)
+                if not any(scores):
+                    continue  # the run never recorded this signal
                 value = _auroc(labels, scores)
-                if value is not None and (best is None or value > best["auroc"]):
+                if value is None:
+                    continue
+                if best is None or value > best["auroc"]:
                     best = {
                         "auroc": value,
                         "signal": f"{target}/{signal}",
+                        "aggregation": how,
+                    }
+                seen = per_signal.get(signal)
+                if seen is None or value > seen["auroc"]:
+                    per_signal[signal] = {
+                        "auroc": value,
+                        "target": target,
                         "aggregation": how,
                     }
 
@@ -183,6 +202,10 @@ def report(run: Path, prefix_steps: int, seeds: int, fraction: float) -> dict[st
         "prefix_steps": prefix_steps,
         "length_artefact_auroc": _auroc(labels, lengths),
         "best_prefix_signal": best,
+        "per_signal_prefix": {
+            name: f"{row['auroc']:.3f} ({row['target']}/{row['aggregation']})"
+            for name, row in sorted(per_signal.items())
+        },
         "belief_prefix": {
             name: f"{mean:.3f} ± {sd:.3f}" for name, (mean, sd) in belief.items()
         },
