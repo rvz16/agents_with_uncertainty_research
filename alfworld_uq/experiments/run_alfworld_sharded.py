@@ -63,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument("--top-logprobs", type=int, default=0)
+    parser.add_argument("--verbalized", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     return parser
 
@@ -134,6 +136,10 @@ def main() -> None:
                 command.extend(["--provider-order", args.provider_order])
             if not args.allow_provider_fallbacks:
                 command.append("--no-allow-provider-fallbacks")
+            if args.top_logprobs:
+                command.extend(["--top-logprobs", str(args.top_logprobs)])
+            if args.verbalized:
+                command.append("--verbalized")
             if args.overwrite:
                 command.append("--overwrite")
             process = subprocess.Popen(

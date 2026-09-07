@@ -34,6 +34,8 @@ MAX_STEPS="${MAX_STEPS:-30}"
 AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-0}"
 MAX_GENERATION_TOKENS="${MAX_GENERATION_TOKENS:-2048}"
 SMOL_CODE_TAGS="${SMOL_CODE_TAGS:-markdown}"
+TOP_LOGPROBS="${TOP_LOGPROBS:-0}"
+VERBALIZED="${VERBALIZED:-0}"
 # A smolagents turn carries a multi-thousand-token prompt; 60s is too tight.
 API_TIMEOUT="${API_TIMEOUT:-300}"
 EMPTY_RESPONSE_RETRIES="${EMPTY_RESPONSE_RETRIES:-1}"
@@ -155,6 +157,7 @@ export MODEL_NAME="${MODEL}"
 echo "[wrapper] config: policy=${POLICY} model=${MODEL} split=${SPLIT}"
 echo "  NUM_EPISODES=${NUM_EPISODES} MAX_STEPS=${MAX_STEPS} AGENT_MAX_STEPS=${AGENT_MAX_STEPS}"
 echo "  MAX_GENERATION_TOKENS=${MAX_GENERATION_TOKENS} WORKERS=${WORKERS}"
+echo "  TOP_LOGPROBS=${TOP_LOGPROBS} VERBALIZED=${VERBALIZED}"
 echo "  RUN_ROOT=${RUN_ROOT}"
 
 common_args=(
@@ -169,8 +172,14 @@ common_args=(
   --split "${SPLIT}"
   --seed "${SEED}"
   --output-dir "${RUN_ROOT}"
+  --top-logprobs "${TOP_LOGPROBS}"
   --overwrite
 )
+# A locally served vLLM honours top_logprobs and the confidence prompt; both are
+# off by default so an existing run reproduces byte for byte.
+case "${VERBALIZED}" in
+  1|true|True|yes) common_args+=(--verbalized) ;;
+esac
 
 if [ "${WORKERS}" -gt 1 ]; then
   python -m experiments.run_alfworld_sharded --workers "${WORKERS}" "${common_args[@]}"
