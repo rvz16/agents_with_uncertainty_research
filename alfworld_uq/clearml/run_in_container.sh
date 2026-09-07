@@ -38,6 +38,10 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
 VLLM_LOG="${VLLM_LOG:-${PROJECT_DIR}/vllm_serve.log}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-}"
+# vLLM takes 90% of the card unless told otherwise, which leaves no room for a
+# reviewer on the same GPU. When one is asked for, the agent's share is capped
+# so that both fit, unless a share was set explicitly.
+AGENT_GPU_FRACTION_WITH_JUDGE="${AGENT_GPU_FRACTION_WITH_JUDGE:-0.60}"
 # A 72 GB checkpoint has to be downloaded before the server can answer, which
 # takes far longer than loading an already-cached one.
 HEALTH_TIMEOUT_STEPS="${HEALTH_TIMEOUT_STEPS:-240}"
@@ -152,6 +156,11 @@ serve_args=(
   --max-model-len "${MAX_MODEL_LEN}"
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}"
 )
+if [ -z "${GPU_MEMORY_UTILIZATION}" ] && [ -n "${JUDGE_SERVE_MODEL:-}" ] \
+   && [ "${JUDGE_TOOL_BUDGET:-0}" != "0" ]; then
+  GPU_MEMORY_UTILIZATION="${AGENT_GPU_FRACTION_WITH_JUDGE}"
+  echo "[wrapper] reviewer requested: capping the agent at ${GPU_MEMORY_UTILIZATION} of the card"
+fi
 if [ -n "${GPU_MEMORY_UTILIZATION}" ]; then
   serve_args+=(--gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}")
 fi
