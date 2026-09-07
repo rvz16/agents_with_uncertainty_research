@@ -80,7 +80,7 @@ BASE_URL="http://${GATEWAY}:${PORT}/v1"
 echo "[probe] agents will call ${BASE_URL}"
 curl -sf "${BASE_URL}/models" >/dev/null && echo "[probe] endpoint reachable via gateway" || echo "[probe] WARNING: gateway address not reachable from here"
 
-echo "=== [6/7] does the client actually send logprobs? ==="
+echo "=== [6/7] which litellm entry point returns logprobs? ==="
 # The agent's own config showed {"drop_params": true, "logprobs": true}: litellm
 # silently drops parameters it believes the provider does not support, and a
 # locally served model is absent from its registry. This asks litellm directly,
@@ -90,19 +90,25 @@ python - <<PY
 import json
 try:
     import litellm
-    for drop in (True, False):
-        try:
-            r = litellm.completion(
-                model="openai/${SERVE_MODEL}",
-                api_base="${BASE_URL}",
-                api_key="local",
-                messages=[{"role": "user", "content": "say ok"}],
-                max_tokens=8, logprobs=True, drop_params=drop,
-            )
-            lp = r.choices[0].logprobs
-            print(f"[probe] litellm drop_params={drop}: logprobs={'PRESENT' if lp else 'ABSENT'}")
-        except Exception as exc:
-            print(f"[probe] litellm drop_params={drop}: FAILED {type(exc).__name__}: {str(exc)[:120]}")
+    # The adapter picks litellm_response for an openai/ model, and that path calls
+    # litellm.responses() -- the Responses API, which has no logprobs at all. The
+    # completion path does. This prints the difference rather than assuming it.
+    try:
+        r = litellm.completion(
+            model="openai/${SERVE_MODEL}", api_base="${BASE_URL}", api_key="local",
+            messages=[{"role": "user", "content": "say ok"}], max_tokens=8, logprobs=True,
+        )
+        print(f"[probe] litellm.completion: logprobs={'PRESENT' if r.choices[0].logprobs else 'ABSENT'}")
+    except Exception as exc:
+        print(f"[probe] litellm.completion FAILED {type(exc).__name__}: {str(exc)[:120]}")
+    try:
+        r = litellm.responses(
+            model="openai/${SERVE_MODEL}", api_base="${BASE_URL}", api_key="local",
+            input="say ok", max_output_tokens=16,
+        )
+        print("[probe] litellm.responses: returned, logprobs are not part of that API")
+    except Exception as exc:
+        print(f"[probe] litellm.responses FAILED {type(exc).__name__}: {str(exc)[:120]}")
 except Exception as exc:
     print("[probe] litellm unavailable:", exc)
 PY
@@ -114,7 +120,8 @@ timeout "${PROBE_TIMEOUT_SEC:-3600}" pier run \
   --n-tasks "${N_TASKS:-2}" --sample-seed 0 --n-concurrent 1 \
   --jobs-dir "${SHARED}/jobs" --env docker --yes \
   --agent mini-swe-agent \
-  --agent-kwarg 'model_kwargs={"logprobs":true,"drop_params":false}' \
+  --agent-kwarg 'model_kwargs={"logprobs":true}' \
+  --agent-kwarg model_class=litellm \
   --agent-env "OPENAI_API_KEY=local" \
   --agent-env "OPENAI_API_BASE=${BASE_URL}" \
   --agent-env "OPENAI_BASE_URL=${BASE_URL}" \
