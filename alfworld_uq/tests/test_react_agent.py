@@ -301,3 +301,44 @@ def test_final_confidence_is_a_separate_call_over_the_finished_trajectory() -> N
     assert result["verbalized_confidence"] == 0.10
     prompt = completions.kwargs["messages"][1]["content"]
     assert "put a mug on the desk" in prompt and "a room" in prompt
+
+
+def test_an_action_is_read_out_of_an_unformatted_response() -> None:
+    """Qwen deliberates in prose and runs past the token budget mid-sentence.
+
+    Discarding those steps sent `look` to the environment on 50% of Qwen's
+    turns, which measured our format rule rather than the policy.
+    """
+    text = (
+        "The user wants a knife. I searched drawers 1-7 and found nothing.\n"
+        "Let's try cabinet 1.\n"
+        "Action: go to cabinet 1\n"
+        "Wait, I should check whether there are more dra"
+    )
+    parsed = parse_react_response(text)
+    assert parsed.action == "go to cabinet 1"
+    assert parsed.recovered
+    assert not parsed.valid  # never promoted to a clean parse
+    assert "searched drawers" in parsed.thought
+
+
+def test_the_last_complete_action_wins_when_the_model_changes_its_mind() -> None:
+    text = (
+        "Action: go to cabinet 1\n"
+        "No, the counter is closer.\n"
+        "Action: go to countertop 1\n"
+        "Actually let me reconsider once more, because Action: go to sink"
+    )
+    parsed = parse_react_response(text)
+    # the trailing line has no newline: it was cut off, so it is not trusted
+    assert parsed.action == "go to countertop 1"
+
+
+def test_a_clean_response_is_not_marked_as_recovered() -> None:
+    parsed = parse_react_response("Thought: inspect\nAction: look")
+    assert parsed.valid and not parsed.recovered
+
+
+def test_a_response_with_no_action_at_all_stays_invalid() -> None:
+    parsed = parse_react_response("I am thinking about what to do next and then")
+    assert not parsed.valid and not parsed.recovered and parsed.action == ""

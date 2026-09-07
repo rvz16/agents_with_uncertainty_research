@@ -76,6 +76,10 @@ class ParsedResponse:
     valid: bool
     thought_span: tuple[int, int] | None = None
     action_span: tuple[int, int] | None = None
+    # The response did not follow the format, but an action was read out of it
+    # anyway. Kept separate from `valid` so the recovery is visible in the data
+    # rather than indistinguishable from a clean generation.
+    recovered: bool = False
 
 
 @dataclass
@@ -100,10 +104,39 @@ class AgentGeneration:
 
 
 def parse_react_response(text: str) -> ParsedResponse:
+    """Read the chosen action, whether or not the response kept the format.
+
+    Qwen3.6 deliberates in prose without the `Thought:` label and talks past
+    its own decision -- "Let's try cabinet 1. Action: go to cabinet 1. Wait, I
+    should ..." -- until the token budget cuts it off mid-sentence. That was
+    51% of its steps against 0.1% of gpt-oss's, and the strict parser threw all
+    of them away and sent `look` to the environment instead. The action is
+    right there in the text; discarding it measures our format rule rather than
+    the policy.
+
+    A recovered action is marked, never silently promoted to a clean parse.
+    """
     thought_match = re.search(
         r"(?ims)^\s*Thought:\s*(.*?)(?=^\s*Action:\s*)", text
     )
     action_match = re.search(r"(?im)^\s*Action:\s*([^\r\n]+)", text)
+    if not thought_match and action_match:
+        # Several action lines mean the model revisited its choice; the last
+        # complete one is its latest stated intent. A final line with no
+        # newline after it was cut off mid-word, so it is not trusted.
+        complete = [
+            match
+            for match in re.finditer(r"(?im)^\s*Action:\s*([^\r\n]+)\r?\n", text)
+        ]
+        chosen = complete[-1] if complete else action_match
+        action = chosen.group(1).strip().strip("`\"'")
+        return ParsedResponse(
+            thought=text[: chosen.start()].strip(),
+            action=action,
+            valid=False,
+            action_span=chosen.span(1),
+            recovered=bool(action),
+        )
     if not thought_match or not action_match:
         return ParsedResponse(thought=text.strip(), action="", valid=False)
 
@@ -602,7 +635,7 @@ class ReActAgent:
             parsed.action, admissible_actions, history
         )
         if not parsed.valid and fallback_reason is None:
-            fallback_reason = "invalid_format"
+            fallback_reason = "recovered_format" if parsed.recovered else "invalid_format"
 
         token_records = _extract_token_records(response)
         reasoning, content = split_reasoning_tokens(raw_text, token_records)
