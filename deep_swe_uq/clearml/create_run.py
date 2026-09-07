@@ -47,6 +47,9 @@ def main() -> None:
     p.add_argument("--model", default="openrouter/openai/gpt-oss-20b")
     p.add_argument("--serve-model", default="Qwen/Qwen3.6-35B-A3B",
                    help="served locally with vLLM; the cluster blocks hosted endpoints")
+    p.add_argument("--max-model-len", type=int, default=131072,
+                   help="a DeepSWE trajectory is long: one agent died at "
+                        "32814 tokens against a 32768 window, 94 calls in")
     p.add_argument("--max-format-errors", type=int, default=20,
                    help="consecutive malformed responses mini-swe-agent tolerates "
                         "before giving up; its default of 3 ends a gpt-oss run "
@@ -93,6 +96,7 @@ def main() -> None:
         "Args/SERVE_MODEL": a.serve_model,
         "Args/TOOL_CALL_PARSER": a.tool_call_parser,
         "Args/MAX_FORMAT_ERRORS": str(a.max_format_errors),
+        "Args/MAX_MODEL_LEN": str(a.max_model_len),
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })

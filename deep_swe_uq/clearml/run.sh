@@ -223,10 +223,26 @@ PYSUM
 # perfectly good calls -- 33 successful tool calls and then an exit. The default
 # assumes a model whose tool calling never slips; raise it and the agent reads
 # the format-error message and carries on.
+#
+# The second half of the same problem: deep-swe grades "git diff base..HEAD",
+# so only committed work is submitted -- upstream says the agent "commits its
+# work upon completion" -- but mini-swe-agent's own workflow ends at
+# "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" and never mentions committing.
+# Our two agents edited files, ran the tests, submitted, and left everything
+# uncommitted: 80 and 25 commands, zero calls to git commit, empty patches.
+# The system prompt states the grading rule and nothing about how to solve the
+# task, which is the smallest change that makes the harness agree with the
+# benchmark it is running.
 AGENT_CONFIG=/tmp/mswea_custom.yaml
 cat > "${AGENT_CONFIG}" <<YAML
 agent:
   max_consecutive_format_errors: ${MAX_FORMAT_ERRORS:-20}
+  system_template: |
+    You are a helpful assistant that can interact with a computer.
+    Your work is submitted as a git commit: anything left uncommitted in the
+    working tree is discarded and counts as no work at all. Before you issue
+    the final submit command, stage and commit everything you changed, for
+    example with: git add -A && git commit -m "fix"
 YAML
 echo "[run] agent config: $(tr '\n' ' ' < ${AGENT_CONFIG})"
 
