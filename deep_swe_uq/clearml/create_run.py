@@ -47,7 +47,19 @@ def main() -> None:
     p.add_argument("--model", default="openrouter/openai/gpt-oss-20b")
     p.add_argument("--serve-model", default="Qwen/Qwen3.6-35B-A3B",
                    help="served locally with vLLM; the cluster blocks hosted endpoints")
+    p.add_argument("--tool-call-parser", default=None,
+                   help="vLLM parser for tool_choice=auto, which mini-swe-agent "
+                        "always sends. Defaults to openai for gpt-oss and hermes "
+                        "otherwise; pass an empty string to serve without one.")
     a = p.parse_args()
+    if a.tool_call_parser is None:
+        # gpt-oss speaks harmony, which vLLM parses with its `openai` parser;
+        # everything else here is a Qwen3-family checkpoint, which uses hermes.
+        # Serving gpt-oss without one is what let OpenRouter-style harmony
+        # markers ("bash<|channel|>commentary") reach the agent as a tool name.
+        a.tool_call_parser = (
+            "openai" if "gpt-oss" in a.serve_model.lower() else "hermes"
+        )
 
     docker_args = DOCKER_ARGS
     if key := os.environ.get("OPENROUTER_API_KEY", ""):
@@ -75,6 +87,7 @@ def main() -> None:
         "Args/TENSOR_PARALLEL_SIZE": str(a.tensor_parallel_size),
         "Args/RUN_NAME": a.run_name,
         "Args/SERVE_MODEL": a.serve_model,
+        "Args/TOOL_CALL_PARSER": a.tool_call_parser,
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })

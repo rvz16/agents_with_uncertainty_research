@@ -63,8 +63,28 @@ python -m pip install --no-cache-dir "vllm==${VLLM_VERSION:-0.28.0}" >/dev/null 
 export VLLM_USE_FLASHINFER_SAMPLER=0
 # 0.0.0.0, not localhost: this task runs with --network=host, so the port lands
 # in the host namespace where Pier's task containers can reach it.
+# mini-swe-agent sends tool_choice="auto". gpt-oss parses that natively through
+# harmony, but every other checkpoint needs the parser named explicitly, and
+# without it vLLM rejects the very first call with
+#   "auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser
+# so the whole run finishes with empty patches and no model call ever made.
+# A wrong parser name makes vLLM exit during startup, which reads like a CUDA
+# failure in the log 20 minutes later. Print what this build actually has.
+python - <<'PYPARSERS' || true
+try:
+    from vllm.entrypoints.openai.tool_parsers import ToolParserManager
+    print("[run] tool-call parsers available:", ", ".join(sorted(ToolParserManager.tool_parsers)))
+except Exception as exc:
+    print("[run] could not list tool-call parsers:", exc)
+PYPARSERS
+
+TOOL_ARGS=()
+if [ -n "${TOOL_CALL_PARSER:-}" ]; then
+  TOOL_ARGS=(--enable-auto-tool-choice --tool-call-parser "${TOOL_CALL_PARSER}")
+fi
 vllm serve "${SERVE_MODEL}" --host 0.0.0.0 --port "${PORT}" \
   --max-model-len "${MAX_MODEL_LEN:-32768}" \
+  ${TOOL_ARGS[@]+"${TOOL_ARGS[@]}"} \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE:-1}" > /tmp/vllm.log 2>&1 &
 VLLM_PID=$!
 trap 'kill ${VLLM_PID} 2>/dev/null || true' EXIT
@@ -103,6 +123,36 @@ try:
         print(f"[probe] litellm.completion: logprobs={'PRESENT' if r.choices[0].logprobs else 'ABSENT'}")
     except Exception as exc:
         print(f"[probe] litellm.completion FAILED {type(exc).__name__}: {str(exc)[:120]}")
+    # The plain call above succeeds even when the server cannot serve the agent:
+    # mini-swe-agent always sends tools with tool_choice="auto", and a server
+    # started without a parser rejects exactly that, on the first call of every
+    # task. Probe the shape the agent actually sends.
+    try:
+        r = litellm.completion(
+            model="openai/${SERVE_MODEL}", api_base="${BASE_URL}", api_key="local",
+            messages=[{"role": "user",
+                       "content": "Use the bash tool to list the files in /tmp."}],
+            max_tokens=64, tool_choice="auto",
+            tools=[{"type": "function", "function": {
+                "name": "bash", "description": "run a shell command",
+                "parameters": {"type": "object",
+                               "properties": {"command": {"type": "string"}},
+                               "required": ["command"]}}}],
+        )
+        calls = r.choices[0].message.tool_calls or []
+        names = [call.function.name for call in calls]
+        print(f"[probe] tool_choice=auto: ACCEPTED, tool_calls={names}")
+        # gpt-oss on a hosted endpoint returned 'bash<|channel|>commentary' as
+        # the tool name, which the agent rejects as an unknown tool until it
+        # gives up with RepeatedFormatError. A clean round-trip here is the
+        # difference between a run and 113 empty patches.
+        if not names:
+            print("[probe] VERDICT: the model returned no tool call for a request "
+                  "that plainly needs one; the agent will loop on format errors")
+        elif any(name != "bash" for name in names):
+            print(f"[probe] VERDICT: tool name is mangled: {names}")
+    except Exception as exc:
+        print(f"[probe] VERDICT: tool_choice=auto REJECTED -- {str(exc)[:200]}")
     try:
         r = litellm.responses(
             model="openai/${SERVE_MODEL}", api_base="${BASE_URL}", api_key="local",
@@ -114,6 +164,30 @@ try:
 except Exception as exc:
     print("[probe] litellm unavailable:", exc)
 PY
+
+# Every failure mode so far ended the same way -- a run that finished with
+# nothing to grade -- and it was only visible hours later, on the laptop, after
+# downloading the artifact. Count the patches here instead.
+summarise_patches() {
+  local root="${1}"
+  python - "${root}" <<'PYSUM'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+patches = sorted(root.glob("*/artifacts/model.patch"))
+sizes = [path.stat().st_size for path in patches]
+non_empty = [size for size in sizes if size > 0]
+print(f"[run] patches: {len(patches)} captured, {len(non_empty)} non-empty, "
+      f"{sum(sizes)} bytes total")
+statuses = {}
+for path in root.glob("*/agent/mini-swe-agent.trajectory.json"):
+    try:
+        info = json.loads(path.read_text()).get("info", {})
+    except Exception:
+        continue
+    statuses[info.get("exit_status")] = statuses.get(info.get("exit_status"), 0) + 1
+print(f"[run] agent exit statuses: {statuses}")
+PYSUM
+}
 
 echo "=== [7/7] two real tasks through pier ==="
 timeout "${RUN_TIMEOUT_SEC:-21600}" pier run \
@@ -130,4 +204,5 @@ timeout "${RUN_TIMEOUT_SEC:-21600}" pier run \
   --job-name "${RUN_NAME:-deepswe}"
 rc=$?
 echo "[run] pier rc=${rc}"
+summarise_patches "${SHARED}/jobs/${RUN_NAME:-deepswe}" || true
 exit ${rc}
