@@ -167,7 +167,7 @@ fi
 MIN_FREE_GB="${MIN_FREE_GB:-40}"
 find "${HF_HOME:-$HOME/.cache/huggingface}" -name '*.incomplete' -delete 2>/dev/null || true
 # Weights already in the cache need no room, so the bar is only for a download.
-CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--$(echo "${MODEL:-}" | tr '/' '-')"
+CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--$(echo "${MODEL:-}" | sed 's|/|--|g')"
 if [ -d "${CACHE_DIR}" ]; then
   MIN_FREE_GB=8
   echo "[wrapper] weights already cached, requiring only ${MIN_FREE_GB}G"
