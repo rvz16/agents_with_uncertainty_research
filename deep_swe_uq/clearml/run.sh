@@ -113,6 +113,12 @@ echo "=== [5/6] serve the model locally ==="
 # way on a node with 7.9G left of 1.1T. Check first: it costs a second.
 MIN_FREE_GB="${MIN_FREE_GB:-40}"
 find "${HF_HOME:-$HOME/.cache/huggingface}" -name '*.incomplete' -delete 2>/dev/null || true
+# Weights already in the cache need no room, so the bar is only for a download.
+CACHE_DIR="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--$(echo "${SERVE_MODEL:-}" | tr '/' '-')"
+if [ -d "${CACHE_DIR}" ]; then
+  MIN_FREE_GB=8
+  echo "[run] weights already cached, requiring only ${MIN_FREE_GB}G"
+fi
 FREE_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
 echo "[run] free space on /: ${FREE_GB:-?}G (need ${MIN_FREE_GB}G)"
 if [ -n "${FREE_GB}" ] && [ "${FREE_GB}" -lt "${MIN_FREE_GB}" ]; then
