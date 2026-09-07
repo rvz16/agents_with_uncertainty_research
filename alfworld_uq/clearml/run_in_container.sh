@@ -153,6 +153,17 @@ fi
 # A worker whose disk is full kills the run 25 minutes in, inside vLLM's engine
 # startup, as "I/O error: No space left on device". Both gpt-oss runs died that
 # way on a node with 7.9G left of 1.1T. Check first: it costs a second.
+# aiagent01:gpu0 has MIG enabled with no MIG devices configured, so nvidia-smi
+# shows an A100 while torch reports "No CUDA GPUs are available" -- 9 of our
+# runs died there, each after installing vLLM. One csv query settles it before
+# any of that work happens.
+MIG_MODE=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
+if [ "${MIG_MODE}" = "Enabled" ] && ! nvidia-smi -L 2>/dev/null | grep -q "MIG"; then
+  echo "[wrapper] VERDICT: this GPU has MIG enabled with no MIG device; nothing can use it"
+  nvidia-smi -L || true
+  exit 31
+fi
+
 MIN_FREE_GB="${MIN_FREE_GB:-40}"
 find "${HF_HOME:-$HOME/.cache/huggingface}" -name '*.incomplete' -delete 2>/dev/null || true
 FREE_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
