@@ -252,6 +252,18 @@ def is_transient_error(exc: Exception) -> bool:
     }
 
 
+def _normalise_action(text: str) -> str:
+    """Comparison form of an action string.
+
+    Matching was exact, and a model that ends its action with a full stop --
+    `go to drawer 1.` -- had every such step replaced by the fallback. On
+    Qwen3.6 that was 62% of all steps, of which two thirds parsed correctly,
+    so the harness rather than the policy produced the failures. `look` and
+    `look.` are the same action; trailing sentence punctuation is not meaning.
+    """
+    return text.strip().strip(".!;,").strip().lower()
+
+
 def resolve_action(
     proposed: str,
     admissible: list[str],
@@ -265,8 +277,8 @@ def resolve_action(
     Returns (action, action_valid, fallback_reason). Shared by every policy so
     the mechanical critics mean the same thing across runs.
     """
-    by_lower = {action.lower(): action for action in admissible}
-    action = by_lower.get(proposed.strip().lower())
+    by_lower = {_normalise_action(action): action for action in admissible}
+    action = by_lower.get(_normalise_action(proposed))
     if action is None:
         fallback = by_lower.get("look") or (admissible[0] if admissible else "look")
         return fallback, False, "inadmissible_action"

@@ -179,3 +179,28 @@ def test_a_plain_endpoint_has_no_reasoning_to_split() -> None:
     reasoning, content = split_reasoning_tokens("Thought: look", records)
     assert reasoning == []
     assert content == records
+
+
+def test_trailing_punctuation_does_not_make_an_action_inadmissible() -> None:
+    """Qwen3.6 ends its actions with a full stop.
+
+    Exact matching turned 62% of that run's steps into fallbacks -- two thirds
+    of them from responses that parsed perfectly -- so the measured policy was
+    the harness, not the agent.
+    """
+    import random
+
+    from agents.react_agent import resolve_action
+
+    admissible = ["go to drawer 1", "look"]
+    for proposed in ("go to drawer 1.", " go to drawer 1 ", "Go to drawer 1!"):
+        action, valid, fallback = resolve_action(
+            proposed, admissible, [], rng=random.Random(0), repeat_action_limit=2
+        )
+        assert (action, valid, fallback) == ("go to drawer 1", True, None), proposed
+
+    # something genuinely absent still falls back
+    action, valid, fallback = resolve_action(
+        "teleport", admissible, [], rng=random.Random(0), repeat_action_limit=2
+    )
+    assert not valid and fallback == "inadmissible_action"
