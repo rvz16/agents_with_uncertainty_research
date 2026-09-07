@@ -18,7 +18,7 @@ REPO = "https://github.com/rvz16/agents_with_uncertainty_research.git"
 # fails before our code runs, with no boto3 and no credentials for that bucket.
 FILE_STORE = "https://files.clearai.innopolis.university"
 # A plain python image: it ships git, and nothing here needs a GPU.
-DOCKER_IMAGE = "python:3.12"
+DOCKER_IMAGE = "python:3.12"  # vLLM comes from pip; the wheels carry their own CUDA runtime
 DOCKER_ARGS = (
     "--entrypoint= --network=host "
     "-v /var/run/docker.sock:/var/run/docker.sock "
@@ -41,6 +41,8 @@ def main() -> None:
     p.add_argument("--branch", default="alfworld_smolagents")
     p.add_argument("--n-tasks", type=int, default=2)
     p.add_argument("--model", default="openrouter/openai/gpt-oss-20b")
+    p.add_argument("--serve-model", default="openai/gpt-oss-20b",
+                   help="served locally with vLLM; the cluster blocks hosted endpoints")
     a = p.parse_args()
 
     docker_args = DOCKER_ARGS
@@ -64,7 +66,10 @@ def main() -> None:
         "Args/N_TASKS": str(a.n_tasks),
         "Args/MODEL": a.model,
         "Args/RUN_ROOT": "/tmp/probe_runs",
-        "Args/PROBE_TIMEOUT_SEC": "3600",
+        "Args/PROBE_TIMEOUT_SEC": "5400",
+        "Args/SERVE_MODEL": a.serve_model,
+        "Args/VLLM_VERSION": "0.28.0",
+        "Args/HEALTH_TIMEOUT_STEPS": "360",
     })
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
