@@ -36,13 +36,32 @@ SHARED="${RUN_ROOT:-/tmp/probe_runs}"
 mkdir -p "${SHARED}"
 # SHARED is bind-mounted from the host, so it survives between tasks: a clone
 # into it fails the second time. Reuse what is already there.
-if [ -d "${SHARED}/deep-swe/tasks" ]; then
-  echo "[run] tasks already present from an earlier run, reusing"
+# Pinned, and not to master. Upstream has since removed pre_artifacts.sh from
+# every task -- the script pier runs to turn the agent's commits into
+# /logs/artifacts/model.patch. A shallow clone of master therefore ships no
+# capture at all: pier skips the missing script without a word, nothing writes
+# the patch, and collection fails with "Could not find the file". That, and not
+# the agent, is why every cluster run reported empty patches. This commit is
+# the one vendored in the repo, and the one our pier 0.3.0 was validated
+# against.
+DEEPSWE_COMMIT="${DEEPSWE_COMMIT:-e016041}"
+if [ -d "${SHARED}/deep-swe/tasks" ] \
+   && [ "$(git -C "${SHARED}/deep-swe" rev-parse --short HEAD 2>/dev/null)" = "${DEEPSWE_COMMIT}" ]; then
+  echo "[run] tasks already present at ${DEEPSWE_COMMIT}, reusing"
 else
-  git clone --depth 1 https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" >/dev/null 2>&1 || {
+  rm -rf "${SHARED}/deep-swe"
+  git clone https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" >/dev/null 2>&1 || {
     echo "[run] VERDICT: task clone failed"; exit 22; }
+  git -C "${SHARED}/deep-swe" checkout -q "${DEEPSWE_COMMIT}" || {
+    echo "[run] VERDICT: cannot check out ${DEEPSWE_COMMIT}"; exit 22; }
 fi
-echo "[run] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) under ${SHARED}"
+echo "[run] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) under ${SHARED} at ${DEEPSWE_COMMIT}"
+capture_scripts=$(ls "${SHARED}"/deep-swe/tasks/*/pre_artifacts.sh 2>/dev/null | wc -l)
+echo "[run] tasks shipping pre_artifacts.sh: ${capture_scripts}"
+if [ "${capture_scripts}" -eq 0 ]; then
+  echo "[run] VERDICT: no task ships pre_artifacts.sh, so no patch can ever be captured"
+  exit 27
+fi
 
 echo "=== [4/6] can we pull a task image? ==="
 IMAGE=$(grep -ho 'public.ecr.aws[^"]*' "${SHARED}"/deep-swe/tasks/*/environment/Dockerfile 2>/dev/null | head -1)
@@ -61,6 +80,10 @@ fi
 echo "=== [4.5/6] add a mounted copy to each task's artifact capture ==="
 capture_patched=0
 for script in "${SHARED}"/deep-swe/tasks/*/pre_artifacts.sh; do
+  # An unmatched glob expands to itself, and the append below would then create
+  # a file named after the pattern: the first attempt reported "1 task" patched
+  # and nothing else, which is how the missing scripts stayed hidden.
+  [ -f "${script}" ] || continue
   grep -q "pier-cluster-diagnostic" "${script}" && continue
   cat >> "${script}" <<'CAPTURE'
 
