@@ -29,6 +29,7 @@ FALLBACK_IMAGE = "python:3.12"
 # --entrypoint= : the image's entrypoint is `vllm`; clear it so ClearML runs python.
 # --network=host: the client reaches the in-container endpoint on 127.0.0.1.
 DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g"
+FILE_STORE = "https://files.clearai.innopolis.university"
 SETUP = """
 df -h /
 # The agent mounts the host's /var/cache/apt/archives into the container, and on
@@ -109,8 +110,16 @@ def main() -> None:
         script="alfworld_uq/clearml/entry.py",
         docker=f"{a.image} {DOCKER_ARGS}",
         docker_bash_setup_script=SETUP,
-        packages=["clearml"],
+        # boto3 because ClearML checks the credentials of the *configured*
+        # destination before ours is applied, and some workers default to the
+        # s3 bucket.
+        packages=["clearml", "boto3"],
     )
+    # ClearML prepends its own Task.init() to the entry script. On a worker whose
+    # agent config defaults output_uri to the s3 bucket, that init dies with
+    # "Could not get access credentials" before entry.py runs a single line, so
+    # the destination has to be set here, at creation, and not in entry.py.
+    task.output_uri = FILE_STORE
     params = {
         "Args/MODEL": a.model,
         "Args/POLICY": a.policy,
