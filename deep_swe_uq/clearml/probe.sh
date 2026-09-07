@@ -33,8 +33,14 @@ echo "=== [3/6] tasks ==="
 # SHARED is bind-mounted at the same path on both sides, so it resolves alike.
 SHARED="${RUN_ROOT:-/tmp/probe_runs}"
 mkdir -p "${SHARED}"
-git clone --depth 1 https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" >/dev/null 2>&1 || {
-  echo "[probe] VERDICT: task clone failed"; exit 22; }
+# SHARED is bind-mounted from the host, so it survives between tasks: a clone
+# into it fails the second time. Reuse what is already there.
+if [ -d "${SHARED}/deep-swe/tasks" ]; then
+  echo "[probe] tasks already present from an earlier run, reusing"
+else
+  git clone --depth 1 https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" >/dev/null 2>&1 || {
+    echo "[probe] VERDICT: task clone failed"; exit 22; }
+fi
 echo "[probe] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) under ${SHARED}"
 
 echo "=== [4/6] can we pull a task image? ==="
@@ -112,7 +118,7 @@ timeout "${PROBE_TIMEOUT_SEC:-3600}" pier run \
   --agent-env "OPENAI_API_KEY=local" \
   --agent-env "OPENAI_API_BASE=${BASE_URL}" \
   --agent-env "OPENAI_BASE_URL=${BASE_URL}" \
-  --job-name probe
+  --job-name "probe-$(date +%s)"
 rc=$?
 echo "[probe] pier rc=${rc}"
 exit ${rc}
