@@ -57,7 +57,22 @@ echo "=== [5/6] serve the model locally ==="
 # Serving the model here removes the outbound call and, as a bonus, is the only
 # way we ever got complete token log-probabilities.
 SERVE_MODEL="${SERVE_MODEL:-openai/gpt-oss-20b}"
-PORT="${VLLM_PORT:-8010}"
+# Two tasks on one worker share the host network, so a fixed port makes the
+# second one adopt the first one's server: its health check passes, and the
+# failure only surfaces later as a connection error from somewhere else. Take a
+# free port unless one was named.
+if [ -z "${VLLM_PORT:-}" ]; then
+  PORT=$(python - <<'PYPORT'
+import socket
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1])
+sock.close()
+PYPORT
+)
+else
+  PORT="${VLLM_PORT}"
+fi
 python -m pip install --no-cache-dir "vllm==${VLLM_VERSION:-0.28.0}" >/dev/null 2>&1 || {
   echo "[run] VERDICT: vllm install failed"; exit 23; }
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -100,7 +115,20 @@ echo "[run] vLLM healthy"
 GATEWAY=$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1)
 BASE_URL="http://${GATEWAY}:${PORT}/v1"
 echo "[run] agents will call ${BASE_URL}"
-curl -sf "${BASE_URL}/models" >/dev/null && echo "[run] endpoint reachable via gateway" || echo "[run] WARNING: gateway address not reachable from here"
+# The agents reach the server over the bridge, so that is the address whose
+# health matters -- and the model it names has to be ours, not a neighbour
+# task's server that happened to take the same port.
+SERVED=$(curl -sf "${BASE_URL}/models" | python -c \
+  "import json,sys; print(json.load(sys.stdin)['data'][0]['id'])" 2>/dev/null || echo "")
+if [ -z "${SERVED}" ]; then
+  echo "[run] VERDICT: ${BASE_URL} is not reachable; the agents cannot call the model"
+  exit 25
+fi
+echo "[run] endpoint serves: ${SERVED}"
+if [ "${SERVED}" != "${SERVE_MODEL}" ]; then
+  echo "[run] VERDICT: ${BASE_URL} serves ${SERVED}, not ${SERVE_MODEL}"
+  exit 26
+fi
 
 echo "=== [6/7] which litellm entry point returns logprobs? ==="
 # The agent's own config showed {"drop_params": true, "logprobs": true}: litellm

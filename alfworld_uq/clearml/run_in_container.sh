@@ -18,7 +18,22 @@ echo "[wrapper] project=${PROJECT_DIR}"
 command -v python >/dev/null 2>&1 || ln -sf "$(command -v python3)" /usr/local/bin/python
 
 MODEL="${MODEL:-openai/gpt-oss-20b}"
-PORT="${VLLM_PORT:-8010}"
+# Two tasks on one worker share the host network, so a fixed port makes the
+# second one adopt the first one's server: its health check passes, and the
+# failure only surfaces later as a connection error from somewhere else. Take a
+# free port unless one was named.
+if [ -z "${VLLM_PORT:-}" ]; then
+  PORT=$(python - <<'PYPORT'
+import socket
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1])
+sock.close()
+PYPORT
+)
+else
+  PORT="${VLLM_PORT}"
+fi
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
 VLLM_LOG="${VLLM_LOG:-${PROJECT_DIR}/vllm_serve.log}"
@@ -146,6 +161,16 @@ for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS}"); do
 done
 curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null || {
   echo "[wrapper] FATAL: health never came up"; tail -n 300 "${VLLM_LOG}"; exit 1; }
+
+# A health endpoint only proves that something is listening. Ask it what it is:
+# adopting another task's model silently produces a whole run of the wrong data.
+SERVED=$(curl -sf "http://127.0.0.1:${PORT}/v1/models" | python -c \
+  "import json,sys; print(json.load(sys.stdin)['data'][0]['id'])" 2>/dev/null || echo "")
+echo "[wrapper] endpoint serves: ${SERVED:-unknown}"
+if [ -n "${SERVED}" ] && [ "${SERVED}" != "${MODEL}" ]; then
+  echo "[wrapper] FATAL: port ${PORT} is serving ${SERVED}, not ${MODEL}"
+  exit 1
+fi
 
 # The runner reads the endpoint from .env / the environment. `logprobs` is a
 # plain OpenAI parameter here, so none of the OpenRouter provider routing
