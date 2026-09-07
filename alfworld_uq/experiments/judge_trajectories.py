@@ -149,6 +149,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-tokens", type=int, default=256)
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument(
+        "--prefix-steps",
+        type=int,
+        default=0,
+        help="Judge only the first N steps, and only episodes that have at "
+        "least N. A ReAct episode ends the moment the agent wins and otherwise "
+        "runs to the step budget, so a full transcript tells the judge the "
+        "outcome by its length alone -- `num_steps < budget` scores AUROC 1.000 "
+        "on our Qwen run. A fixed-length prefix removes that: every transcript "
+        "is the same length and the ending is not in it, so what is left is "
+        "whether the judge can see trouble coming.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
     return parser
@@ -170,6 +182,14 @@ def main() -> None:
     trajectories: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in _read_jsonl(args.trajectories):
         trajectories[str(row["episode_id"])].append(row)
+    if args.prefix_steps:
+        trajectories = {
+            episode_id: sorted(rows, key=lambda row: int(row["step"]))[
+                : args.prefix_steps
+            ]
+            for episode_id, rows in trajectories.items()
+            if len(rows) >= args.prefix_steps
+        }
     episode_ids = sorted(trajectories)
     if args.limit > 0:
         episode_ids = episode_ids[: args.limit]
