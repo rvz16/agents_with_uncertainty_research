@@ -75,6 +75,7 @@ class _EnvStep:
     progress: float | None
     done: bool
     won: bool
+    state_changed: bool = False
 
 
 @dataclass
@@ -142,6 +143,8 @@ class _EnvSession:
             rng=self.rng,
             repeat_action_limit=self.repeat_action_limit,
         )
+        previous_observation = self.observation
+        previous_admissible = list(self.admissible)
         result = self.env.step(action)
         self.env_steps += 1
         step = _EnvStep(
@@ -150,6 +153,10 @@ class _EnvSession:
             action_valid=action_valid,
             fallback_reason=fallback_reason,
             observation=result.observation,
+            state_changed=(
+                result.observation.strip() != previous_observation.strip()
+                or list(result.admissible_actions) != previous_admissible
+            ),
             progress=result.progress,
             done=bool(result.done),
             won=bool(result.won),
@@ -581,6 +588,12 @@ class SmolagentsPolicy:
                     "format_valid": format_valid,
                     "action_valid": action_valid,
                     "fallback_reason": fallback_reason,
+                    # One generation may issue several actions here, so the
+                    # tool call succeeds only if every action in it did.
+                    "tool_success": bool(env_steps) and all(
+                        step.action_valid for step in env_steps
+                    ),
+                    "state_changed": any(step.state_changed for step in env_steps),
                     "raw_response": raw_text,
                     "logprobs_available": bool(content),
                     "provider": generation["provider"],

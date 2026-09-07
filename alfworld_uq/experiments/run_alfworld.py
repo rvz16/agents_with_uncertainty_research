@@ -91,6 +91,8 @@ def _build_agent(args: argparse.Namespace) -> Any:
         seed=args.seed,
         extra_body=extra_body,
         max_empty_response_retries=args.empty_response_retries,
+        top_logprobs=args.top_logprobs,
+        verbalized=args.verbalized,
     )
 
 
@@ -99,7 +101,7 @@ def _run_react_episode(
     env: ALFWorldTextEnv,
     initial: Any,
     max_steps: int,
-) -> tuple[list[dict[str, Any]], bool, str, int]:
+) -> tuple[list[dict[str, Any]], bool, str, int, dict[str, Any] | None]:
     """Runner-driven ReAct loop: one generation per environment step."""
     observation = initial.observation
     admissible = initial.admissible_actions
@@ -159,6 +161,18 @@ def _run_react_episode(
             "format_valid": generation.format_valid,
             "action_valid": generation.action_valid,
             "fallback_reason": generation.fallback_reason,
+            # The tool of this environment is the action itself. The harness
+            # never sends an inadmissible string -- it substitutes `look` --
+            # so the environment side always succeeds and the honest place to
+            # measure a tool call is what the model proposed. `state_changed`
+            # separates a legal action from a useful one: a legal action that
+            # leaves the observation and the admissible set untouched did
+            # nothing, and that is invisible in `action_valid`.
+            "tool_success": bool(generation.action_valid),
+            "state_changed": (
+                result.observation.strip() != observation.strip()
+                or result.admissible_actions != admissible
+            ),
             "raw_response": generation.raw_text,
             "logprobs_available": generation.logprobs_available,
             "provider": generation.provider,
@@ -192,7 +206,35 @@ def _run_react_episode(
             else:
                 stop_reason = "environment_done"
             break
-    return records, final_success, stop_reason, total_tokens
+
+    # Asked after the loop, so it cannot steer a single action of the episode.
+    final_confidence = None
+    if getattr(agent, "verbalized", False) and history:
+        final_confidence = agent.final_confidence(initial.task, history)
+        if final_confidence:
+            total_tokens += int(final_confidence.pop("total_tokens", 0))
+    return records, final_success, stop_reason, total_tokens, final_confidence
+
+
+def _fraction(records: list[dict[str, Any]], key: str) -> float | None:
+    values = [bool(row[key]) for row in records if row.get(key) is not None]
+    return float(sum(values) / len(values)) if values else None
+
+
+def _step_verbalized(records: list[dict[str, Any]]) -> list[float]:
+    return [
+        float(row["verb"]) for row in records if row.get("verb") is not None
+    ]
+
+
+def _verbalized_mean(records: list[dict[str, Any]]) -> float | None:
+    values = _step_verbalized(records)
+    return float(sum(values) / len(values)) if values else None
+
+
+def _verbalized_last(records: list[dict[str, Any]]) -> float | None:
+    values = _step_verbalized(records)
+    return values[-1] if values else None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -248,6 +290,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-generation-tokens", type=int, default=1024)
     parser.add_argument("--empty-response-retries", type=int, default=1)
     parser.add_argument("--repeat-action-limit", type=int, default=2)
+    parser.add_argument(
+        "--top-logprobs",
+        type=int,
+        default=0,
+        help="Ask the server for this many alternatives per token, which is "
+        "what mean token entropy needs; 0 keeps the sampled token alone. "
+        "Hosted endpoints often ignore it, a locally served vLLM does not.",
+    )
+    parser.add_argument(
+        "--verbalized",
+        action="store_true",
+        help="Ask the policy for a confidence on every step and once more, "
+        "with the finished trajectory, after the episode ends. It changes the "
+        "prompt, so a run with it is only comparable to another run with it.",
+    )
     parser.add_argument("--no-logprobs", action="store_true")
     parser.add_argument(
         "--require-api-parameters",
@@ -315,6 +372,8 @@ def main() -> None:
         "agent_max_steps": args.agent_max_steps,
         "model": model,
         "request_logprobs": not args.no_logprobs,
+        "top_logprobs": args.top_logprobs,
+        "verbalized": args.verbalized,
         "empty_response_retries": args.empty_response_retries,
         "require_api_parameters": args.require_api_parameters,
         "provider_order": args.provider_order,
@@ -345,8 +404,9 @@ def main() -> None:
                 final_success = episode.final_success
                 stop_reason = episode.stop_reason
                 total_tokens = episode.total_tokens
+                final_confidence = None
             else:
-                records, final_success, stop_reason, total_tokens = (
+                records, final_success, stop_reason, total_tokens, final_confidence = (
                     _run_react_episode(agent, env, initial, args.max_steps)
                 )
 
@@ -364,6 +424,18 @@ def main() -> None:
                 "stop_reason": stop_reason,
                 "total_tokens": total_tokens,
                 "duration_seconds": duration,
+                "tool_success_rate": _fraction(records, "tool_success"),
+                "state_changed_rate": _fraction(records, "state_changed"),
+                "verbalized_mean": _verbalized_mean(records),
+                "verbalized_last": _verbalized_last(records),
+                "final_verbalized": (
+                    final_confidence.get("verbalized_confidence")
+                    if final_confidence
+                    else None
+                ),
+                "final_verbalized_raw": (
+                    final_confidence.get("raw_response") if final_confidence else None
+                ),
             }
             _write_jsonl(episodes_path, [summary])
             success_count += int(final_success)

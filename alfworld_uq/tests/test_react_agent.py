@@ -204,3 +204,100 @@ def test_trailing_punctuation_does_not_make_an_action_inadmissible() -> None:
         "teleport", admissible, [], rng=random.Random(0), repeat_action_limit=2
     )
     assert not valid and fallback == "inadmissible_action"
+
+
+def _client_with_top_logprobs(text: str, alternatives: list[list[float]]):
+    """A response whose tokens carry the top-k the server was asked for."""
+    token_strings = ["Thought:", " inspect", "\n", "Action:", " look"]
+    token_items = [
+        SimpleNamespace(
+            token=token,
+            logprob=-0.1 * (index + 1),
+            top_logprobs=[
+                SimpleNamespace(token="x", logprob=value)
+                for value in alternatives[index]
+            ],
+        )
+        for index, token in enumerate(token_strings)
+    ]
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=text),
+                logprobs=SimpleNamespace(content=token_items),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=20, completion_tokens=5, total_tokens=25),
+    )
+    completions = FakeCompletions(response)
+    return SimpleNamespace(chat=SimpleNamespace(completions=completions)), completions
+
+
+def _agent(client, **kwargs):
+    return ReActAgent(
+        base_url="http://unused", api_key="unused", model="test", client=client, **kwargs
+    )
+
+
+def test_top_logprobs_are_requested_only_when_asked_for() -> None:
+    client, completions = _client("Thought: inspect\nAction: look")
+    _agent(client).act("inspect", [], ["look"])
+    assert "top_logprobs" not in completions.kwargs
+
+    client, completions = _client("Thought: inspect\nAction: look")
+    _agent(client, top_logprobs=5).act("inspect", [], ["look"])
+    assert completions.kwargs["top_logprobs"] == 5
+
+
+def test_mean_token_entropy_separates_a_flat_head_from_a_peaked_one() -> None:
+    """Entropy is not recoverable from the sampled token's log-probability.
+
+    Both responses below draw exactly the same tokens with the same
+    log-probabilities; only the shape of the distribution they were drawn from
+    differs, which is the whole point of asking for `top_logprobs`.
+    """
+    import math
+
+    peaked = [[math.log(0.97), math.log(0.02), math.log(0.01)]] * 5
+    flat = [[math.log(0.34), math.log(0.33), math.log(0.33)]] * 5
+
+    client, _ = _client_with_top_logprobs("Thought: inspect\nAction: look", peaked)
+    sharp = _agent(client, top_logprobs=3).act("inspect", [], ["look"])
+    client, _ = _client_with_top_logprobs("Thought: inspect\nAction: look", flat)
+    vague = _agent(client, top_logprobs=3).act("inspect", [], ["look"])
+
+    assert sharp.uq["combined"]["mean_token_logprob"] == vague.uq["combined"]["mean_token_logprob"]
+    assert sharp.uq["combined"]["mean_token_entropy"] < vague.uq["combined"]["mean_token_entropy"]
+    assert sharp.uq["combined"]["entropy_coverage"] == 1.0
+
+
+def test_entropy_is_none_when_the_server_sent_no_alternatives() -> None:
+    client, _ = _client("Thought: inspect\nAction: look")
+    result = _agent(client).act("inspect", [], ["look"])
+    assert result.uq["combined"]["mean_token_entropy"] is None
+    assert result.uq["combined"]["perplexity"] is not None
+
+
+def test_confidence_is_parsed_only_when_the_prompt_asks_for_it() -> None:
+    text = "Thought: inspect\nAction: look\nConfidence: 0.35"
+    client, completions = _client(text)
+    plain = _agent(client).act("inspect", [], ["look"])
+    assert "Confidence:" not in completions.kwargs["messages"][0]["content"]
+
+    client, completions = _client(text)
+    asked = _agent(client, verbalized=True).act("inspect", [], ["look"])
+    assert "Confidence:" in completions.kwargs["messages"][0]["content"]
+    # The parser reads the line wherever it appears; the prompt decides whether
+    # the model ever writes one.
+    assert asked.uq["combined"]["verbalized_confidence"] == 0.35
+    assert plain.uq["combined"]["verbalized_confidence"] == 0.35
+
+
+def test_final_confidence_is_a_separate_call_over_the_finished_trajectory() -> None:
+    client, completions = _client("Confidence: 0.10")
+    agent = _agent(client, verbalized=True)
+    history = [{"thought": "t", "action": "look", "observation": "a room"}]
+    result = agent.final_confidence("put a mug on the desk", history)
+    assert result["verbalized_confidence"] == 0.10
+    prompt = completions.kwargs["messages"][1]["content"]
+    assert "put a mug on the desk" in prompt and "a room" in prompt

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 import re
 import time
@@ -19,6 +20,26 @@ Return exactly:
 Thought: <brief reasoning>
 Action: <one admissible action>
 Do not add any other fields or formatting."""
+
+# Verbalised confidence has to be asked for: the plain prompt above forbids any
+# extra field, so `parse_verbalized_confidence` never fired and the `verb`
+# column was null in every run so far. The confidence is about the task, not
+# about the line just written -- a per-step estimate of eventual success, which
+# is what an episode-level UQ signal needs.
+VERBALIZED_SYSTEM_PROMPT = """You are a text-only household agent. Solve the task by
+reasoning briefly and selecting exactly one action from the admissible action list.
+Return exactly:
+Thought: <brief reasoning>
+Action: <one admissible action>
+Confidence: <number between 0.00 and 1.00>
+Confidence is your probability that you will finish the whole task successfully,
+not your confidence in this single action. Do not add any other fields."""
+
+# Asked once, after the episode has ended, with the trajectory in the prompt.
+FINAL_VERB_SYSTEM_PROMPT = """You are reviewing your own attempt at a household task.
+Answer with exactly one line:
+Confidence: <number between 0.00 and 1.00>
+It is your probability that the task was actually accomplished."""
 
 
 class AgentError(RuntimeError):
@@ -83,14 +104,53 @@ def parse_react_response(text: str) -> ParsedResponse:
     )
 
 
-def _metric_bundle(logprobs: list[float]) -> dict[str, float | int | None]:
-    return {
+def _metric_bundle(
+    logprobs: list[float], entropies: list[float] | None = None
+) -> dict[str, float | int | None]:
+    bundle: dict[str, float | int | None] = {
         "num_tokens": len(logprobs),
         "perplexity": perplexity(logprobs),
         "sum_logprob": sum_log_probability(logprobs),
         "mean_token_logprob": mean_token_log_probability(logprobs),
         "sequence_probability": sequence_probability(logprobs),
     }
+    # Mean token entropy: the width of the next-token distribution rather than
+    # the probability of the token that was drawn. A confident wrong token and
+    # a token drawn from a flat distribution have the same log-probability, so
+    # this is not recoverable from the log-probabilities we already store -- it
+    # needs `top_logprobs` at request time.
+    finite = [value for value in (entropies or []) if value is not None]
+    bundle["mean_token_entropy"] = float(sum(finite) / len(finite)) if finite else None
+    bundle["max_token_entropy"] = max(finite) if finite else None
+    bundle["entropy_coverage"] = (
+        float(len(finite) / len(logprobs)) if logprobs else None
+    )
+    return bundle
+
+
+def token_entropy(top_logprobs: list[Any]) -> float | None:
+    """Entropy of one next-token distribution, from the top-k the server sent.
+
+    vLLM returns the k most likely alternatives, not the whole vocabulary, so
+    this is the entropy of the renormalised head. k is fixed across a run, which
+    keeps the numbers comparable within it; `topk_mass` records how much
+    probability the head actually captured, so a truncated tail is visible
+    rather than silent.
+    """
+    values = []
+    for item in top_logprobs or []:
+        logprob = getattr(item, "logprob", None)
+        if logprob is not None:
+            values.append(float(logprob))
+    if not values:
+        return None
+    probabilities = [math.exp(value) for value in values]
+    mass = sum(probabilities)
+    if mass <= 0:
+        return None
+    return float(
+        -sum((p / mass) * math.log(p / mass) for p in probabilities if p > 0)
+    )
 
 
 _SPECIAL_TOKEN = re.compile(r"^<\|.*\|>$")
@@ -182,6 +242,12 @@ def token_offsets(
     return offsets
 
 
+def _entropies(records: list[dict[str, Any]]) -> list[float]:
+    return [
+        float(record["entropy"]) for record in records if record.get("entropy") is not None
+    ]
+
+
 def metrics_by_span(
     raw_text: str,
     token_records: list[dict[str, Any]],
@@ -195,16 +261,23 @@ def metrics_by_span(
     """
     offsets = token_offsets(raw_text, token_records)
 
-    def select(span: tuple[int, int] | None) -> list[float]:
+    def select(span: tuple[int, int] | None) -> list[dict[str, Any]]:
         if span is None:
             return []
         start, end = span
-        return [lp for left, right, lp in offsets if right > start and left < end]
+        return [
+            token_records[index]
+            for index, (left, right, _) in enumerate(offsets)
+            if right > start and left < end
+        ]
 
-    bundles = {name: _metric_bundle(select(span)) for name, span in spans.items()}
-    bundles["combined"] = _metric_bundle(
-        [float(record["logprob"]) for record in token_records]
-    )
+    def bundle_of(records: list[dict[str, Any]]) -> dict[str, float | int | None]:
+        return _metric_bundle(
+            [float(record["logprob"]) for record in records], _entropies(records)
+        )
+
+    bundles = {name: bundle_of(select(span)) for name, span in spans.items()}
+    bundles["combined"] = bundle_of(token_records)
     return bundles
 
 
@@ -232,7 +305,17 @@ def _extract_token_records(response: Any) -> list[dict[str, Any]]:
         token = getattr(item, "token", None)
         logprob = getattr(item, "logprob", None)
         if token is not None and logprob is not None:
-            records.append({"token": token, "logprob": float(logprob)})
+            record = {"token": token, "logprob": float(logprob)}
+            top = getattr(item, "top_logprobs", None)
+            if top:
+                entropy = token_entropy(top)
+                if entropy is not None:
+                    record["entropy"] = entropy
+                    record["topk_mass"] = float(
+                        sum(math.exp(float(x.logprob)) for x in top
+                            if getattr(x, "logprob", None) is not None)
+                    )
+            records.append(record)
     return records
 
 
@@ -308,6 +391,8 @@ class ReActAgent:
         seed: int = 0,
         extra_body: dict[str, Any] | None = None,
         max_empty_response_retries: int = 1,
+        top_logprobs: int = 0,
+        verbalized: bool = False,
         client: Any | None = None,
     ) -> None:
         self.client = client or OpenAI(
@@ -324,6 +409,45 @@ class ReActAgent:
         self.rng = random.Random(seed)
         self.extra_body = extra_body
         self.max_empty_response_retries = max(0, max_empty_response_retries)
+        self.top_logprobs = max(0, int(top_logprobs))
+        self.verbalized = bool(verbalized)
+
+    def final_confidence(
+        self, task: str, history: list[dict[str, str]]
+    ) -> dict[str, Any] | None:
+        """One extra call after the episode: did the agent think it succeeded?
+
+        The per-step confidence is asked while the outcome is still open; this
+        is asked once with the whole trajectory visible, which is the signal an
+        episode-level calibrator actually wants. It is a separate call so that
+        it cannot influence any action the agent took.
+        """
+        transcript = "\n".join(
+            f"Action: {item['action']}\nObservation: {item['observation']}"
+            for item in history
+        )
+        messages = [
+            {"role": "system", "content": FINAL_VERB_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Task: {task}\n\nYour attempt:\n{transcript}\n\n"
+                           "Was the task accomplished?",
+            },
+        ]
+        try:
+            response, metadata = self._request(messages)
+        except AgentError:
+            return None
+        raw_text = response.choices[0].message.content or ""
+        records = _extract_token_records(response)
+        return {
+            "verbalized_confidence": parse_verbalized_confidence(raw_text),
+            "raw_response": raw_text,
+            "uq": _metric_bundle(
+                [float(record["logprob"]) for record in records], _entropies(records)
+            ),
+            "total_tokens": metadata["total_tokens"],
+        }
 
     @staticmethod
     def _prompt(
@@ -365,6 +489,8 @@ class ReActAgent:
         }
         if self.request_logprobs:
             kwargs["logprobs"] = True
+            if self.top_logprobs:
+                kwargs["top_logprobs"] = int(self.top_logprobs)
         if self.extra_body:
             kwargs["extra_body"] = self.extra_body
 
@@ -430,7 +556,10 @@ class ReActAgent:
         admissible_actions: list[str],
     ) -> AgentGeneration:
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": VERBALIZED_SYSTEM_PROMPT if self.verbalized else SYSTEM_PROMPT,
+            },
             {
                 "role": "user",
                 "content": self._prompt(task, history, admissible_actions),
@@ -449,7 +578,7 @@ class ReActAgent:
         reasoning, content = split_reasoning_tokens(raw_text, token_records)
         uq = _segment_logprobs(raw_text, parsed, content)
         uq["reasoning"] = _metric_bundle(
-            [float(record["logprob"]) for record in reasoning]
+            [float(record["logprob"]) for record in reasoning], _entropies(reasoning)
         )
         verbalized = parse_verbalized_confidence(raw_text)
         for segment in uq.values():
