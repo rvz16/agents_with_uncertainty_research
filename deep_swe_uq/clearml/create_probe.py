@@ -13,6 +13,10 @@ import os
 from clearml import Task
 
 REPO = "https://github.com/rvz16/agents_with_uncertainty_research.git"
+# The agent's default output_uri is the s3 bucket, and ClearML prepends its own
+# Task.init() to the entry script: without an explicit destination that init
+# fails before our code runs, with no boto3 and no credentials for that bucket.
+FILE_STORE = "https://files.clearai.innopolis.university"
 # A plain python image: it ships git, and nothing here needs a GPU.
 DOCKER_IMAGE = "python:3.12"
 DOCKER_ARGS = (
@@ -53,8 +57,9 @@ def main() -> None:
         script="deep_swe_uq/clearml/probe_entry.py",
         docker=f"{DOCKER_IMAGE} {docker_args}",
         docker_bash_setup_script=SETUP,
-        packages=["clearml"],
+        packages=["clearml", "boto3"],
     )
+    task.output_uri = FILE_STORE
     task.set_parameters({
         "Args/N_TASKS": str(a.n_tasks),
         "Args/MODEL": a.model,
