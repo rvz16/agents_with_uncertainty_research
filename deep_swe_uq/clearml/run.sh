@@ -51,6 +51,35 @@ if [ -n "${IMAGE}" ]; then
   timeout 900 docker pull "${IMAGE}" >/dev/null 2>&1 && echo "[run] pull OK" || echo "[run] pull FAILED (registry throttling was the local failure mode)"
 fi
 
+# The capture itself is now the failure. An agent committed
+# ("[master 41493e4] 1 file changed"), yet /logs/artifacts/model.patch did not
+# exist in the container: pier's own copy reported "Could not find the file".
+# /logs/verifier, unlike /logs/artifacts, is bind-mounted to the host trial
+# directory, so anything written there survives whatever happens to the
+# container. Append a second, mounted copy plus a few facts about the
+# environment; nothing existing is changed, so grading is unaffected.
+echo "=== [4.5/6] add a mounted copy to each task's artifact capture ==="
+capture_patched=0
+for script in "${SHARED}"/deep-swe/tasks/*/pre_artifacts.sh; do
+  grep -q "pier-cluster-diagnostic" "${script}" && continue
+  cat >> "${script}" <<'CAPTURE'
+
+# pier-cluster-diagnostic: /logs/artifacts did not survive on the cluster.
+mkdir -p /logs/verifier 2>/dev/null || true
+{
+  echo "pwd=$(pwd)"
+  echo "app=$([ -d /app ] && echo present || echo missing)"
+  echo "head=$(git -C /app rev-parse --short HEAD 2>&1)"
+  echo "commits_since_base=$(git -C /app rev-list --count HEAD 2>&1)"
+  echo "artifacts_dir=$([ -d /logs/artifacts ] && echo present || echo missing)"
+  echo "patch_bytes=$(wc -c < /logs/artifacts/model.patch 2>/dev/null || echo missing)"
+} > /logs/verifier/pre_artifacts_debug.txt 2>&1
+cp /logs/artifacts/model.patch /logs/verifier/model.patch 2>/dev/null || true
+CAPTURE
+  capture_patched=$((capture_patched + 1))
+done
+echo "[run] artifact capture extended in ${capture_patched} tasks"
+
 echo "=== [5/6] serve the model locally ==="
 # The cluster's egress filter answers OpenRouter with HTTP 403 ("Access denied
 # by security policy"), so the agent cannot reach a hosted endpoint at all.
@@ -202,6 +231,15 @@ summarise_patches() {
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 patches = sorted(root.glob("*/artifacts/model.patch"))
+mounted = sorted(root.glob("*/verifier/model.patch"))
+if mounted:
+    sizes_mounted = [path.stat().st_size for path in mounted]
+    print(f"[run] mounted copies: {len(mounted)}, "
+          f"{sum(1 for size in sizes_mounted if size > 0)} non-empty, "
+          f"{sum(sizes_mounted)} bytes total")
+for path in sorted(root.glob("*/verifier/pre_artifacts_debug.txt"))[:2]:
+    print(f"[run] {path.parent.parent.name}: "
+          + "; ".join(path.read_text().split())) 
 sizes = [path.stat().st_size for path in patches]
 non_empty = [size for size in sizes if size > 0]
 print(f"[run] patches: {len(patches)} captured, {len(non_empty)} non-empty, "
