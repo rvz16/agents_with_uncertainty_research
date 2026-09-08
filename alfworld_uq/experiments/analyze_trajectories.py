@@ -34,6 +34,9 @@ UQ_METHODS = {
     "mean_token_logprob": False,
     "sequence_probability": False,
     "verbalized_confidence": False,
+    # Wider next-token distribution means less certain, hence True. Present only
+    # in runs collected with --top-logprobs; absent elsewhere and dropped then.
+    "mean_token_entropy": True,
 }
 # `reasoning` exists only for locally served models that return log-probabilities
 # for their hidden channel; it is empty for hosted endpoints and drops out then.
