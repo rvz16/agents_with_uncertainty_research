@@ -156,17 +156,41 @@ export VLLM_USE_FLASHINFER_SAMPLER=0
 # so the whole run finishes with empty patches and no model call ever made.
 # A wrong parser name makes vLLM exit during startup, which reads like a CUDA
 # failure in the log 20 minutes later. Print what this build actually has.
-python - <<'PYPARSERS' || true
-try:
-    from vllm.entrypoints.openai.tool_parsers import ToolParserManager
-    print("[run] tool-call parsers available:", ", ".join(sorted(ToolParserManager.tool_parsers)))
-except Exception as exc:
-    print("[run] could not list tool-call parsers:", exc)
-PYPARSERS
+# vLLM moved the parser registry between versions, so ask the CLI rather than
+# importing: --help lists the accepted names for this build.
+PARSER_CHOICES=$(vllm serve --help 2>/dev/null | tr ',' '\n' | tr -d ' {}' | sort -u)
+echo "[run] tool-call parsers offered by this build: $(echo "${PARSER_CHOICES}" | grep -ciE 'hermes|qwen|openai') matches"
+
+# Qwen3.6 does not emit Hermes JSON. It writes the Qwen-Coder XML shape --
+#   <tool_call><function=bash><parameter=command>...
+# -- so the hermes parser returned tool_calls: None on every single call, and
+# all 113 tasks ended in RepeatedFormatError with 2260 "No tool calls found".
+# Pick the first name this build actually offers.
+pick_parser() {
+  for candidate in "$@"; do
+    if echo "${PARSER_CHOICES}" | grep -qx "${candidate}"; then
+      echo "${candidate}"; return 0
+    fi
+  done
+  echo "$1"  # nothing matched: keep the request and let vLLM complain loudly
+}
+case "${SERVE_MODEL}" in
+  *gpt-oss*) TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-openai}" ;;
+  *Qwen3.6*|*qwen3.6*|*Qwen3-*|*qwen3-*)
+    TOOL_CALL_PARSER=$(pick_parser qwen3_coder qwen3_xml hermes)
+    REASONING_PARSER="${REASONING_PARSER:-qwen3}"
+    ;;
+esac
+echo "[run] tool-call parser: ${TOOL_CALL_PARSER:-none}, reasoning parser: ${REASONING_PARSER:-none}"
 
 TOOL_ARGS=()
 if [ -n "${TOOL_CALL_PARSER:-}" ]; then
   TOOL_ARGS=(--enable-auto-tool-choice --tool-call-parser "${TOOL_CALL_PARSER}")
+fi
+# Qwen writes its chain of thought into the answer unless a reasoning parser
+# splits it off, which also keeps our log-probability accounting honest.
+if [ -n "${REASONING_PARSER:-}" ]; then
+  TOOL_ARGS+=(--reasoning-parser "${REASONING_PARSER}")
 fi
 vllm serve "${SERVE_MODEL}" --host 0.0.0.0 --port "${PORT}" \
   --max-model-len "${MAX_MODEL_LEN:-32768}" \
