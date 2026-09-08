@@ -157,7 +157,13 @@ fi
 # shows an A100 while torch reports "No CUDA GPUs are available" -- 9 of our
 # runs died there, each after installing vLLM. One csv query settles it before
 # any of that work happens.
-MIG_MODE=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
+# Read every line and take the first in the shell. `| head -1` closes the pipe
+# after one line, nvidia-smi takes SIGPIPE, and under `set -euo pipefail` the
+# 141 kills the whole run -- which is what happened on the two-GPU worker,
+# where nvidia-smi prints two lines and the check that was meant to protect the
+# run destroyed it instead.
+MIG_ALL=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader 2>/dev/null || true)
+MIG_MODE=$(printf '%s' "${MIG_ALL%%$'\n'*}" | tr -d ' ')
 if [ "${MIG_MODE}" = "Enabled" ] && ! nvidia-smi -L 2>/dev/null | grep -q "MIG"; then
   echo "[wrapper] VERDICT: this GPU has MIG enabled with no MIG device; nothing can use it"
   nvidia-smi -L || true
