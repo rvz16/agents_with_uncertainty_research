@@ -28,7 +28,11 @@ DOCKER_IMAGE = "vllm/vllm-openai:v0.12.0"
 FALLBACK_IMAGE = "python:3.12"
 # --entrypoint= : the image's entrypoint is `vllm`; clear it so ClearML runs python.
 # --network=host: the client reaches the in-container endpoint on 127.0.0.1.
-DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g"
+# The container's own filesystem does not survive the task, so every run
+# re-downloaded ~13G of weights into the node's overlay: one worker reached
+# 99% full and started refusing jobs. A host-side cache makes the download
+# happen once per node instead of once per run.
+DOCKER_ARGS = "--entrypoint= --network=host --shm-size=16g -v /root/.clearml/hf-cache:/root/.cache/huggingface"
 FILE_STORE = "https://files.clearai.innopolis.university"
 SETUP = """
 df -h /

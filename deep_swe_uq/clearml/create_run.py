@@ -23,7 +23,7 @@ DOCKER_IMAGE = "python:3.12"  # vLLM comes from pip; the wheels carry their own 
 DOCKER_ARGS = (
     "--entrypoint= --network=host "
     "-v /var/run/docker.sock:/var/run/docker.sock "
-    "-v /tmp/deepswe_runs:/tmp/deepswe_runs"
+    "-v /tmp/deepswe_runs:/tmp/deepswe_runs -v /root/.clearml/hf-cache:/root/.cache/huggingface"
 )
 SETUP = """
 df -h /
