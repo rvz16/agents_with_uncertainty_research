@@ -42,6 +42,9 @@ def main() -> None:
     p.add_argument("--branch", default="alfworld_smolagents")
     p.add_argument("--n-tasks", type=int, default=113)
     p.add_argument("--n-concurrent", type=int, default=4)
+    p.add_argument("--timeout-sec", type=int, default=21600,
+                   help="the Qwen run reached 83 of 113 tasks in six hours and "
+                        "was cut off by this, losing the remaining 30")
     p.add_argument("--tensor-parallel-size", type=int, default=2)
     p.add_argument("--run-name", default="deepswe")
     p.add_argument("--model", default="openrouter/openai/gpt-oss-20b")
@@ -89,7 +92,7 @@ def main() -> None:
         "Args/N_TASKS": str(a.n_tasks),
         "Args/MODEL": a.model,
         "Args/RUN_ROOT": "/tmp/deepswe_runs",
-        "Args/RUN_TIMEOUT_SEC": "21600",
+        "Args/RUN_TIMEOUT_SEC": str(a.timeout_sec),
         "Args/N_CONCURRENT": str(a.n_concurrent),
         "Args/TENSOR_PARALLEL_SIZE": str(a.tensor_parallel_size),
         "Args/RUN_NAME": a.run_name,
