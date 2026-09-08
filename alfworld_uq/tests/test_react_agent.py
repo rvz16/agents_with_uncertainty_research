@@ -375,3 +375,41 @@ def test_without_a_limit_the_whole_history_is_sent() -> None:
     prompt = agent._prompt("task", history, ["look"])
     assert prompt.count("Action: look") == 30
     assert "omitted" not in prompt
+
+
+def test_give_up_is_a_valid_action_but_not_an_environment_one() -> None:
+    """Without an exit, every ReAct failure runs to the budget.
+
+    Episode length alone then scores PRR .948 on gpt-oss and 1.000 on Qwen,
+    and no trajectory signal can be measured against that. smolagents has
+    final_answer; this is the same affordance for the same protocol.
+    """
+    import random
+    from agents.react_agent import GIVE_UP_ACTION, resolve_action
+
+    action, valid, reason = resolve_action(
+        "give up", ["look", "go to desk 1"], [], rng=random.Random(0),
+        repeat_action_limit=2,
+    )
+    assert action == GIVE_UP_ACTION and valid and reason is None
+
+    # trailing punctuation is handled like any other action
+    action, valid, _ = resolve_action(
+        "Give up.", ["look"], [], rng=random.Random(0), repeat_action_limit=2,
+    )
+    assert action == GIVE_UP_ACTION and valid
+
+
+def test_the_exit_is_offered_only_when_enabled() -> None:
+    def prompt_of(**kwargs):
+        agent = ReActAgent(
+            base_url="http://unused", api_key="unused", model="test",
+            client=SimpleNamespace(), **kwargs
+        )
+        return agent._system_prompt()
+
+    assert "give up" not in prompt_of()
+    assert "give up" in prompt_of(allow_give_up=True)
+    # it composes with the other two switches rather than replacing them
+    both = prompt_of(allow_give_up=True, judge_tool_budget=3, verbalized=True)
+    assert "give up" in both and "check progress" in both and "Confidence:" in both

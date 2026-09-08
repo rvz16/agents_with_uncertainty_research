@@ -54,6 +54,7 @@ AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-0}"
 MAX_GENERATION_TOKENS="${MAX_GENERATION_TOKENS:-2048}"
 SMOL_CODE_TAGS="${SMOL_CODE_TAGS:-markdown}"
 TOP_LOGPROBS="${TOP_LOGPROBS:-0}"
+ALLOW_GIVE_UP="${ALLOW_GIVE_UP:-0}"
 VERBALIZED="${VERBALIZED:-0}"
 JUDGE_TOOL_BUDGET="${JUDGE_TOOL_BUDGET:-0}"
 # A reviewer served next to the agent on the same GPU. The probe showed why it
@@ -319,6 +320,9 @@ fi
 # off by default so an existing run reproduces byte for byte.
 case "${VERBALIZED}" in
   1|true|True|yes) common_args+=(--verbalized) ;;
+esac
+case "${ALLOW_GIVE_UP}" in
+  1|true|True|yes) common_args+=(--allow-give-up) ;;
 esac
 
 if [ "${WORKERS}" -gt 1 ]; then

@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from agents.judge_tool import JudgeTool
 from agents.react_agent import (
+    GIVE_UP_ACTION,
     JUDGE_TOOL_ACTION,
     AgentError,
     RandomAdmissibleAgent,
@@ -104,6 +105,7 @@ def _build_agent(args: argparse.Namespace, judge_tool: Any = None) -> Any:
         verbalized=args.verbalized,
         judge_tool_budget=args.judge_tool_budget,
         context_limit=args.context_limit,
+        allow_give_up=args.allow_give_up,
     )
 
 
@@ -237,6 +239,58 @@ def _run_react_episode(
                 }
             )
             continue
+
+        # The agent's own exit. It costs no environment step, and the episode
+        # is still graded by the environment: giving up on a solved task would
+        # not make it a failure, and giving up early does not make it one
+        # either -- the outcome is whatever the environment already recorded.
+        if generation.action == GIVE_UP_ACTION:
+            records.append(
+                {
+                    "episode_id": initial.episode_id,
+                    "task_type": initial.task_type,
+                    "task": initial.task,
+                    "step": step_number,
+                    "thought": generation.thought,
+                    "action": GIVE_UP_ACTION,
+                    "proposed_action": generation.proposed_action,
+                    "observation": observation,
+                    "admissible_actions": admissible,
+                    "token_logprobs": generation.token_logprobs,
+                    "perplexity": generation.uq.get("combined", {}).get("perplexity"),
+                    "seqprob": generation.uq.get("combined", {}).get(
+                        "sequence_probability"
+                    ),
+                    "verb": generation.uq.get("combined", {}).get(
+                        "verbalized_confidence"
+                    ),
+                    "progress": None,
+                    "done": True,
+                    "final_success": False,
+                    "format_valid": generation.format_valid,
+                    "action_valid": True,
+                    "fallback_reason": None,
+                    "tool_success": True,
+                    "state_changed": False,
+                    "env_action_count": 0,
+                    "gave_up": True,
+                    "raw_response": generation.raw_text,
+                    "logprobs_available": generation.logprobs_available,
+                    "provider": generation.provider,
+                    "uq": generation.uq,
+                    "usage": {
+                        "prompt_tokens": generation.prompt_tokens,
+                        "completion_tokens": generation.completion_tokens,
+                        "total_tokens": generation.total_tokens,
+                        "request_attempts": generation.request_attempts,
+                        "empty_response_retries": generation.empty_response_retries,
+                        "generation_token_limit": generation.generation_token_limit,
+                    },
+                }
+            )
+            total_tokens += generation.total_tokens
+            stop_reason = "agent_gave_up"
+            break
 
         result = env.step(generation.action)
         combined_uq = generation.uq.get("combined", {})
@@ -398,6 +452,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Hosted endpoints often ignore it, a locally served vLLM does not.",
     )
     parser.add_argument(
+        "--allow-give-up",
+        action="store_true",
+        help="Let the ReAct policy end the episode itself. Without it every "
+        "failure runs to the step budget and episode length alone predicts "
+        "the outcome (PRR 0.95-1.00), which no trajectory signal can be "
+        "measured against; smolagents has final_answer and shows no such "
+        "degeneracy.",
+    )
+    parser.add_argument(
         "--context-limit",
         type=int,
         default=0,
@@ -503,6 +566,7 @@ def main() -> None:
         "request_logprobs": not args.no_logprobs,
         "top_logprobs": args.top_logprobs,
         "verbalized": args.verbalized,
+        "allow_give_up": args.allow_give_up,
         "judge_tool_budget": args.judge_tool_budget,
         "judge_tool_model": args.judge_tool_model if args.judge_tool_budget else None,
         "empty_response_retries": args.empty_response_retries,
