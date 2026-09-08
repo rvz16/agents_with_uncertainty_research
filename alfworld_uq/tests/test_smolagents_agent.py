@@ -355,3 +355,34 @@ def test_the_confidence_request_appears_only_when_asked_for() -> None:
     assert "# Confidence: <number between 0.00 and 1.00>" in asked
     # the rules survive the insertion
     assert "take_action" in asked and "Rules:" in asked
+
+
+def test_the_judge_is_exempted_from_the_one_action_rule() -> None:
+    """The rule that fixed multi-action blocks also silenced the reviewer.
+
+    "Make exactly ONE take_action call per code block" reads as a ban on any
+    second call, and the agent obeyed: zero judge calls in 140 episodes against
+    264 for ReAct on the same model. The exemption appears only when the tool
+    is actually registered.
+    """
+    from agents.smolagents_agent import SmolagentsPolicy, _EnvSession
+
+    initial = SimpleNamespace(
+        episode_id="e", task_type="t", task="put a mug on the desk",
+        observation="a room", admissible_actions=["look"], gamefile="g",
+    )
+    session = _EnvSession(
+        env=SimpleNamespace(), initial=initial, max_steps=50,
+        repeat_action_limit=2, seed=0,
+    )
+
+    without = SmolagentsPolicy._task_prompt(initial, session)
+    assert "check_progress" not in without
+    assert "exactly ONE take_action call" in without
+
+    session.judge_available = True
+    with_judge = SmolagentsPolicy._task_prompt(initial, session)
+    assert "check_progress() is not an environment action" in with_judge
+    assert "does not count" in with_judge
+    # the original rule survives: it is narrowed, not removed
+    assert "exactly ONE take_action call" in with_judge

@@ -126,6 +126,11 @@ class _EnvSession:
         self.admissible = list(initial.admissible_actions)
         self.judge_calls: list[Any] = []
         self.verbalized = False
+        # The rule above says one take_action per block. Read literally it also
+        # forbids the reviewer, and the agent obeyed it: 0 calls in 140 episodes
+        # against 264 for ReAct, which is a property of our prompt, not of the
+        # framework. The exemption is stated only when the tool exists.
+        self.judge_available = False
         self.history: list[dict[str, str]] = []
         self.pending: list[_EnvStep] = []
         self.env_steps = 0
@@ -457,6 +462,14 @@ class SmolagentsPolicy:
             "actions written in advance is guesswork.\n"
             "- take_action returns the new observation and the new admissible list; "
             "the list changes after every action, so never reuse a stale one.\n"
+            + (
+                "- check_progress() is not an environment action: it does not count "
+                "against the one-call rule above, nor against the action budget. "
+                "Call it in the same block or in a block of its own.\n"
+                if session.judge_available
+                else ""
+            )
+            +
             f"- The environment allows at most {session.max_steps} actions in this "
             "episode and ends the episode by itself once the task is solved or the "
             "budget runs out.\n"
@@ -477,6 +490,7 @@ class SmolagentsPolicy:
             seed=self.seed,
         )
         session.verbalized = self.verbalized
+        session.judge_available = self.judge_tool is not None
         generations: list[dict[str, Any]] = []
         model = self._build_model(session, generations)
         tools = [_build_tool(session)]

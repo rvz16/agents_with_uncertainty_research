@@ -59,6 +59,14 @@ def main() -> int:
     if serve_log.exists():
         task.upload_artifact("vllm_serve_log", artifact_object=serve_log, wait_on_upload=True)
         print(f"[entry] uploaded {serve_log}", flush=True)
+
+    # The reviewer's log lives outside the project directory and was never
+    # collected, so a reviewer that died during engine start left no trace at
+    # all once the console window had rolled past it.
+    judge_log = Path("/tmp/vllm_judge.log")
+    if judge_log.exists():
+        task.upload_artifact("vllm_judge_log", artifact_object=judge_log, wait_on_upload=True)
+        print(f"[entry] uploaded {judge_log}", flush=True)
     return rc
 
 

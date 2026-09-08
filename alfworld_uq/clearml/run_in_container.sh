@@ -257,8 +257,13 @@ print(sock.getsockname()[1]); sock.close()
 PYPORT
 )
   echo "[wrapper] serving reviewer ${JUDGE_SERVE_MODEL} on :${JUDGE_PORT}"
+  # The reviewer only ever reads a transcript and answers one JSON object, so
+  # it needs neither a long context nor graph capture. Both were charged
+  # against a card the agent had already taken 60% of, and the server died
+  # during engine start -- silently, because its log was never collected.
   vllm serve "${JUDGE_SERVE_MODEL}" --host 127.0.0.1 --port "${JUDGE_PORT}" \
-    --max-model-len 32768 \
+    --max-model-len "${JUDGE_MAX_MODEL_LEN:-8192}" \
+    --enforce-eager \
     --gpu-memory-utilization "${JUDGE_GPU_FRACTION}" \
     > /tmp/vllm_judge.log 2>&1 &
   JUDGE_PID=$!
@@ -273,6 +278,8 @@ PYPORT
     echo "[wrapper] reviewer ready: ${JUDGE_TOOL_MODEL} (independent of the agent)"
   else
     echo "[wrapper] reviewer failed to start; the judge falls back to self-assessment"
+    echo "[wrapper] last lines of the reviewer log:"
+    tail -n 25 /tmp/vllm_judge.log 2>/dev/null || true
   fi
 fi
 
