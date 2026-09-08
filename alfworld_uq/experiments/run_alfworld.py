@@ -103,6 +103,7 @@ def _build_agent(args: argparse.Namespace, judge_tool: Any = None) -> Any:
         top_logprobs=args.top_logprobs,
         verbalized=args.verbalized,
         judge_tool_budget=args.judge_tool_budget,
+        context_limit=args.context_limit,
     )
 
 
@@ -395,6 +396,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ask the server for this many alternatives per token, which is "
         "what mean token entropy needs; 0 keeps the sampled token alone. "
         "Hosted endpoints often ignore it, a locally served vLLM does not.",
+    )
+    parser.add_argument(
+        "--context-limit",
+        type=int,
+        default=0,
+        help="Server context window in tokens. The ReAct history is trimmed "
+        "from the front to fit it; 0 sends the whole history and risks the "
+        "400 that ended 42 of Qwen's 140 episodes at a 50-step budget.",
     )
     parser.add_argument(
         "--judge-tool-budget",

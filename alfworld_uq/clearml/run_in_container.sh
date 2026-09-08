@@ -247,6 +247,7 @@ common_args=(
   --seed "${SEED}"
   --output-dir "${RUN_ROOT}"
   --top-logprobs "${TOP_LOGPROBS}"
+  --context-limit "${MAX_MODEL_LEN}"
   --overwrite
 )
 if [ -n "${JUDGE_SERVE_MODEL}" ] && [ "${JUDGE_TOOL_BUDGET}" != "0" ]; then

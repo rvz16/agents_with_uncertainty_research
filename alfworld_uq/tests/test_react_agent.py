@@ -342,3 +342,36 @@ def test_a_clean_response_is_not_marked_as_recovered() -> None:
 def test_a_response_with_no_action_at_all_stays_invalid() -> None:
     parsed = parse_react_response("I am thinking about what to do next and then")
     assert not parsed.valid and not parsed.recovered and parsed.action == ""
+
+
+def test_the_history_is_trimmed_to_fit_the_server_context() -> None:
+    """An untrimmed ReAct prompt carries the whole episode and eventually 400s.
+
+    42 of Qwen's 140 episodes died that way at a 50-step budget, all of them
+    late, which also bent the length distribution they were then measured by.
+    """
+    agent = ReActAgent(
+        base_url="http://unused", api_key="unused", model="test",
+        client=SimpleNamespace(), max_tokens=100, context_limit=1000,
+    )
+    history = [
+        {"thought": "t" * 200, "action": "look", "observation": "o" * 200}
+        for _ in range(40)
+    ]
+    prompt = agent._prompt("put a mug on the desk", history, ["look"])
+
+    assert len(prompt) < 40 * 400          # most of the history is gone
+    assert "earlier steps omitted" in prompt
+    assert "put a mug on the desk" in prompt   # task and actions always survive
+    assert "- look" in prompt
+
+
+def test_without_a_limit_the_whole_history_is_sent() -> None:
+    agent = ReActAgent(
+        base_url="http://unused", api_key="unused", model="test",
+        client=SimpleNamespace(),
+    )
+    history = [{"thought": "t", "action": "look", "observation": "o"} for _ in range(30)]
+    prompt = agent._prompt("task", history, ["look"])
+    assert prompt.count("Action: look") == 30
+    assert "omitted" not in prompt

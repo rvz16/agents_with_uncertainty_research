@@ -446,6 +446,7 @@ class ReActAgent:
         top_logprobs: int = 0,
         verbalized: bool = False,
         judge_tool_budget: int = 0,
+        context_limit: int = 0,
         client: Any | None = None,
     ) -> None:
         self.client = client or OpenAI(
@@ -465,6 +466,19 @@ class ReActAgent:
         self.top_logprobs = max(0, int(top_logprobs))
         self.verbalized = bool(verbalized)
         self.judge_tool_budget = max(0, int(judge_tool_budget))
+        # Characters, not tokens: a tokeniser is not available here and four
+        # characters per token is the usual English ratio. The margin leaves
+        # room for the system prompt, the admissible list and the answer.
+        self.context_limit = max(0, int(context_limit))
+        # The margin covers the system prompt and the admissible list. A fixed
+        # 2048 would exceed a small context outright and silently disable
+        # trimming exactly where it is needed most, so it scales with the window.
+        margin = min(2048, self.context_limit // 4)
+        self.history_char_budget = (
+            max(512, int((self.context_limit - self.max_tokens - margin) * 3.5))
+            if self.context_limit
+            else 0
+        )
 
     def _system_prompt(self) -> str:
         """The two switches compose: either can be on without losing the other."""
@@ -515,12 +529,20 @@ class ReActAgent:
             "total_tokens": metadata["total_tokens"],
         }
 
-    @staticmethod
     def _prompt(
+        self,
         task: str,
         history: list[dict[str, str]],
         admissible_actions: list[str],
     ) -> str:
+        """The task, the history so far, and what can be done next.
+
+        The history is trimmed from the front when it would overflow the
+        server's context. Untrimmed, a verbose model at a 50-step budget ends
+        the episode with a 400: 42 of Qwen's 140 episodes died at ~127k input
+        tokens, all of them late, which also skewed the length distribution
+        those episodes were then measured by.
+        """
         transcript = []
         for item in history:
             transcript.extend(
@@ -530,6 +552,16 @@ class ReActAgent:
                     f"Observation: {item['observation']}",
                 ]
             )
+        dropped = 0
+        if self.history_char_budget:
+            while (
+                transcript
+                and sum(len(line) + 1 for line in transcript) > self.history_char_budget
+            ):
+                del transcript[:3]  # one whole step: thought, action, observation
+                dropped += 1
+        if dropped:
+            transcript.insert(0, f"[{dropped} earlier steps omitted to fit the context]")
         history_text = "\n".join(transcript) if transcript else "(no previous steps)"
         actions = "\n".join(f"- {action}" for action in admissible_actions)
         return (
