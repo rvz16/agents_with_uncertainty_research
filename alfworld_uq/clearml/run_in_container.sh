@@ -53,6 +53,12 @@ MAX_STEPS="${MAX_STEPS:-30}"
 AGENT_MAX_STEPS="${AGENT_MAX_STEPS:-0}"
 MAX_GENERATION_TOKENS="${MAX_GENERATION_TOKENS:-2048}"
 SMOL_CODE_TAGS="${SMOL_CODE_TAGS:-markdown}"
+# On vLLM 0.28 gpt-oss returns its whole generation as reasoning and leaves the
+# visible answer empty: 2637 of 2728 smolagents generations came back blank,
+# the framework read that as nothing to do and called final_answer in 105 of
+# 140 episodes. The code-tag stop sequence firing inside the hidden channel is
+# the known cause of an empty answer here, so it has to be switchable.
+SMOL_STOP_SEQUENCES="${SMOL_STOP_SEQUENCES:-1}"
 TOP_LOGPROBS="${TOP_LOGPROBS:-0}"
 ALLOW_GIVE_UP="${ALLOW_GIVE_UP:-0}"
 VERBALIZED="${VERBALIZED:-0}"
@@ -249,6 +255,7 @@ common_args=(
   --max-generation-tokens "${MAX_GENERATION_TOKENS}"
   --empty-response-retries "${EMPTY_RESPONSE_RETRIES}"
   --smol-code-tags "${SMOL_CODE_TAGS}"
+  $([ "${SMOL_STOP_SEQUENCES}" = "0" ] && echo "--no-smol-stop-sequences" || echo "--smol-stop-sequences")
   --api-timeout "${API_TIMEOUT}"
   --split "${SPLIT}"
   --seed "${SEED}"

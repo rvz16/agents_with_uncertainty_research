@@ -67,6 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbalized", action="store_true")
     parser.add_argument("--context-limit", type=int, default=0)
     parser.add_argument("--allow-give-up", action="store_true")
+    parser.add_argument(
+        "--smol-stop-sequences",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="keep the code close tag as a stop sequence for --policy smolagents",
+    )
     parser.add_argument("--judge-tool-budget", type=int, default=0)
     parser.add_argument("--judge-tool-model", default="")
     parser.add_argument("--judge-tool-base-url", default="")
@@ -147,6 +153,8 @@ def main() -> None:
                 command.append("--verbalized")
             if args.allow_give_up:
                 command.append("--allow-give-up")
+            if not args.smol_stop_sequences:
+                command.append("--no-smol-stop-sequences")
             if args.context_limit:
                 command.extend(["--context-limit", str(args.context_limit)])
             if args.judge_tool_budget:

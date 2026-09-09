@@ -387,6 +387,19 @@ def _usage(response: Any, name: str) -> int:
     return int(value or 0)
 
 
+def is_context_length_error(exc: Exception) -> bool:
+    """The server refusing a prompt that does not fit its window.
+
+    A character-based estimate of the token count can always be wrong -- ours
+    was, by enough to lose 39 episodes -- so the prompt is also shrunk in
+    response to the refusal itself, which no ratio can misjudge.
+    """
+    text = str(exc).lower()
+    return "context length" in text or "context_length" in text or (
+        "maximum context" in text
+    )
+
+
 def is_transient_error(exc: Exception) -> bool:
     """Whether an endpoint failure is worth retrying rather than failing on."""
     status = getattr(exc, "status_code", None)
@@ -491,8 +504,12 @@ class ReActAgent:
         # 2048 would exceed a small context outright and silently disable
         # trimming exactly where it is needed most, so it scales with the window.
         margin = min(2048, self.context_limit // 4)
+        # 2.5 characters per token, not 3.5: at 3.5 the budget never bound and
+        # 39 of Qwen's episodes still died on a 400, with the history never
+        # trimmed once. The ratio depends on the text, so it is only the first
+        # line of defence; `_shrink_history` is the one that cannot be wrong.
         self.history_char_budget = (
-            max(512, int((self.context_limit - self.max_tokens - margin) * 3.5))
+            max(512, int((self.context_limit - self.max_tokens - margin) * 2.5))
             if self.context_limit
             else 0
         )
@@ -673,14 +690,26 @@ class ReActAgent:
         history: list[dict[str, str]],
         admissible_actions: list[str],
     ) -> AgentGeneration:
-        messages = [
-            {"role": "system", "content": self._system_prompt()},
-            {
-                "role": "user",
-                "content": self._prompt(task, history, admissible_actions),
-            },
-        ]
-        response, request_metadata = self._request(messages)
+        # Shrink and retry if the server says the prompt does not fit. The
+        # character budget is an estimate and can be wrong in either direction;
+        # this cannot, because it reacts to the refusal itself. Halving the
+        # history each time reaches any window in a few steps.
+        kept = list(history)
+        while True:
+            messages = [
+                {"role": "system", "content": self._system_prompt()},
+                {
+                    "role": "user",
+                    "content": self._prompt(task, kept, admissible_actions),
+                },
+            ]
+            try:
+                response, request_metadata = self._request(messages)
+                break
+            except AgentError as exc:
+                if not (is_context_length_error(exc) and len(kept) > 1):
+                    raise
+                kept = kept[len(kept) // 2:]
         raw_text = response.choices[0].message.content or ""
         parsed = parse_react_response(raw_text)
         action, action_valid, fallback_reason = self._resolve_action(

@@ -413,3 +413,52 @@ def test_the_exit_is_offered_only_when_enabled() -> None:
     # it composes with the other two switches rather than replacing them
     both = prompt_of(allow_give_up=True, judge_tool_budget=3, verbalized=True)
     assert "give up" in both and "check progress" in both and "Confidence:" in both
+
+
+def test_a_refused_prompt_is_retried_with_half_the_history() -> None:
+    """Any character estimate of a token count can be wrong; ours was.
+
+    39 of Qwen's episodes died on "maximum context length" with the history
+    never trimmed once, because the budget was computed at 3.5 characters per
+    token and the real text ran closer to 2.5. Reacting to the refusal itself
+    cannot misjudge the ratio.
+    """
+    class _Refusing:
+        """Refuses until the prompt is short enough, then answers."""
+
+        def __init__(self, limit_chars):
+            self.limit = limit_chars
+            self.calls = []
+
+        def create(self, **kwargs):
+            prompt = kwargs["messages"][1]["content"]
+            self.calls.append(len(prompt))
+            if len(prompt) > self.limit:
+                raise RuntimeError(
+                    "Error code: 400 - This model's maximum context length is "
+                    "131072 tokens. However, your prompt contains more."
+                )
+            token_items = [SimpleNamespace(token=t, logprob=-0.1)
+                           for t in ["Thought:", " go", "\n", "Action:", " look"]]
+            return SimpleNamespace(
+                choices=[SimpleNamespace(
+                    message=SimpleNamespace(content="Thought: go\nAction: look"),
+                    logprobs=SimpleNamespace(content=token_items))],
+                usage=SimpleNamespace(prompt_tokens=5, completion_tokens=5, total_tokens=10),
+            )
+
+    completions = _Refusing(limit_chars=3000)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    agent = ReActAgent(
+        base_url="http://unused", api_key="unused", model="test", client=client,
+        max_retries=0,
+    )
+    history = [
+        {"thought": "t" * 100, "action": "look", "observation": "o" * 100}
+        for _ in range(60)
+    ]
+    result = agent.act("put a mug on the desk", history, ["look"])
+
+    assert result.action == "look"                 # it recovered
+    assert len(completions.calls) > 1              # and only after shrinking
+    assert completions.calls[-1] < completions.calls[0]

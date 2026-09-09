@@ -74,6 +74,10 @@ def main() -> None:
     p.add_argument("--max-generation-tokens", type=int, default=2048)
     p.add_argument("--top-logprobs", type=int, default=0,
                    help="alternatives per token; needed for mean token entropy")
+    p.add_argument("--smol-stop-sequences", default="1", choices=["0", "1"],
+                   help="0 removes the code-tag stop sequence; on vLLM 0.28 it "
+                        "fires inside gpt-oss's hidden channel and the visible "
+                        "answer comes back empty")
     p.add_argument("--allow-give-up", action="store_true",
                    help="let ReAct end the episode itself, as smolagents can")
     p.add_argument("--judge-tool-budget", type=int, default=0,
@@ -146,6 +150,7 @@ def main() -> None:
         "Args/MAX_GENERATION_TOKENS": str(a.max_generation_tokens),
         "Args/SMOL_CODE_TAGS": a.smol_code_tags,
         "Args/TOP_LOGPROBS": str(a.top_logprobs),
+        "Args/SMOL_STOP_SEQUENCES": a.smol_stop_sequences,
         "Args/ALLOW_GIVE_UP": "1" if a.allow_give_up else "0",
         "Args/JUDGE_TOOL_BUDGET": str(a.judge_tool_budget),
         "Args/JUDGE_TOOL_MODEL": a.judge_tool_model,
