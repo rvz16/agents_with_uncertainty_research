@@ -206,6 +206,40 @@ class _EnvSession:
         return pending
 
 
+def _visible_or_reasoning(message: Any, response: Any) -> tuple[str, bool]:
+    """The answer, or the reasoning when the model never produced an answer.
+
+    gpt-oss in harmony writes into its `analysis` channel and, on the code
+    prompt smolagents gives it, finishes there without opening the final
+    channel: 6113 of 7085 generations came back with an empty `content`, at a
+    median of 621 tokens out of an allowed 4096, so it is not a budget. The
+    reasoning carries the work -- `take_action` appears in 295 of 300 sampled
+    empty generations -- and the framework can parse it, since the code fences
+    are the same.
+
+    Returns (text, recovered). `recovered` is stored on the step so a run that
+    leant on this is never mistaken for one that did not.
+    """
+    content = (getattr(message, "content", None) or "").strip()
+    if content:
+        return content, False
+    # vLLM with a reasoning parser puts the hidden channel here.
+    for holder in (message, response):
+        reasoning = getattr(holder, "reasoning_content", None)
+        if not reasoning and isinstance(holder, dict):
+            reasoning = holder.get("reasoning_content")
+        if reasoning and str(reasoning).strip():
+            return str(reasoning).strip(), True
+    try:
+        choice = response.choices[0].message
+        reasoning = getattr(choice, "reasoning_content", None)
+        if reasoning and str(reasoning).strip():
+            return str(reasoning).strip(), True
+    except Exception:  # noqa: BLE001
+        pass
+    return "", False
+
+
 def _build_judge_tool(session: _EnvSession, judge: Any) -> Any:
     """The reviewer as a tool the CodeAgent may call from its own Python.
 
@@ -294,6 +328,7 @@ class SmolagentsPolicy:
         judge_tool: Any = None,
         top_logprobs: int = 0,
         verbalized: bool = False,
+        reasoning_effort: str = "",
     ) -> None:
         self.base_url = base_url
         self.api_key = api_key
@@ -315,6 +350,11 @@ class SmolagentsPolicy:
         self.judge_tool = judge_tool
         self.top_logprobs = max(0, int(top_logprobs))
         self.verbalized = bool(verbalized)
+        # gpt-oss decides for itself how long to think. On the code prompt it
+        # thinks its way to an answer and stops inside the hidden channel, so
+        # asking for less deliberation is the other half of the fix -- the
+        # first being to read that channel when nothing else arrives.
+        self.reasoning_effort = str(reasoning_effort or "")
 
     # -- model ---------------------------------------------------------------
 
@@ -380,7 +420,8 @@ class SmolagentsPolicy:
                                     raise
                                 time.sleep(min(2**transient, 8))
                         response = getattr(message, "raw", None)
-                        if (message.content or "").strip():
+                        text, recovered = _visible_or_reasoning(message, response)
+                        if text:
                             break
                         if empty_retries >= policy.empty_response_retries:
                             break
@@ -400,8 +441,10 @@ class SmolagentsPolicy:
                 kept_completion = _usage(response, "completion_tokens") or int(
                     getattr(usage, "output_tokens", 0) or 0
                 )
+                text, recovered = _visible_or_reasoning(message, response)
                 entry.update(
-                    raw_text=message.content or "",
+                    raw_text=text,
+                    reasoning_used_as_answer=recovered,
                     token_records=_extract_token_records(response),
                     prompt_tokens=discarded["prompt"] + kept_prompt,
                     completion_tokens=discarded["completion"] + kept_completion,
@@ -425,6 +468,8 @@ class SmolagentsPolicy:
             completion_kwargs["logprobs"] = True
             if policy.top_logprobs:
                 completion_kwargs["top_logprobs"] = int(policy.top_logprobs)
+        if policy.reasoning_effort:
+            completion_kwargs["reasoning_effort"] = policy.reasoning_effort
         if policy.extra_body:
             completion_kwargs["extra_body"] = policy.extra_body
         return RecordingModel(
@@ -675,6 +720,9 @@ class SmolagentsPolicy:
                     # One generation may issue several actions here, so the
                     # tool call succeeds only if every action in it did.
                     "judge_calls": judge_calls,
+                    "reasoning_used_as_answer": bool(
+                        generation.get("reasoning_used_as_answer")
+                    ),
                     "tool_success": bool(env_steps) and all(
                         step.action_valid for step in env_steps
                     ),

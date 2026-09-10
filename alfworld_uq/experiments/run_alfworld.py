@@ -87,6 +87,7 @@ def _build_agent(args: argparse.Namespace, judge_tool: Any = None) -> Any:
             judge_tool=judge_tool,
             top_logprobs=args.top_logprobs,
             verbalized=args.verbalized,
+            reasoning_effort=args.reasoning_effort,
         )
 
     return ReActAgent(
@@ -452,6 +453,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Hosted endpoints often ignore it, a locally served vLLM does not.",
     )
     parser.add_argument(
+        "--reasoning-effort",
+        default="",
+        choices=["", "low", "medium", "high"],
+        help="How long gpt-oss deliberates before answering. It ends inside "
+        "its hidden channel on the smolagents prompt, leaving the visible "
+        "answer empty in 86%% of generations; less deliberation gets it to the "
+        "answer sooner. Empty leaves the server default.",
+    )
+    parser.add_argument(
         "--allow-give-up",
         action="store_true",
         help="Let the ReAct policy end the episode itself. Without it every "
@@ -567,6 +577,7 @@ def main() -> None:
         "top_logprobs": args.top_logprobs,
         "verbalized": args.verbalized,
         "allow_give_up": args.allow_give_up,
+        "reasoning_effort": args.reasoning_effort,
         "judge_tool_budget": args.judge_tool_budget,
         "judge_tool_model": args.judge_tool_model if args.judge_tool_budget else None,
         "empty_response_retries": args.empty_response_retries,

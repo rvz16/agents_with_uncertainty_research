@@ -386,3 +386,31 @@ def test_the_judge_is_exempted_from_the_one_action_rule() -> None:
     assert "does not count" in with_judge
     # the original rule survives: it is narrowed, not removed
     assert "exactly ONE take_action call" in with_judge
+
+
+def test_the_hidden_channel_is_used_only_when_the_answer_is_missing() -> None:
+    """gpt-oss finishes inside its analysis channel on the code prompt.
+
+    6113 of 7085 generations returned an empty visible answer at a median of
+    621 tokens out of 4096 allowed, so it is not a budget: the model considers
+    itself done. The work is in the reasoning -- take_action appears in 295 of
+    300 sampled empty generations -- and reading it is the difference between
+    a usable run and 111 episodes ending in final_answer.
+    """
+    from agents.smolagents_agent import _visible_or_reasoning
+
+    answered = SimpleNamespace(content="```py\ntake_action('look')\n```")
+    text, recovered = _visible_or_reasoning(answered, None)
+    assert "take_action" in text and not recovered
+
+    silent = SimpleNamespace(content="", reasoning_content="We should look.\ntake_action('look')")
+    text, recovered = _visible_or_reasoning(silent, None)
+    assert "take_action" in text and recovered
+
+    # the visible answer always wins, even when both are present
+    both = SimpleNamespace(content="visible", reasoning_content="hidden")
+    text, recovered = _visible_or_reasoning(both, None)
+    assert text == "visible" and not recovered
+
+    nothing = SimpleNamespace(content="")
+    assert _visible_or_reasoning(nothing, None) == ("", False)

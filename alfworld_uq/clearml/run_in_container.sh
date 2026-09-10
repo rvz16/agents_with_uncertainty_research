@@ -59,6 +59,7 @@ SMOL_CODE_TAGS="${SMOL_CODE_TAGS:-markdown}"
 # 140 episodes. The code-tag stop sequence firing inside the hidden channel is
 # the known cause of an empty answer here, so it has to be switchable.
 SMOL_STOP_SEQUENCES="${SMOL_STOP_SEQUENCES:-1}"
+REASONING_EFFORT="${REASONING_EFFORT:-}"
 TOP_LOGPROBS="${TOP_LOGPROBS:-0}"
 ALLOW_GIVE_UP="${ALLOW_GIVE_UP:-0}"
 VERBALIZED="${VERBALIZED:-0}"
@@ -262,6 +263,7 @@ common_args=(
   --output-dir "${RUN_ROOT}"
   --top-logprobs "${TOP_LOGPROBS}"
   --context-limit "${MAX_MODEL_LEN}"
+  $([ -n "${REASONING_EFFORT}" ] && echo "--reasoning-effort ${REASONING_EFFORT}")
   --overwrite
 )
 if [ -n "${JUDGE_SERVE_MODEL}" ] && [ "${JUDGE_TOOL_BUDGET}" != "0" ]; then

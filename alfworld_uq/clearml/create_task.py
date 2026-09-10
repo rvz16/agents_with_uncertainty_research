@@ -78,6 +78,9 @@ def main() -> None:
                    help="0 removes the code-tag stop sequence; on vLLM 0.28 it "
                         "fires inside gpt-oss's hidden channel and the visible "
                         "answer comes back empty")
+    p.add_argument("--reasoning-effort", default="", choices=["","low","medium","high"],
+                   help="how long gpt-oss deliberates; low gets it to a visible "
+                        "answer instead of ending inside the hidden channel")
     p.add_argument("--allow-give-up", action="store_true",
                    help="let ReAct end the episode itself, as smolagents can")
     p.add_argument("--judge-tool-budget", type=int, default=0,
@@ -151,6 +154,7 @@ def main() -> None:
         "Args/SMOL_CODE_TAGS": a.smol_code_tags,
         "Args/TOP_LOGPROBS": str(a.top_logprobs),
         "Args/SMOL_STOP_SEQUENCES": a.smol_stop_sequences,
+        "Args/REASONING_EFFORT": a.reasoning_effort,
         "Args/ALLOW_GIVE_UP": "1" if a.allow_give_up else "0",
         "Args/JUDGE_TOOL_BUDGET": str(a.judge_tool_budget),
         "Args/JUDGE_TOOL_MODEL": a.judge_tool_model,

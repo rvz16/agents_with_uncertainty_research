@@ -67,6 +67,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbalized", action="store_true")
     parser.add_argument("--context-limit", type=int, default=0)
     parser.add_argument("--allow-give-up", action="store_true")
+    parser.add_argument("--reasoning-effort", default="",
+                        choices=["", "low", "medium", "high"])
     parser.add_argument(
         "--smol-stop-sequences",
         action=argparse.BooleanOptionalAction,
@@ -151,6 +153,8 @@ def main() -> None:
                 command.extend(["--top-logprobs", str(args.top_logprobs)])
             if args.verbalized:
                 command.append("--verbalized")
+            if args.reasoning_effort:
+                command.extend(["--reasoning-effort", args.reasoning_effort])
             if args.allow_give_up:
                 command.append("--allow-give-up")
             if not args.smol_stop_sequences:
