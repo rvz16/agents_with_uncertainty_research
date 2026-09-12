@@ -22,12 +22,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.react_agent import (
+    _entropies,
     _extract_token_records,
     _metric_bundle,
     _usage,
     is_transient_error,
     metrics_by_span,
     resolve_action,
+    split_at_last_message,
     split_reasoning_tokens,
 )
 from uq.verbalized import parse_verbalized_confidence
@@ -761,14 +763,23 @@ class SmolagentsPolicy:
             thought_span, action_span, code = _response_spans(raw_text)
             # A locally served model may score its hidden reasoning channel too;
             # keep it out of `combined` and report it as its own target.
-            reasoning, content = split_reasoning_tokens(
-                raw_text, generation["token_records"]
-            )
-            uq = metrics_by_span(
-                raw_text,
-                content,
-                {"thought": thought_span, "action": action_span},
-            )
+            if generation.get("tool_call_translated"):
+                # The text was rebuilt from the call; score the call's tokens.
+                reasoning, content = split_at_last_message(generation["token_records"])
+                uq = metrics_by_span(raw_text, [], {"thought": None, "action": None})
+                uq["action"] = uq["combined"] = _metric_bundle(
+                    [float(record["logprob"]) for record in content],
+                    _entropies(content),
+                )
+            else:
+                reasoning, content = split_reasoning_tokens(
+                    raw_text, generation["token_records"]
+                )
+                uq = metrics_by_span(
+                    raw_text,
+                    content,
+                    {"thought": thought_span, "action": action_span},
+                )
             uq["reasoning"] = _metric_bundle(
                 [float(record["logprob"]) for record in reasoning]
             )

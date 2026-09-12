@@ -278,6 +278,29 @@ def split_reasoning_tokens(
     return list(token_records), []
 
 
+def split_at_last_message(
+    token_records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Reasoning and answer tokens when the answer was rebuilt, not quoted.
+
+    A translated tool call (see `_code_from_tool_call` in the smolagents
+    policy) has no text that equals any run of tokens, so the structural
+    split cannot verify itself. The tokens after the last `<|message|>` are
+    the call the model actually scored, and they are what its uncertainty
+    should be read from -- without this, 2186 of 3543 translated steps in
+    one run carried no `combined` metrics at all.
+    """
+    for index in range(len(token_records) - 1, -1, -1):
+        if str(token_records[index]["token"]) == "<|message|>":
+            content = [
+                record
+                for record in token_records[index + 1 :]
+                if not _SPECIAL_TOKEN.match(str(record["token"]))
+            ]
+            return token_records[: index + 1], content
+    return list(token_records), []
+
+
 def token_offsets(
     raw_text: str, token_records: list[dict[str, Any]]
 ) -> list[tuple[int, int, float]]:

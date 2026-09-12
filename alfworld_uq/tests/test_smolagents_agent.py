@@ -473,3 +473,19 @@ def test_interpreter_and_final_answer_calls_are_translated():
     assert _code_from_tool_call(msg, None, stream(s)) == "```python\n# Confidence: 0.9\nprint(take_action('examine cabinet 1'))\n```"
     s = '<|channel|>commentary to=final_answer <|constrain|>json<|message|>{"answer":"move knife 1 to sidetable 1"}<|call|>'
     assert _code_from_tool_call(msg, None, stream(s)) == "```python\nfinal_answer('move knife 1 to sidetable 1')\n```"
+
+
+def test_translated_steps_score_the_call_tokens():
+    """A translated call has no text equal to any token run, so the usual
+    split leaves `combined` empty. The tokens after the last <|message|>
+    are the call itself and carry its uncertainty."""
+    from agents.react_agent import split_at_last_message
+
+    stream = ["<|channel|>", "analysis", "<|message|>", "Need", " drawer", "<|end|>",
+              "<|start|>", "assistant", "<|channel|>", "comment", "ary", " to=", "take_action",
+              "<|message|>", '{"action"', ':"open drawer 1"}', "<|call|>"]
+    records = [{"token": t, "logprob": -0.1 * i} for i, t in enumerate(stream)]
+    reasoning, content = split_at_last_message(records)
+    assert [r["token"] for r in content] == ['{"action"', ':"open drawer 1"}']
+    assert len(reasoning) == 14
+    assert split_at_last_message([{"token": "plain", "logprob": -1.0}]) == ([{"token": "plain", "logprob": -1.0}], [])
