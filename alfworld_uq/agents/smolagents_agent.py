@@ -14,6 +14,7 @@ Token log-probabilities are the reason this is not a plain smolagents run:
 from __future__ import annotations
 
 import ast
+import json
 import random
 import re
 import time
@@ -206,6 +207,78 @@ class _EnvSession:
         return pending
 
 
+_HARMONY_CALL = re.compile(
+    r"to=(?P<tool>[\w.]+).*?<\|message\|>(?P<args>\{.*?\})\s*<\|call\|>", re.DOTALL
+)
+
+
+def _code_from_tool_call(
+    message: Any,
+    response: Any,
+    tokens: list[dict[str, Any]],
+    fences: tuple[str, str] = ("```python", "```"),
+) -> str:
+    """Turn a harmony tool call into the code block a CodeAgent can read.
+
+    Asked for less deliberation, gpt-oss stops reasoning its way to an answer
+    and starts calling the tool properly -- in harmony's commentary channel:
+
+        <|channel|>commentary to=take_action <|constrain|>json
+        <|message|>{"action":"go to sidetable 1"}<|call|>
+
+    The server parses that into `tool_calls` and leaves `content` empty, and a
+    CodeAgent, which expects Python in the text, sees nothing: 138 of 140
+    episodes ended in final_answer with a success rate of zero, while
+    take_action was present in 200 of 200 sampled empty generations.
+
+    Switching to a ToolCallingAgent would read it natively but would also make
+    this a different policy from the one Qwen runs, so the call is translated
+    instead. Returns "" when there is no call to translate.
+    """
+    calls = getattr(message, "tool_calls", None) or []
+    try:
+        calls = calls or response.choices[0].message.tool_calls or []
+    except Exception:  # noqa: BLE001
+        pass
+    for call in calls:
+        function = getattr(call, "function", None) or {}
+        name = getattr(function, "name", None) or (
+            function.get("name") if isinstance(function, dict) else None
+        )
+        raw = getattr(function, "arguments", None) or (
+            function.get("arguments") if isinstance(function, dict) else None
+        )
+        if not name or not raw:
+            continue
+        try:
+            action = json.loads(raw).get("action")
+        except Exception:  # noqa: BLE001
+            continue
+        if action:
+            return f"{fences[0]}\n{name}({action!r})\n{fences[1]}"
+
+    # The parsed field is not always populated; the raw stream always is.
+    text = "".join(str(t.get("token", "")) for t in tokens or [])
+    match = _HARMONY_CALL.search(text)
+    if match:
+        try:
+            action = json.loads(match.group("args")).get("action")
+        except Exception:  # noqa: BLE001
+            action = None
+        if action:
+            return f"{fences[0]}\n{match.group('tool')}({action!r})\n{fences[1]}"
+    return ""
+
+
+def _fences_for(code_block_tags: Any) -> tuple[str, str]:
+    """The open/close pair a CodeAgent with these tags will parse."""
+    if isinstance(code_block_tags, (tuple, list)) and len(code_block_tags) == 2:
+        return str(code_block_tags[0]), str(code_block_tags[1])
+    if code_block_tags == "xml":
+        return "<code>", "</code>"
+    return "```python", "```"  # what smolagents maps "markdown" to
+
+
 def _visible_or_reasoning(message: Any, response: Any) -> tuple[str, bool]:
     """The answer, or the reasoning when the model never produced an answer.
 
@@ -364,6 +437,7 @@ class SmolagentsPolicy:
         from smolagents import OpenAIServerModel
 
         policy = self
+        fences = _fences_for(self.code_block_tags)
 
         class RecordingModel(OpenAIServerModel):
             """`OpenAIServerModel` that keeps the raw response of every call."""
@@ -421,6 +495,15 @@ class SmolagentsPolicy:
                                 time.sleep(min(2**transient, 8))
                         response = getattr(message, "raw", None)
                         text, recovered = _visible_or_reasoning(message, response)
+                        translated = False
+                        if not text:
+                            text = _code_from_tool_call(
+                                message,
+                                response,
+                                _extract_token_records(response),
+                                fences,
+                            )
+                            translated = bool(text)
                         if text:
                             break
                         if empty_retries >= policy.empty_response_retries:
@@ -441,10 +524,13 @@ class SmolagentsPolicy:
                 kept_completion = _usage(response, "completion_tokens") or int(
                     getattr(usage, "output_tokens", 0) or 0
                 )
-                text, recovered = _visible_or_reasoning(message, response)
+                if (recovered or translated) and text:
+                    # The CodeAgent reads `content` and nothing else.
+                    message.content = text
                 entry.update(
                     raw_text=text,
                     reasoning_used_as_answer=recovered,
+                    tool_call_translated=translated,
                     token_records=_extract_token_records(response),
                     prompt_tokens=discarded["prompt"] + kept_prompt,
                     completion_tokens=discarded["completion"] + kept_completion,
@@ -722,6 +808,9 @@ class SmolagentsPolicy:
                     "judge_calls": judge_calls,
                     "reasoning_used_as_answer": bool(
                         generation.get("reasoning_used_as_answer")
+                    ),
+                    "tool_call_translated": bool(
+                        generation.get("tool_call_translated")
                     ),
                     "tool_success": bool(env_steps) and all(
                         step.action_valid for step in env_steps

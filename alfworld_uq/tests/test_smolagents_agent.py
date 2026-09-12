@@ -414,3 +414,28 @@ def test_the_hidden_channel_is_used_only_when_the_answer_is_missing() -> None:
 
     nothing = SimpleNamespace(content="")
     assert _visible_or_reasoning(nothing, None) == ("", False)
+
+
+def test_tool_call_is_translated_into_a_code_block():
+    """With reasoning_effort=low, gpt-oss calls take_action as a harmony tool
+    call and leaves `content` empty. 138 of 140 episodes then ended in
+    final_answer with zero successes. The call becomes the code block the
+    CodeAgent would have parsed, from the parsed field or the raw stream."""
+    from agents.smolagents_agent import _code_from_tool_call
+
+    call = SimpleNamespace(
+        function=SimpleNamespace(name="take_action", arguments='{"action": "go to sidetable 1"}')
+    )
+    parsed = SimpleNamespace(content="", tool_calls=[call])
+    assert _code_from_tool_call(parsed, None, []) == "```python\ntake_action('go to sidetable 1')\n```"
+
+    stream = "<|channel|>commentary to=take_action <|constrain|>json<|message|>{\"action\":\"look\"}<|call|>"
+    tokens = [{"token": ch, "logprob": -0.1} for ch in stream]
+    raw = SimpleNamespace(content="", tool_calls=None)
+    assert _code_from_tool_call(raw, None, tokens) == "```python\ntake_action('look')\n```"
+
+    # xml tags produce the pair that agent parses
+    assert _code_from_tool_call(parsed, None, [], fences=("<code>", "</code>")).startswith("<code>\n")
+
+    # nothing to translate: an ordinary empty response stays empty
+    assert _code_from_tool_call(SimpleNamespace(content="", tool_calls=None), None, []) == ""
