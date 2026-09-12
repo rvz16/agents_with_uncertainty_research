@@ -104,6 +104,7 @@ def load_compact(path: Path, keep) -> list[dict[str, Any]]:
         if not rw or not lp:
             continue
         ent = [s["mean_entropy"] for s in steps if s["mean_entropy"] is not None]
+        conf = [s["confidence"] for s in steps if s.get("confidence") is not None]
         rcs = [s["returncode"] == 0 for s in steps if s["returncode"] is not None]
         cmds = [s["command"] for s in steps if s["command"]]; counts = collections.Counter(cmds)
         item = {
@@ -111,6 +112,8 @@ def load_compact(path: Path, keep) -> list[dict[str, Any]]:
             "f2p": rw.get("f2p_passed", 0) / max(rw.get("f2p_total", 1), 1),
             "p2p": rw.get("p2p_passed", 0) / max(rw.get("p2p_total", 1), 1),
             "steps": lp, "entropies": ent or None,
+            "verbalized_final": conf[-1] if conf else None,
+            "verbalized_mean": st.fmean(conf) if conf else None,
             "tool_success": (sum(rcs) / len(rcs)) if rcs else 0.0,
             "critics": {
                 "no_format_errors": not any(s["format_error"] for s in steps),
@@ -136,10 +139,12 @@ def column(rows: list[dict[str, Any]], label_fn, seeds: int) -> dict[str, float 
         "Logprob (mean)": lambda r: st.fmean(r["steps"]),
         "Perplexity (max)": lambda r: -max(math.exp(-s) for s in r["steps"]),
         "MTE (max)": lambda r: -max(r["entropies"]) if r.get("entropies") else None,
+        "Verbalized UQ (final)": lambda r: r.get("verbalized_final"),
+        "Verbalized UQ (mean)": lambda r: r.get("verbalized_mean"),
         "Tool success rate": lambda r: r["tool_success"],
         "Length-only baseline": lambda r: -float(len(r["steps"])),
     }
-    out: dict[str, float | None] = {"MTE (max)": None, "Verbalized UQ (final)": None}
+    out: dict[str, float | None] = {"MTE (max)": None, "Verbalized UQ (final)": None, "Verbalized UQ (mean)": None}
     acc = collections.defaultdict(list)
     for seed in range(seeds):
         cal, test = _split_ids(ids, 0.5, seed)
@@ -192,7 +197,7 @@ def main() -> None:
             "gpt-oss (repo intact)": column(read(a.gptoss, lambda r: r["size"] > 0 and r["f2p"] == 0), lambda r: int(r["p2p"] > 0), a.seeds),
             "Qwen (any progress)": column(read(a.qwen, nonempty), progress, a.seeds),
         }
-    order = ["Logprob (mean)", "Perplexity (max)", "MTE (max)", "Verbalized UQ (final)", "Tool success rate",
+    order = ["Logprob (mean)", "Perplexity (max)", "MTE (max)", "Verbalized UQ (final)", "Verbalized UQ (mean)", "Tool success rate",
              "Bayes tool-only", "Bayes UQ-only (cont.)", "Bayes Fused (cont.)", "Bayes Fused (SEP)", "Length-only baseline"]
     print(f"{'method':24s}" + "".join(f"{c:>24s}" for c in cols))
     for k in order:
