@@ -114,6 +114,7 @@ def main() -> None:
         "Args/MAX_MODEL_LEN": str(a.max_model_len),
         "Args/TOP_LOGPROBS": str(a.top_logprobs),
         "Args/STEP_LIMIT": str(a.step_limit),
+        "Args/COMMIT_WORKING_TREE": "1",
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })

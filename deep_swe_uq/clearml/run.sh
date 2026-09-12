@@ -63,6 +63,35 @@ if [ "${capture_scripts}" -eq 0 ]; then
   exit 27
 fi
 
+# Grade the working tree, not only what the agent remembered to commit.
+# Upstream captures "git diff base HEAD", so an agent that edits, tests and
+# submits without committing scores an empty patch. Telling gpt-oss to commit
+# as it goes worked (87 of 113 did); Qwen ignored the same instruction, and
+# 41 of its 81 trajectories ended by context overflow or the step budget with
+# real edits and no commit -- 1 of them graded. SWE-bench grades the working
+# tree; so do we, by committing it in the capture script before the diff.
+if [ "${COMMIT_WORKING_TREE:-1}" = "1" ]; then
+  python - "${SHARED}"/deep-swe/tasks/*/pre_artifacts.sh <<'PY' || { echo "[run] VERDICT: capture-script patch failed"; exit 28; }
+import sys
+MARK = "harness: working tree"
+PRE = ('git add -A . >/dev/null 2>&1 || true\n'
+       'git -c user.email=harness@local -c user.name=harness commit -qm "' + MARK + '" >/dev/null 2>&1 || true\n')
+done = 0
+for path in sys.argv[1:]:
+    text = open(path).read()
+    if MARK not in text:
+        lines = text.splitlines(keepends=True)
+        idx = [i for i, l in enumerate(lines) if l.startswith("git diff --binary")]
+        if not idx:
+            continue
+        lines.insert(idx[0], PRE)
+        open(path, "w").write("".join(lines))
+    done += 1
+print(f"[run] capture scripts committing the working tree before the diff: {done} of {len(sys.argv) - 1}")
+sys.exit(0 if done == len(sys.argv) - 1 else 28)
+PY
+fi
+
 echo "=== [4/6] can we pull a task image? ==="
 IMAGE=$(grep -ho 'public.ecr.aws[^"]*' "${SHARED}"/deep-swe/tasks/*/environment/Dockerfile 2>/dev/null | head -1)
 echo "[run] image: ${IMAGE:-<none found>}"
