@@ -11,7 +11,12 @@ model is scored on the outcome its runs actually vary in:
            among non-empty patches: 49 vs 11
 
 Critics are the DeepSWE analogues of ours: no format errors, submitted,
-ran tests, committed, no command repeated three times. Tool success rate is
+ran tests, committed, no command repeated three times -- plus two about the
+task rather than the process, read from the agent's own (public) test runs:
+a test that failed and later passed, and a passing last test run. On gpt-oss
+those two have likelihood ratios near 2.5, but with ~9 positives per
+calibration half their fitted evidence is noisy (tool-only PRR +0.04 +- 0.31
+from them alone). Tool success rate is
 the fraction of bash commands returning 0. MTE and verbalised confidence
 were not collected on DeepSWE and are reported as absent, not as zero.
 """
@@ -21,6 +26,7 @@ import argparse
 import collections
 import json
 import math
+import re
 import statistics as st
 from pathlib import Path
 from typing import Any
@@ -107,6 +113,13 @@ def load_compact(path: Path, keep) -> list[dict[str, Any]]:
         conf = [s["confidence"] for s in steps if s.get("confidence") is not None]
         rcs = [s["returncode"] == 0 for s in steps if s["returncode"] is not None]
         cmds = [s["command"] for s in steps if s["command"]]; counts = collections.Counter(cmds)
+        # Task-level evidence, from the agent's own test runs (public tests it
+        # chose to execute, not the hidden grading tests): did a test command
+        # fail and later pass, and did the last one pass?
+        test_rcs = [s["returncode"] for s in steps
+                    if s["command"] and _TEST_CMD.search(s["command"]) and s["returncode"] is not None]
+        flipped = any(rc != 0 for rc in test_rcs) and any(
+            rc == 0 for rc in test_rcs[next(i for i, rc in enumerate(test_rcs) if rc != 0):]) if any(rc != 0 for rc in test_rcs) else False
         item = {
             "id": r["id"], "size": r["patch_bytes"],
             "f2p": rw.get("f2p_passed", 0) / max(rw.get("f2p_total", 1), 1),
@@ -121,11 +134,16 @@ def load_compact(path: Path, keep) -> list[dict[str, Any]]:
                 "ran_tests": any(("test" in c or "pytest" in c) for c in cmds),
                 "committed": any("git commit" in c for c in cmds),
                 "no_repeated_command": all(v < 3 for v in counts.values()) if counts else False,
+                "test_flipped": bool(flipped),
+                "last_test_passed": bool(test_rcs) and test_rcs[-1] == 0,
             },
         }
         if keep(item):
             rows.append(item)
     return rows
+
+
+_TEST_CMD = re.compile(r"\b(pytest|go test|npm test|npx jest|npx vitest|cargo test|yarn test|pnpm test|python -m pytest|python -m unittest|make test)\b")
 
 
 def prr(y, conf):
