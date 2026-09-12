@@ -57,6 +57,13 @@ def main() -> None:
                    help="consecutive malformed responses mini-swe-agent tolerates "
                         "before giving up; its default of 3 ends a gpt-oss run "
                         "that is otherwise making progress")
+    p.add_argument("--top-logprobs", type=int, default=20,
+                   help="alternatives per token, needed for mean token entropy; "
+                        "the first runs collected none and had no MTE column")
+    p.add_argument("--step-limit", type=int, default=200,
+                   help="commands per task, 0 for none; 44 of 109 Qwen tasks died "
+                        "of context overflow (median step 158) and the run "
+                        "outlived its 10-hour timeout with no limit")
     p.add_argument("--tool-call-parser", default=None,
                    help="vLLM parser for tool_choice=auto, which mini-swe-agent "
                         "always sends. Defaults to openai for gpt-oss and hermes "
@@ -100,6 +107,8 @@ def main() -> None:
         "Args/TOOL_CALL_PARSER": a.tool_call_parser,
         "Args/MAX_FORMAT_ERRORS": str(a.max_format_errors),
         "Args/MAX_MODEL_LEN": str(a.max_model_len),
+        "Args/TOP_LOGPROBS": str(a.top_logprobs),
+        "Args/STEP_LIMIT": str(a.step_limit),
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })

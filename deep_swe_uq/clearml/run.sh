@@ -337,16 +337,31 @@ PYSUM
 # The system prompt states the grading rule and nothing about how to solve the
 # task, which is the smallest change that makes the harness agree with the
 # benchmark it is running.
+# Two more things the second Qwen run taught us. 44 of 109 trajectories died
+# of ContextWindowExceededError (from step 75 on, median step 158) and 3 of
+# 113 never finished inside the 10-hour budget; every one of those left its
+# edits uncommitted, so the benchmark saw an empty patch even where the agent
+# had done the work. A step budget bounds the run, and "commit as you go"
+# turns a death mid-trajectory into a graded partial patch instead of nothing.
+# The budget is stated in the prompt so it is a rule the agent can plan for,
+# the way the ALFWorld agents know their 50-step budget.
+STEP_LIMIT="${STEP_LIMIT:-0}"
+BUDGET_LINE=""
+if [ "${STEP_LIMIT}" -gt 0 ]; then
+  BUDGET_LINE="    You have a budget of at most ${STEP_LIMIT} commands; the episode ends when it runs out."
+fi
 AGENT_CONFIG=/tmp/mswea_custom.yaml
 cat > "${AGENT_CONFIG}" <<YAML
 agent:
   max_consecutive_format_errors: ${MAX_FORMAT_ERRORS:-20}
+  step_limit: ${STEP_LIMIT}
   system_template: |
     You are a helpful assistant that can interact with a computer.
-    Your work is submitted as a git commit: anything left uncommitted in the
-    working tree is discarded and counts as no work at all. Before you issue
-    the final submit command, stage and commit everything you changed, for
-    example with: git add -A && git commit -m "fix"
+    Your work is submitted as git commits: anything left uncommitted in the
+    working tree is discarded and counts as no work at all. Commit after every
+    meaningful change (for example: git add -A && git commit -m "wip"), and
+    make sure everything is committed before you issue the final submit command.
+${BUDGET_LINE}
 YAML
 echo "[run] agent config: $(tr '\n' ' ' < ${AGENT_CONFIG})"
 
@@ -357,7 +372,7 @@ timeout "${RUN_TIMEOUT_SEC:-21600}" pier run \
   --n-tasks "${N_TASKS:-113}" --sample-seed "${SAMPLE_SEED:-0}" --n-concurrent "${N_CONCURRENT:-4}" \
   --jobs-dir "${SHARED}/jobs" --env docker --yes \
   --agent mini-swe-agent \
-  --agent-kwarg 'model_kwargs={"logprobs":true}' \
+  --agent-kwarg "model_kwargs={\"logprobs\":true,\"top_logprobs\":${TOP_LOGPROBS:-20}}" \
   --agent-kwarg model_class=litellm \
   --agent-kwarg "config_file=${AGENT_CONFIG}" \
   --agent-env "OPENAI_API_KEY=local" \
