@@ -12,10 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics as st
 import zipfile
 from pathlib import Path
 from typing import Any
+
+
+_CONFIDENCE = re.compile(r"^\s*#\s*confidence:\s*(\d{1,3})\s*%?\s*\n?", re.IGNORECASE)
 
 
 def head_entropy(top: list[dict[str, Any]]) -> float | None:
@@ -46,8 +50,11 @@ def compact(tr: dict[str, Any]) -> dict[str, Any]:
                     args = json.loads(tc["function"]["arguments"])
                     c = args.get("command", "")
                     cmd = c if isinstance(c, str) else " ".join(map(str, c))
-                    conf = args.get("confidence")  # the verbalised run's 0-100 estimate
-                    conf = float(conf) / 100.0 if conf is not None else None
+                    # the verbalised run's estimate rides as a leading comment line
+                    m_conf = _CONFIDENCE.match(cmd or "")
+                    if m_conf:
+                        conf = min(max(float(m_conf.group(1)) / 100.0, 0.0), 1.0)
+                        cmd = cmd[m_conf.end():].lstrip("\n")
                 except Exception:  # noqa: BLE001
                     cmd = conf = None
             pending = {

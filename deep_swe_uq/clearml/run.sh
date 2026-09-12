@@ -376,44 +376,15 @@ PYSUM
 # the way the ALFWorld agents know their 50-step budget.
 # Verbalised confidence, the ALFWorld way. Both models leave `content` empty
 # on DeepSWE (reasoning in the hidden channel, the tool call in the other), so
-# a "Confidence:" line in the text would never be written; the number rides
-# on the tool call instead, as an optional argument of the bash tool that
-# mini-swe-agent's parser already ignores. The schema is patched in place and
-# the run fails early if the patch does not apply.
+# a "Confidence:" line in the text would never be written. The bash tool's
+# schema cannot be extended either: pier installs mini-swe-agent inside each
+# task container (uv tool install), out of reach of this script. So the number
+# travels inside the command, as a leading comment line bash ignores and the
+# trajectory keeps verbatim; the compactor strips it before anything reads
+# the command.
 CONFIDENCE_LINE=""
 if [ "${VERBALIZED:-0}" = "1" ]; then
-  python - <<'PY' || { echo "[run] VERDICT: could not add the confidence argument to the bash tool"; exit 29; }
-import pathlib, sys
-import minisweagent
-root = pathlib.Path(minisweagent.__file__).parent
-CONF = ('"confidence": {"type": "integer", "description": "Your probability, 0 to 100, '
-        'of finishing the whole task successfully -- not your confidence in this single command"},')
-hits = [p for p in root.rglob("*.py") if '"name": "bash"' in p.read_text() and '"required": ["command"]' in p.read_text()]
-if not hits:
-    print("[run] bash tool schema not found"); sys.exit(1)
-for path in hits:
-    text = path.read_text()
-    if '"confidence"' in text:
-        continue
-    # the command property is the last one before "required"; append ours after it
-    head, sep, tail = text.partition('"required": ["command"]')
-    idx = head.rstrip().rfind("}")          # closes "properties"
-    inner = head[:idx].rstrip()             # ends with the brace closing "command"
-    assert inner.endswith("}"), inner[-40:]
-    head = inner + ",\n" + CONF.rstrip(",") + "\n" + head[idx:]
-    path.write_text(head + sep + tail)
-import importlib
-for path in hits:  # every patched module must still import, and carry the field
-    mod = importlib.import_module(".".join(path.relative_to(root.parent).with_suffix("").parts))
-    # completions API nests the tool under "function"; the responses API does not
-    tool = next(v for v in vars(mod).values() if isinstance(v, dict)
-                and (v.get("function", {}).get("name") == "bash" or v.get("name") == "bash"))
-    props = tool.get("function", tool)["parameters"]["properties"]
-    assert "confidence" in props and "command" in props, (path, props)
-assert "confidence" in props and "command" in props, props
-print(f"[run] bash tool schema patched in {[p.name for p in hits]}: {sorted(props)}")
-PY
-  CONFIDENCE_LINE="    With every bash call also pass \"confidence\": an integer from 0 to 100, your probability of finishing the whole task successfully -- not your confidence in this single command."
+  CONFIDENCE_LINE="    Start every bash command with a comment line of the form \"# confidence: NN\" where NN is an integer from 0 to 100: your probability of finishing the whole task successfully, not your confidence in this single command. Then the command itself on the next line."
 fi
 
 STEP_LIMIT="${STEP_LIMIT:-0}"
