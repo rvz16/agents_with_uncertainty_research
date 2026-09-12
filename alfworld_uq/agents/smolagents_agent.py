@@ -210,6 +210,36 @@ class _EnvSession:
 _HARMONY_CALL = re.compile(
     r"to=(?P<tool>[\w.]+).*?<\|message\|>(?P<args>\{.*?\})\s*<\|call\|>", re.DOTALL
 )
+# The other shape: a call to harmony's builtin `python` tool, whose body is
+# the code itself rather than JSON -- 6459 of 8176 steps in the first run
+# with the adapter, all of them invisible to the server's tool parser.
+_HARMONY_BODY = re.compile(
+    r"<\|channel\|>commentary(?P<header>[^<]*?)<\|message\|>(?P<body>.*?)(?:<\|call\|>|<\|end\|>|<\|return\|>|$)",
+    re.DOTALL,
+)
+
+
+def _call_to_code(name: str, args: Any, fences: tuple[str, str]) -> str:
+    """One parsed call, as the code block that does the same thing.
+
+    Three argument shapes were seen: {"action": ...} on take_action (and on
+    check_progress), {"code": ...} on the interpreter itself, {"answer": ...}
+    on final_answer. Each is rendered as what the agent would have executed;
+    a final_answer ends the episode exactly as it would have.
+    """
+    if not isinstance(args, dict):
+        return ""
+    code = args.get("code")
+    if isinstance(code, str) and code.strip():
+        body = code.strip()
+        return body if body.startswith(fences[0]) else f"{fences[0]}\n{body}\n{fences[1]}"
+    if name in ("final_answer", "final_answer_tool") and "answer" in args:
+        return f"{fences[0]}\nfinal_answer({args['answer']!r})\n{fences[1]}"
+    action = args.get("action", args.get("answer"))
+    if isinstance(action, str) and action.strip():
+        tool = "final_answer" if name.startswith("final_answer") else name
+        return f"{fences[0]}\n{tool}({action!r})\n{fences[1]}"
+    return ""
 
 
 def _code_from_tool_call(
@@ -251,22 +281,30 @@ def _code_from_tool_call(
         if not name or not raw:
             continue
         try:
-            action = json.loads(raw).get("action")
+            code = _call_to_code(name, json.loads(raw), fences)
         except Exception:  # noqa: BLE001
             continue
-        if action:
-            return f"{fences[0]}\n{name}({action!r})\n{fences[1]}"
+        if code:
+            return code
 
     # The parsed field is not always populated; the raw stream always is.
     text = "".join(str(t.get("token", "")) for t in tokens or [])
     match = _HARMONY_CALL.search(text)
     if match:
         try:
-            action = json.loads(match.group("args")).get("action")
+            code = _call_to_code(match.group("tool"), json.loads(match.group("args")), fences)
         except Exception:  # noqa: BLE001
-            action = None
-        if action:
-            return f"{fences[0]}\n{match.group('tool')}({action!r})\n{fences[1]}"
+            code = ""
+        if code:
+            return code
+    for match in _HARMONY_BODY.finditer(text):
+        body = match.group("body").strip()
+        if body.startswith("{"):
+            continue  # a JSON call that carried no action; handled above
+        if re.search(r"\b(take_action|final_answer|check_progress)\s*\(", body):
+            if body.startswith(fences[0]):
+                return body
+            return f"{fences[0]}\n{body}\n{fences[1]}"
     return ""
 
 

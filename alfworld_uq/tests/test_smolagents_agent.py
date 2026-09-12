@@ -439,3 +439,37 @@ def test_tool_call_is_translated_into_a_code_block():
 
     # nothing to translate: an ordinary empty response stays empty
     assert _code_from_tool_call(SimpleNamespace(content="", tool_calls=None), None, []) == ""
+
+
+def test_python_tool_body_is_translated_too():
+    """The second shape gpt-oss uses: a call to harmony's builtin python
+    tool, with the code as the message body rather than JSON. 6459 of 8176
+    steps in the first adapter run, none of them parsed by the server."""
+    from agents.smolagents_agent import _code_from_tool_call
+
+    stream = (
+        "<|channel|>analysis<|message|>Need to open drawer 1.<|end|>"
+        "<|start|>assistant<|channel|>commentary to=python code<|message|>"
+        "# Confidence: 0.95\ntake_action('open drawer 1')\n<|call|>"
+    )
+    tokens = [{"token": ch, "logprob": -0.1} for ch in stream]
+    out = _code_from_tool_call(SimpleNamespace(content="", tool_calls=None), None, tokens)
+    assert out == "```python\n# Confidence: 0.95\ntake_action('open drawer 1')\n```"
+
+    # reasoning that merely mentions the tool, with no commentary call, is not code
+    stream = "<|channel|>analysis<|message|>Maybe take_action('look') later.<|end|>"
+    tokens = [{"token": ch, "logprob": -0.1} for ch in stream]
+    assert _code_from_tool_call(SimpleNamespace(content="", tool_calls=None), None, tokens) == ""
+
+
+def test_interpreter_and_final_answer_calls_are_translated():
+    from agents.smolagents_agent import _code_from_tool_call
+
+    def stream(s):
+        return [{"token": ch, "logprob": -0.1} for ch in s]
+
+    msg = SimpleNamespace(content="", tool_calls=None)
+    s = '<|channel|>commentary to=python_interpreter <|constrain|>json<|message|>{"code":"# Confidence: 0.9\\nprint(take_action(\'examine cabinet 1\'))"}<|call|>'
+    assert _code_from_tool_call(msg, None, stream(s)) == "```python\n# Confidence: 0.9\nprint(take_action('examine cabinet 1'))\n```"
+    s = '<|channel|>commentary to=final_answer <|constrain|>json<|message|>{"answer":"move knife 1 to sidetable 1"}<|call|>'
+    assert _code_from_tool_call(msg, None, stream(s)) == "```python\nfinal_answer('move knife 1 to sidetable 1')\n```"
