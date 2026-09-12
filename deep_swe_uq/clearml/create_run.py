@@ -64,6 +64,7 @@ def main() -> None:
                    help="commands per task, 0 for none; 44 of 109 Qwen tasks died "
                         "of context overflow (median step 158) and the run "
                         "outlived its 10-hour timeout with no limit")
+    p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
     p.add_argument("--tool-call-parser", default=None,
                    help="vLLM parser for tool_choice=auto, which mini-swe-agent "
                         "always sends. Defaults to openai for gpt-oss and hermes "
@@ -95,6 +96,10 @@ def main() -> None:
         packages=["clearml", "boto3"],
     )
     task.output_uri = FILE_STORE
+    # Task.create records the branch but pins no commit; a reset task reused the
+    # commit of its first run. Pin the commit we just pushed.
+    if a.commit:
+        task.set_script(commit=a.commit)
     task.set_parameters({
         "Args/N_TASKS": str(a.n_tasks),
         "Args/MODEL": a.model,
