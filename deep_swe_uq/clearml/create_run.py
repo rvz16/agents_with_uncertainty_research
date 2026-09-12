@@ -64,6 +64,8 @@ def main() -> None:
                    help="commands per task, 0 for none; 44 of 109 Qwen tasks died "
                         "of context overflow (median step 158) and the run "
                         "outlived its 10-hour timeout with no limit")
+    p.add_argument("--verbalized", action="store_true",
+                   help="ask for a 0-100 confidence with every bash call, as ALFWorld asks per step")
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
     p.add_argument("--tool-call-parser", default=None,
                    help="vLLM parser for tool_choice=auto, which mini-swe-agent "
@@ -115,6 +117,7 @@ def main() -> None:
         "Args/TOP_LOGPROBS": str(a.top_logprobs),
         "Args/STEP_LIMIT": str(a.step_limit),
         "Args/COMMIT_WORKING_TREE": "1",
+        "Args/VERBALIZED": "1" if a.verbalized else "0",
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })

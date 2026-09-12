@@ -40,13 +40,16 @@ def compact(tr: dict[str, Any]) -> dict[str, Any]:
             content = ((choice.get("logprobs") or {}).get("content")) or []
             lps = [float(t["logprob"]) for t in content if t.get("logprob") is not None]
             ents = [e for e in (head_entropy(t.get("top_logprobs")) for t in content) if e is not None]
-            cmd = None
+            cmd = conf = None
             for tc in (choice.get("message") or {}).get("tool_calls") or []:
                 try:
-                    c = json.loads(tc["function"]["arguments"]).get("command", "")
+                    args = json.loads(tc["function"]["arguments"])
+                    c = args.get("command", "")
                     cmd = c if isinstance(c, str) else " ".join(map(str, c))
+                    conf = args.get("confidence")  # the verbalised run's 0-100 estimate
+                    conf = float(conf) / 100.0 if conf is not None else None
                 except Exception:  # noqa: BLE001
-                    cmd = None
+                    cmd = conf = None
             pending = {
                 "num_tokens": len(lps),
                 "mean_logprob": st.fmean(lps) if lps else None,
@@ -54,6 +57,7 @@ def compact(tr: dict[str, Any]) -> dict[str, Any]:
                 "mean_entropy": st.fmean(ents) if ents else None,
                 "max_entropy": max(ents) if ents else None,
                 "command": cmd,
+                "confidence": conf,
                 "returncode": None,
                 "format_error": False,
             }
