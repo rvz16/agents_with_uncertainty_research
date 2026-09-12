@@ -95,6 +95,36 @@ def load(run: Path, keep) -> list[dict[str, Any]]:
     return rows
 
 
+def load_compact(path: Path, keep) -> list[dict[str, Any]]:
+    """Records written by deep_swe_uq/experiments/compact_jobs.py (top_logprobs runs)."""
+    rows = []
+    for line in open(path):
+        r = json.loads(line); rw = r["rewards"]; steps = r["steps"]
+        lp = [s["mean_logprob"] for s in steps if s["mean_logprob"] is not None]
+        if not rw or not lp:
+            continue
+        ent = [s["mean_entropy"] for s in steps if s["mean_entropy"] is not None]
+        rcs = [s["returncode"] == 0 for s in steps if s["returncode"] is not None]
+        cmds = [s["command"] for s in steps if s["command"]]; counts = collections.Counter(cmds)
+        item = {
+            "id": r["id"], "size": r["patch_bytes"],
+            "f2p": rw.get("f2p_passed", 0) / max(rw.get("f2p_total", 1), 1),
+            "p2p": rw.get("p2p_passed", 0) / max(rw.get("p2p_total", 1), 1),
+            "steps": lp, "entropies": ent or None,
+            "tool_success": (sum(rcs) / len(rcs)) if rcs else 0.0,
+            "critics": {
+                "no_format_errors": not any(s["format_error"] for s in steps),
+                "submitted": r["exit_status"] == "Submitted",
+                "ran_tests": any(("test" in c or "pytest" in c) for c in cmds),
+                "committed": any("git commit" in c for c in cmds),
+                "no_repeated_command": all(v < 3 for v in counts.values()) if counts else False,
+            },
+        }
+        if keep(item):
+            rows.append(item)
+    return rows
+
+
 def prr(y, conf):
     a = prediction_rejection_area([-c for c in conf], y, 0.5); o, r = _prr_references(tuple(y), 0.5)
     return None if None in (a, o, r) or abs(o - r) < 1e-9 else (a - r) / (o - r)
@@ -105,6 +135,7 @@ def column(rows: list[dict[str, Any]], label_fn, seeds: int) -> dict[str, float 
     raw = {
         "Logprob (mean)": lambda r: st.fmean(r["steps"]),
         "Perplexity (max)": lambda r: -max(math.exp(-s) for s in r["steps"]),
+        "MTE (max)": lambda r: -max(r["entropies"]) if r.get("entropies") else None,
         "Tool success rate": lambda r: r["tool_success"],
         "Length-only baseline": lambda r: -float(len(r["steps"])),
     }
@@ -117,7 +148,8 @@ def column(rows: list[dict[str, Any]], label_fn, seeds: int) -> dict[str, float 
         cont = ContinuousBayesUQ.fit([by[i]["steps"] for i in cal], yc, lambda_=1.0)
         sep = BinaryBayesUQ.fit([by[i]["steps"] for i in cal], yc, threshold_mode="sep", higher_is_uncertain=False)
         for k, f in raw.items():  # same test halves as the Bayes rows
-            v = prr(yt, [f(by[i]) for i in test])
+            conf = [f(by[i]) for i in test]
+            v = None if any(c is None for c in conf) else prr(yt, conf)
             if v is not None:
                 acc[k].append(v)
         belief = {i: crit.predict(by[i]["critics"]) for i in test}
@@ -142,11 +174,24 @@ def main() -> None:
     p.add_argument("--gptoss", type=Path, required=True)
     p.add_argument("--qwen", type=Path, required=True)
     p.add_argument("--seeds", type=int, default=20)
+    p.add_argument("--unified", action="store_true", help="score both models on F2P>0 among non-empty patches")
     a = p.parse_args()
-    cols = {
-        "gpt-oss (repo intact)": column(load(a.gptoss, lambda r: r["size"] > 0 and r["f2p"] == 0), lambda r: int(r["p2p"] > 0), a.seeds),
-        "Qwen (any progress)": column(load(a.qwen, lambda r: r["size"] > 0), lambda r: int(r["f2p"] > 0), a.seeds),
-    }
+    def read(path: Path, keep):
+        return load_compact(path, keep) if path.suffix == ".jsonl" else load(path, keep)
+
+    nonempty = lambda r: r["size"] > 0  # noqa: E731
+    progress = lambda r: int(r["f2p"] > 0)  # noqa: E731
+    if a.unified:
+        # Both models scored on the same question: did a non-empty patch pass any F2P test?
+        cols = {
+            "gpt-oss (any progress)": column(read(a.gptoss, nonempty), progress, a.seeds),
+            "Qwen (any progress)": column(read(a.qwen, nonempty), progress, a.seeds),
+        }
+    else:
+        cols = {
+            "gpt-oss (repo intact)": column(read(a.gptoss, lambda r: r["size"] > 0 and r["f2p"] == 0), lambda r: int(r["p2p"] > 0), a.seeds),
+            "Qwen (any progress)": column(read(a.qwen, nonempty), progress, a.seeds),
+        }
     order = ["Logprob (mean)", "Perplexity (max)", "MTE (max)", "Verbalized UQ (final)", "Tool success rate",
              "Bayes tool-only", "Bayes UQ-only (cont.)", "Bayes Fused (cont.)", "Bayes Fused (SEP)", "Length-only baseline"]
     print(f"{'method':24s}" + "".join(f"{c:>24s}" for c in cols))
