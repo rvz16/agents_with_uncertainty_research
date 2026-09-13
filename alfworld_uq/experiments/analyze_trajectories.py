@@ -59,7 +59,17 @@ EPISODE_CRITIC_NAMES = (
     "all_actions_valid",
     "no_repeated_fallback",
 )
-STEP_CRITIC_NAMES = ("format_valid", "action_valid", "no_repeated_fallback")
+# Per-step checks the environment gives for free: the action parsed, it was
+# admissible, it was not a repeat, the tool call succeeded and the world
+# changed. The last two are what the colleague's "tool success" signal is
+# made of; on runs that predate them they are absent and read as constant.
+STEP_CRITIC_NAMES = (
+    "format_valid",
+    "action_valid",
+    "no_repeated_fallback",
+    "tool_success",
+    "state_changed",
+)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -135,7 +145,24 @@ def _step_critic_observation(row: dict[str, Any]) -> dict[str, bool]:
         "format_valid": row.get("format_valid") is True,
         "action_valid": row.get("action_valid") is True,
         "no_repeated_fallback": row.get("fallback_reason") != "repeated_action",
+        "tool_success": row.get("tool_success") is True,
+        "state_changed": row.get("state_changed") is True,
     }
+
+
+def _predict_from_belief_tempered(model: Any, sequence: list[float], belief: float) -> float:
+    """Fuse a belief with a UQ sequence whose evidence is averaged per step."""
+    if not sequence:
+        return belief
+    total = 0.0
+    for value in sequence:
+        total += _logit_clipped(model.update(0.5, value))  # per-step log-likelihood ratio
+    return float(np.clip(1.0 / (1.0 + math.exp(-(_logit_clipped(belief) + total / len(sequence)))), EPS, 1 - EPS))
+
+
+def _logit_clipped(value: float) -> float:
+    value = min(max(float(value), EPS), 1 - EPS)
+    return math.log(value / (1 - value))
 
 
 def _predict_from_belief(model: Any, sequence: list[float], belief: float) -> float:
@@ -689,6 +716,12 @@ def main() -> None:
         )
         for episode_id in episode_ids
     }
+    stepwise_tempered_states = {
+        episode_id: stepwise_critic_bayes.predict_sequence_tempered(
+            step_critic_sequences[episode_id]
+        )
+        for episode_id in episode_ids
+    }
     bayes_state_rows = [
         {
             "episode_id": episode_id,
@@ -1170,6 +1203,39 @@ def main() -> None:
                     probabilities=stepwise_base_predictions,
                 )
             )
+            # Tempered variants: critics alone, and fused with the UQ signal,
+            # both with evidence averaged per step. Reported on both halves.
+            for split_name, split_ids in (("test", test_available), ("calibration", calibration_available)):
+                split_labels = [labels[i] for i in split_ids]
+                metric_rows.append(
+                    _metric_row(
+                        target=target,
+                        method=method,
+                        model="stepwise_bayes_state_tempered",
+                        labels=split_labels,
+                        probabilities=[stepwise_tempered_states[i] for i in split_ids],
+                        split=split_name,
+                    )
+                )
+                for source_name, episode_fused_name in fusion_names.items():
+                    fused_model = bayes_models[source_name]
+                    metric_rows.append(
+                        _metric_row(
+                            target=target,
+                            method=method,
+                            model=episode_fused_name.replace(
+                                "bayes_state_plus_", "stepwise_tempered_plus_"
+                            ),
+                            labels=split_labels,
+                            probabilities=[
+                                _predict_from_belief_tempered(
+                                    fused_model, sequences[i], stepwise_tempered_states[i]
+                                )
+                                for i in split_ids
+                            ],
+                            split=split_name,
+                        )
+                    )
             risk_rows.extend(
                 _risk_coverage(
                     outcomes,

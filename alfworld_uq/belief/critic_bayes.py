@@ -101,3 +101,26 @@ class CriticBayesState:
             for critic in sorted(self.likelihoods):
                 belief = self.update(belief, critic, bool(observations[critic]))
         return belief
+
+    def predict_sequence_tempered(self, sequence: list[dict[str, bool]]) -> float:
+        """The same evidence averaged over steps instead of multiplied.
+
+        One likelihood ratio per step treats steps as independent draws; a
+        long episode then saturates the posterior after a handful of steps
+        and the ranking degenerates into a count of failed steps -- which is
+        why the plain tool-success *rate* outranked the multiplied belief
+        (.79 vs .58 mean PRR across the ALFWorld grid). Dividing the total
+        log-evidence by the number of steps -- the geometric mean of the
+        per-step likelihood ratios -- keeps the rate's resolution and the
+        prior, and is the critic counterpart of the tempered UQ update.
+        """
+        if not sequence:
+            return self.prior
+        total = 0.0
+        for observations in sequence:
+            for critic, likelihood in self.likelihoods.items():
+                passed = bool(observations[critic])
+                p_success = likelihood.p_pass_success if passed else 1 - likelihood.p_pass_success
+                p_failure = likelihood.p_pass_failure if passed else 1 - likelihood.p_pass_failure
+                total += math.log(_clip_probability(p_success) / _clip_probability(p_failure))
+        return _clip_probability(_sigmoid(_logit(self.prior) + total / len(sequence)))

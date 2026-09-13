@@ -36,6 +36,9 @@ ROWS = {
     "Bayes UQ-only (cont.)": (("continuous_bayes",), UQ_SIGNALS),
     "Bayes Fused (cont.)": (("bayes_state_plus_continuous",), UQ_SIGNALS),
     "Bayes Fused (SEP)": (("bayes_state_plus_sep",), UQ_SIGNALS),
+    "Bayes tool-only (tempered)": (("stepwise_bayes_state_tempered",), UQ_SIGNALS),
+    "Bayes Fused (cont., tempered)": (("stepwise_tempered_plus_continuous",), UQ_SIGNALS),
+    "Bayes Fused (SEP, tempered)": (("stepwise_tempered_plus_sep",), UQ_SIGNALS),
 }
 METRIC = "prr_at_0_5"
 
