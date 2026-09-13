@@ -212,8 +212,8 @@ Bayes Fused (SEP, tempered)    & .320 & \g{.920} & \underline{.596} & .369 & \NA
 
 \vspace{0.25em}
 \fontsize{6}{7}\selectfont
-PRR@0.5~$\uparrow$, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2.
-SEP = binary UQ. Tempered = per-step evidence averaged, not multiplied; critics = format,
+PRR@0.5~$\uparrow$, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2
+(the length-only baseline is a leak diagnostic and is not ranked). SEP = binary UQ. Tempered = per-step evidence averaged, not multiplied; critics = format,
 admissibility, no-repeat, tool success, state changed. smol = smolagents, OSW = OSWorld.
 ALFWorld: 140 episodes per setup, 50-step budget; finished-only cohort (agent ended the
 episode itself), scored before the terminal step, segment and signal chosen on the
@@ -261,10 +261,10 @@ Qwen: \texttt{state\_changed} + \texttt{sum\_logprob}; ReAct/gpt-oss: nothing st
 \end{frame}
 
 \begin{frame}{OOD transfer on ALFWorld: fit on one setup, score another}
-\vspace{0.2em}
-\fontsize{7.5}{9}\selectfont
-\setlength{\tabcolsep}{2.7pt}
-\renewcommand{\arraystretch}{1.15}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.05}
 \begin{tabularx}{\linewidth}{@{}Ylrrrr@{}}
 \toprule
 \textbf{Method} & \textbf{Mode} & \shortstack{\textbf{same model}\\\textbf{other agent}} & \shortstack{\textbf{other model}\\\textbf{other agent}} & \shortstack{\textbf{same agent}\\\textbf{other model}} & \textbf{Overall}\\
@@ -276,29 +276,27 @@ Verb final, Bayes UQ + tools   & Last only & \g{.484} & .254 & .304 & .347\\
 Perplexity, Bayes UQ + tools   & Last only & .373 & .182 & \g{.437} & .331\\
 MTE, Bayes UQ + tools          & SEP & .385 & .225 & .319 & .310\\
 \midrule
-Perplexity (raw)                  & last & .301 & .301 & .301 & .301\\
-Logistic regression               & pinned & .253 & .084 & .177 & .172\\
-Verb final (raw)                  & final & .120 & .120 & .120 & .120\\
+Perplexity (raw)               & last & .301 & .301 & .301 & .301\\
+Logistic regression            & pinned & .253 & .084 & .177 & .172\\
+Verb final (raw)               & final & .120 & .120 & .120 & .120\\
 \bottomrule
 \end{tabularx}
 
-\vspace{0.4em}
-\scriptsize
-\textbf{Bold}: top-1, \underline{underline}: top-2 per column. Four ALFWorld setups
-(ReAct / smolagents $\times$ gpt-oss-20b / Qwen3.6-35B), twelve directions grouped in
-three pairs of four; each cell is the mean over its directions of the mean PRR over five
-seeds. For every direction and seed \emph{all} parameters (prior, critic likelihoods,
-UQ thresholds and Gaussians, regression columns and weights) are fitted on a random
-half of the source setup (the calibration size the in-domain protocol gets) and scored
-on the whole target. Raw baselines fit nothing, so their transfer equals their in-domain
-value. 37 methods in the full sweep; shown: top fused rows and references.\\
-What transfers: the tool posterior (environment critics) and binary UQ thresholds
-(Quantile): mean drop $\le .1$ vs.\ in-domain. What does not: continuous likelihoods
-across models: gpt-oss and Qwen log-probabilities do not overlap (median mean-token
-logprob $-.38$ vs.\ $-.14$), so a Gaussian fitted on one classifies every step of the
-other as one class (Continuous / Tempered rows: $-.2$ to $.1$ overall). Regression
-transfers worst of the learned methods (.17, rank 27/37): its selected columns are
-setup-specific.
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5. \textbf{Bold}: top-1, \underline{underline}: top-2 per column.
+Four ALFWorld setups (ReAct / smolagents $\times$ gpt-oss-20b / Qwen3.6-35B), twelve
+source$\to$target directions in three groups of four; a cell is the mean over its
+directions of the mean over five seeds. Per direction and seed, all parameters (prior,
+critic likelihoods, UQ thresholds and Gaussians, regression columns and weights) are
+fitted on a random half of the source and scored on the whole target. Raw baselines fit
+nothing, so their transfer equals their in-domain value. 37 methods in the full sweep;
+shown: top fused rows and references.
+What transfers: the tool posterior and binary UQ thresholds (Quantile), mean drop
+$\le .1$ vs.\ in-domain. What does not: continuous likelihoods across models (gpt-oss and
+Qwen log-probabilities do not overlap: median $-.38$ vs.\ $-.14$; Continuous / Tempered
+rows $-.2$ to $.1$ overall). Regression transfers worst of the learned methods
+(.17, rank 27/37): its selected columns are setup-specific.
 \end{frame}
 
 \begin{frame}{DeepSWE (mini-swe-agent): a different question}
@@ -328,8 +326,8 @@ tasks (positives)         & 90 (24) & 65 (56) & \\
 
 \vspace{0.25em}
 \fontsize{6}{7}\selectfont
-PRR@0.5, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2.
-113 DeepSWE tasks, 200-command budget, working-tree grading. Neither model solves a task
+PRR@0.5, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2 (length-only
+baseline not ranked). 113 DeepSWE tasks, 200-command budget, working-tree grading. Neither model solves a task
 outright (0/113), so the label is \emph{any progress}: a non-empty patch passing at least one
 F2P test. Cohort as on ALFWorld: submitted episodes, scored before the terminal command.
 Critics: no format errors, submitted, ran tests, committed, no command repeated $\ge3\times$,
