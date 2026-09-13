@@ -1,0 +1,373 @@
+% Compile with pdfLaTeX twice. Original main.tex template, unchanged.
+\documentclass[10pt, aspectratio=43]{beamer}
+
+% --- Fonts (sans-serif, similar weight to MBZUAI deck) -----------------
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+
+% --- Math + symbols ----------------------------------------------------
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{textcomp}
+
+% --- Tables, code, color, boxes ----------------------------------------
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, fit, shapes.geometric}
+
+% --- Theme tweaks ------------------------------------------------------
+\usetheme{default}
+\useinnertheme{rectangles}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\textcolor{accent}{\(\blacktriangleright\)}}
+\setbeamertemplate{itemize subitem}{\textcolor{accent}{\(\triangleright\)}}
+
+\definecolor{accent}{HTML}{1A4789}      % dark blue, matches MBZUAI deck
+\definecolor{accent2}{HTML}{2D7A55}     % green for "wins"
+\definecolor{warn}{HTML}{B8001F}        % red for caveats
+\definecolor{boxbg}{HTML}{F4F6F8}
+\definecolor{codebg}{HTML}{F4F4FA}
+\newcommand{\g}[1]{\textcolor{accent2}{\textbf{#1}}}  % green highlight (best)
+\renewcommand{\ng}[1]{\textcolor{warn}{#1}}           % T1 already defines \ng
+
+\setbeamercolor{frametitle}{fg=accent}
+\setbeamercolor{title}{fg=accent}
+\setbeamercolor{structure}{fg=accent}
+\setbeamercolor{block title}{fg=white, bg=accent}
+\setbeamercolor{block body}{bg=boxbg}
+
+\setbeamerfont{frametitle}{size=\Large, series=\bfseries}
+\setbeamerfont{footline}{size=\tiny}
+
+% Frametitle with thin horizontal rule below
+\setbeamertemplate{frametitle}{%
+  \vskip0.4em%
+  \begin{beamercolorbox}[wd=\paperwidth,leftskip=0.5cm,rightskip=0.5cm]{frametitle}%
+    \usebeamerfont{frametitle}\insertframetitle\par%
+    {\color{accent}\rule{\dimexpr\paperwidth-1cm\relax}{0.6pt}}%
+  \end{beamercolorbox}%
+  \vskip0.4em%
+}
+
+% Slide number footer (bottom right): "n / N"
+\setbeamertemplate{footline}{%
+  \hfill\textcolor{gray}{\insertframenumber\,/\,\inserttotalframenumber}%
+  \hspace{0.3cm}\vspace{0.15cm}%
+}
+
+% --- Listings (code blocks) --------------------------------------------
+\lstdefinestyle{pyish}{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0.3pt,
+  rulecolor=\color{gray!50},
+  showstringspaces=false,
+  numbers=none,
+  keywordstyle=\color{accent}\bfseries,
+  commentstyle=\color{gray!80}\itshape,
+  stringstyle=\color{accent2},
+  language=Python,
+  breaklines=true,
+  xleftmargin=0.4em,
+  xrightmargin=0.4em,
+  aboveskip=0.4em,
+  belowskip=0.4em,
+}
+
+% --- Callout boxes -----------------------------------------------------
+\newtcolorbox{callout}[1][]{
+  colback=boxbg, colframe=accent,
+  left=4pt, right=4pt, top=2pt, bottom=2pt,
+  fonttitle=\bfseries\small,
+  boxrule=0.4pt, arc=2pt, #1
+}
+\newtcolorbox{wincallout}[1][]{
+  colback=accent2!8, colframe=accent2,
+  left=4pt, right=4pt, top=2pt, bottom=2pt,
+  fonttitle=\bfseries\small\color{white},
+  boxrule=0.4pt, arc=2pt, #1
+}
+\newtcolorbox{notation}[1][]{
+  colback=yellow!8, colframe=orange!50!black,
+  left=4pt, right=4pt, top=2pt, bottom=2pt,
+  fonttitle=\bfseries\small\color{white},
+  boxrule=0.4pt, arc=2pt,
+  title=Notation,
+  #1
+}
+
+\newcommand{\NA}{\textemdash}
+\newcommand{\avg}[2]{#1\,{\scriptsize(#2)}}
+\title{\textbf{Uncertainty Quantification for Agents}}
+\author{}
+\date{}
+
+\begin{document}
+
+\begin{frame}{UQ for agents --- setup}
+\small
+Estimate \textbf{trajectory success} from model uncertainty and tool feedback.
+
+\vspace{0.5em}
+\textbf{Models}
+\begin{itemize}\setlength\itemsep{2pt}
+  \item \texttt{gpt-oss-20b}
+  \item \texttt{Qwen/Qwen3.6-35B-A3B} (VLM)
+\end{itemize}
+
+\vspace{0.3em}
+\textbf{Agents}
+\begin{itemize}\setlength\itemsep{2pt}
+  \item LangGraph ReAct, smolagents
+  \item Specialized agents (e.g., OSWorld and WebArena Verified)
+  \item mini-swe-agent (DeepSWE)
+\end{itemize}
+
+\vspace{0.3em}
+\textbf{Environments}\\[3pt]
+Coding, interactive planning, real-world tool use,\\
+web search, math, computer use.
+\end{frame}
+
+\begin{frame}{Bayesian belief state + continuous UQ}
+\small
+\textbf{Belief:} $b=P(Y=1\mid\text{trajectory evidence})$, where $Y=1$ means success.
+
+\begin{block}{1. Tool / critic evidence}
+\vspace{-0.3em}
+\[
+ \operatorname{logit}b_{\rm crit}
+ =\operatorname{logit}b_0+
+ \frac{1}{N}\sum_{t=1}^{N}\sum_i\log\frac{P(z_{t,i}\mid Y=1)}{P(z_{t,i}\mid Y=0)}.
+\]
+\vspace{-0.6em}
+\footnotesize
+$z_{t,i}$: critic $i$ at step $t$ (format valid, action admissible, no repeat,
+tool success, state changed). \textbf{Tempered}: evidence averaged over the $N$ steps,
+not multiplied --- one likelihood ratio per step saturates after a few steps and the
+ranking degenerates into a count of bad steps (i.e.\ length).
+\par\vspace{0.2em}
+\end{block}
+
+\begin{block}{2. Continuous UQ evidence}
+\small
+Fit score distributions $s\mid Y=y\sim\mathcal N(\mu_y,\sigma_y^2)$.
+\vspace{-0.3em}
+\[
+ \operatorname{logit}b_{\rm fused}
+ =\operatorname{logit}b_{\rm crit}
+ +\lambda\sum_j\log
+ \frac{\mathcal N(s_j;\mu_1,\sigma_1^2)}
+      {\mathcal N(s_j;\mu_0,\sigma_0^2)}.
+\]
+\vspace{-0.6em}
+\footnotesize
+$s$: UQ score; $j$: generation index. SEP: binarised $s_j$ at a fitted threshold.
+\par\vspace{0.2em}
+\end{block}
+
+\footnotesize
+\textbf{UQ-only:} start from $b_0$.\quad
+$b_0$: prior. All parameters fitted on the calibration half only.
+\end{frame}
+
+\begin{frame}{Evaluation protocol --- what changed and why}
+\small
+\begin{itemize}\setlength\itemsep{4pt}
+  \item \textbf{Finished-only cohort.} Only episodes the agent ended itself
+        (success, \texttt{final\_answer}, \texttt{give up}); budget exhaustion and
+        external errors excluded. Otherwise ``failure $=$ ran out of steps'' and
+        episode length alone reaches PRR .95--.97 on ReAct.
+  \item \textbf{Pre-terminal scoring.} On a finished episode the last step reveals
+        the outcome: a success ends on the goal-satisfying action (state changed), a
+        failure on give-up / \texttt{final\_answer} (no environment action). Every
+        method is scored on the episode \emph{before} its last generation --- the
+        state a monitor would act on. Critics with that step: .85; without: .63.
+  \item \textbf{Same freedom for every method.} Each method (features and Bayes
+        alike) chooses its response segment (thought / action / reasoning / full)
+        and signal on the \emph{calibration} half, among cells that cover every
+        test episode; the test half is reported. Previously feature rows took the
+        best segment on the test half, and gpt-oss's ``thought'' segment exists
+        only on the 38/70 episodes where it wrote prose (5 successes).
+  \item \textbf{Agent-called judge.} \texttt{check\_progress} is a tool the agent may
+        call (independent reviewer model); no end-of-episode judge, which read the
+        transcript length (.949 $\rightarrow$ .569 on a 10-step prefix).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{ALFWorld + OSWorld-Verified --- results}
+\footnotesize
+PRR@0.5~$\uparrow$. Central estimates. ALFWorld: 140 episodes per setup, 50-step budget.
+
+\vspace{0.4em}
+\fontsize{7.5}{9}\selectfont
+\setlength{\tabcolsep}{2.7pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrr@{}}
+\toprule
+& \multicolumn{2}{c}{\shortstack{\textbf{ALFWorld}\\\textbf{gpt-oss-20b}}}
+& \multicolumn{2}{c}{\shortstack{\textbf{ALFWorld}\\\textbf{Qwen3.6}}}
+& \shortstack{\textbf{OSW-V}$^\ast$\\\textbf{Qwen3.6}} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-6}
+\textbf{Method} & \textbf{ReAct}$^\ddagger$ & \textbf{smol} & \textbf{ReAct}$^\ddagger$ & \textbf{smol} & \textbf{OSW-Agent} & \textbf{Avg (n)}\\
+\midrule
+Logprob (mean)                 & .139 & .747 & -.012 & -.006 & .434 & \avg{.260}{5}\\
+Perplexity (max)               & .404 & .699 & -.150 & -.087 & .508 & \avg{.275}{5}\\
+MTE (max)                      & .347 & .786 & -.048 & -.006 & .482 & \avg{.312}{5}\\
+Verbalized UQ (final)$^\S$     & -.075 & .897 & .209 & .304 & .468 & \avg{.361}{5}\\
+Tool success rate              & .258 & .849 & .142 & .367 & .341 & \avg{.391}{5}\\
+Bayes tool-only                & \underline{.441} & .674 & .040 & .323 & .386 & \avg{.373}{5}\\
+Bayes UQ-only (cont.)          & .189 & .658 & .135 & .011 & \underline{.690} & \avg{.337}{5}\\
+Bayes Fused (cont.)            & .397 & .747 & .091 & .233 & \g{.695} & \avg{.433}{5}\\
+Bayes Fused (SEP)              & \g{.464} & .690 & .138 & .233 & .559 & \avg{.417}{5}\\
+\midrule
+Bayes tool-only (tempered)     & .391 & \underline{.903} & \g{.679} & \g{.542} & \NA & \avg{\g{.629}}{4}\\
+Bayes Fused (cont., tempered)  & .247 & .883 & .540 & \underline{.423} & \NA & \avg{.523}{4}\\
+Bayes Fused (SEP, tempered)    & .320 & \g{.920} & \underline{.596} & .369 & \NA & \avg{\underline{.551}}{4}\\
+\midrule
+\textit{Length-only baseline} & \textit{.561} & \textit{.728} & \textit{.234} & \textit{-.036} & \NA & \\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.4em}
+\scriptsize
+\textbf{Bold}: top-1. \underline{Underline}: top-2. SEP = binary UQ. Tempered = per-step
+evidence averaged, not multiplied; critics = format, admissibility, no-repeat, tool
+success, state changed. smol = smolagents. OSW = OSWorld.
+ALFWorld: finished-only cohort, scored before the terminal step, segment and signal
+chosen on the calibration half; PRR@0.5, means over 20 splits. Episodes (successes):
+ReAct/gpt-oss 99 (33), smol/gpt-oss 139 (43), ReAct/Qwen 75 (67), smol/Qwen 118 (104).\\
+$^\ddagger$ReAct with the give-up action. $^\S$Scored where the model stated a confidence.
+$^\ast$OSW-V values from the all-episode protocol, terminal step included; to be
+recomputed. Avg: equal-weight mean over $n$ available setups.
+\end{frame}
+
+\begin{frame}{Logistic regression (main branch) vs.\ Bayes --- ALFWorld}
+\vspace{0.2em}
+\fontsize{7.5}{9}\selectfont
+\setlength{\tabcolsep}{2.7pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}Ylrrrrr@{}}
+\toprule
+& & \multicolumn{2}{c}{\textbf{gpt-oss-20b}} & \multicolumn{2}{c}{\textbf{Qwen3.6-35B}} & \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+\textbf{Method} & \textbf{Config} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{Avg}\\
+\midrule
+Logistic regression & selected  & .148  & \underline{.979} & .122 & .550 & .450\\
+Logistic regression & pinned ($C{=}0.03$) & -.186 & \g{.993} & .102 & \g{.565} & .368\\
+\midrule
+Bayes UQ + tools    & Logprob, last only & \g{.443} & .957 & \g{.575} & .147 & .531\\
+Bayes UQ + tools    & Verb final, last only & .258 & .906 & .349 & .433 & .487\\
+Bayes tool-only     & step critics & .386 & .945 & \underline{.466} & .390 & \g{.547}\\
+Tool success rate   & --- & .343 & .867 & .467 & .444 & \underline{.530}\\
+Best raw UQ         & MTE, last & -.083 & .831 & .157 & \underline{.567} & .368\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.4em}
+\scriptsize
+\textbf{Bold}: top-1, \underline{underline}: top-2 per column. PRR@0.5, 5-fold out-of-fold
+(episodes shuffled with seed 0, fold $i=$ \texttt{order[i::5]}, one PRR on the pooled
+predictions), finished-only cohorts, every method scored before the terminal step.\\
+Regression: \texttt{trajectory\_uq\_toolkit.regression} from \texttt{main}, unchanged ---
+forward feature selection over all (signal, aggregation) columns of Logprob / Perplexity /
+MTE / Verb and the five step critics, L2 logistic fit; refitted inside every outer fold.
+It is given the same signals and the same critics as the Bayes rows and no length feature.\\
+Selected columns: smol/gpt-oss --- MTE last, Verb last (the refusal fingerprint);
+Qwen --- \texttt{state\_changed} + \texttt{sum\_logprob}; ReAct/gpt-oss --- nothing stable
+(80 training episodes vs.\ $\sim$200 candidate columns; the double selection gate passes little).
+\end{frame}
+
+\begin{frame}{OOD transfer on ALFWorld --- fit on one setup, score another}
+\vspace{0.2em}
+\fontsize{7.5}{9}\selectfont
+\setlength{\tabcolsep}{2.7pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}Ylrrrr@{}}
+\toprule
+\textbf{Method} & \textbf{Mode} & \shortstack{\textbf{same model}\\\textbf{other agent}} & \shortstack{\textbf{other model}\\\textbf{other agent}} & \shortstack{\textbf{same agent}\\\textbf{other model}} & \textbf{Overall}\\
+\midrule
+Verb actions --- Bayes UQ + tools & Quantile & .468 & \g{.402} & .389 & \g{.419}\\
+MTE --- Bayes UQ + tools          & Quantile & .472 & \underline{.366} & \underline{.418} & \underline{.418}\\
+Perplexity --- Bayes UQ + tools   & Quantile & .371 & .334 & .349 & .351\\
+Verb final --- Bayes UQ + tools   & Last only & \g{.484} & .254 & .304 & .347\\
+Perplexity --- Bayes UQ + tools   & Last only & .373 & .182 & \g{.437} & .331\\
+MTE --- Bayes UQ + tools          & SEP & .385 & .225 & .319 & .310\\
+\midrule
+Perplexity (raw)                  & last & .301 & .301 & .301 & .301\\
+Logistic regression               & pinned & .253 & .084 & .177 & .172\\
+Verb final (raw)                  & final & .120 & .120 & .120 & .120\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.4em}
+\scriptsize
+\textbf{Bold}: top-1, \underline{underline}: top-2 per column. Four ALFWorld setups
+(ReAct / smolagents $\times$ gpt-oss-20b / Qwen3.6-35B), twelve directions grouped in
+three pairs of four; each cell is the mean over its directions of the mean PRR over five
+seeds. For every direction and seed \emph{all} parameters --- prior, critic likelihoods,
+UQ thresholds and Gaussians, regression columns and weights --- are fitted on a random
+half of the source setup (the calibration size the in-domain protocol gets) and scored
+on the whole target. Raw baselines fit nothing, so their transfer equals their in-domain
+value. 37 methods in the full sweep; shown: top fused rows and references.\\
+What transfers: the tool posterior (environment critics) and binary UQ thresholds
+(Quantile) --- mean drop $\le .1$ vs.\ in-domain. What does not: continuous likelihoods
+across models --- gpt-oss and Qwen log-probabilities do not overlap (median mean-token
+logprob $-.38$ vs.\ $-.14$), so a Gaussian fitted on one classifies every step of the
+other as one class (Continuous / Tempered rows: $-.2$ to $.1$ overall). Regression
+transfers worst of the learned methods (.17, rank 27/37): its selected columns are
+setup-specific.
+\end{frame}
+
+\begin{frame}{DeepSWE (mini-swe-agent) --- a different question}
+\vspace{0.2em}
+\fontsize{7.5}{9}\selectfont
+\setlength{\tabcolsep}{2.7pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}Yrrr@{}}
+\toprule
+\textbf{Method} & \textbf{gpt-oss-20b} & \textbf{Qwen3.6-35B} & \textbf{Avg}\\
+\midrule
+Logprob (mean)            & .223 & \g{.452} & \g{.338}\\
+Perplexity (max)          & .065 & -.161 & -.048\\
+MTE (max)                 & \g{.264} & -.188 & .038\\
+Verbalized UQ (final)     & \NA$^\P$ & \NA$^\P$ & \\
+Tool success rate         & .055 & -.387 & -.166\\
+Bayes tool-only           & .090 & .055 & .073\\
+Bayes UQ-only (cont.)     & \underline{.238} & \underline{.318} & \underline{.278}\\
+Bayes Fused (cont.)       & .196 & .252 & .224\\
+Bayes Fused (SEP)         & .124 & .244 & .184\\
+\midrule
+\textit{Length-only baseline} & \textit{.035} & \textit{-.156} & \\
+\midrule
+tasks (positives)         & 90 (24) & 65 (56) & \\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.4em}
+\scriptsize
+\textbf{Bold}: top-1, \underline{underline}: top-2. 113 DeepSWE tasks, mini-swe-agent,
+200-command budget, working-tree grading. Neither model solves a task outright
+(0/113), so the label is \emph{any progress}: a non-empty patch that passes at least
+one F2P test. Cohort as on ALFWorld: episodes the agent submitted itself, scored
+before the terminal command; PRR@0.5, means over 20 splits. Critics: no format
+errors, submitted, ran tests, committed, no command repeated $\ge3\times$, a test
+that failed then passed, last test run passed.\\
+$^\P$Both models ignore a confidence instruction inside the tool-calling loop:
+Qwen 0 of 1806 commands, gpt-oss 49 of 6365 (almost all ``0'' before aborting).\\
+Why it is weak: the label is progress, not success (Qwen: 9 negatives in 65); the
+outcome is largely a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$
+vs.\ $.05$); the environment gives no progress signal --- process critics are saturated,
+failing test runs are how work is done (tool success is anti-correlated), and the
+log-probabilities of shell commands say little about the fix.
+\end{frame}
+
+\end{document}
