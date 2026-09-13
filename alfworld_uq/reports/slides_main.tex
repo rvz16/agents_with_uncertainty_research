@@ -299,45 +299,53 @@ rows $-.2$ to $.1$ overall). Regression transfers worst of the learned methods
 (.17, rank 27/37): its selected columns are setup-specific.
 \end{frame}
 
-\begin{frame}{DeepSWE (mini-swe-agent): a different question}
+\begin{frame}{DeepSWE (mini-swe-agent)}
 \vspace{-0.2em}
 \fontsize{7}{8.4}\selectfont
 \setlength{\tabcolsep}{2.5pt}
 \renewcommand{\arraystretch}{1.05}
-\begin{tabularx}{\linewidth}{@{}Yrrr@{}}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrr@{}}
 \toprule
-\textbf{Method} & \textbf{gpt-oss-20b} & \textbf{Qwen3.6-35B} & \textbf{Avg}\\
+& \multicolumn{3}{c}{\textbf{partial score} (all tests)} & \multicolumn{3}{c}{\textbf{F2P fraction} (feature tests)}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+\textbf{Method} & \textbf{gpt-oss} & \textbf{Qwen3.6} & \textbf{Avg} & \textbf{gpt-oss} & \textbf{Qwen3.6} & \textbf{Avg}\\
 \midrule
-Logprob (mean)            & .223 & \g{.452} & \g{.338}\\
-Perplexity (max)          & .065 & -.161 & -.048\\
-MTE (max)                 & \g{.264} & -.188 & .038\\
-Verbalized UQ (final)     & \NA$^\P$ & \NA$^\P$ & \\
-Tool success rate         & .055 & -.387 & -.166\\
-Bayes tool-only           & .090 & .055 & .073\\
-Bayes UQ-only (cont.)     & \underline{.238} & \underline{.318} & \underline{.278}\\
-Bayes Fused (cont.)       & .196 & .252 & .224\\
-Bayes Fused (SEP)         & .124 & .244 & .184\\
+Logprob (mean)            & -.032 & \g{.207} & .088 & \g{.416} & \g{.342} & \g{.379}\\
+Perplexity (max)          & -.066 & -.022 & -.044 & .059 & -.132 & -.037\\
+MTE (max)                 & -.047 & .092 & .023 & \underline{.360} & -.081 & .140\\
+Verbalized UQ (final)     & \NA$^\P$ & \NA$^\P$ & & \NA$^\P$ & \NA$^\P$ & \\
+Tool success rate         & -.197 & -.102 & -.150 & -.134 & -.118 & -.126\\
+Bayes tool-only           & \g{.206} & .030 & .118 & .214 & .137 & .176\\
+Bayes UQ-only (cont.)     & .003 & .120 & .062 & .211 & .266 & \underline{.239}\\
+Bayes Fused (cont.)       & .165 & .126 & \underline{.146} & .237 & .216 & .227\\
+Bayes Fused (SEP)         & \underline{.198} & \underline{.158} & \g{.178} & .126 & \underline{.315} & .221\\
 \midrule
-\textit{Length-only baseline} & \textit{.035} & \textit{-.156} & \\
+\textit{Length-only baseline} & \textit{.132} & \textit{-.136} & & \textit{-.183} & \textit{-.046} & \\
 \midrule
-tasks (positives)         & 90 (24) & 65 (56) & \\
+tasks (mean score)        & 90 (.49) & 65 (.78) & & 90 (.07) & 65 (.44) & \\
 \bottomrule
 \end{tabularx}
 
 \vspace{0.25em}
 \fontsize{6}{7}\selectfont
-PRR@0.5, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2 (length-only
-baseline not ranked). 113 DeepSWE tasks, 200-command budget, working-tree grading. Neither model solves a task
-outright (0/113), so the label is \emph{any progress}: a non-empty patch passing at least one
-F2P test. Cohort as on ALFWorld: submitted episodes, scored before the terminal command.
-Critics: no format errors, submitted, ran tests, committed, no command repeated $\ge3\times$,
-a test that failed then passed, last test run passed.
+PRR@0.5 against the verifier's \emph{continuous} scores, no binarisation (as for OSWorld /
+WebArena): oracle ranks by the true score, random reference = mean score; means over 20
+splits. \textbf{Bold}: top-1, \underline{underline}: top-2 (length-only baseline not ranked).
+113 DeepSWE feature-request tasks (Go / TypeScript / Python / JS / Rust), 200-command budget,
+working-tree grading. Neither model resolves a task outright (binary reward 0/113), so two
+native scores are used: \emph{partial} = passed / all hidden tests (F2P + P2P, i.e.\ mostly
+``did the patch keep the repository working''), and the fraction of F2P tests passed
+(``how much of the feature was built''; best single patch 76/78). Cohort as on ALFWorld:
+submitted episodes, scored before the terminal command; Bayes models are trained on a
+median split of the calibration half. Critics: no format errors, submitted, ran tests,
+committed, no command repeated $\ge3\times$, a test that failed then passed, last test passed.
 $^\P$Both models ignore a confidence instruction inside the tool-calling loop
 (Qwen 0/1806 commands, gpt-oss 49/6365).
-Why weak: the label is progress, not success (Qwen: 9 negatives in 65); the outcome is largely
-a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$); the environment
-gives no progress signal: process critics are saturated, failing test runs are how work is
-done, and shell-command log-probabilities say little about the fix.
+Reading: Bayes fusion is best at predicting whether the agent keeps the repository intact
+(the part its critics see); how much of the feature gets built is predicted better by raw
+log-probability; no method exceeds .42, versus .5--.9 on ALFWorld, because the environment
+gives no progress signal (process critics saturate, failing test runs are how work is done)
+and the outcome is largely a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$).
 \end{frame}
 
 \end{document}
