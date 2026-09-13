@@ -131,6 +131,7 @@ def load_compact(path: Path, keep, drop_last: bool = False) -> list[dict[str, An
             "id": r["id"], "size": r["patch_bytes"],
             "f2p": rw.get("f2p_passed", 0) / max(rw.get("f2p_total", 1), 1),
             "p2p": rw.get("p2p_passed", 0) / max(rw.get("p2p_total", 1), 1),
+            "partial": float(rw.get("partial", 0.0)),
             "steps": lp, "entropies": ent or None,
             "verbalized_final": conf[-1] if conf else None,
             "verbalized_mean": st.fmean(conf) if conf else None,
@@ -154,12 +155,45 @@ _TEST_CMD = re.compile(r"\b(pytest|go test|npm test|npx jest|npx vitest|cargo te
 
 
 def prr(y, conf):
+    if any(isinstance(v, float) and not float(v).is_integer() for v in y):
+        return prr_continuous(y, conf)
     a = prediction_rejection_area([-c for c in conf], y, 0.5); o, r = _prr_references(tuple(y), 0.5)
     return None if None in (a, o, r) or abs(o - r) < 1e-9 else (a - r) / (o - r)
 
 
+def _area(conf, score, max_rejection=0.5):
+    """Mean retained quality while rejecting the least confident half, on a
+    continuous score in [0, 1] (the repository PRR truncates labels to int)."""
+    import numpy as np
+    conf = np.asarray(conf, float); score = np.asarray(score, float)
+    ranked = score[np.argsort(-conf)]  # most confident first
+    rejected = int(max_rejection * len(ranked))
+    if rejected <= 0:
+        return None
+    cumulative = np.cumsum(ranked); retained = np.arange(1, len(ranked) + 1)
+    kept = (cumulative / retained)[len(ranked) - rejected:]
+    return float(kept.mean())
+
+
+def prr_continuous(score, conf):
+    """PRR@0.5 against native partial scores, as the OSWorld/WebArena report
+    does: no binarisation. Oracle ranks by the true score; the random
+    reference is the mean score (its expectation at every rejection level)."""
+    import statistics as st
+    a = _area(conf, score); o = _area(score, score); r = st.fmean(score)
+    return None if a is None or o is None or abs(o - r) < 1e-9 else (a - r) / (o - r)
+
+
 def column(rows: list[dict[str, Any]], label_fn, seeds: int) -> dict[str, float | None]:
     by = {r["id"]: r for r in rows}; ids = list(by); y = {i: label_fn(by[i]) for i in ids}
+    continuous = any(isinstance(v, float) and not float(v).is_integer() for v in y.values())
+    # Bayes models need a binary training label; with a continuous score the
+    # calibration half is split at its median (the split is refitted per seed).
+    def train_labels(cal):
+        if not continuous:
+            return [int(y[i]) for i in cal]
+        med = st.median(y[i] for i in cal)
+        return [int(y[i] > med) for i in cal]
     raw = {
         "Logprob (mean)": lambda r: st.fmean(r["steps"]),
         "Perplexity (max)": lambda r: -max(math.exp(-s) for s in r["steps"]),
@@ -173,7 +207,7 @@ def column(rows: list[dict[str, Any]], label_fn, seeds: int) -> dict[str, float 
     acc = collections.defaultdict(list)
     for seed in range(seeds):
         cal, test = _split_ids(ids, 0.5, seed)
-        yc = [y[i] for i in cal]; yt = [y[i] for i in test]
+        yc = train_labels(cal); yt = [y[i] for i in test]
         crit = CriticBayesState.fit([by[i]["critics"] for i in cal], yc)
         cont = ContinuousBayesUQ.fit([by[i]["steps"] for i in cal], yc, lambda_=1.0)
         sep = BinaryBayesUQ.fit([by[i]["steps"] for i in cal], yc, threshold_mode="sep", higher_is_uncertain=False)
@@ -190,12 +224,12 @@ def column(rows: list[dict[str, Any]], label_fn, seeds: int) -> dict[str, float 
             "Bayes Fused (SEP)": [_predict_from_belief(sep, by[i]["steps"], belief[i]) for i in test],
         }
         for k, p in variants.items():
-            v = metric_values(yt, p).get("prr_at_0_5")
+            v = prr(yt, p) if continuous else metric_values(yt, p).get("prr_at_0_5")
             if v is not None:
                 acc[k].append(v)
     for k, v in acc.items():
         out[k] = st.fmean(v)
-    out["n"] = len(ids); out["positives"] = sum(y.values())
+    out["n"] = len(ids); out["positives"] = (f"mean {st.fmean(y.values()):.2f}" if continuous else sum(y.values()))
     return out
 
 
@@ -207,12 +241,14 @@ def main() -> None:
     p.add_argument("--unified", action="store_true", help="score both models on F2P>0 among non-empty patches")
     p.add_argument("--finished-only", action="store_true", help="keep only episodes the agent submitted itself")
     p.add_argument("--drop-last", action="store_true", help="score the trajectory before its terminal command")
+    p.add_argument("--score", choices=["progress", "partial", "f2p"], default="progress",
+                   help="progress: binary F2P>0; partial: the verifier's native partial score (all passed / all tests); f2p: fraction of F2P tests passed; the last two without binarisation")
     a = p.parse_args()
     def read(path: Path, keep):
         return load_compact(path, keep, drop_last=a.drop_last) if path.suffix == ".jsonl" else load(path, keep)
 
     nonempty = (lambda r: r["size"] > 0 and r["critics"]["submitted"]) if a.finished_only else (lambda r: r["size"] > 0)  # noqa: E731
-    progress = lambda r: int(r["f2p"] > 0)  # noqa: E731
+    progress = {"partial": lambda r: r["partial"], "f2p": lambda r: float(r["f2p"]), "progress": lambda r: int(r["f2p"] > 0)}[a.score]
     if a.unified:
         # Both models scored on the same question: did a non-empty patch pass any F2P test?
         cols = {
@@ -230,6 +266,8 @@ def main() -> None:
     for k in order:
         print(f"{k:24s}" + "".join((f"{cols[c][k]:+24.3f}" if cols[c].get(k) is not None else f"{'NA':>24s}") for c in cols))
     print(f"{'tasks (positives)':24s}" + "".join(f"{str(cols[c]['n'])+' ('+str(cols[c]['positives'])+')':>24s}" for c in cols))
+    if a.score != "progress":
+        print(f"label: {a.score} score (continuous PRR; Bayes trained on a per-seed median split of the calibration half)")
 
 
 if __name__ == "__main__":
