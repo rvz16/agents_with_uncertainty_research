@@ -10,13 +10,11 @@ model is scored on the outcome its runs actually vary in:
   Qwen     "did the patch make any progress?"              (f2p > 0)
            among non-empty patches: 49 vs 11
 
-Critics are the DeepSWE analogues of ours: no format errors, submitted,
-ran tests, committed, no command repeated three times -- plus two about the
-task rather than the process, read from the agent's own (public) test runs:
-a test that failed and later passed, and a passing last test run. On gpt-oss
-those two have likelihood ratios near 2.5, but with ~9 positives per
-calibration half their fitted evidence is noisy (tool-only PRR +0.04 +- 0.31
-from them alone). Tool success rate is
+Critics are read from the agent's own test runs and commits (see
+load_compact): ran the test suite, ran it at least twice, last run passed, a
+run that failed then passed, committed at least twice, no format errors. The
+process critics we started with (submitted, committed, "ran tests" matched by
+the substring "test") were saturated in both classes and carried nothing. Tool success rate is
 the fraction of bash commands returning 0. MTE and verbalised confidence
 were not collected on DeepSWE and are reported as absent, not as zero.
 """
@@ -132,18 +130,30 @@ def load_compact(path: Path, keep, drop_last: bool = False) -> list[dict[str, An
             "f2p": rw.get("f2p_passed", 0) / max(rw.get("f2p_total", 1), 1),
             "p2p": rw.get("p2p_passed", 0) / max(rw.get("p2p_total", 1), 1),
             "partial": float(rw.get("partial", 0.0)),
+            "submitted": r["exit_status"] == "Submitted",
             "steps": lp, "entropies": ent or None,
             "verbalized_final": conf[-1] if conf else None,
             "verbalized_mean": st.fmean(conf) if conf else None,
             "tool_success": (sum(rcs) / len(rcs)) if rcs else 0.0,
+            # Critics about the task, not the process. The first set we used
+            # (no format errors, submitted, committed, "ran tests" by the
+            # substring "test", no repeated command) was saturated at ~100% in
+            # both classes: `ls tests/` counted as a test run, and the harness
+            # makes everyone commit and submit. What separates outcomes is
+            # whether the agent actually ran the test suite, how often, and
+            # whether it passed at the end (gpt-oss: 58%/20%, 47%/13%, 38%/9%
+            # between the upper and lower half by partial score), plus whether
+            # work was committed more than once. Note what these can and
+            # cannot see: the agent runs the repository's existing suite, the
+            # verifier's F2P tests are new, so these critics measure "kept the
+            # repository working" (P2P), not "built the feature".
             "critics": {
-                "no_format_errors": not any(s["format_error"] for s in steps),
-                "submitted": r["exit_status"] == "Submitted",
-                "ran_tests": any(("test" in c or "pytest" in c) for c in cmds),
-                "committed": any("git commit" in c for c in cmds),
-                "no_repeated_command": all(v < 3 for v in counts.values()) if counts else False,
-                "test_flipped": bool(flipped),
+                "ran_tests": len(test_rcs) > 0,
+                "ran_tests_twice": len(test_rcs) >= 2,
                 "last_test_passed": bool(test_rcs) and test_rcs[-1] == 0,
+                "test_flipped": bool(flipped),
+                "committed_twice": sum("git commit" in c for c in cmds) >= 2,
+                "no_format_errors": not any(s["format_error"] for s in steps),
             },
         }
         if keep(item):
@@ -247,7 +257,7 @@ def main() -> None:
     def read(path: Path, keep):
         return load_compact(path, keep, drop_last=a.drop_last) if path.suffix == ".jsonl" else load(path, keep)
 
-    nonempty = (lambda r: r["size"] > 0 and r["critics"]["submitted"]) if a.finished_only else (lambda r: r["size"] > 0)  # noqa: E731
+    nonempty = (lambda r: r["size"] > 0 and r["submitted"]) if a.finished_only else (lambda r: r["size"] > 0)  # noqa: E731
     progress = {"partial": lambda r: r["partial"], "f2p": lambda r: float(r["f2p"]), "progress": lambda r: int(r["f2p"] > 0)}[a.score]
     if a.unified:
         # Both models scored on the same question: did a non-empty patch pass any F2P test?

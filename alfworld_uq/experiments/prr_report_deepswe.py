@@ -27,7 +27,7 @@ SIGNALS = {
     "Perplexity": ("perplexity", True),
     "MTE": ("mean_entropy", True),
 }
-CRITICS = ("no_format_errors", "ran_tests", "committed", "no_repeated_command", "test_flipped", "last_test_passed")
+CRITICS = ("ran_tests", "ran_tests_twice", "last_test_passed", "test_flipped", "committed_twice", "no_format_errors")
 
 
 def load(path: Path) -> dict[str, dict]:
@@ -47,17 +47,18 @@ def load(path: Path) -> dict[str, dict]:
         first_fail = next((k for k, rc in enumerate(test_rcs) if rc != 0), None)
         flipped = first_fail is not None and any(rc == 0 for rc in test_rcs[first_fail:])
         # per-step critics: the process ones are per step, the test ones are per episode and repeated
-        rows = []; seen = {}
-        for s in steps:
-            c = s["command"] or ""; seen[c] = seen.get(c, 0) + 1
-            rows.append({
-                "no_format_errors": not s["format_error"],
-                "ran_tests": bool(_TEST_CMD.search(c)),
-                "committed": "git commit" in c,
-                "no_repeated_command": seen[c] < 3,
-                "test_flipped": bool(flipped),
-                "last_test_passed": bool(test_rcs) and test_rcs[-1] == 0,
-            })
+        # episode-level critics, repeated per step so the tempered posterior
+        # (an average over steps) equals the single-observation posterior
+        n_commits = sum("git commit" in c for c in cmds)
+        episode_critics = {
+            "ran_tests": len(test_rcs) > 0,
+            "ran_tests_twice": len(test_rcs) >= 2,
+            "last_test_passed": bool(test_rcs) and test_rcs[-1] == 0,
+            "test_flipped": bool(flipped),
+            "committed_twice": n_commits >= 2,
+            "no_format_errors": not any(s["format_error"] for s in steps),
+        }
+        rows = [dict(episode_critics) for _ in steps]
         rc0 = [s["returncode"] == 0 for s in steps if s["returncode"] is not None]
         episodes[r["id"]] = {
             "_key": r["id"], "label": 0, "score": float(rw.get("partial", 0.0)),
@@ -118,7 +119,7 @@ def main() -> None:
           "## Evaluation protocol", "",
           "Same protocol as the ALFWorld report: Sections 1–4 use 5-fold out-of-fold evaluation (`numpy.random.RandomState(0)`, fold *i* = `order[i::5]`, one PRR on the pooled predictions); Section 7 averages OOD over five source-train → target-test holdouts (seeds 0–4, all parameters fitted on a random half of the source).",
           "", "**Scores are continuous.** Neither model resolves a DeepSWE task outright (binary reward 0/113 for both), so PRR uses the verifier's native `partial` score (passed / all hidden tests, F2P + P2P) without binarisation, as the OSWorld/WebArena report does: the oracle ranks by the true score, the random reference is the mean score. Bayes and regression need a binary training label; every training fold is split at its own median score.",
-          "", "Cohort: 113 DeepSWE tasks, mini-swe-agent, 200-command budget, working-tree grading; **submitted-only** (the agent issued the submit command itself; context-window deaths and budget exhaustion excluded) and **pre-terminal** (scored before the submit command). Signals per command: Logprob = mean token log-probability of the generation, Perplexity = exp(−Logprob), MTE = mean token entropy (top-20). Verbalised confidence was requested in the system prompt and ignored by both models (Qwen 0/1806 commands, gpt-oss 49/6365), so no Verb rows. Tool critics per command: no format error, ran tests, committed, no command repeated ≥3×, and two episode-level test critics repeated per step: a test that failed then passed, last test run passed. Tool success rate = share of commands with return code 0. **Bayes tool-only** is the tempered critic posterior.",
+          "", "Cohort: 113 DeepSWE tasks, mini-swe-agent, 200-command budget, working-tree grading; **submitted-only** (the agent issued the submit command itself; context-window deaths and budget exhaustion excluded) and **pre-terminal** (scored before the submit command). Signals per command: Logprob = mean token log-probability of the generation, Perplexity = exp(−Logprob), MTE = mean token entropy (top-20). Verbalised confidence was requested in the system prompt and ignored by both models (Qwen 0/1806 commands, gpt-oss 49/6365), so no Verb rows. Tool critics are read from the agent's own test runs and commits: ran the test suite (`pytest`, `go test`, `npm test`, …), ran it at least twice, last run passed, a run that failed then passed, committed at least twice, no format errors. Our first critic set (submitted, committed, no repeated command, and \"ran tests\" matched by the substring `test`, which counts `ls tests/`) was saturated at ~100% in both classes and carried no signal; this is reported in the paper as a negative finding about critic design. What these critics can see: the agent runs the repository's existing suite, while the verifier's F2P tests are new, so they measure \"kept the repository working\" (P2P) rather than \"built the feature\". Tool success rate = share of commands with return code 0. **Bayes tool-only** is the critic posterior.",
           "", "**Two things that look like copy-paste errors and are not.** (1) Perplexity rows repeat the Logprob rows wherever the method is rank-based (raw `last`, and every binarised Bayes variant): on DeepSWE Perplexity is exp(−Logprob) per command, a monotone transform, and PRR only sees ranks; they differ only where the value enters a Gaussian (Continuous / Tempered / Last only) or a mean over steps. (2) UQ-only Continuous (λ=1) and Tempered (λ=0.25) coincide: λ rescales the summed evidence, which does not change the ranking; they separate only once fused with the tool posterior.",
           "", "**Headline.** All values are low (best Avg ≈ .24 in-domain, ≈ .30 OOD, against .5–.9 on ALFWorld): the label is partial credit rather than success, the outcome is largely a task property, and the environment offers no progress signal (process critics saturate, failing test runs are how work is done, so the tool success rate is *negative*). Within that, Bayes UQ + tools (Double) is top-1 for every signal in Section 2, the tempered/multiplied tool-only posterior beats the regression and every raw baseline in Sections 3–4, and the fused binary variants (LR+ / SEP) transfer between the two models with a drop of ≈ .05.",
           "", "### Cohorts and folds", ""]

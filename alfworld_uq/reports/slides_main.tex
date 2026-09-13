@@ -315,10 +315,10 @@ Perplexity (max)          & -.066 & -.022 & -.044 & .059 & -.132 & -.037\\
 MTE (max)                 & -.047 & .092 & .023 & \underline{.360} & -.081 & .140\\
 Verbalized UQ (final)     & \NA$^\P$ & \NA$^\P$ & & \NA$^\P$ & \NA$^\P$ & \\
 Tool success rate         & -.197 & -.102 & -.150 & -.134 & -.118 & -.126\\
-Bayes tool-only           & \g{.206} & .030 & .118 & .214 & .137 & .176\\
-Bayes UQ-only (cont.)     & .003 & .120 & .062 & .211 & .266 & \underline{.239}\\
-Bayes Fused (cont.)       & .165 & .126 & \underline{.146} & .237 & .216 & .227\\
-Bayes Fused (SEP)         & \underline{.198} & \underline{.158} & \g{.178} & .126 & \underline{.315} & .221\\
+Bayes tool-only           & \g{.322} & .148 & \underline{.235} & .275 & .196 & .236\\
+Bayes UQ-only (cont.)     & .003 & .120 & .062 & .211 & .266 & .239\\
+Bayes Fused (cont.)       & .241 & .177 & .209 & .246 & .227 & .237\\
+Bayes Fused (SEP)         & \underline{.275} & \underline{.200} & \g{.238} & .174 & \underline{.316} & \underline{.245}\\
 \midrule
 \textit{Length-only baseline} & \textit{.132} & \textit{-.136} & & \textit{-.183} & \textit{-.046} & \\
 \midrule
@@ -337,15 +337,18 @@ native scores are used: \emph{partial} = passed / all hidden tests (F2P + P2P, i
 ``did the patch keep the repository working''), and the fraction of F2P tests passed
 (``how much of the feature was built''; best single patch 76/78). Cohort as on ALFWorld:
 submitted episodes, scored before the terminal command; Bayes models are trained on a
-median split of the calibration half. Critics: no format errors, submitted, ran tests,
-committed, no command repeated $\ge3\times$, a test that failed then passed, last test passed.
+median split of the calibration half. Critics, from the agent's own test runs and commits:
+ran the test suite, ran it twice, last run passed, a run that failed then passed, committed
+twice, no format errors. Our first critic set (submitted, committed, no repeated command,
+``ran tests'' matched by the substring \texttt{test}) was saturated at 100\% in both
+classes and gave tool-only $\approx 0$.
 $^\P$Both models ignore a confidence instruction inside the tool-calling loop
 (Qwen 0/1806 commands, gpt-oss 49/6365).
-Reading: Bayes fusion is best at predicting whether the agent keeps the repository intact
-(the part its critics see); how much of the feature gets built is predicted better by raw
-log-probability; no method exceeds .42, versus .5--.9 on ALFWorld, because the environment
-gives no progress signal (process critics saturate, failing test runs are how work is done)
-and the outcome is largely a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$).
+Reading: critics see whether the agent tested and kept the repository working (the agent
+runs the existing suite; the verifier's F2P tests are new), so Bayes tool-only / fusion lead
+on the partial score while raw log-probability leads on the F2P fraction; nothing exceeds
+.42, versus .5--.9 on ALFWorld, because the outcome is largely a task property
+(P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$).
 \end{frame}
 
 \end{document}
