@@ -104,7 +104,7 @@
   #1
 }
 
-\newcommand{\NA}{\textemdash}
+\newcommand{\NA}{--}
 \newcommand{\avg}[2]{#1\,{\scriptsize(#2)}}
 \title{\textbf{Uncertainty Quantification for Agents}}
 \author{}
@@ -112,7 +112,7 @@
 
 \begin{document}
 
-\begin{frame}{UQ for agents --- setup}
+\begin{frame}{UQ for agents: setup}
 \small
 Estimate \textbf{trajectory success} from model uncertainty and tool feedback.
 
@@ -152,7 +152,7 @@ web search, math, computer use.
 \footnotesize
 $z_{t,i}$: critic $i$ at step $t$ (format valid, action admissible, no repeat,
 tool success, state changed). \textbf{Tempered}: evidence averaged over the $N$ steps,
-not multiplied --- one likelihood ratio per step saturates after a few steps and the
+not multiplied: one likelihood ratio per step saturates after a few steps and the
 ranking degenerates into a count of bad steps (i.e.\ length).
 \par\vspace{0.2em}
 \end{block}
@@ -179,7 +179,7 @@ $s$: UQ score; $j$: generation index. SEP: binarised $s_j$ at a fitted threshold
 $b_0$: prior. All parameters fitted on the calibration half only.
 \end{frame}
 
-\begin{frame}{ALFWorld + OSWorld-Verified --- results}
+\begin{frame}{ALFWorld + OSWorld-Verified: results}
 \vspace{-0.2em}
 \fontsize{7}{8.4}\selectfont
 \setlength{\tabcolsep}{2.5pt}
@@ -224,7 +224,7 @@ $^\ast$OSW-V: all-episode protocol, terminal step included; to be recomputed.
 Avg: mean over $n$ available setups.
 \end{frame}
 
-\begin{frame}{Logistic regression (main branch) vs.\ Bayes --- ALFWorld}
+\begin{frame}{Logistic regression (main branch) vs.\ Bayes, ALFWorld}
 \vspace{0.2em}
 \fontsize{7.5}{9}\selectfont
 \setlength{\tabcolsep}{2.7pt}
@@ -236,13 +236,13 @@ Avg: mean over $n$ available setups.
 \textbf{Method} & \textbf{Config} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{Avg}\\
 \midrule
 Logistic regression & selected  & .148  & \underline{.979} & .122 & .550 & .450\\
-Logistic regression & pinned ($C{=}0.03$) & -.186 & \g{.993} & .102 & \g{.565} & .368\\
+Logistic regression & pinned ($C{=}0.03$) & -.186 & \g{.993} & .102 & \underline{.565} & .368\\
 \midrule
-Bayes UQ + tools    & Logprob, last only & \g{.443} & .957 & \g{.575} & .147 & .531\\
+Bayes UQ + tools    & Logprob, last only & \g{.443} & .957 & \g{.575} & .147 & \underline{.531}\\
 Bayes UQ + tools    & Verb final, last only & .258 & .906 & .349 & .433 & .487\\
-Bayes tool-only     & step critics & .386 & .945 & \underline{.466} & .390 & \g{.547}\\
-Tool success rate   & --- & .343 & .867 & .467 & .444 & \underline{.530}\\
-Best raw UQ         & MTE, last & -.083 & .831 & .157 & \underline{.567} & .368\\
+Bayes tool-only     & step critics & \underline{.386} & .945 & .466 & .390 & \g{.547}\\
+Tool success rate   & (none) & .343 & .867 & \underline{.467} & .444 & .530\\
+Best raw UQ         & MTE, last & -.083 & .831 & .157 & \g{.567} & .368\\
 \bottomrule
 \end{tabularx}
 
@@ -251,16 +251,16 @@ Best raw UQ         & MTE, last & -.083 & .831 & .157 & \underline{.567} & .368\
 \textbf{Bold}: top-1, \underline{underline}: top-2 per column. PRR@0.5, 5-fold out-of-fold
 (episodes shuffled with seed 0, fold $i=$ \texttt{order[i::5]}, one PRR on the pooled
 predictions), finished-only cohorts, every method scored before the terminal step.\\
-Regression: \texttt{trajectory\_uq\_toolkit.regression} from \texttt{main}, unchanged ---
+Regression: \texttt{trajectory\_uq\_toolkit.regression} from \texttt{main}, unchanged:
 forward feature selection over all (signal, aggregation) columns of Logprob / Perplexity /
 MTE / Verb and the five step critics, L2 logistic fit; refitted inside every outer fold.
 It is given the same signals and the same critics as the Bayes rows and no length feature.\\
-Selected columns: smol/gpt-oss --- MTE last, Verb last (the refusal fingerprint);
-Qwen --- \texttt{state\_changed} + \texttt{sum\_logprob}; ReAct/gpt-oss --- nothing stable
+Selected columns: smol/gpt-oss: MTE last, Verb last (the refusal fingerprint);
+Qwen: \texttt{state\_changed} + \texttt{sum\_logprob}; ReAct/gpt-oss: nothing stable
 (80 training episodes vs.\ $\sim$200 candidate columns; the double selection gate passes little).
 \end{frame}
 
-\begin{frame}{OOD transfer on ALFWorld --- fit on one setup, score another}
+\begin{frame}{OOD transfer on ALFWorld: fit on one setup, score another}
 \vspace{0.2em}
 \fontsize{7.5}{9}\selectfont
 \setlength{\tabcolsep}{2.7pt}
@@ -269,12 +269,12 @@ Qwen --- \texttt{state\_changed} + \texttt{sum\_logprob}; ReAct/gpt-oss --- noth
 \toprule
 \textbf{Method} & \textbf{Mode} & \shortstack{\textbf{same model}\\\textbf{other agent}} & \shortstack{\textbf{other model}\\\textbf{other agent}} & \shortstack{\textbf{same agent}\\\textbf{other model}} & \textbf{Overall}\\
 \midrule
-Verb actions --- Bayes UQ + tools & Quantile & .468 & \g{.402} & .389 & \g{.419}\\
-MTE --- Bayes UQ + tools          & Quantile & .472 & \underline{.366} & \underline{.418} & \underline{.418}\\
-Perplexity --- Bayes UQ + tools   & Quantile & .371 & .334 & .349 & .351\\
-Verb final --- Bayes UQ + tools   & Last only & \g{.484} & .254 & .304 & .347\\
-Perplexity --- Bayes UQ + tools   & Last only & .373 & .182 & \g{.437} & .331\\
-MTE --- Bayes UQ + tools          & SEP & .385 & .225 & .319 & .310\\
+Verb actions, Bayes UQ + tools & Quantile & .468 & \g{.402} & .389 & \g{.419}\\
+MTE, Bayes UQ + tools          & Quantile & \underline{.472} & \underline{.366} & \underline{.418} & \underline{.418}\\
+Perplexity, Bayes UQ + tools   & Quantile & .371 & .334 & .349 & .351\\
+Verb final, Bayes UQ + tools   & Last only & \g{.484} & .254 & .304 & .347\\
+Perplexity, Bayes UQ + tools   & Last only & .373 & .182 & \g{.437} & .331\\
+MTE, Bayes UQ + tools          & SEP & .385 & .225 & .319 & .310\\
 \midrule
 Perplexity (raw)                  & last & .301 & .301 & .301 & .301\\
 Logistic regression               & pinned & .253 & .084 & .177 & .172\\
@@ -287,21 +287,21 @@ Verb final (raw)                  & final & .120 & .120 & .120 & .120\\
 \textbf{Bold}: top-1, \underline{underline}: top-2 per column. Four ALFWorld setups
 (ReAct / smolagents $\times$ gpt-oss-20b / Qwen3.6-35B), twelve directions grouped in
 three pairs of four; each cell is the mean over its directions of the mean PRR over five
-seeds. For every direction and seed \emph{all} parameters --- prior, critic likelihoods,
-UQ thresholds and Gaussians, regression columns and weights --- are fitted on a random
+seeds. For every direction and seed \emph{all} parameters (prior, critic likelihoods,
+UQ thresholds and Gaussians, regression columns and weights) are fitted on a random
 half of the source setup (the calibration size the in-domain protocol gets) and scored
 on the whole target. Raw baselines fit nothing, so their transfer equals their in-domain
 value. 37 methods in the full sweep; shown: top fused rows and references.\\
 What transfers: the tool posterior (environment critics) and binary UQ thresholds
-(Quantile) --- mean drop $\le .1$ vs.\ in-domain. What does not: continuous likelihoods
-across models --- gpt-oss and Qwen log-probabilities do not overlap (median mean-token
+(Quantile): mean drop $\le .1$ vs.\ in-domain. What does not: continuous likelihoods
+across models: gpt-oss and Qwen log-probabilities do not overlap (median mean-token
 logprob $-.38$ vs.\ $-.14$), so a Gaussian fitted on one classifies every step of the
 other as one class (Continuous / Tempered rows: $-.2$ to $.1$ overall). Regression
 transfers worst of the learned methods (.17, rank 27/37): its selected columns are
 setup-specific.
 \end{frame}
 
-\begin{frame}{DeepSWE (mini-swe-agent) --- a different question}
+\begin{frame}{DeepSWE (mini-swe-agent): a different question}
 \vspace{-0.2em}
 \fontsize{7}{8.4}\selectfont
 \setlength{\tabcolsep}{2.5pt}
@@ -338,7 +338,7 @@ $^\P$Both models ignore a confidence instruction inside the tool-calling loop
 (Qwen 0/1806 commands, gpt-oss 49/6365).
 Why weak: the label is progress, not success (Qwen: 9 negatives in 65); the outcome is largely
 a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$); the environment
-gives no progress signal --- process critics are saturated, failing test runs are how work is
+gives no progress signal: process critics are saturated, failing test runs are how work is
 done, and shell-command log-probabilities say little about the fix.
 \end{frame}
 
