@@ -179,30 +179,6 @@ $s$: UQ score; $j$: generation index. SEP: binarised $s_j$ at a fitted threshold
 $b_0$: prior. All parameters fitted on the calibration half only.
 \end{frame}
 
-\begin{frame}{Evaluation protocol --- what changed and why}
-\small
-\begin{itemize}\setlength\itemsep{4pt}
-  \item \textbf{Finished-only cohort.} Only episodes the agent ended itself
-        (success, \texttt{final\_answer}, \texttt{give up}); budget exhaustion and
-        external errors excluded. Otherwise ``failure $=$ ran out of steps'' and
-        episode length alone reaches PRR .95--.97 on ReAct.
-  \item \textbf{Pre-terminal scoring.} On a finished episode the last step reveals
-        the outcome: a success ends on the goal-satisfying action (state changed), a
-        failure on give-up / \texttt{final\_answer} (no environment action). Every
-        method is scored on the episode \emph{before} its last generation --- the
-        state a monitor would act on. Critics with that step: .85; without: .63.
-  \item \textbf{Same freedom for every method.} Each method (features and Bayes
-        alike) chooses its response segment (thought / action / reasoning / full)
-        and signal on the \emph{calibration} half, among cells that cover every
-        test episode; the test half is reported. Previously feature rows took the
-        best segment on the test half, and gpt-oss's ``thought'' segment exists
-        only on the 38/70 episodes where it wrote prose (5 successes).
-  \item \textbf{Agent-called judge.} \texttt{check\_progress} is a tool the agent may
-        call (independent reviewer model); no end-of-episode judge, which read the
-        transcript length (.949 $\rightarrow$ .569 on a 10-step prefix).
-\end{itemize}
-\end{frame}
-
 \begin{frame}{ALFWorld + OSWorld-Verified --- results}
 \footnotesize
 PRR@0.5~$\uparrow$. Central estimates. ALFWorld: 140 episodes per setup, 50-step budget.
