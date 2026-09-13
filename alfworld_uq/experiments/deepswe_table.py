@@ -101,11 +101,18 @@ def load(run: Path, keep) -> list[dict[str, Any]]:
     return rows
 
 
-def load_compact(path: Path, keep) -> list[dict[str, Any]]:
-    """Records written by deep_swe_uq/experiments/compact_jobs.py (top_logprobs runs)."""
+def load_compact(path: Path, keep, drop_last: bool = False) -> list[dict[str, Any]]:
+    """Records written by deep_swe_uq/experiments/compact_jobs.py (top_logprobs runs).
+
+    `drop_last` scores the trajectory before its terminal command, as the
+    ALFWorld tables do: on a submitted episode the last command is the submit
+    marker, on a context death it is whatever the model was doing.
+    """
     rows = []
     for line in open(path):
         r = json.loads(line); rw = r["rewards"]; steps = r["steps"]
+        if drop_last and len(steps) > 1:
+            steps = steps[:-1]
         lp = [s["mean_logprob"] for s in steps if s["mean_logprob"] is not None]
         if not rw or not lp:
             continue
@@ -198,11 +205,13 @@ def main() -> None:
     p.add_argument("--qwen", type=Path, required=True)
     p.add_argument("--seeds", type=int, default=20)
     p.add_argument("--unified", action="store_true", help="score both models on F2P>0 among non-empty patches")
+    p.add_argument("--finished-only", action="store_true", help="keep only episodes the agent submitted itself")
+    p.add_argument("--drop-last", action="store_true", help="score the trajectory before its terminal command")
     a = p.parse_args()
     def read(path: Path, keep):
-        return load_compact(path, keep) if path.suffix == ".jsonl" else load(path, keep)
+        return load_compact(path, keep, drop_last=a.drop_last) if path.suffix == ".jsonl" else load(path, keep)
 
-    nonempty = lambda r: r["size"] > 0  # noqa: E731
+    nonempty = (lambda r: r["size"] > 0 and r["critics"]["submitted"]) if a.finished_only else (lambda r: r["size"] > 0)  # noqa: E731
     progress = lambda r: int(r["f2p"] > 0)  # noqa: E731
     if a.unified:
         # Both models scored on the same question: did a non-empty patch pass any F2P test?
