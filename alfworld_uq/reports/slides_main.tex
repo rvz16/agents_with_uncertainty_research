@@ -180,13 +180,10 @@ $b_0$: prior. All parameters fitted on the calibration half only.
 \end{frame}
 
 \begin{frame}{ALFWorld + OSWorld-Verified --- results}
-\footnotesize
-PRR@0.5~$\uparrow$. Central estimates. ALFWorld: 140 episodes per setup, 50-step budget.
-
-\vspace{0.4em}
-\fontsize{7.5}{9}\selectfont
-\setlength{\tabcolsep}{2.7pt}
-\renewcommand{\arraystretch}{1.15}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.05}
 \begin{tabularx}{\linewidth}{@{}Yrrrrrr@{}}
 \toprule
 & \multicolumn{2}{c}{\shortstack{\textbf{ALFWorld}\\\textbf{gpt-oss-20b}}}
@@ -213,17 +210,18 @@ Bayes Fused (SEP, tempered)    & .320 & \g{.920} & \underline{.596} & .369 & \NA
 \bottomrule
 \end{tabularx}
 
-\vspace{0.4em}
-\scriptsize
-\textbf{Bold}: top-1. \underline{Underline}: top-2. SEP = binary UQ. Tempered = per-step
-evidence averaged, not multiplied; critics = format, admissibility, no-repeat, tool
-success, state changed. smol = smolagents. OSW = OSWorld.
-ALFWorld: finished-only cohort, scored before the terminal step, segment and signal
-chosen on the calibration half; PRR@0.5, means over 20 splits. Episodes (successes):
-ReAct/gpt-oss 99 (33), smol/gpt-oss 139 (43), ReAct/Qwen 75 (67), smol/Qwen 118 (104).\\
-$^\ddagger$ReAct with the give-up action. $^\S$Scored where the model stated a confidence.
-$^\ast$OSW-V values from the all-episode protocol, terminal step included; to be
-recomputed. Avg: equal-weight mean over $n$ available setups.
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5~$\uparrow$, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2.
+SEP = binary UQ. Tempered = per-step evidence averaged, not multiplied; critics = format,
+admissibility, no-repeat, tool success, state changed. smol = smolagents, OSW = OSWorld.
+ALFWorld: 140 episodes per setup, 50-step budget; finished-only cohort (agent ended the
+episode itself), scored before the terminal step, segment and signal chosen on the
+calibration half. Episodes (successes): ReAct/gpt-oss 99 (33), smol/gpt-oss 139 (43),
+ReAct/Qwen 75 (67), smol/Qwen 118 (104).
+$^\ddagger$ReAct with give-up. $^\S$Where the model stated a confidence.
+$^\ast$OSW-V: all-episode protocol, terminal step included; to be recomputed.
+Avg: mean over $n$ available setups.
 \end{frame}
 
 \begin{frame}{Logistic regression (main branch) vs.\ Bayes --- ALFWorld}
@@ -304,10 +302,10 @@ setup-specific.
 \end{frame}
 
 \begin{frame}{DeepSWE (mini-swe-agent) --- a different question}
-\vspace{0.2em}
-\fontsize{7.5}{9}\selectfont
-\setlength{\tabcolsep}{2.7pt}
-\renewcommand{\arraystretch}{1.15}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.05}
 \begin{tabularx}{\linewidth}{@{}Yrrr@{}}
 \toprule
 \textbf{Method} & \textbf{gpt-oss-20b} & \textbf{Qwen3.6-35B} & \textbf{Avg}\\
@@ -328,22 +326,20 @@ tasks (positives)         & 90 (24) & 65 (56) & \\
 \bottomrule
 \end{tabularx}
 
-\vspace{0.4em}
-\scriptsize
-\textbf{Bold}: top-1, \underline{underline}: top-2. 113 DeepSWE tasks, mini-swe-agent,
-200-command budget, working-tree grading. Neither model solves a task outright
-(0/113), so the label is \emph{any progress}: a non-empty patch that passes at least
-one F2P test. Cohort as on ALFWorld: episodes the agent submitted itself, scored
-before the terminal command; PRR@0.5, means over 20 splits. Critics: no format
-errors, submitted, ran tests, committed, no command repeated $\ge3\times$, a test
-that failed then passed, last test run passed.\\
-$^\P$Both models ignore a confidence instruction inside the tool-calling loop:
-Qwen 0 of 1806 commands, gpt-oss 49 of 6365 (almost all ``0'' before aborting).\\
-Why it is weak: the label is progress, not success (Qwen: 9 negatives in 65); the
-outcome is largely a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$
-vs.\ $.05$); the environment gives no progress signal --- process critics are saturated,
-failing test runs are how work is done (tool success is anti-correlated), and the
-log-probabilities of shell commands say little about the fix.
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2.
+113 DeepSWE tasks, 200-command budget, working-tree grading. Neither model solves a task
+outright (0/113), so the label is \emph{any progress}: a non-empty patch passing at least one
+F2P test. Cohort as on ALFWorld: submitted episodes, scored before the terminal command.
+Critics: no format errors, submitted, ran tests, committed, no command repeated $\ge3\times$,
+a test that failed then passed, last test run passed.
+$^\P$Both models ignore a confidence instruction inside the tool-calling loop
+(Qwen 0/1806 commands, gpt-oss 49/6365).
+Why weak: the label is progress, not success (Qwen: 9 negatives in 65); the outcome is largely
+a task property (P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$); the environment
+gives no progress signal --- process critics are saturated, failing test runs are how work is
+done, and shell-command log-probabilities say little about the fix.
 \end{frame}
 
 \end{document}
