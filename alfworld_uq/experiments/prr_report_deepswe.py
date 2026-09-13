@@ -136,6 +136,11 @@ def main() -> None:
     ref = base.reference_rows(cohorts)
     ref = {k: v for k, v in ref.items() if not k[0].startswith("Verb")}
     ref[("Tool success rate", "share of commands with return code 0")] = ref.pop(("Tool success rate", "mean of step tool critics"))
+    # the critics are episode-level and repeated per step: multiplying them N
+    # times would smuggle the step count in; only the single-observation
+    # (tempered) posterior is meaningful here
+    ref.pop(("Bayes tool-only", "step critics, multiplied"), None)
+    ref[("Bayes tool-only", "episode critics")] = ref.pop(("Bayes tool-only", "step critics, tempered"))
     md += ["## 3. Reference methods", "", base.table(ref, cols), "", "N steps uses −N (shorter ranks higher); N counts commands before the submit.", ""]
     if a.toolkit:
         reg, _ = base.regression_rows(cohorts, a.toolkit)

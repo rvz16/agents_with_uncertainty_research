@@ -98,10 +98,9 @@ Five variants per signal, as in the ALFWorld report. UQ + tools starts from the 
 
 | Rank | Method | Aggregation | gpt-oss-20b | Qwen3.6-35B | Avg |
 |---:|---|---|---:|---:|---:|
-| 3 | N steps | −N | 0.1613 | -0.1058 | 0.0278 |
-| 2 | Bayes tool-only | step critics, tempered | 0.0974 | 0.1717 | 0.1346 |
-| 1 | Bayes tool-only | step critics, multiplied | 0.3342 | 0.1197 | **0.2270** |
-| 4 | Tool success rate | share of commands with return code 0 | -0.1834 | -0.1288 | -0.1561 |
+| 2 | N steps | −N | 0.1613 | -0.1058 | 0.0278 |
+| 3 | Tool success rate | share of commands with return code 0 | -0.1834 | -0.1288 | -0.1561 |
+| 1 | Bayes tool-only | episode critics | 0.0974 | 0.1717 | **0.1346** |
 
 N steps uses −N (shorter ranks higher); N counts commands before the submit.
 
