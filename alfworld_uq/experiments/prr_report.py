@@ -222,10 +222,11 @@ def regression_rows(cohorts, toolkit: str):
     for name, settings in REGRESSION_CONFIGURATIONS.items():
         vals = []
         for eps in cohorts.values():
-            recs = {id(e): record(i, e) for i, e in eps.items()}
+            key = lambda e: e.get("_key") or id(e)  # noqa: E731  (copies carry _key)
+            recs = {key(e): record(i, e) for i, e in eps.items()}
             def fn(train, test, settings=settings):
-                model = TrajectoryRegression.fit([recs[id(e)] for e in train], [e["label"] for e in train], seed=0, **settings)
-                return model.predict([recs[id(e)] for e in test])  # in test order
+                model = TrajectoryRegression.fit([recs[key(e)] for e in train], [e["label"] for e in train], seed=0, **settings)
+                return model.predict([recs[key(e)] for e in test])  # in test order
             vals.append(oof(eps, fn))
         rows[("Logistic regression", name)] = vals
     return rows, REGRESSION_CONFIGURATIONS
