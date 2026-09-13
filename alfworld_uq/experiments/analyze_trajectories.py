@@ -897,6 +897,21 @@ def main() -> None:
                         probabilities=predictions,
                     )
                 )
+                # The same model on its own calibration half, so that a
+                # choice among segments or signals can be made without
+                # looking at the test half.
+                metric_rows.append(
+                    _metric_row(
+                        target=target,
+                        method=method,
+                        model=model_name,
+                        labels=[labels[i] for i in train_ids],
+                        probabilities=model.predict(
+                            [float(aggregated[i][aggregation]) for i in train_ids]
+                        ),
+                        split="calibration",
+                    )
+                )
                 risk_rows.extend(
                     _risk_coverage(
                         outcomes,
@@ -983,6 +998,7 @@ def main() -> None:
             )
 
             outcomes = [labels[i] for i in test_available]
+            calibration_outcomes = [labels[i] for i in calibration_available]
             for model_name, model in bayes_models.items():
                 predictions = [model.predict(sequences[i]) for i in test_available]
                 metric_rows.append(
@@ -992,6 +1008,16 @@ def main() -> None:
                         model=model_name,
                         labels=outcomes,
                         probabilities=predictions,
+                    )
+                )
+                metric_rows.append(
+                    _metric_row(
+                        target=target,
+                        method=method,
+                        model=model_name,
+                        labels=calibration_outcomes,
+                        probabilities=[model.predict(sequences[i]) for i in calibration_available],
+                        split="calibration",
                     )
                 )
                 risk_rows.extend(
@@ -1012,6 +1038,16 @@ def main() -> None:
                     model="bayes_state",
                     labels=outcomes,
                     probabilities=base_predictions,
+                )
+            )
+            metric_rows.append(
+                _metric_row(
+                    target=target,
+                    method=method,
+                    model="bayes_state",
+                    labels=calibration_outcomes,
+                    probabilities=[bayes_states[i] for i in calibration_available],
+                    split="calibration",
                 )
             )
             risk_rows.extend(
@@ -1067,6 +1103,19 @@ def main() -> None:
                         model=fused_name,
                         labels=outcomes,
                         probabilities=predictions,
+                    )
+                )
+                metric_rows.append(
+                    _metric_row(
+                        target=target,
+                        method=method,
+                        model=fused_name,
+                        labels=calibration_outcomes,
+                        probabilities=[
+                            _predict_from_belief(model, sequences[i], bayes_states[i])
+                            for i in calibration_available
+                        ],
+                        split="calibration",
                     )
                 )
                 risk_rows.extend(
