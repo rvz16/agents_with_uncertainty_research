@@ -263,7 +263,7 @@ common_args=(
   --output-dir "${RUN_ROOT}"
   --top-logprobs "${TOP_LOGPROBS}"
   --context-limit "${MAX_MODEL_LEN}"
-  $([ -n "${REASONING_EFFORT}" ] && echo "--reasoning-effort ${REASONING_EFFORT}")
+  $([ -n "${REASONING_EFFORT}" ] && echo "--reasoning-effort ${REASONING_EFFORT}" || true)
   --overwrite
 )
 if [ -n "${JUDGE_SERVE_MODEL}" ] && [ "${JUDGE_TOOL_BUDGET}" != "0" ]; then
