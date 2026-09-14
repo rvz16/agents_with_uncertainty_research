@@ -260,12 +260,14 @@ fi
 if [ -n "${REPLAY_TASK_ID:-}" ]; then
   echo "=== replay: verbalised confidence side queries for ${REPLAY_RUN} ==="
   python -m pip install --no-cache-dir openai clearml >/dev/null 2>&1 || true
-  ZIP=$(python - <<PY
+  # the SDK logs its cache housekeeping to stdout; only the last line is the path
+  ZIP=$(python - <<PY 2>/dev/null | tail -n 1
 from clearml import Task
 t = Task.get_task(task_id="${REPLAY_TASK_ID}")
 print(t.artifacts["run_root"].get_local_copy(extract_archive=False))
 PY
 )
+  [ -f "${ZIP}" ] || { echo "[replay] VERDICT: archive not found: ${ZIP}"; exit 30; }
   echo "[replay] archive: ${ZIP} ($(du -h "${ZIP}" | cut -f1))"
   mkdir -p "${SHARED}/jobs"
   python deep_swe_uq/experiments/verb_replay.py --jobs "${ZIP}" --run "${REPLAY_RUN}" \
