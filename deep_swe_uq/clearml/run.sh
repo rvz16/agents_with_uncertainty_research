@@ -11,8 +11,12 @@ echo "=== [0/6] is the card ours and empty? ==="
 # tail that never names the cause (two runs on aiagent01:gpu0 did exactly that).
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv,noheader 2>/dev/null | sed 's/^/[gpu] /'
-  if nvidia-smi -L 2>/dev/null | grep -q "MIG"; then
-    echo "[run] VERDICT: MIG-sliced card, vLLM cannot use it"; exit 25
+  # aiagent01:gpu0: MIG mode enabled with no MIG device configured -- nvidia-smi
+  # shows a healthy empty A100, CUDA reports "No CUDA GPUs are available"
+  MIG_ALL=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader 2>/dev/null || true)
+  MIG_MODE=$(printf '%s' "${MIG_ALL%%$'\n'*}" | tr -d ' ')
+  if [ "${MIG_MODE}" = "Enabled" ]; then
+    echo "[run] VERDICT: MIG mode enabled on this card (devices: $(nvidia-smi -L 2>/dev/null | grep -c MIG)); vLLM cannot use it"; exit 25
   fi
   USED_MB=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d ' ')
   if [ -n "${USED_MB}" ] && [ "${USED_MB}" -gt 20000 ]; then
