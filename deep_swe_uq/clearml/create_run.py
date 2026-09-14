@@ -66,6 +66,11 @@ def main() -> None:
                         "outlived its 10-hour timeout with no limit")
     p.add_argument("--verbalized", action="store_true",
                    help="ask for a 0-100 confidence with every bash call, as ALFWorld asks per step")
+    p.add_argument("--replay-task-id", default=None,
+                   help="replay mode: ask a confidence side question after every step of this "
+                        "finished task's trajectories instead of running the agent")
+    p.add_argument("--replay-run", default=None, help="run directory inside that task's archive")
+    p.add_argument("--replay-reasoning", default=None, help="reasoning_effort for the side query (gpt-oss: low)")
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
     p.add_argument("--tool-call-parser", default=None,
                    help="vLLM parser for tool_choice=auto, which mini-swe-agent "
@@ -118,6 +123,9 @@ def main() -> None:
         "Args/STEP_LIMIT": str(a.step_limit),
         "Args/COMMIT_WORKING_TREE": "1",
         "Args/VERBALIZED": "1" if a.verbalized else "0",
+        "Args/REPLAY_TASK_ID": a.replay_task_id or "",
+        "Args/REPLAY_RUN": a.replay_run or "",
+        "Args/REPLAY_REASONING": a.replay_reasoning or "",
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",
     })

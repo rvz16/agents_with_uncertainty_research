@@ -254,6 +254,28 @@ if [ "${SERVED}" != "${SERVE_MODEL}" ]; then
   exit 26
 fi
 
+# Replay mode: no agent run. Take a finished run's archive, ask the served
+# model a confidence side question after every step, save one jsonl. Same
+# server flags as the real run, so the model and parsers match.
+if [ -n "${REPLAY_TASK_ID:-}" ]; then
+  echo "=== replay: verbalised confidence side queries for ${REPLAY_RUN} ==="
+  python -m pip install --no-cache-dir openai clearml >/dev/null 2>&1 || true
+  ZIP=$(python - <<PY
+from clearml import Task
+t = Task.get_task(task_id="${REPLAY_TASK_ID}")
+print(t.artifacts["run_root"].get_local_copy(extract_archive=False))
+PY
+)
+  echo "[replay] archive: ${ZIP} ($(du -h "${ZIP}" | cut -f1))"
+  mkdir -p "${SHARED}/jobs"
+  python deep_swe_uq/experiments/verb_replay.py --jobs "${ZIP}" --run "${REPLAY_RUN}" \
+    --base-url "${BASE_URL}" --model "${SERVE_MODEL}" --workers "${N_CONCURRENT:-8}" \
+    --out "${SHARED}/jobs/verb_${REPLAY_RUN}.jsonl" ${REPLAY_REASONING:+--reasoning-effort "${REPLAY_REASONING}"}
+  rc=$?
+  echo "[replay] rc=${rc}; $(wc -l < "${SHARED}/jobs/verb_${REPLAY_RUN}.jsonl") rows"
+  exit ${rc}
+fi
+
 echo "=== [6/7] which litellm entry point returns logprobs? ==="
 # The agent's own config showed {"drop_params": true, "logprobs": true}: litellm
 # silently drops parameters it believes the provider does not support, and a

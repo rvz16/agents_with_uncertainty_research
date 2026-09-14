@@ -33,6 +33,14 @@ def head_entropy(top: list[dict[str, Any]]) -> float | None:
     return float(-sum((p / mass) * math.log(p / mass) for p in probs if p > 0))
 
 
+def self_certainty(top: list[dict[str, Any]]) -> float | None:
+    """-mean(log p_j) - log k on the raw top-k (lm-polygraph / OSWorld tables)."""
+    vals = [float(t["logprob"]) for t in top or [] if t.get("logprob") is not None and math.isfinite(float(t["logprob"]))]
+    if len(vals) < 2:
+        return None
+    return float(-sum(vals) / len(vals) - math.log(len(vals)))
+
+
 def compact(tr: dict[str, Any]) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
     pending: dict[str, Any] | None = None
@@ -44,6 +52,7 @@ def compact(tr: dict[str, Any]) -> dict[str, Any]:
             content = ((choice.get("logprobs") or {}).get("content")) or []
             lps = [float(t["logprob"]) for t in content if t.get("logprob") is not None]
             ents = [e for e in (head_entropy(t.get("top_logprobs")) for t in content) if e is not None]
+            certs = [c for c in (self_certainty(t.get("top_logprobs")) for t in content) if c is not None]
             cmd = conf = None
             for tc in (choice.get("message") or {}).get("tool_calls") or []:
                 try:
@@ -63,6 +72,7 @@ def compact(tr: dict[str, Any]) -> dict[str, Any]:
                 "min_logprob": min(lps) if lps else None,
                 "mean_entropy": st.fmean(ents) if ents else None,
                 "max_entropy": max(ents) if ents else None,
+                "self_certainty": st.fmean(certs) if certs else None,
                 "command": cmd,
                 "confidence": conf,
                 "returncode": None,
