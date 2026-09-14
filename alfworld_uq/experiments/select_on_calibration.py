@@ -37,6 +37,7 @@ ROWS = {
     "Bayes UQ-only (cont.)": (("continuous_bayes",), UQ_SIGNALS),
     "Bayes Fused (cont.)": (("bayes_state_plus_continuous",), UQ_SIGNALS),
     "Bayes Fused (SEP)": (("bayes_state_plus_sep",), UQ_SIGNALS),
+    "Bayes tool-only (step, multiplied)": (("stepwise_bayes_state",), UQ_SIGNALS),
     "Bayes tool-only (tempered)": (("stepwise_bayes_state_tempered",), UQ_SIGNALS),
     "Bayes Fused (cont., tempered)": (("stepwise_tempered_plus_continuous",), UQ_SIGNALS),
     "Bayes Fused (SEP, tempered)": (("stepwise_tempered_plus_sep",), UQ_SIGNALS),
@@ -68,9 +69,13 @@ def cell(run: Path, models, methods, full_coverage: bool = True) -> tuple[float 
             if r["split"] == "test":
                 n_of[key] = int(r["n"])
         usable = [k for k in cal if k in test and (not full_coverage or n_of[k] == n_full)]
+        if not usable and not cal:
+            # models with no calibration rows (the critic-only posteriors, which
+            # do not depend on the segment or signal): every cell is the same
+            usable = [k for k in test if not full_coverage or n_of[k] == n_full]
         if not usable:
             continue
-        best = max(usable, key=lambda k: cal[k])
+        best = max(usable, key=lambda k: cal.get(k, 0.0))
         per_seed.append(test[best]); chosen[f"{best[0]}/{best[1]}"] += 1
     return (st.fmean(per_seed) if per_seed else None), dict(chosen)
 

@@ -202,9 +202,10 @@ Bayes UQ-only (cont.)          & .189 & .658 & .135 & .011 & \underline{.690} & 
 Bayes Fused (cont.)            & .397 & .747 & .091 & .233 & \g{.695} & \avg{.433}{5}\\
 Bayes Fused (SEP)              & \g{.464} & .690 & .138 & .233 & .559 & \avg{.417}{5}\\
 \midrule
-Bayes tool-only (tempered)     & .391 & \underline{.903} & \g{.679} & \g{.542} & \NA & \avg{\g{.629}}{4}\\
-Bayes Fused (cont., tempered)  & .247 & .883 & .540 & \underline{.423} & \NA & \avg{.523}{4}\\
-Bayes Fused (SEP, tempered)    & .320 & \g{.920} & \underline{.596} & .369 & \NA & \avg{\underline{.551}}{4}\\
+Bayes tool-only (step, multiplied)& .439 & \g{.936} & \underline{.605} & \underline{.475} & \NA & \avg{\underline{.614}}{4}\\
+Bayes tool-only (tempered)     & .391 & .903 & \g{.679} & \g{.542} & \NA & \avg{\g{.629}}{4}\\
+Bayes Fused (cont., tempered)  & .247 & .883 & .540 & .423 & \NA & \avg{.523}{4}\\
+Bayes Fused (SEP, tempered)    & .320 & \underline{.920} & .596 & .369 & \NA & \avg{.551}{4}\\
 \midrule
 \textit{Length-only baseline} & \textit{.561} & \textit{.728} & \textit{.234} & \textit{-.036} & \NA & \\
 \bottomrule
@@ -213,8 +214,7 @@ Bayes Fused (SEP, tempered)    & .320 & \g{.920} & \underline{.596} & .369 & \NA
 \vspace{0.25em}
 \fontsize{6}{7}\selectfont
 PRR@0.5~$\uparrow$, means over 20 splits. \textbf{Bold}: top-1, \underline{underline}: top-2
-(the length-only baseline is a leak diagnostic and is not ranked). SEP = binary UQ. Tempered = per-step evidence averaged, not multiplied; critics = format,
-admissibility, no-repeat, tool success, state changed. smol = smolagents, OSW = OSWorld.
+(the length-only baseline is a leak diagnostic and is not ranked). SEP = binary UQ. Bayes tool-only = episode critics (all formats valid, all actions admissible, no repeat), one update; step critics = format, admissibility, no-repeat, tool success, state changed on every step, multiplied (summed log-LR) or tempered (averaged over the $N$ steps). smol = smolagents, OSW = OSWorld.
 ALFWorld: 140 episodes per setup, 50-step budget; finished-only cohort (agent ended the
 episode itself), scored before the terminal step, segment and signal chosen on the
 calibration half. Episodes (successes): ReAct/gpt-oss 99 (33), smol/gpt-oss 139 (43),
@@ -350,6 +350,258 @@ runs the existing suite; the verifier's F2P tests are new), so Bayes tool-only /
 on the partial score while raw log-probability leads on the F2P fraction; nothing exceeds
 .42, versus .5--.9 on ALFWorld, because the outcome is largely a task property
 (P(gpt-oss progresses $\mid$ Qwen does) $=.32$ vs.\ $.05$).
+\end{frame}
+
+
+%%% askutsakov %%%
+
+
+\begin{frame}{LiveCodeBench-hard: PRR@0.5 over 20 splits, all episodes}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{\textbf{oss-120b}} & \multicolumn{2}{c}{\textbf{oss-20b}} & \multicolumn{2}{c}{\textbf{Qwen3.6 (th)}} & \multicolumn{2}{c}{\textbf{Qwen3.6 (nt)}} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+\textbf{Method} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{Avg (n)}\\
+\midrule
+Logprob (mean) & .344 & .399 & .523 & \g{.498} & .368 & .313 & .482 & .504 & \avg{.429}{8}\\
+MTE (max) & .046 & .129 & .133 & .207 & .050 & .066 & .262 & .507 & \avg{.175}{8}\\
+Verbalized (final)$^\S$ & .026 & -.028 & .334 & .445 & .087 & .134 & .340 & .394 & \avg{.216}{8}\\
+Tool success rate & \underline{.471} & .404 & .473 & .208 & .292 & .272 & .641 & .762 & \avg{.440}{8}\\
+Bayes tool-only & .462 & \underline{.425} & .456 & .274 & .361 & .329 & .858 & \underline{.897} & \avg{.508}{8}\\
+Bayes UQ-only (cont.) & .241 & .305 & .368 & .374 & .294 & .210 & .593 & .680 & \avg{.383}{8}\\
+Bayes Fused (cont.) & .417 & .401 & .458 & .423 & .401 & .354 & .835 & .883 & \avg{.521}{8}\\
+Bayes Fused (SEP) & .427 & .415 & .464 & .439 & .410 & .354 & .845 & .895 & \avg{.531}{8}\\
+\midrule
+Bayes tool-only (temp.) & \g{.478} & .416 & .493 & .260 & .369 & .329 & .836 & .886 & \avg{.508}{8}\\
+Bayes Fused (SEP, temp.) & .452 & .410 & \underline{.528} & \underline{.469} & \underline{.414} & .352 & .835 & .872 & \avg{\underline{.542}}{8}\\
+\midrule
+LogReg (standard, selected) & .430 & .402 & .508 & .408 & .384 & \underline{.426} & \underline{.874} & .882 & \avg{.539}{8}\\
+LogReg, pinned ($C{=}0.03$) & .432 & \g{.435} & \g{.539} & .443 & \g{.426} & \g{.459} & \g{.881} & \g{.899} & \avg{\g{.564}}{8}\\
+\midrule
+\textit{Length-only baseline} & \textit{.158} & \textit{.270} & \textit{.249} & \textit{-.014} & \textit{.350} & \textit{.332} & \textit{.747} & \textit{.859} & \avg{.369}{8}\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5~$\uparrow$, mean over 20 random 50/50 calibration/test splits; \textbf{bold} top-1,
+\underline{underline} top-2 per column; length-only (step count, Platt) is a leak diagnostic, not ranked.
+Critics here are checks of the current candidate that the agent calls as actions (L0 syntax, L1 lint,
+L2 public tests, L3 judge = the served model), one verdict set per generation -- not the deck's
+per-step process critics. Tempered = evidence averaged, not multiplied. Verbalized is \emph{post hoc}.
+Agent-finished cohort (1890/2781 episodes: no cap, no controller stop), average over the same columns: Logprob .241, Bayes Fused (SEP) .196, Bayes tool-only .166, LogReg standard .167, LogReg pinned .182.
+Episodes (successes): ReAct/oss-120b 350 (177), smol/oss-120b 350 (208), ReAct/oss-20b 334 (155), smol/oss-20b 350 (166), ReAct/Qwen3.6~think 350 (225), smol/Qwen3.6~think 350 (226), ReAct/Qwen3.6~nt 347 (152), smol/Qwen3.6~nt 350 (122).
+\end{frame}
+
+\begin{frame}{BigCodeBench-hard: PRR@0.5 over 20 splits, all episodes}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{\textbf{oss-120b}} & \multicolumn{2}{c}{\textbf{oss-20b}} & \multicolumn{2}{c}{\textbf{Qwen3.6 (th)}} & \multicolumn{2}{c}{\textbf{Qwen3.6 (nt)}} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+\textbf{Method} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{ReAct} & \textbf{smol} & \textbf{Avg (n)}\\
+\midrule
+Logprob (mean) & .461 & .466 & .349 & .418 & .314 & .299 & -.080 & -.017 & \avg{.276}{8}\\
+MTE (max) & .439 & .565 & .337 & .270 & .395 & .427 & .062 & .108 & \avg{.325}{8}\\
+Verbalized (final)$^\S$ & .493 & .154 & .298 & .002 & .334 & .398 & .239 & .307 & \avg{.278}{8}\\
+Tool success rate & \g{.711} & \g{.640} & .343 & .216 & .355 & .446 & .426 & .420 & \avg{.445}{8}\\
+Bayes tool-only & \underline{.605} & \underline{.589} & \g{.365} & \underline{.451} & .416 & \g{.459} & .434 & .536 & \avg{\underline{.482}}{8}\\
+Bayes UQ-only (cont.) & .351 & .408 & .176 & .039 & .347 & .305 & .302 & .445 & \avg{.297}{8}\\
+Bayes Fused (cont.) & .532 & .530 & .265 & .362 & \g{.488} & .434 & .439 & \g{.623} & \avg{.459}{8}\\
+Bayes Fused (SEP) & .586 & .568 & .266 & .394 & .425 & .353 & .451 & \underline{.575} & \avg{.452}{8}\\
+\midrule
+Bayes tool-only (temp.) & .605 & .573 & \underline{.353} & \g{.455} & \underline{.465} & \underline{.458} & \underline{.468} & .532 & \avg{\g{.489}}{8}\\
+Bayes Fused (SEP, temp.) & .558 & .555 & .220 & .365 & .425 & .332 & \g{.474} & .530 & \avg{.432}{8}\\
+\midrule
+LogReg (standard, selected) & .294 & .314 & .181 & .095 & .220 & .132 & .328 & .262 & \avg{.228}{8}\\
+LogReg, pinned ($C{=}0.03$) & .426 & .377 & .214 & .115 & .309 & .149 & .313 & .286 & \avg{.274}{8}\\
+\midrule
+\textit{Length-only baseline} & \textit{.487} & \textit{.562} & \textit{.026} & \textit{-.028} & \textit{.538} & \textit{.286} & \textit{.430} & \textit{.458} & \avg{.345}{8}\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5~$\uparrow$, mean over 20 random 50/50 calibration/test splits; \textbf{bold} top-1,
+\underline{underline} top-2 per column; length-only (step count, Platt) is a leak diagnostic, not ranked.
+Critics here are checks of the current candidate that the agent calls as actions (L0 syntax, L1 lint,
+L2 public tests, L3 judge = the served model), one verdict set per generation -- not the deck's
+per-step process critics. Tempered = evidence averaged, not multiplied. Verbalized is \emph{post hoc}.
+Agent-finished cohort (595/945 episodes: no cap, no controller stop), average over the same columns: Logprob .233, Bayes Fused (SEP) .138, Bayes tool-only .171, LogReg standard .021, LogReg pinned .024.
+On some splits the fit selects nothing and scores a constant (PRR .000, averaged in as such): LogReg (standard, selected), LogReg, pinned ($C{=}0.03$).
+Episodes (successes): ReAct/oss-120b 119 (44), smol/oss-120b 117 (49), ReAct/oss-20b 117 (49), smol/oss-20b 117 (45), ReAct/Qwen3.6~think 119 (43), smol/Qwen3.6~think 119 (44), ReAct/Qwen3.6~nt 118 (49), smol/Qwen3.6~nt 119 (46).
+\end{frame}
+
+\begin{frame}{OOD transfer: fit on one setup, score another}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrr@{}}
+\toprule
+ & \multicolumn{3}{c}{\textbf{LiveCodeBench-hard}} & \multicolumn{3}{c}{\textbf{BigCodeBench-hard}}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+\textbf{Method} & \shortstack{same model\\other agent} & \shortstack{other model\\other agent} & \shortstack{same agent\\other model} & \shortstack{same model\\other agent} & \shortstack{other model\\other agent} & \shortstack{same agent\\other model}\\
+\midrule
+Logprob (mean) & .368 & .368 & .368 & .411 & .411 & .411\\
+MTE (max) & .061 & .061 & .061 & .469 & .469 & .469\\
+Verbalized (final)$^\S$ & .093 & .093 & .093 & .299 & .299 & .299\\
+Bayes tool-only & .416 & \underline{.416} & .406 & .545 & \g{.536} & \underline{.528}\\
+Bayes UQ-only (cont.) & .323 & .033 & .032 & .408 & .001 & .033\\
+Bayes Fused (cont.) & .436 & .249 & .241 & .527 & .365 & .358\\
+Bayes Fused (SEP) & .428 & .409 & .397 & \g{.559} & .491 & .499\\
+\midrule
+Bayes tool-only (temp.) & .418 & \g{.420} & \g{.412} & \underline{.557} & \underline{.534} & \g{.529}\\
+Bayes Fused (SEP, temp.) & \underline{.440} & .414 & \underline{.409} & .553 & .525 & .514\\
+\midrule
+LogReg (standard, selected) & .414 & .362 & .359 & .324 & .297 & .265\\
+LogReg, pinned ($C{=}0.03$) & \g{.461} & .394 & .381 & .396 & .300 & .227\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5, 12 directions per benchmark over 4 setups (gpt-oss-120b, Qwen3.6 think $\times$
+ReAct, smol); per direction and seed every parameter is fitted on a random half of the
+source and scored on the whole target, 5 seeds; a cell is the mean over the directions of
+its group. \textbf{Bold}: top-1, \underline{underline}: top-2 per column.
+Reading: LiveCodeBench-hard: best overall Bayes Fused (SEP, tempered) (.421); BigCodeBench-hard: best overall Bayes tool-only (tempered) (.540).
+\end{frame}
+
+\begin{frame}{PRR on RAG, real-world tasks, etc.}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrrrrr@{}}
+\toprule
+& \multicolumn{3}{c}{\textbf{RAG}} & \multicolumn{2}{c}{\textbf{Code}} & \multicolumn{3}{c}{\textbf{Long-horizon}} & \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-9}
+\textbf{Method} & \textbf{Hotpot} & \textbf{MuSiQue} & \textbf{CRAG} & \textbf{HEF} & \textbf{LCB} & \textbf{ALFW} & \textbf{$\tau^2$} & \textbf{$\tau^3$} & \textbf{Avg (n)}\\
+\midrule
+Logprob (last) & .031 & .072 & .359 & $-$.040 & $-$.117 & .112 & .068 & .133 & \avg{.077}{8}\\
+Perplexity (last) & .031 & .048 & .361 & $-$.046 & $-$.121 & .119 & .069 & .136 & \avg{.075}{8}\\
+MTE (last) & .075 & .151 & \underline{.367} & .111 & \underline{$-$.020} & \NA & .109 & .112 & \avg{.129}{7}\\
+Self-certainty (mean) & .060 & .128 & .178 & \underline{.178} & $-$.170 & \NA & \NA & \NA & \avg{.075}{5}\\
+Verbalized UQ (mean)$^\S$ & \g{.446} & \underline{.343} & .277 & \NA & \NA & \NA & \NA & \NA & \avg{.356}{3}\\
+Tool success rate & .129 & .242 & $-$.046 & $-$.181 & $-$.083 & $-$.006 & .102 & .098 & \avg{.032}{8}\\
+\midrule
+Bayes tool-only & .142 & .232 & .030 & $-$.108 & $-$.127 & $-$.003 & \underline{.155} & .265 & \avg{.073}{8}\\
+Bayes UQ-only (cont.) & .132 & .181 & .222 & \g{.200} & $-$.134 & \underline{.444} & .085 & .232 & \avg{.170}{8}\\
+Bayes UQ-only (SEP) & .084 & .225 & .283 & .088 & $-$.116 & .265 & .017 & .235 & \avg{.135}{8}\\
+Bayes Fused (cont.) & \underline{.198} & .257 & .217 & .093 & $-$.164 & .428 & .070 & \underline{.309} & \avg{.176}{8}\\
+Bayes Fused (SEP) & .146 & .273 & .275 & .065 & $-$.113 & .319 & .022 & .293 & \avg{.160}{8}\\
+\midrule
+\textbf{B4} & .195 & \g{.357} & \g{.436} & $-$.092 & \g{.054} & \g{.737} & \g{.357} & \g{.496} & \avg{\g{.318}}{8}\\
+\midrule
+\textit{Length-only baseline} & \textit{.067} & \textit{.143} & \textit{.168} & \textit{$-$.181} & \textit{$-$.083} & \textit{.616} & \textit{.268} & \textit{.316} & \\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5~$\uparrow$, out-of-fold, 4 task-grouped folds. \textbf{Bold}: top-1, \underline{underline}: top-2 per
+column (the length-only baseline is a leak diagnostic and is not ranked). COMPLETED cohort: the agent ended the
+episode itself (not at the step budget, no error on the final step). 24 cells = benchmark $\times$ harness
+(smolagents tool / smolagents code / LangGraph ReAct for RAG; $\tau^2$/$\tau^3$: \texttt{llm} / \texttt{plan} /
+smolagents-tool), Qwen2.5-32B-Instruct at its shipped sampling (T 0.7, top-$p$ 0.8, top-$k$ 20, rep.\ 1.05);
+cells with minority class $<40$ excluded. Baselines are a 1-D logistic on the signal at the last observed step,
+direction learned on the training fold. Oracle retrieval critics dropped throughout.
+$^\S$Verbalized UQ was collected only on the RAG runs (100\% of steps on Hotpot/MuSiQue/CRAG, 0\% on
+HumanEval, LCB, ALFWorld, $\tau^2$, $\tau^3$); it also needs a separate elicitation call, so it is not a free
+signal. Avg: mean over the $n$ benchmark groups where the method is defined, and is ranked only among
+the methods defined on all eight (so the verbalized row, $n=3$, is not comparable to it).
+\end{frame}
+
+\begin{frame}{OOD transfer}
+\vspace{-0.2em}
+\fontsize{7}{8.4}\selectfont
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\linewidth}{@{}Yrrrr@{}}
+\toprule
+\textbf{Method} & \shortstack{\textbf{same model}\\\textbf{other agent}} & \shortstack{\textbf{other model}\\\textbf{other agent}} & \shortstack{\textbf{same agent}\\\textbf{other model}} & \textbf{Overall}\\
+& \scriptsize(12) & \scriptsize(6) & \scriptsize(8) & \scriptsize(26)\\
+\midrule
+Logprob (last) & .166 & .083 & .107 & .129\\
+Perplexity (last) & .170 & .084 & .109 & .131\\
+MTE (last) & .208 & .100 & .145 & .162\\
+\midrule
+Bayes tool-only & .160 & .102 & .101 & .128\\
+Bayes UQ-only (cont.) & .215 & .152 & .116 & .170\\
+Bayes Fused (cont.) & .294 & .185 & .156 & .227\\
+\midrule
+B4 raw $+\,K_{\mathrm{eff}}$ & .405 & .162 & .197 & .285\\
+\midrule
+\textit{Length-only baseline} & \textit{.294} & \textit{.136} & \textit{.113} & \textit{.202}\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5 on the target's ENDPOINT cohort. \textbf{Bold}: top-1, \underline{underline}: top-2 per column
+(length-only not ranked). 26 source$\to$target directions in three groups; column counts in parentheses.
+\emph{Same model, other agent}: Qwen2.5-32B across harnesses (tool$\leftrightarrow$code$\leftrightarrow$ReAct
+on Hotpot/MuSiQue/CRAG, \texttt{llm}$\to$smol on $\tau^2$/$\tau^3$, smol$\to$ReAct on ALFWorld).
+\emph{Other model}: Qwen2.5-32B $\to$ gpt-oss-20b on the same benchmarks. Every parameter (prior, critic
+likelihoods, class moments, both projections, calibration constants) is fitted on the source and applied to the
+target unchanged; a signal is used only if covered on both sides. Baselines fit a 1-D logistic on the source, so
+they transfer non-trivially.
+
+\textbf{What this says.} In-domain the order is B3 .511 $\approx$ B4 .503 $>$ R2 .477; under shift it reverses --
+R2 is at least as good as B4 in all three conditions, and selection-freedom does not help (UF11, which selects
+per fold, retains better than B4 in two of three). Likely cause is capacity: B4 fits two full-signal-vector
+projections plus class moments to the source. When \emph{both} model and agent change, the raw
+$+\,K_{\mathrm{eff}}$ variant is preferable (.188 vs .162): the calibration constants come from the source and
+stop applying, and the design-effect correction takes that work back. \textbf{B4's advantage is in-domain.}
+\end{frame}
+
+\begin{frame}{Verdict readout}
+\vspace{-0.2em}
+\fontsize{6.5}{7.8}\selectfont
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\linewidth}{@{}Yrrrrrrrrrrr@{}}
+\toprule
+& \multicolumn{3}{c}{\textbf{RAG}} & \multicolumn{2}{c}{\textbf{Code}} & \multicolumn{5}{c}{\textbf{Long-horizon}} & \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-11}
+\textbf{Method} & \textbf{Hotpot} & \textbf{MuSiQue} & \textbf{CRAG} & \textbf{HEF} & \textbf{LCB} & \textbf{ALFW} & \textbf{$\tau^2$} & \textbf{$\tau^3$ret} & \textbf{$\tau^3$air} & \textbf{$\tau^3$tel} & \textbf{Avg}\\
+\midrule
+Verdict readout alone$^\dagger$ & \underline{.420} & \g{.528} & .437 & \g{.865} & \g{.728} & .846 & \underline{.611} & .542 & $-$.551 & .955 & .538\\
+B4 (free signals only) & .194 & .351 & .440 & .743 & .593 & .847 & .425 & .352 & \g{.709} & .761 & .541\\
+\midrule
+\textbf{B4 + readout} & .384 & \underline{.502} & .589 & .754 & .613 & \underline{.939} & .595 & .561 & .667 & \g{.973} & \underline{.658}\\
+B4 + readout (Platt) & .373 & .499 & \underline{.600} & .749 & .619 & \g{.944} & .595 & \underline{.562} & \underline{.676} & .965 & \g{.658}\\
+B4 + readout + task prior & \g{.425} & .488 & \g{.629} & \underline{.764} & \underline{.714} & .899 & \g{.680} & \g{.568} & $-$.443 & \underline{.970} & .569\\
+R2 + readout (prev.) & .375 & .499 & .581 & .752 & .624 & .894 & .565 & .523 & .599 & .959 & .637\\
+\midrule
+\textit{$\Delta$ readout adds to B4} & \textit{.190} & \textit{.151} & \textit{.150} & \textit{.011} & \textit{.020} & \textit{.092} & \textit{.170} & \textit{.209} & \textit{$-$.042} & \textit{.212} & \textit{.116}\\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.25em}
+\fontsize{6}{7}\selectfont
+PRR@0.5~$\uparrow$ on ENDPOINT, out-of-fold. \textbf{Bold}: top-1, \underline{underline}: top-2 per column.
+Readout = a frozen Qwen judge shown the trajectory prefix and asked whether the episode will succeed; its logit
+is added to the belief with unit weight (no fitted weight). Platt = one fitted slope instead. ``+ task prior''
+additionally adds the judge's task-only difficulty estimate.
+$^\dagger$Readout alone = that logit on top of the harness prior, no free signals.
+Same 24 cells as before; COMPLETED cohort gives the same ordering (readout alone .430, B4 .359,
+\textbf{B4 + readout .524}).
+
+\textbf{Two points.} (i) The readout and the free signals are \emph{complementary}: B4 alone .541, readout alone
+.538, together \textbf{.658} --- the sum beats both parts on every group except $\tau^3$ airline, and needs no
+fitted combination weight. (ii) The readout has one catastrophic failure mode and B4 repairs it: on
+$\tau^3$ airline the judge is \emph{inverted} ($-.551$) because it reads a satisfied customer as success when
+the policy-correct outcome is a refusal; B4 alone gets $.709$ there and the sum keeps $.667$. Adding the
+task-only prior re-breaks exactly that cell ($-.443$), so we do not use it.
 \end{frame}
 
 \end{document}
