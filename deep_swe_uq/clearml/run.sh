@@ -5,6 +5,23 @@
 # the knobs a real run needs.
 set -uo pipefail
 
+echo "=== [0/6] is the card ours and empty? ==="
+# Fail in seconds, not after a vLLM install: a MIG-sliced card or one still
+# holding a previous tenant's memory kills the engine at start with a 40-line
+# tail that never names the cause (two runs on aiagent01:gpu0 did exactly that).
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv,noheader 2>/dev/null | sed 's/^/[gpu] /'
+  if nvidia-smi -L 2>/dev/null | grep -q "MIG"; then
+    echo "[run] VERDICT: MIG-sliced card, vLLM cannot use it"; exit 25
+  fi
+  USED_MB=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d ' ')
+  if [ -n "${USED_MB}" ] && [ "${USED_MB}" -gt 20000 ]; then
+    echo "[run] VERDICT: ${USED_MB} MiB already in use on the card by someone else"; exit 25
+  fi
+else
+  echo "[run] nvidia-smi unavailable inside the container; continuing"
+fi
+
 echo "=== [1/6] docker reachable from inside the task container? ==="
 ls -la /var/run/docker.sock 2>&1 | head -2
 if ! command -v docker >/dev/null 2>&1; then
