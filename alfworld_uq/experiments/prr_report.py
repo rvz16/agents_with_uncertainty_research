@@ -29,6 +29,7 @@ from belief.continuous_bayes import ContinuousBayesUQ
 from belief.critic_bayes import CriticBayesState
 from experiments.analyze_trajectories import (
     STEP_CRITIC_NAMES,
+    _critic_observations,
     _prr_references,
     _step_critic_observation,
     prediction_rejection_area,
@@ -199,8 +200,15 @@ def reference_rows(cohorts):
             [e["verb_final"] for e in eps.values() if e["verb_final"] is not None]) for eps in cohorts.values()]
     rows[("Tool success rate", "mean of step tool critics")] = [prr([e["label"] for e in eps.values()], [e["tool_rate"] for e in eps.values()]) for eps in cohorts.values()]
     rows[("N steps", "−N")] = [prr([e["label"] for e in eps.values()], [-e["n_steps"] for e in eps.values()]) for eps in cohorts.values()]
-    rows[("Bayes tool-only", "step critics, tempered")] = [oof(eps, lambda tr, te: [fit_tools(tr).predict_sequence_tempered(e["critics"]) for e in te]) for eps in cohorts.values()]
+    # three ways to read the critics: one episode-level observation (the original
+    # critic:all), or the per-step observations multiplied / averaged over steps
+    def episode_tools(train, test):
+        obs = [_critic_observations(e["rows"]) for e in train]
+        model = CriticBayesState.fit(obs, [e["label"] for e in train], prior=sum(e["label"] for e in train) / len(train))
+        return [model.predict(_critic_observations(e["rows"])) for e in test]
+    rows[("Bayes tool-only", "episode critics (critic:all)")] = [oof(eps, episode_tools) for eps in cohorts.values()]
     rows[("Bayes tool-only", "step critics, multiplied")] = [oof(eps, lambda tr, te: [fit_tools(tr).predict_sequence(e["critics"]) for e in te]) for eps in cohorts.values()]
+    rows[("Bayes tool-only", "step critics, tempered")] = [oof(eps, lambda tr, te: [fit_tools(tr).predict_sequence_tempered(e["critics"]) for e in te]) for eps in cohorts.values()]
     return rows
 
 
@@ -331,7 +339,7 @@ def main() -> None:
     md += ["## Evaluation protocol", "",
            "Sections 1–4 use 5-fold out-of-fold evaluation on the complete cohort: episode indices are shuffled with `numpy.random.RandomState(0)`, fold *i* is `order[i::5]` (not stratified); every episode is predicted exactly once by a model fitted on the other four folds, and each method's PRR@0.5 is computed once on the pooled prediction vector. Raw baselines, Verb final, tool success rate and −N fit nothing.",
            "", "Cohort = ALFWorld valid-seen, 50-step budget, **finished-only** (the agent ended the episode itself: success, `final_answer`, or `give up`; budget exhaustion and external errors excluded — the analogue of Answer-only), and **pre-terminal**: every method sees the episode up to, not including, its last generation, because on a finished episode the last step reveals the outcome (a success ends on the goal-satisfying action, a failure on give-up / final_answer). Labels are binary success; PRR uses them (no partial scores exist).",
-           "", f"UQ signals are read from the `{SEGMENT}` response segment of each generation: Logprob = `sum_logprob`, Perplexity, MTE = mean token entropy over the top-k alternatives, Self-certainty = −mean(top-k log-probs) − log k per token (lm-polygraph's definition), Verb actions = per-step verbalised confidence. Tool critics are the five per-step checks: format valid, action admissible, no repeated action, tool success, state changed. **Bayes tool-only** is the tempered critic posterior — per-step log-likelihood ratios averaged over steps, not multiplied (the multiplied form is shown in Section 3 for reference).",
+           "", f"UQ signals are read from the `{SEGMENT}` response segment of each generation: Logprob = `sum_logprob`, Perplexity, MTE = mean token entropy over the top-k alternatives, Self-certainty = −mean(top-k log-probs) − log k per token (lm-polygraph's definition), Verb actions = per-step verbalised confidence. Tool critics are the five per-step checks: format valid, action admissible, no repeated action, tool success, state changed. **Bayes tool-only** in Section 2 (the base of every UQ + tools row) is the tempered step-critic posterior — per-step log-likelihood ratios averaged over steps. Section 3 shows all three ways to read the critics: one episode-level observation (`critic:all`: all formats valid, all actions admissible, no repeated action — the original formulation), the per-step observations multiplied (summed log-LR), and the per-step observations tempered (averaged over steps).",
            "", "### Cohorts and folds", ""]
     for name, eps in cohorts.items():
         n = len(eps); s = sum(e["label"] for e in eps.values())
