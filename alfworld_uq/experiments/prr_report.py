@@ -40,6 +40,7 @@ SIGNALS = {
     "Logprob": ("sum_logprob", False),
     "Perplexity": ("perplexity", True),
     "MTE": ("mean_token_entropy", True),
+    "Self-certainty": ("self_certainty", False),
     "Verb actions": ("verbalized_confidence", False),
 }
 FUSED_MODES = ("Quantile", "SEP", "LR+", "LR−", "Double", "Continuous (λ=1)", "Tempered (λ=0.25)", "Last only")
@@ -330,7 +331,7 @@ def main() -> None:
     md += ["## Evaluation protocol", "",
            "Sections 1–4 use 5-fold out-of-fold evaluation on the complete cohort: episode indices are shuffled with `numpy.random.RandomState(0)`, fold *i* is `order[i::5]` (not stratified); every episode is predicted exactly once by a model fitted on the other four folds, and each method's PRR@0.5 is computed once on the pooled prediction vector. Raw baselines, Verb final, tool success rate and −N fit nothing.",
            "", "Cohort = ALFWorld valid-seen, 50-step budget, **finished-only** (the agent ended the episode itself: success, `final_answer`, or `give up`; budget exhaustion and external errors excluded — the analogue of Answer-only), and **pre-terminal**: every method sees the episode up to, not including, its last generation, because on a finished episode the last step reveals the outcome (a success ends on the goal-satisfying action, a failure on give-up / final_answer). Labels are binary success; PRR uses them (no partial scores exist).",
-           "", f"UQ signals are read from the `{SEGMENT}` response segment of each generation: Logprob = `sum_logprob`, Perplexity, MTE = mean token entropy (top-20 alternatives), Verb actions = per-step verbalised confidence. Self-certainty is not collected on ALFWorld. Tool critics are the five per-step checks: format valid, action admissible, no repeated action, tool success, state changed. **Bayes tool-only** is the tempered critic posterior — per-step log-likelihood ratios averaged over steps, not multiplied (the multiplied form is shown in Section 3 for reference).",
+           "", f"UQ signals are read from the `{SEGMENT}` response segment of each generation: Logprob = `sum_logprob`, Perplexity, MTE = mean token entropy over the top-k alternatives, Self-certainty = −mean(top-k log-probs) − log k per token (lm-polygraph's definition), Verb actions = per-step verbalised confidence. Tool critics are the five per-step checks: format valid, action admissible, no repeated action, tool success, state changed. **Bayes tool-only** is the tempered critic posterior — per-step log-likelihood ratios averaged over steps, not multiplied (the multiplied form is shown in Section 3 for reference).",
            "", "### Cohorts and folds", ""]
     for name, eps in cohorts.items():
         n = len(eps); s = sum(e["label"] for e in eps.values())

@@ -25,12 +25,13 @@ from pathlib import Path
 from experiments.analyze_trajectories import _prr_references, prediction_rejection_area
 
 SEGMENTS = ("thought", "action", "reasoning", "combined")
-UQ_SIGNALS = ("mean_token_logprob", "perplexity", "mean_token_entropy", "sequence_probability", "sum_logprob", "verbalized_confidence")
+UQ_SIGNALS = ("mean_token_logprob", "perplexity", "mean_token_entropy", "self_certainty", "sequence_probability", "sum_logprob", "verbalized_confidence")
 # label -> (models, methods)  -- candidates are every segment x listed methods
 ROWS = {
     "Logprob (mean)": (("feature_mean",), ("mean_token_logprob",)),
     "Perplexity (max)": (("feature_max",), ("perplexity",)),
     "MTE (max)": (("feature_max",), ("mean_token_entropy",)),
+    "Self-certainty (mean)": (("feature_mean",), ("self_certainty",)),
     "Verbalized UQ (final)": (("feature_last",), ("verbalized_confidence",)),
     "Bayes tool-only": (("bayes_state",), UQ_SIGNALS),  # critic-only belief, identical across segments
     "Bayes UQ-only (cont.)": (("continuous_bayes",), UQ_SIGNALS),
