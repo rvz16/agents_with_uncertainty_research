@@ -462,3 +462,15 @@ def test_a_refused_prompt_is_retried_with_half_the_history() -> None:
     assert result.action == "look"                 # it recovered
     assert len(completions.calls) > 1              # and only after shrinking
     assert completions.calls[-1] < completions.calls[0]
+
+
+def test_token_self_certainty_matches_the_toolkit_definition():
+    """-mean(log p_j) - log k over the raw top-k, as in lm-polygraph and the
+    OSWorld/WebArena tables; None below two alternatives."""
+    import math
+    from types import SimpleNamespace
+    from agents.react_agent import token_self_certainty
+
+    top = [SimpleNamespace(logprob=-0.1), SimpleNamespace(logprob=-3.0), SimpleNamespace(logprob=-5.0)]
+    assert abs(token_self_certainty(top) - (-(-0.1 - 3.0 - 5.0) / 3 - math.log(3))) < 1e-12
+    assert token_self_certainty([SimpleNamespace(logprob=-0.1)]) is None

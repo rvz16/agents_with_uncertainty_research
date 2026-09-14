@@ -16,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from agents.react_agent import _entropies, _metric_bundle, split_at_last_message
+from agents.react_agent import _certainties, _entropies, _metric_bundle, split_at_last_message
 from uq.verbalized import parse_verbalized_confidence
 
 
@@ -32,7 +32,7 @@ def main() -> None:
             step = json.loads(line); total += 1
             if step.get("tool_call_translated") and step.get("token_logprobs"):
                 reasoning, content = split_at_last_message(step["token_logprobs"])
-                bundle = _metric_bundle([float(r["logprob"]) for r in content], _entropies(content))
+                bundle = _metric_bundle([float(r["logprob"]) for r in content], _entropies(content), _certainties(content))
                 bundle["verbalized_confidence"] = parse_verbalized_confidence(step.get("raw_response") or "")
                 uq = step.setdefault("uq", {})
                 uq["action"] = dict(bundle); uq["combined"] = dict(bundle)

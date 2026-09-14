@@ -37,6 +37,9 @@ UQ_METHODS = {
     # Wider next-token distribution means less certain, hence True. Present only
     # in runs collected with --top-logprobs; absent elsewhere and dropped then.
     "mean_token_entropy": True,
+    # KL(uniform || p) on the top-k: higher = more certain. Present only in
+    # runs that store per-token self-certainty; absent elsewhere and dropped.
+    "self_certainty": False,
 }
 # `reasoning` exists only for locally served models that return log-probabilities
 # for their hidden channel; it is empty for hosted endpoints and drops out then.

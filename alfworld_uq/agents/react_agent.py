@@ -168,7 +168,9 @@ def parse_react_response(text: str) -> ParsedResponse:
 
 
 def _metric_bundle(
-    logprobs: list[float], entropies: list[float] | None = None
+    logprobs: list[float],
+    entropies: list[float] | None = None,
+    certainties: list[float] | None = None,
 ) -> dict[str, float | int | None]:
     bundle: dict[str, float | int | None] = {
         "num_tokens": len(logprobs),
@@ -188,6 +190,8 @@ def _metric_bundle(
     bundle["entropy_coverage"] = (
         float(len(finite) / len(logprobs)) if logprobs else None
     )
+    certain = [value for value in (certainties or []) if value is not None]
+    bundle["self_certainty"] = float(sum(certain) / len(certain)) if certain else None
     return bundle
 
 
@@ -334,6 +338,14 @@ def _entropies(records: list[dict[str, Any]]) -> list[float]:
     ]
 
 
+def _certainties(records: list[dict[str, Any]]) -> list[float]:
+    return [
+        float(record["self_certainty"])
+        for record in records
+        if record.get("self_certainty") is not None
+    ]
+
+
 def metrics_by_span(
     raw_text: str,
     token_records: list[dict[str, Any]],
@@ -359,7 +371,9 @@ def metrics_by_span(
 
     def bundle_of(records: list[dict[str, Any]]) -> dict[str, float | int | None]:
         return _metric_bundle(
-            [float(record["logprob"]) for record in records], _entropies(records)
+            [float(record["logprob"]) for record in records],
+            _entropies(records),
+            _certainties(records),
         )
 
     bundles = {name: bundle_of(select(span)) for name, span in spans.items()}
@@ -401,8 +415,27 @@ def _extract_token_records(response: Any) -> list[dict[str, Any]]:
                         sum(math.exp(float(x.logprob)) for x in top
                             if getattr(x, "logprob", None) is not None)
                     )
+                certainty = token_self_certainty(top)
+                if certainty is not None:
+                    record["self_certainty"] = certainty
             records.append(record)
     return records
+
+
+def token_self_certainty(top_logprobs: list[Any]) -> float | None:
+    """Self-certainty of one next-token distribution: KL(uniform || p) on the
+    top-k the server sent, `-mean(log p_j) - log k`, the definition used by
+    lm-polygraph and by the OSWorld/WebArena tables (raw top-k log-probs, not
+    renormalised). Higher = more certain. Not recoverable from `entropy` and
+    `topk_mass`, which is why runs before this field carry no self-certainty."""
+    values = [
+        float(getattr(item, "logprob"))
+        for item in top_logprobs or []
+        if getattr(item, "logprob", None) is not None and math.isfinite(float(item.logprob))
+    ]
+    if len(values) < 2:
+        return None
+    return float(-sum(values) / len(values) - math.log(len(values)))
 
 
 def _usage(response: Any, name: str) -> int:
@@ -584,7 +617,9 @@ class ReActAgent:
             "verbalized_confidence": parse_verbalized_confidence(raw_text),
             "raw_response": raw_text,
             "uq": _metric_bundle(
-                [float(record["logprob"]) for record in records], _entropies(records)
+                [float(record["logprob"]) for record in records],
+                _entropies(records),
+                _certainties(records),
             ),
             "total_tokens": metadata["total_tokens"],
         }

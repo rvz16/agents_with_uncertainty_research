@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.react_agent import (
+    _certainties,
     _entropies,
     _extract_token_records,
     _metric_bundle,
@@ -770,6 +771,7 @@ class SmolagentsPolicy:
                 uq["action"] = uq["combined"] = _metric_bundle(
                     [float(record["logprob"]) for record in content],
                     _entropies(content),
+                    _certainties(content),
                 )
             else:
                 reasoning, content = split_reasoning_tokens(
