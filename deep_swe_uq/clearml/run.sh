@@ -221,6 +221,9 @@ fi
 if [ -n "${REASONING_PARSER:-}" ]; then
   TOOL_ARGS+=(--reasoning-parser "${REASONING_PARSER}")
 fi
+# What the card looks like before we take it: a previous tenant's leftover
+# process or a MIG slice shows up here, not in vLLM's 40-line tail.
+nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv 2>/dev/null || echo "[run] nvidia-smi unavailable"
 vllm serve "${SERVE_MODEL}" --host 0.0.0.0 --port "${PORT}" \
   --max-model-len "${MAX_MODEL_LEN:-32768}" \
   ${TOOL_ARGS[@]+"${TOOL_ARGS[@]}"} \
@@ -229,7 +232,12 @@ VLLM_PID=$!
 trap 'kill ${VLLM_PID} 2>/dev/null || true' EXIT
 for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS:-360}"); do
   curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1 && break
-  kill -0 ${VLLM_PID} 2>/dev/null || { echo "[run] VERDICT: vLLM died"; tail -n 40 /tmp/vllm.log; exit 24; }
+  kill -0 ${VLLM_PID} 2>/dev/null || {
+    echo "[run] VERDICT: vLLM died; root cause lines:"
+    grep -iE "error|memory|out of|MIG|no cuda|invalid|not supported" /tmp/vllm.log | grep -v "^(APIServer.*File " | tail -n 25
+    mkdir -p "${SHARED}/jobs"; cp /tmp/vllm.log "${SHARED}/jobs/vllm_serve.log" 2>/dev/null || true
+    exit 24
+  }
   sleep 5
 done
 curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null || { echo "[run] VERDICT: vLLM never healthy"; exit 24; }
