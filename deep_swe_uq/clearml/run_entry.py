@@ -43,7 +43,15 @@ def main() -> int:
     # Upload only the job results: the shared directory also holds the cloned
     # task repository, which the host daemon needs but nobody needs afterwards.
     jobs = run_root / "jobs"
-    if jobs.exists() and any(jobs.iterdir()):
+    replay = os.environ.get("REPLAY_RUN", "")
+    if replay:
+        # replay mode writes one small jsonl; the shared jobs directory on the
+        # host holds every earlier run and would be a multi-GB upload
+        out = jobs / f"verb_{replay}.jsonl"
+        if out.exists():
+            task.upload_artifact("verb", artifact_object=out, wait_on_upload=True)
+            print(f"[entry] uploaded {out}", flush=True)
+    elif jobs.exists() and any(jobs.iterdir()):
         task.upload_artifact("run_root", artifact_object=jobs, wait_on_upload=True)
         print(f"[entry] uploaded {jobs}", flush=True)
     return rc
