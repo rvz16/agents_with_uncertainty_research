@@ -1,0 +1,1047 @@
+% Self-contained report; no external figures or input files required.
+% Compile with pdfLaTeX twice, or upload to Overleaf.
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[landscape,margin=16mm]{geometry}
+\usepackage{array,booktabs,longtable}
+\usepackage{enumitem,needspace}
+\usepackage[hidelinks]{hyperref}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcommand{\PRR}[2]{\ensuremath{#1\,\pm\,#2}}
+\setlength{\tabcolsep}{3pt}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{\fill}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\renewcommand{\arraystretch}{1.18}
+\setlist[itemize]{leftmargin=*,itemsep=3pt,topsep=4pt}
+\emergencystretch=2em
+
+\hypersetup{pdftitle={Standard PRR \ensuremath{-} ALFWorld and DeepSWE}}
+\title{Standard PRR \ensuremath{-} ALFWorld and DeepSWE}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-8mm}
+\begin{itemize}
+\item \textbf{Unit:} one confidence score and one native task score per episode; PRR is episode-level, including for stepwise methods.
+\item \textbf{Cohorts:} ALFWorld: finished-only (the agent ended the episode itself: success, final answer, or give-up) and scored before the terminal generation; ReAct uses the give-up variant. DeepSWE: submitted-only and scored before the submit command. Both ALFWorld and DeepSWE trajectories are truncated at the outcome-revealing terminal action; the reference OSWorld/WebArena report does not truncate.
+\item \textbf{Cross-fitting:} 3 seeds (0, 1, 2) \ensuremath{\times} 5 stratified folds; fit on 4 folds and predict the held-out fold. ALFWorld stratifies on success; DeepSWE on the cohort median of the partial score.
+\item \textbf{Metric:} PRR@0.5 on native scores: binary success on ALFWorld, the verifier's continuous partial score (passed / all hidden tests) on DeepSWE, where no model resolves a task outright. Pool all held-out predictions before computing one PRR per seed; report mean \ensuremath{\pm} sample SD over seeds. Binary labels are used for fitting and stratification only; on DeepSWE they are the training fold's own median split.
+\item \textbf{Signals:} Logprob = summed token log-probability of a generation (ALFWorld) / mean token log-probability of a command (DeepSWE); Perplexity; MTE = mean token entropy over the top-\ensuremath{k} alternatives; Self-certainty = \ensuremath{-\mathrm{mean}(\log p_{\mathrm{top}\text{-}k}) - \log k} per token; Verb actions = per-step verbalized confidence (ALFWorld: a required line of the response format; DeepSWE: a separate side query after every command, replayed on the recorded trajectories, since both models ignore an in-loop instruction).
+\item \textbf{Step critics:} ALFWorld: format valid, action admissible, no repeat, tool success, state changed, one row per generation. DeepSWE: ran the test suite, ran it twice, last run passed, a run that failed then passed, committed twice, no format errors; these are episode-level and repeated per row, so the multiplied and tempered forms coincide up to the step count. \texttt{critic:all} = the episode-level formats-valid / actions-admissible / no-repeat flags of the original formulation.
+\item \textbf{Bayes Fused:} start from the tempered step-critic posterior (log-likelihood ratios averaged over rows), then update with UQ. Tool success rate alone is the arithmetic mean of the step-critic flags (ALFWorld) / the share of commands with return code 0 (DeepSWE); Fused does not use that mean as its tool input.
+\item \textbf{UQ updates:} SEP/Double/Continuous/Tempered process the UQ sequence; Tempered uses \ensuremath{\lambda}=0.25. Last only fits and applies one update on the last UQ value; Mean only does so on the trajectory's arithmetic mean UQ. Raw last/mean/max have no learned transform.
+\item \textbf{Reference methods:} logistic regression = the unchanged main-branch \texttt{TrajectoryRegression} (pinned \ensuremath{C}=0.03 / selected), given the same signals and critics; TemporalBelief (B4) = the main-branch model at the final checkpoint, one harness per cohort; elicited signals (Verb) are excluded from B4 and regression by construction.
+\item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
+\item \textbf{Averages and ranks:} Avg is the equal-weight mean over cohorts/directions of the seed means; its \ensuremath{\pm} is the mean of the per-cell SDs. Ranks are descriptive selections by Avg. Raw \ensuremath{\pm}0 reflects split-invariant rankings, not zero statistical uncertainty.
+\end{itemize}
+\clearpage
+\section*{ALFWorld}
+RG = ReAct/gpt-oss-20b; SG = smolagents/gpt-oss-20b; RQ = ReAct/Qwen3.6-35B-A3B; SQ = smolagents/Qwen3.6-35B-A3B. 140 episodes per setup before the finished-only filter, 50-step budget; ReAct with the give-up action.
+
+\Needspace{50mm}
+\subsection*{Datasets}
+\begin{tabular}{@{}L{60mm}C{30mm}C{30mm}C{40mm}@{}}
+\toprule
+\textbf{Cohort} & \textbf{Episodes} & \textbf{Mean score} & \textbf{Continuous score} \\
+\midrule
+RG & 97 & 0.34 & no (binary success) \\
+SG & 139 & 0.35 & no (binary success) \\
+RQ & 86 & 0.83 & no (binary success) \\
+SQ & 122 & 0.89 & no (binary success) \\
+\bottomrule
+\end{tabular}
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Logprob \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Logprob \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+1 & Logprob & last & \PRR{-0.08}{0.00} & \PRR{0.57}{0.00} & \PRR{0.45}{0.00} & \PRR{0.35}{0.00} & \PRR{0.32}{0.00} \\
+2 & Logprob & mean & \PRR{0.23}{0.00} & \PRR{0.58}{0.00} & \PRR{0.28}{0.00} & \PRR{0.19}{0.00} & \PRR{0.32}{0.00} \\
+3 & Logprob & max & \PRR{-0.32}{0.00} & \PRR{0.11}{0.00} & \PRR{-0.12}{0.00} & \PRR{-0.01}{0.00} & \PRR{-0.08}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Logprob \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Logprob \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+9 & Logprob \ensuremath{-} Bayes UQ-only & SEP & \PRR{0.39}{0.06} & \PRR{0.60}{0.08} & \PRR{0.29}{0.17} & \PRR{0.18}{0.05} & \PRR{0.36}{0.09} \\
+4 & Logprob \ensuremath{-} Bayes UQ-only & Double & \PRR{0.31}{0.06} & \PRR{0.80}{0.02} & \PRR{0.50}{0.02} & \PRR{0.29}{0.09} & \PRR{0.48}{0.05} \\
+10 & Logprob \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{0.33}{0.02} & \PRR{0.82}{0.01} & \PRR{0.06}{0.02} & \PRR{-0.03}{0.07} & \PRR{0.29}{0.03} \\
+11 & Logprob \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.32}{0.01} & \PRR{0.81}{0.00} & \PRR{0.06}{0.01} & \PRR{-0.02}{0.08} & \PRR{0.29}{0.03} \\
+7 & Logprob \ensuremath{-} Bayes UQ-only & Last only & \PRR{0.29}{0.07} & \PRR{0.58}{0.03} & \PRR{0.44}{0.01} & \PRR{0.26}{0.11} & \PRR{0.39}{0.06} \\
+12 & Logprob \ensuremath{-} Bayes UQ-only & Mean only & \PRR{0.16}{0.07} & \PRR{0.48}{0.02} & \PRR{0.21}{0.01} & \PRR{0.02}{0.12} & \PRR{0.22}{0.06} \\
+5 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.41}{0.04} & \PRR{0.80}{0.04} & \PRR{0.36}{0.15} & \PRR{0.33}{0.07} & \PRR{0.47}{0.07} \\
+2 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.38}{0.06} & \PRR{0.87}{0.01} & \PRR{0.52}{0.02} & \PRR{0.40}{0.09} & \PRR{0.54}{0.04} \\
+8 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.36}{0.00} & \PRR{0.85}{0.01} & \PRR{0.16}{0.05} & \PRR{0.14}{0.04} & \PRR{0.38}{0.03} \\
+3 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.34}{0.03} & \PRR{0.89}{0.00} & \PRR{0.36}{0.02} & \PRR{0.35}{0.05} & \PRR{0.48}{0.03} \\
+1 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.38}{0.06} & \PRR{0.89}{0.01} & \PRR{0.61}{0.01} & \PRR{0.46}{0.09} & \PRR{0.59}{0.04} \\
+6 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.22}{0.05} & \PRR{0.86}{0.02} & \PRR{0.37}{0.03} & \PRR{0.33}{0.02} & \PRR{0.45}{0.03} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Perplexity \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Perplexity \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+2 & Perplexity & last & \PRR{-0.05}{0.00} & \PRR{0.51}{0.00} & \PRR{-0.01}{0.00} & \PRR{0.55}{0.00} & \PRR{0.25}{0.00} \\
+3 & Perplexity & mean & \PRR{0.31}{0.00} & \PRR{0.73}{0.00} & \PRR{-0.16}{0.00} & \PRR{-0.02}{0.00} & \PRR{0.21}{0.00} \\
+1 & Perplexity & max & \PRR{0.42}{0.00} & \PRR{0.73}{0.00} & \PRR{0.18}{0.00} & \PRR{0.08}{0.00} & \PRR{0.35}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Perplexity \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Perplexity \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+6 & Perplexity \ensuremath{-} Bayes UQ-only & SEP & \PRR{0.46}{0.05} & \PRR{0.61}{0.02} & \PRR{0.32}{0.15} & \PRR{0.16}{0.06} & \PRR{0.39}{0.07} \\
+9 & Perplexity \ensuremath{-} Bayes UQ-only & Double & \PRR{0.38}{0.07} & \PRR{0.76}{0.04} & \PRR{-0.10}{0.05} & \PRR{0.13}{0.09} & \PRR{0.29}{0.06} \\
+11 & Perplexity \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{0.30}{0.04} & \PRR{0.73}{0.01} & \PRR{-0.11}{0.08} & \PRR{-0.01}{0.03} & \PRR{0.23}{0.04} \\
+10 & Perplexity \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.30}{0.03} & \PRR{0.75}{0.01} & \PRR{-0.11}{0.09} & \PRR{0.00}{0.05} & \PRR{0.23}{0.04} \\
+8 & Perplexity \ensuremath{-} Bayes UQ-only & Last only & \PRR{0.43}{0.06} & \PRR{0.53}{0.01} & \PRR{-0.25}{0.08} & \PRR{0.51}{0.02} & \PRR{0.31}{0.04} \\
+12 & Perplexity \ensuremath{-} Bayes UQ-only & Mean only & \PRR{0.24}{0.05} & \PRR{0.65}{0.03} & \PRR{0.07}{0.13} & \PRR{-0.19}{0.04} & \PRR{0.20}{0.06} \\
+2 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.49}{0.03} & \PRR{0.82}{0.01} & \PRR{0.36}{0.13} & \PRR{0.36}{0.06} & \PRR{0.51}{0.06} \\
+5 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.42}{0.07} & \PRR{0.85}{0.01} & \PRR{0.10}{0.10} & \PRR{0.40}{0.05} & \PRR{0.44}{0.06} \\
+7 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.33}{0.03} & \PRR{0.76}{0.01} & \PRR{-0.04}{0.10} & \PRR{0.39}{0.10} & \PRR{0.36}{0.06} \\
+4 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.34}{0.05} & \PRR{0.84}{0.01} & \PRR{0.13}{0.14} & \PRR{0.54}{0.09} & \PRR{0.46}{0.07} \\
+1 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.48}{0.01} & \PRR{0.90}{0.00} & \PRR{0.38}{0.12} & \PRR{0.65}{0.03} & \PRR{0.60}{0.04} \\
+3 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.23}{0.05} & \PRR{0.92}{0.02} & \PRR{0.46}{0.13} & \PRR{0.39}{0.11} & \PRR{0.50}{0.08} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} MTE \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} MTE \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+2 & MTE & last & \PRR{-0.15}{0.00} & \PRR{0.75}{0.00} & \PRR{0.03}{0.00} & \PRR{0.61}{0.00} & \PRR{0.31}{0.00} \\
+3 & MTE & mean & \PRR{0.16}{0.00} & \PRR{0.80}{0.00} & \PRR{-0.15}{0.00} & \PRR{-0.01}{0.00} & \PRR{0.20}{0.00} \\
+1 & MTE & max & \PRR{0.40}{0.00} & \PRR{0.72}{0.00} & \PRR{0.12}{0.00} & \PRR{0.05}{0.00} & \PRR{0.32}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} MTE \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} MTE \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+6 & MTE \ensuremath{-} Bayes UQ-only & SEP & \PRR{0.36}{0.15} & \PRR{0.60}{0.05} & \PRR{0.30}{0.08} & \PRR{0.31}{0.00} & \PRR{0.39}{0.07} \\
+9 & MTE \ensuremath{-} Bayes UQ-only & Double & \PRR{0.33}{0.08} & \PRR{0.73}{0.05} & \PRR{-0.02}{0.07} & \PRR{0.18}{0.05} & \PRR{0.30}{0.06} \\
+11 & MTE \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{0.24}{0.02} & \PRR{0.78}{0.03} & \PRR{-0.13}{0.09} & \PRR{0.04}{0.04} & \PRR{0.23}{0.04} \\
+10 & MTE \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.23}{0.02} & \PRR{0.79}{0.03} & \PRR{-0.13}{0.09} & \PRR{0.05}{0.06} & \PRR{0.24}{0.05} \\
+8 & MTE \ensuremath{-} Bayes UQ-only & Last only & \PRR{0.42}{0.06} & \PRR{0.69}{0.01} & \PRR{-0.25}{0.09} & \PRR{0.57}{0.01} & \PRR{0.36}{0.04} \\
+12 & MTE \ensuremath{-} Bayes UQ-only & Mean only & \PRR{0.10}{0.08} & \PRR{0.78}{0.03} & \PRR{0.04}{0.13} & \PRR{-0.21}{0.05} & \PRR{0.18}{0.07} \\
+2 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.35}{0.11} & \PRR{0.76}{0.04} & \PRR{0.40}{0.07} & \PRR{0.43}{0.01} & \PRR{0.48}{0.06} \\
+4 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.34}{0.09} & \PRR{0.85}{0.02} & \PRR{0.17}{0.13} & \PRR{0.45}{0.02} & \PRR{0.45}{0.06} \\
+7 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.32}{0.01} & \PRR{0.79}{0.03} & \PRR{-0.06}{0.10} & \PRR{0.39}{0.08} & \PRR{0.36}{0.06} \\
+5 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.33}{0.02} & \PRR{0.84}{0.03} & \PRR{0.07}{0.09} & \PRR{0.55}{0.09} & \PRR{0.45}{0.06} \\
+1 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.51}{0.02} & \PRR{0.93}{0.01} & \PRR{0.40}{0.12} & \PRR{0.70}{0.03} & \PRR{0.63}{0.04} \\
+3 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.14}{0.05} & \PRR{0.92}{0.01} & \PRR{0.45}{0.15} & \PRR{0.38}{0.09} & \PRR{0.47}{0.08} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Self-certainty \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Self-certainty \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+1 & Self-certainty & last & \PRR{-0.03}{0.00} & \PRR{0.93}{0.00} & \PRR{-0.13}{0.00} & \PRR{0.59}{0.00} & \PRR{0.34}{0.00} \\
+2 & Self-certainty & mean & \PRR{0.37}{0.00} & \PRR{0.91}{0.00} & \PRR{-0.17}{0.00} & \PRR{-0.01}{0.00} & \PRR{0.27}{0.00} \\
+3 & Self-certainty & max & \PRR{0.17}{0.00} & \PRR{0.03}{0.00} & \PRR{-0.27}{0.00} & \PRR{0.08}{0.00} & \PRR{0.00}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Self-certainty \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Self-certainty \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+8 & Self-certainty \ensuremath{-} Bayes UQ-only & SEP & \PRR{0.35}{0.04} & \PRR{0.52}{0.06} & \PRR{0.39}{0.01} & \PRR{0.20}{0.04} & \PRR{0.36}{0.04} \\
+10 & Self-certainty \ensuremath{-} Bayes UQ-only & Double & \PRR{0.40}{0.05} & \PRR{0.73}{0.05} & \PRR{0.07}{0.13} & \PRR{0.10}{0.07} & \PRR{0.33}{0.07} \\
+9 & Self-certainty \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{0.31}{0.02} & \PRR{0.90}{0.01} & \PRR{-0.06}{0.09} & \PRR{0.17}{0.05} & \PRR{0.33}{0.04} \\
+11 & Self-certainty \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.30}{0.02} & \PRR{0.90}{0.01} & \PRR{-0.07}{0.09} & \PRR{0.14}{0.03} & \PRR{0.32}{0.04} \\
+6 & Self-certainty \ensuremath{-} Bayes UQ-only & Last only & \PRR{0.28}{0.03} & \PRR{0.93}{0.00} & \PRR{-0.15}{0.11} & \PRR{0.53}{0.02} & \PRR{0.40}{0.04} \\
+12 & Self-certainty \ensuremath{-} Bayes UQ-only & Mean only & \PRR{0.26}{0.07} & \PRR{0.89}{0.02} & \PRR{0.19}{0.09} & \PRR{-0.13}{0.02} & \PRR{0.30}{0.05} \\
+5 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.39}{0.04} & \PRR{0.65}{0.06} & \PRR{0.42}{0.01} & \PRR{0.29}{0.04} & \PRR{0.44}{0.04} \\
+4 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.44}{0.04} & \PRR{0.87}{0.01} & \PRR{0.29}{0.12} & \PRR{0.22}{0.06} & \PRR{0.45}{0.06} \\
+7 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.37}{0.04} & \PRR{0.91}{0.01} & \PRR{0.01}{0.09} & \PRR{0.30}{0.05} & \PRR{0.40}{0.05} \\
+3 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.36}{0.02} & \PRR{0.91}{0.01} & \PRR{0.12}{0.13} & \PRR{0.45}{0.08} & \PRR{0.46}{0.06} \\
+1 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.34}{0.03} & \PRR{0.93}{0.00} & \PRR{0.35}{0.12} & \PRR{0.70}{0.04} & \PRR{0.58}{0.05} \\
+2 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.27}{0.04} & \PRR{0.90}{0.01} & \PRR{0.48}{0.10} & \PRR{0.29}{0.04} & \PRR{0.49}{0.05} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Verb actions \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Verb actions \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+2 & Verb actions & last & \PRR{0.19}{0.00} & \PRR{0.76}{0.00} & \PRR{-0.16}{0.00} & \PRR{-0.04}{0.00} & \PRR{0.19}{0.00} \\
+1 & Verb actions & mean & \PRR{0.60}{0.00} & \PRR{0.63}{0.00} & \PRR{-0.40}{0.00} & \PRR{0.03}{0.00} & \PRR{0.21}{0.00} \\
+3 & Verb actions & max & \PRR{0.39}{0.00} & \PRR{0.56}{0.00} & \PRR{-0.26}{0.00} & \PRR{-0.06}{0.00} & \PRR{0.16}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Verb actions \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Verb actions \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+9 & Verb actions \ensuremath{-} Bayes UQ-only & SEP & \PRR{0.67}{0.02} & \PRR{0.57}{0.04} & \PRR{0.50}{0.01} & \PRR{-0.11}{0.00} & \PRR{0.41}{0.02} \\
+10 & Verb actions \ensuremath{-} Bayes UQ-only & Double & \PRR{0.67}{0.03} & \PRR{0.44}{0.06} & \PRR{0.38}{0.04} & \PRR{-0.09}{0.00} & \PRR{0.35}{0.03} \\
+7 & Verb actions \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{0.64}{0.03} & \PRR{0.53}{0.03} & \PRR{0.53}{0.01} & \PRR{-0.04}{0.00} & \PRR{0.41}{0.02} \\
+8 & Verb actions \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.63}{0.03} & \PRR{0.52}{0.03} & \PRR{0.53}{0.01} & \PRR{-0.02}{0.00} & \PRR{0.41}{0.02} \\
+12 & Verb actions \ensuremath{-} Bayes UQ-only & Last only & \PRR{0.10}{0.15} & \PRR{0.70}{0.02} & \PRR{0.03}{0.03} & \PRR{0.12}{0.00} & \PRR{0.24}{0.05} \\
+11 & Verb actions \ensuremath{-} Bayes UQ-only & Mean only & \PRR{0.56}{0.01} & \PRR{0.59}{0.01} & \PRR{0.31}{0.06} & \PRR{-0.15}{0.00} & \PRR{0.33}{0.02} \\
+6 & Verb actions \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.65}{0.02} & \PRR{0.79}{0.04} & \PRR{0.56}{0.01} & \PRR{0.09}{0.00} & \PRR{0.52}{0.02} \\
+1 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.67}{0.04} & \PRR{0.80}{0.02} & \PRR{0.74}{0.08} & \PRR{0.39}{0.00} & \PRR{0.65}{0.04} \\
+5 & Verb actions \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.64}{0.01} & \PRR{0.72}{0.04} & \PRR{0.56}{0.03} & \PRR{0.19}{0.00} & \PRR{0.52}{0.02} \\
+3 & Verb actions \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.66}{0.01} & \PRR{0.81}{0.04} & \PRR{0.65}{0.01} & \PRR{0.27}{0.00} & \PRR{0.60}{0.01} \\
+4 & Verb actions \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.29}{0.05} & \PRR{0.85}{0.01} & \PRR{0.57}{0.10} & \PRR{0.41}{0.00} & \PRR{0.53}{0.04} \\
+2 & Verb actions \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.56}{0.01} & \PRR{0.78}{0.03} & \PRR{0.55}{0.10} & \PRR{0.56}{0.00} & \PRR{0.61}{0.03} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} Reference methods}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} Reference methods (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+7 & N steps & \ensuremath{-}N & \PRR{0.64}{0.00} & \PRR{0.57}{0.00} & \PRR{0.49}{0.00} & \PRR{-0.15}{0.00} & \PRR{0.39}{0.00} \\
+6 & Tool success rate & mean of observed tool critics & \PRR{0.40}{0.00} & \PRR{0.85}{0.00} & \PRR{0.39}{0.00} & \PRR{0.51}{0.00} & \PRR{0.54}{0.00} \\
+8 & Bayes tool-only & critic:all & \PRR{0.22}{0.01} & \PRR{0.58}{0.02} & \PRR{0.25}{0.07} & \PRR{0.21}{0.02} & \PRR{0.31}{0.03} \\
+5 & Bayes tool-only & Step critics, multiplied & \PRR{0.33}{0.04} & \PRR{0.91}{0.00} & \PRR{0.76}{0.05} & \PRR{0.59}{0.02} & \PRR{0.65}{0.03} \\
+4 & Bayes tool-only & Step critics, tempered & \PRR{0.45}{0.01} & \PRR{0.84}{0.01} & \PRR{0.85}{0.06} & \PRR{0.61}{0.02} & \PRR{0.69}{0.03} \\
+2 & Logistic regression & selected & \PRR{0.67}{0.02} & \PRR{0.90}{0.09} & \PRR{0.94}{0.02} & \PRR{0.67}{0.12} & \PRR{0.80}{0.06} \\
+3 & Logistic regression & pinned & \PRR{0.64}{0.10} & \PRR{0.93}{0.05} & \PRR{0.88}{0.01} & \PRR{0.65}{0.07} & \PRR{0.78}{0.06} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.88}{0.01} & \PRR{0.88}{0.01} & \PRR{0.91}{0.03} & \PRR{0.63}{0.02} & \PRR{0.82}{0.02} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} ID summary \ensuremath{-} best per UQ family}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} ID summary \ensuremath{-} best per UQ family (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG} & \textbf{SG} & \textbf{RQ} & \textbf{SQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+15 & Logprob & last & \PRR{-0.08}{0.00} & \PRR{0.57}{0.00} & \PRR{0.45}{0.00} & \PRR{0.35}{0.00} & \PRR{0.32}{0.00} \\
+9 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.38}{0.06} & \PRR{0.89}{0.01} & \PRR{0.61}{0.01} & \PRR{0.46}{0.09} & \PRR{0.59}{0.04} \\
+13 & Perplexity & max & \PRR{0.42}{0.00} & \PRR{0.73}{0.00} & \PRR{0.18}{0.00} & \PRR{0.08}{0.00} & \PRR{0.35}{0.00} \\
+8 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.48}{0.01} & \PRR{0.90}{0.00} & \PRR{0.38}{0.12} & \PRR{0.65}{0.03} & \PRR{0.60}{0.04} \\
+16 & MTE & max & \PRR{0.40}{0.00} & \PRR{0.72}{0.00} & \PRR{0.12}{0.00} & \PRR{0.05}{0.00} & \PRR{0.32}{0.00} \\
+7 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.51}{0.02} & \PRR{0.93}{0.01} & \PRR{0.40}{0.12} & \PRR{0.70}{0.03} & \PRR{0.63}{0.04} \\
+14 & Self-certainty & last & \PRR{-0.03}{0.00} & \PRR{0.93}{0.00} & \PRR{-0.13}{0.00} & \PRR{0.59}{0.00} & \PRR{0.34}{0.00} \\
+10 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.34}{0.03} & \PRR{0.93}{0.00} & \PRR{0.35}{0.12} & \PRR{0.70}{0.04} & \PRR{0.58}{0.05} \\
+18 & Verb actions & mean & \PRR{0.60}{0.00} & \PRR{0.63}{0.00} & \PRR{-0.40}{0.00} & \PRR{0.03}{0.00} & \PRR{0.21}{0.00} \\
+5 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.67}{0.04} & \PRR{0.80}{0.02} & \PRR{0.74}{0.08} & \PRR{0.39}{0.00} & \PRR{0.65}{0.04} \\
+12 & N steps & \ensuremath{-}N & \PRR{0.64}{0.00} & \PRR{0.57}{0.00} & \PRR{0.49}{0.00} & \PRR{-0.15}{0.00} & \PRR{0.39}{0.00} \\
+11 & Tool success rate & mean of observed tool critics & \PRR{0.40}{0.00} & \PRR{0.85}{0.00} & \PRR{0.39}{0.00} & \PRR{0.51}{0.00} & \PRR{0.54}{0.00} \\
+17 & Bayes tool-only & critic:all & \PRR{0.22}{0.01} & \PRR{0.58}{0.02} & \PRR{0.25}{0.07} & \PRR{0.21}{0.02} & \PRR{0.31}{0.03} \\
+6 & Bayes tool-only & Step critics, multiplied & \PRR{0.33}{0.04} & \PRR{0.91}{0.00} & \PRR{0.76}{0.05} & \PRR{0.59}{0.02} & \PRR{0.65}{0.03} \\
+4 & Bayes tool-only & Step critics, tempered & \PRR{0.45}{0.01} & \PRR{0.84}{0.01} & \PRR{0.85}{0.06} & \PRR{0.61}{0.02} & \PRR{0.69}{0.03} \\
+2 & Logistic regression & selected & \PRR{0.67}{0.02} & \PRR{0.90}{0.09} & \PRR{0.94}{0.02} & \PRR{0.67}{0.12} & \PRR{0.80}{0.06} \\
+3 & Logistic regression & pinned & \PRR{0.64}{0.10} & \PRR{0.93}{0.05} & \PRR{0.88}{0.01} & \PRR{0.65}{0.07} & \PRR{0.78}{0.06} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.88}{0.01} & \PRR{0.88}{0.01} & \PRR{0.91}{0.03} & \PRR{0.63}{0.02} & \PRR{0.82}{0.02} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} OOD directions 1\ensuremath{-}4 \ensuremath{-} same model, different agent}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG \ensuremath{\to} SG} & \textbf{SG \ensuremath{\to} RG} & \textbf{RQ \ensuremath{\to} SQ} & \textbf{SQ \ensuremath{\to} RQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} OOD directions 1\ensuremath{-}4 \ensuremath{-} same model, different agent (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG \ensuremath{\to} SG} & \textbf{SG \ensuremath{\to} RG} & \textbf{RQ \ensuremath{\to} SQ} & \textbf{SQ \ensuremath{\to} RQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+28 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.52}{0.21} & \PRR{0.45}{0.06} & \PRR{-0.07}{0.05} & \PRR{0.53}{0.04} & \PRR{0.10}{0.09} \\
+30 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.67}{0.03} & \PRR{0.62}{0.01} & \PRR{-0.13}{0.04} & \PRR{0.48}{0.06} & \PRR{0.07}{0.03} \\
+25 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.54}{0.05} & \PRR{0.03}{0.00} & \PRR{-0.09}{0.03} & \PRR{0.26}{0.05} & \PRR{0.19}{0.03} \\
+19 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.59}{0.04} & \PRR{0.08}{0.00} & \PRR{0.18}{0.17} & \PRR{0.26}{0.02} & \PRR{0.28}{0.06} \\
+23 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.42}{0.10} & \PRR{-0.04}{0.02} & \PRR{0.44}{0.02} & \PRR{-0.06}{0.09} & \PRR{0.19}{0.06} \\
+33 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.08}{0.03} & \PRR{0.03}{0.00} & \PRR{0.15}{0.08} & \PRR{0.02}{0.09} & \PRR{0.03}{0.05} \\
+31 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.51}{0.06} & \PRR{0.47}{0.02} & \PRR{-0.04}{0.04} & \PRR{0.33}{0.04} & \PRR{0.06}{0.04} \\
+34 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.59}{0.12} & \PRR{0.54}{0.04} & \PRR{-0.03}{0.08} & \PRR{0.19}{0.06} & \PRR{0.03}{0.07} \\
+22 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.48}{0.13} & \PRR{0.10}{0.06} & \PRR{-0.05}{0.07} & \PRR{0.34}{0.01} & \PRR{0.22}{0.07} \\
+13 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.55}{0.12} & \PRR{0.59}{0.01} & \PRR{-0.00}{0.07} & \PRR{0.41}{0.07} & \PRR{0.39}{0.06} \\
+27 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.10}{0.03} & \PRR{-0.01}{0.05} & \PRR{0.05}{0.13} & \PRR{0.30}{0.10} & \PRR{0.11}{0.08} \\
+32 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.18}{0.08} & \PRR{0.03}{0.00} & \PRR{0.01}{0.02} & \PRR{0.28}{0.14} & \PRR{0.04}{0.06} \\
+26 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.37}{0.05} & \PRR{0.55}{0.03} & \PRR{-0.03}{0.05} & \PRR{0.34}{0.05} & \PRR{0.12}{0.04} \\
+29 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.53}{0.15} & \PRR{0.64}{0.03} & \PRR{0.01}{0.08} & \PRR{0.25}{0.07} & \PRR{0.09}{0.08} \\
+21 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.52}{0.08} & \PRR{0.13}{0.10} & \PRR{-0.05}{0.06} & \PRR{0.34}{0.01} & \PRR{0.23}{0.06} \\
+14 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.57}{0.05} & \PRR{0.56}{0.04} & \PRR{-0.02}{0.06} & \PRR{0.42}{0.03} & \PRR{0.38}{0.05} \\
+37 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.17}{0.06} & \PRR{-0.13}{0.05} & \PRR{-0.31}{0.05} & \PRR{0.40}{0.12} & \PRR{-0.05}{0.07} \\
+36 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.45}{0.02} & \PRR{0.03}{0.00} & \PRR{-0.01}{0.02} & \PRR{0.35}{0.13} & \PRR{-0.02}{0.04} \\
+20 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.32}{0.02} & \PRR{0.35}{0.16} & \PRR{-0.05}{0.04} & \PRR{0.34}{0.05} & \PRR{0.24}{0.07} \\
+24 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.10}{0.08} & \PRR{0.48}{0.06} & \PRR{0.04}{0.12} & \PRR{0.33}{0.05} & \PRR{0.19}{0.08} \\
+18 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.40}{0.02} & \PRR{0.50}{0.01} & \PRR{-0.05}{0.06} & \PRR{0.37}{0.04} & \PRR{0.31}{0.03} \\
+16 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.48}{0.04} & \PRR{0.54}{0.01} & \PRR{0.01}{0.06} & \PRR{0.44}{0.05} & \PRR{0.37}{0.04} \\
+38 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.69}{0.04} & \PRR{0.01}{0.00} & \PRR{-0.33}{0.06} & \PRR{0.44}{0.13} & \PRR{-0.14}{0.06} \\
+35 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.75}{0.15} & \PRR{0.36}{0.09} & \PRR{-0.02}{0.03} & \PRR{0.39}{0.12} & \PRR{-0.01}{0.10} \\
+10 & Verb actions \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.70}{0.01} & \PRR{0.53}{0.02} & \PRR{0.00}{0.00} & \PRR{0.55}{0.07} & \PRR{0.44}{0.02} \\
+7 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.65}{0.01} & \PRR{0.59}{0.03} & \PRR{0.44}{0.00} & \PRR{0.24}{0.05} & \PRR{0.48}{0.02} \\
+5 & Verb actions \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.64}{0.02} & \PRR{0.62}{0.05} & \PRR{0.15}{0.00} & \PRR{0.66}{0.06} & \PRR{0.52}{0.03} \\
+3 & Verb actions \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.74}{0.03} & \PRR{0.60}{0.06} & \PRR{0.17}{0.00} & \PRR{0.69}{0.07} & \PRR{0.55}{0.04} \\
+9 & Verb actions \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.78}{0.05} & \PRR{0.27}{0.01} & \PRR{0.24}{0.00} & \PRR{0.51}{0.07} & \PRR{0.45}{0.03} \\
+6 & Verb actions \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.70}{0.01} & \PRR{0.55}{0.04} & \PRR{0.13}{0.00} & \PRR{0.56}{0.01} & \PRR{0.49}{0.01} \\
+12 & N steps & \ensuremath{-}N & \PRR{0.57}{0.00} & \PRR{0.64}{0.00} & \PRR{-0.15}{0.00} & \PRR{0.49}{0.00} & \PRR{0.39}{0.00} \\
+4 & Tool success rate & mean of observed tool critics & \PRR{0.85}{0.00} & \PRR{0.40}{0.00} & \PRR{0.51}{0.00} & \PRR{0.39}{0.00} & \PRR{0.54}{0.00} \\
+17 & Bayes tool-only & critic:all & \PRR{0.62}{0.04} & \PRR{0.29}{0.01} & \PRR{0.25}{0.02} & \PRR{0.11}{0.02} & \PRR{0.32}{0.02} \\
+8 & Bayes tool-only & Step critics, multiplied & \PRR{0.77}{0.02} & \PRR{0.14}{0.03} & \PRR{0.23}{0.09} & \PRR{0.70}{0.02} & \PRR{0.46}{0.04} \\
+2 & Bayes tool-only & Step critics, tempered & \PRR{0.76}{0.03} & \PRR{0.37}{0.01} & \PRR{0.62}{0.03} & \PRR{0.63}{0.02} & \PRR{0.60}{0.02} \\
+15 & Logistic regression & selected & \PRR{0.70}{0.13} & \PRR{0.20}{0.09} & \PRR{0.46}{0.18} & \PRR{0.15}{0.10} & \PRR{0.38}{0.12} \\
+11 & Logistic regression & pinned & \PRR{0.77}{0.04} & \PRR{0.18}{0.03} & \PRR{0.21}{0.12} & \PRR{0.57}{0.16} & \PRR{0.43}{0.09} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.77}{0.11} & \PRR{0.90}{0.01} & \PRR{0.65}{0.04} & \PRR{0.91}{0.04} & \PRR{0.81}{0.05} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} OOD directions 5\ensuremath{-}8 \ensuremath{-} different model, different agent}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG \ensuremath{\to} SQ} & \textbf{SG \ensuremath{\to} RQ} & \textbf{RQ \ensuremath{\to} SG} & \textbf{SQ \ensuremath{\to} RG} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} OOD directions 5\ensuremath{-}8 \ensuremath{-} different model, different agent (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG \ensuremath{\to} SQ} & \textbf{SG \ensuremath{\to} RQ} & \textbf{RQ \ensuremath{\to} SG} & \textbf{SQ \ensuremath{\to} RG} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+20 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.19}{0.05} & \PRR{0.44}{0.02} & \PRR{-0.46}{0.28} & \PRR{0.37}{0.05} & \PRR{0.14}{0.10} \\
+28 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.12}{0.03} & \PRR{0.35}{0.05} & \PRR{-0.76}{0.01} & \PRR{0.34}{0.08} & \PRR{0.01}{0.04} \\
+35 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.18}{0.03} & \PRR{0.08}{0.00} & \PRR{-0.70}{0.01} & \PRR{0.13}{0.10} & \PRR{-0.08}{0.04} \\
+27 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.17}{0.03} & \PRR{0.08}{0.00} & \PRR{-0.49}{0.01} & \PRR{0.35}{0.02} & \PRR{0.03}{0.01} \\
+13 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.24}{0.05} & \PRR{0.08}{0.00} & \PRR{0.37}{0.14} & \PRR{0.35}{0.02} & \PRR{0.26}{0.05} \\
+11 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.14}{0.01} & \PRR{0.08}{0.00} & \PRR{0.39}{0.06} & \PRR{0.50}{0.03} & \PRR{0.28}{0.03} \\
+7 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.14}{0.02} & \PRR{0.35}{0.01} & \PRR{0.57}{0.04} & \PRR{0.54}{0.02} & \PRR{0.33}{0.02} \\
+17 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.13}{0.06} & \PRR{0.37}{0.01} & \PRR{-0.18}{0.24} & \PRR{0.55}{0.02} & \PRR{0.15}{0.08} \\
+16 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.02}{0.06} & \PRR{0.17}{0.05} & \PRR{0.43}{0.13} & \PRR{0.32}{0.10} & \PRR{0.22}{0.09} \\
+9 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.03}{0.04} & \PRR{0.27}{0.02} & \PRR{0.53}{0.08} & \PRR{0.43}{0.10} & \PRR{0.32}{0.06} \\
+25 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.30}{0.02} & \PRR{0.10}{0.03} & \PRR{0.47}{0.08} & \PRR{-0.00}{0.04} & \PRR{0.07}{0.04} \\
+30 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.01}{0.11} & \PRR{0.09}{0.00} & \PRR{-0.23}{0.07} & \PRR{0.16}{0.06} & \PRR{0.01}{0.06} \\
+5 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.06}{0.02} & \PRR{0.36}{0.01} & \PRR{0.55}{0.04} & \PRR{0.54}{0.01} & \PRR{0.35}{0.02} \\
+23 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.12}{0.06} & \PRR{0.32}{0.02} & \PRR{-0.40}{0.25} & \PRR{0.56}{0.01} & \PRR{0.09}{0.08} \\
+15 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.12}{0.05} & \PRR{0.21}{0.01} & \PRR{0.40}{0.12} & \PRR{0.46}{0.08} & \PRR{0.24}{0.07} \\
+8 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{-0.08}{0.04} & \PRR{0.30}{0.05} & \PRR{0.52}{0.07} & \PRR{0.55}{0.06} & \PRR{0.32}{0.05} \\
+29 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.35}{0.02} & \PRR{0.12}{0.03} & \PRR{0.24}{0.06} & \PRR{0.02}{0.09} & \PRR{0.01}{0.05} \\
+33 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.07}{0.06} & \PRR{0.10}{0.01} & \PRR{-0.37}{0.11} & \PRR{0.20}{0.07} & \PRR{-0.03}{0.06} \\
+14 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.05}{0.09} & \PRR{0.23}{0.05} & \PRR{0.21}{0.05} & \PRR{0.56}{0.03} & \PRR{0.26}{0.05} \\
+19 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.07}{0.04} & \PRR{0.09}{0.03} & \PRR{-0.14}{0.16} & \PRR{0.54}{0.03} & \PRR{0.14}{0.06} \\
+21 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.01}{0.17} & \PRR{0.16}{0.00} & \PRR{-0.16}{0.17} & \PRR{0.51}{0.06} & \PRR{0.13}{0.10} \\
+12 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.10}{0.14} & \PRR{0.24}{0.02} & \PRR{0.27}{0.08} & \PRR{0.48}{0.04} & \PRR{0.27}{0.07} \\
+36 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.29}{0.00} & \PRR{0.00}{0.03} & \PRR{-0.60}{0.05} & \PRR{0.29}{0.01} & \PRR{-0.15}{0.02} \\
+31 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.09}{0.07} & \PRR{0.13}{0.10} & \PRR{-0.78}{0.17} & \PRR{0.45}{0.07} & \PRR{-0.03}{0.10} \\
+37 & Verb actions \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.00}{0.00} & \PRR{-0.41}{0.00} & \PRR{0.00}{0.06} & \PRR{-0.22}{0.12} & \PRR{-0.16}{0.05} \\
+34 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.01}{0.00} & \PRR{-0.42}{0.02} & \PRR{0.01}{0.04} & \PRR{0.25}{0.15} & \PRR{-0.04}{0.05} \\
+38 & Verb actions \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.17}{0.00} & \PRR{-0.39}{0.06} & \PRR{-0.46}{0.05} & \PRR{-0.10}{0.05} & \PRR{-0.19}{0.04} \\
+32 & Verb actions \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.30}{0.00} & \PRR{-0.31}{0.09} & \PRR{-0.17}{0.08} & \PRR{0.07}{0.08} & \PRR{-0.03}{0.06} \\
+24 & Verb actions \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.30}{0.00} & \PRR{0.24}{0.03} & \PRR{-0.61}{0.03} & \PRR{0.43}{0.06} & \PRR{0.09}{0.03} \\
+26 & Verb actions \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.13}{0.00} & \PRR{0.15}{0.02} & \PRR{-0.55}{0.02} & \PRR{0.46}{0.02} & \PRR{0.05}{0.01} \\
+4 & N steps & \ensuremath{-}N & \PRR{-0.15}{0.00} & \PRR{0.49}{0.00} & \PRR{0.57}{0.00} & \PRR{0.64}{0.00} & \PRR{0.39}{0.00} \\
+2 & Tool success rate & mean of observed tool critics & \PRR{0.51}{0.00} & \PRR{0.39}{0.00} & \PRR{0.85}{0.00} & \PRR{0.40}{0.00} & \PRR{0.54}{0.00} \\
+10 & Bayes tool-only & critic:all & \PRR{0.41}{0.06} & \PRR{0.18}{0.06} & \PRR{0.38}{0.09} & \PRR{0.29}{0.03} & \PRR{0.32}{0.06} \\
+6 & Bayes tool-only & Step critics, multiplied & \PRR{0.49}{0.02} & \PRR{-0.16}{0.04} & \PRR{0.48}{0.17} & \PRR{0.56}{0.02} & \PRR{0.34}{0.06} \\
+3 & Bayes tool-only & Step critics, tempered & \PRR{0.63}{0.02} & \PRR{0.37}{0.03} & \PRR{0.59}{0.17} & \PRR{0.51}{0.03} & \PRR{0.53}{0.07} \\
+22 & Logistic regression & selected & \PRR{-0.08}{0.08} & \PRR{-0.03}{0.06} & \PRR{0.33}{0.06} & \PRR{0.17}{0.03} & \PRR{0.10}{0.06} \\
+18 & Logistic regression & pinned & \PRR{0.03}{0.05} & \PRR{0.03}{0.10} & \PRR{0.26}{0.17} & \PRR{0.25}{0.03} & \PRR{0.14}{0.09} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.41}{0.04} & \PRR{0.94}{0.00} & \PRR{0.86}{0.01} & \PRR{0.84}{0.01} & \PRR{0.77}{0.02} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} OOD directions 9\ensuremath{-}12 \ensuremath{-} different model, same agent}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{58mm}L{37mm}C{28mm}C{28mm}C{28mm}C{28mm}C{28mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG \ensuremath{\to} RQ} & \textbf{SG \ensuremath{\to} SQ} & \textbf{RQ \ensuremath{\to} RG} & \textbf{SQ \ensuremath{\to} SG} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{8}{@{}l}{\emph{ALFWorld \ensuremath{-} OOD directions 9\ensuremath{-}12 \ensuremath{-} different model, same agent (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{RG \ensuremath{\to} RQ} & \textbf{SG \ensuremath{\to} SQ} & \textbf{RQ \ensuremath{\to} RG} & \textbf{SQ \ensuremath{\to} SG} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+36 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.40}{0.10} & \PRR{0.13}{0.02} & \PRR{-0.42}{0.18} & \PRR{-0.63}{0.04} & \PRR{-0.13}{0.08} \\
+38 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.42}{0.01} & \PRR{-0.04}{0.03} & \PRR{-0.60}{0.01} & \PRR{-0.63}{0.03} & \PRR{-0.21}{0.02} \\
+34 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.10}{0.04} & \PRR{-0.07}{0.00} & \PRR{-0.52}{0.05} & \PRR{0.28}{0.03} & \PRR{-0.05}{0.03} \\
+28 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.13}{0.00} & \PRR{-0.07}{0.00} & \PRR{-0.34}{0.01} & \PRR{0.79}{0.05} & \PRR{0.13}{0.02} \\
+12 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.33}{0.01} & \PRR{0.04}{0.00} & \PRR{0.08}{0.06} & \PRR{0.87}{0.03} & \PRR{0.33}{0.03} \\
+17 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.08}{0.00} & \PRR{-0.07}{0.00} & \PRR{0.19}{0.04} & \PRR{0.83}{0.00} & \PRR{0.26}{0.01} \\
+32 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.23}{0.05} & \PRR{0.25}{0.02} & \PRR{-0.41}{0.08} & \PRR{0.42}{0.03} & \PRR{0.01}{0.05} \\
+29 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.13}{0.00} & \PRR{0.22}{0.05} & \PRR{-0.43}{0.20} & \PRR{0.75}{0.05} & \PRR{0.10}{0.08} \\
+31 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.04}{0.01} & \PRR{0.17}{0.02} & \PRR{-0.41}{0.06} & \PRR{0.46}{0.13} & \PRR{0.05}{0.05} \\
+20 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.09}{0.03} & \PRR{0.39}{0.00} & \PRR{-0.37}{0.04} & \PRR{0.79}{0.07} & \PRR{0.22}{0.04} \\
+7 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.01}{0.09} & \PRR{0.60}{0.01} & \PRR{0.07}{0.12} & \PRR{0.89}{0.01} & \PRR{0.39}{0.06} \\
+5 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.22}{0.04} & \PRR{0.12}{0.02} & \PRR{0.37}{0.18} & \PRR{0.88}{0.02} & \PRR{0.40}{0.06} \\
+22 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.18}{0.06} & \PRR{0.45}{0.01} & \PRR{-0.20}{0.14} & \PRR{0.51}{0.05} & \PRR{0.15}{0.07} \\
+24 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.19}{0.02} & \PRR{0.29}{0.03} & \PRR{-0.27}{0.19} & \PRR{0.74}{0.03} & \PRR{0.14}{0.07} \\
+27 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.12}{0.01} & \PRR{0.19}{0.00} & \PRR{-0.39}{0.06} & \PRR{0.60}{0.11} & \PRR{0.13}{0.05} \\
+16 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.25}{0.01} & \PRR{0.39}{0.02} & \PRR{-0.31}{0.05} & \PRR{0.82}{0.05} & \PRR{0.29}{0.03} \\
+6 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.01}{0.07} & \PRR{0.63}{0.01} & \PRR{0.01}{0.01} & \PRR{0.94}{0.02} & \PRR{0.39}{0.03} \\
+11 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.17}{0.01} & \PRR{0.12}{0.01} & \PRR{0.25}{0.07} & \PRR{0.89}{0.03} & \PRR{0.36}{0.03} \\
+14 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.16}{0.06} & \PRR{0.33}{0.02} & \PRR{0.48}{0.03} & \PRR{0.26}{0.08} & \PRR{0.31}{0.05} \\
+25 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.07}{0.09} & \PRR{0.16}{0.03} & \PRR{-0.03}{0.25} & \PRR{0.33}{0.13} & \PRR{0.13}{0.12} \\
+23 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.15}{0.14} & \PRR{0.24}{0.02} & \PRR{0.12}{0.05} & \PRR{0.06}{0.06} & \PRR{0.14}{0.07} \\
+15 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.17}{0.12} & \PRR{0.34}{0.01} & \PRR{0.27}{0.06} & \PRR{0.38}{0.03} & \PRR{0.29}{0.06} \\
+3 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.32}{0.05} & \PRR{0.68}{0.00} & \PRR{0.33}{0.08} & \PRR{0.93}{0.01} & \PRR{0.56}{0.04} \\
+21 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.14}{0.04} & \PRR{0.11}{0.03} & \PRR{-0.09}{0.09} & \PRR{0.86}{0.03} & \PRR{0.19}{0.05} \\
+37 & Verb actions \ensuremath{-} Bayes UQ + tools & SEP & \PRR{-0.40}{0.01} & \PRR{-0.01}{0.00} & \PRR{-0.42}{0.14} & \PRR{0.13}{0.07} & \PRR{-0.18}{0.05} \\
+26 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & \PRR{-0.40}{0.05} & \PRR{0.39}{0.00} & \PRR{-0.12}{0.11} & \PRR{0.66}{0.05} & \PRR{0.13}{0.05} \\
+35 & Verb actions \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.39}{0.06} & \PRR{0.24}{0.00} & \PRR{-0.58}{0.00} & \PRR{0.32}{0.02} & \PRR{-0.10}{0.02} \\
+33 & Verb actions \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{-0.35}{0.03} & \PRR{0.26}{0.00} & \PRR{-0.55}{0.03} & \PRR{0.63}{0.01} & \PRR{-0.00}{0.02} \\
+13 & Verb actions \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.36}{0.15} & \PRR{0.15}{0.00} & \PRR{0.12}{0.06} & \PRR{0.65}{0.02} & \PRR{0.32}{0.06} \\
+30 & Verb actions \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.34}{0.02} & \PRR{0.31}{0.00} & \PRR{-0.49}{0.02} & \PRR{0.81}{0.04} & \PRR{0.07}{0.02} \\
+9 & N steps & \ensuremath{-}N & \PRR{0.49}{0.00} & \PRR{-0.15}{0.00} & \PRR{0.64}{0.00} & \PRR{0.57}{0.00} & \PRR{0.39}{0.00} \\
+4 & Tool success rate & mean of observed tool critics & \PRR{0.39}{0.00} & \PRR{0.51}{0.00} & \PRR{0.40}{0.00} & \PRR{0.85}{0.00} & \PRR{0.54}{0.00} \\
+10 & Bayes tool-only & critic:all & \PRR{0.13}{0.01} & \PRR{0.36}{0.08} & \PRR{0.37}{0.12} & \PRR{0.68}{0.08} & \PRR{0.38}{0.07} \\
+8 & Bayes tool-only & Step critics, multiplied & \PRR{0.50}{0.01} & \PRR{0.24}{0.02} & \PRR{0.04}{0.07} & \PRR{0.79}{0.01} & \PRR{0.39}{0.03} \\
+2 & Bayes tool-only & Step critics, tempered & \PRR{0.66}{0.06} & \PRR{0.54}{0.03} & \PRR{0.35}{0.07} & \PRR{0.83}{0.02} & \PRR{0.60}{0.04} \\
+18 & Logistic regression & selected & \PRR{-0.16}{0.09} & \PRR{0.02}{0.02} & \PRR{0.17}{0.03} & \PRR{0.90}{0.05} & \PRR{0.23}{0.05} \\
+19 & Logistic regression & pinned & \PRR{-0.01}{0.15} & \PRR{0.06}{0.02} & \PRR{-0.01}{0.03} & \PRR{0.89}{0.06} & \PRR{0.23}{0.06} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.56}{0.04} & \PRR{0.66}{0.00} & \PRR{0.89}{0.02} & \PRR{0.92}{0.03} & \PRR{0.76}{0.02} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{ALFWorld \ensuremath{-} OOD overall \ensuremath{-} all methods}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{63mm}L{37mm}C{32mm}C{32mm}C{32mm}C{32mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{directions 1\ensuremath{-}4 \ensuremath{-} same model, different agent} & \textbf{directions 5\ensuremath{-}8 \ensuremath{-} different model, different agent} & \textbf{directions 9\ensuremath{-}12 \ensuremath{-} different model, same agent} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{7}{@{}l}{\emph{ALFWorld \ensuremath{-} OOD overall \ensuremath{-} all methods (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{directions 1\ensuremath{-}4 \ensuremath{-} same model, different agent} & \textbf{directions 5\ensuremath{-}8 \ensuremath{-} different model, different agent} & \textbf{directions 9\ensuremath{-}12 \ensuremath{-} different model, same agent} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{7}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+36 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.10}{0.09} & \PRR{0.14}{0.10} & \PRR{-0.13}{0.08} & \PRR{0.03}{0.09} \\
+38 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.07}{0.03} & \PRR{0.01}{0.04} & \PRR{-0.21}{0.02} & \PRR{-0.04}{0.03} \\
+37 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.19}{0.03} & \PRR{-0.08}{0.04} & \PRR{-0.05}{0.03} & \PRR{0.02}{0.03} \\
+26 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.28}{0.06} & \PRR{0.03}{0.01} & \PRR{0.13}{0.02} & \PRR{0.14}{0.03} \\
+13 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.19}{0.06} & \PRR{0.26}{0.05} & \PRR{0.33}{0.03} & \PRR{0.26}{0.05} \\
+21 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.03}{0.05} & \PRR{0.28}{0.03} & \PRR{0.26}{0.01} & \PRR{0.19}{0.03} \\
+27 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.06}{0.04} & \PRR{0.33}{0.02} & \PRR{0.01}{0.05} & \PRR{0.13}{0.04} \\
+31 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.03}{0.07} & \PRR{0.15}{0.08} & \PRR{0.10}{0.08} & \PRR{0.09}{0.08} \\
+23 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.22}{0.07} & \PRR{0.22}{0.09} & \PRR{0.05}{0.05} & \PRR{0.16}{0.07} \\
+9 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.39}{0.06} & \PRR{0.32}{0.06} & \PRR{0.22}{0.04} & \PRR{0.31}{0.05} \\
+20 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.11}{0.08} & \PRR{0.07}{0.04} & \PRR{0.39}{0.06} & \PRR{0.19}{0.06} \\
+25 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.04}{0.06} & \PRR{0.01}{0.06} & \PRR{0.40}{0.06} & \PRR{0.15}{0.06} \\
+15 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.12}{0.04} & \PRR{0.35}{0.02} & \PRR{0.15}{0.07} & \PRR{0.21}{0.04} \\
+29 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.09}{0.08} & \PRR{0.09}{0.08} & \PRR{0.14}{0.07} & \PRR{0.11}{0.08} \\
+17 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.23}{0.06} & \PRR{0.24}{0.07} & \PRR{0.13}{0.05} & \PRR{0.20}{0.06} \\
+7 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.38}{0.05} & \PRR{0.32}{0.05} & \PRR{0.29}{0.03} & \PRR{0.33}{0.04} \\
+28 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.05}{0.07} & \PRR{0.01}{0.05} & \PRR{0.39}{0.03} & \PRR{0.12}{0.05} \\
+30 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.02}{0.04} & \PRR{-0.03}{0.06} & \PRR{0.36}{0.03} & \PRR{0.10}{0.04} \\
+11 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.24}{0.07} & \PRR{0.26}{0.05} & \PRR{0.31}{0.05} & \PRR{0.27}{0.06} \\
+24 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.19}{0.08} & \PRR{0.14}{0.06} & \PRR{0.13}{0.12} & \PRR{0.15}{0.09} \\
+18 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.31}{0.03} & \PRR{0.13}{0.10} & \PRR{0.14}{0.07} & \PRR{0.19}{0.07} \\
+8 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.37}{0.04} & \PRR{0.27}{0.07} & \PRR{0.29}{0.06} & \PRR{0.31}{0.06} \\
+32 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{-0.14}{0.06} & \PRR{-0.15}{0.02} & \PRR{0.56}{0.04} & \PRR{0.09}{0.04} \\
+34 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{-0.01}{0.10} & \PRR{-0.03}{0.10} & \PRR{0.19}{0.05} & \PRR{0.05}{0.08} \\
+35 & Verb actions \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.44}{0.02} & \PRR{-0.16}{0.05} & \PRR{-0.18}{0.05} & \PRR{0.04}{0.04} \\
+19 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.48}{0.02} & \PRR{-0.04}{0.05} & \PRR{0.13}{0.05} & \PRR{0.19}{0.04} \\
+33 & Verb actions \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.52}{0.03} & \PRR{-0.19}{0.04} & \PRR{-0.10}{0.02} & \PRR{0.07}{0.03} \\
+22 & Verb actions \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.55}{0.04} & \PRR{-0.03}{0.06} & \PRR{-0.00}{0.02} & \PRR{0.17}{0.04} \\
+10 & Verb actions \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.45}{0.03} & \PRR{0.09}{0.03} & \PRR{0.32}{0.06} & \PRR{0.29}{0.04} \\
+16 & Verb actions \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.49}{0.01} & \PRR{0.05}{0.01} & \PRR{0.07}{0.02} & \PRR{0.20}{0.02} \\
+5 & N steps & \ensuremath{-}N & \PRR{0.39}{0.00} & \PRR{0.39}{0.00} & \PRR{0.39}{0.00} & \PRR{0.39}{0.00} \\
+3 & Tool success rate & mean of observed tool critics & \PRR{0.54}{0.00} & \PRR{0.54}{0.00} & \PRR{0.54}{0.00} & \PRR{0.54}{0.00} \\
+6 & Bayes tool-only & critic:all & \PRR{0.32}{0.02} & \PRR{0.32}{0.06} & \PRR{0.38}{0.07} & \PRR{0.34}{0.05} \\
+4 & Bayes tool-only & Step critics, multiplied & \PRR{0.46}{0.04} & \PRR{0.34}{0.06} & \PRR{0.39}{0.03} & \PRR{0.40}{0.04} \\
+2 & Bayes tool-only & Step critics, tempered & \PRR{0.60}{0.02} & \PRR{0.53}{0.07} & \PRR{0.60}{0.04} & \PRR{0.57}{0.04} \\
+14 & Logistic regression & selected & \PRR{0.38}{0.12} & \PRR{0.10}{0.06} & \PRR{0.23}{0.05} & \PRR{0.24}{0.08} \\
+12 & Logistic regression & pinned & \PRR{0.43}{0.09} & \PRR{0.14}{0.09} & \PRR{0.23}{0.06} & \PRR{0.27}{0.08} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.81}{0.05} & \PRR{0.77}{0.02} & \PRR{0.76}{0.02} & \PRR{0.78}{0.03} \\
+\end{longtable}
+\endgroup
+
+\clearpage
+\section*{DeepSWE}
+DG = mini-swe-agent/gpt-oss-20b; DQ = mini-swe-agent/Qwen3.6-35B-A3B. 113 DeepSWE tasks, 200-command budget, working-tree grading; the score is the verifier's partial credit.
+
+\Needspace{50mm}
+\subsection*{Datasets}
+\begin{tabular}{@{}L{60mm}C{30mm}C{30mm}C{40mm}@{}}
+\toprule
+\textbf{Cohort} & \textbf{Episodes} & \textbf{Mean score} & \textbf{Continuous score} \\
+\midrule
+DG & 90 & 0.49 & yes (partial credit) \\
+DQ & 65 & 0.78 & yes (partial credit) \\
+\bottomrule
+\end{tabular}
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Logprob \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Logprob \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+3 & Logprob & last & \PRR{-0.06}{0.00} & \PRR{-0.09}{0.00} & \PRR{-0.07}{0.00} \\
+1 & Logprob & mean & \PRR{-0.03}{0.00} & \PRR{0.24}{0.00} & \PRR{0.11}{0.00} \\
+2 & Logprob & max & \PRR{0.08}{0.00} & \PRR{-0.22}{0.00} & \PRR{-0.07}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Logprob \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Logprob \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+8 & Logprob \ensuremath{-} Bayes UQ-only & SEP & \PRR{-0.02}{0.12} & \PRR{0.06}{0.17} & \PRR{0.02}{0.15} \\
+7 & Logprob \ensuremath{-} Bayes UQ-only & Double & \PRR{0.11}{0.06} & \PRR{0.16}{0.02} & \PRR{0.14}{0.04} \\
+9 & Logprob \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.09}{0.08} & \PRR{0.13}{0.17} & \PRR{0.02}{0.13} \\
+10 & Logprob \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{-0.09}{0.08} & \PRR{0.12}{0.17} & \PRR{0.01}{0.12} \\
+11 & Logprob \ensuremath{-} Bayes UQ-only & Last only & \PRR{-0.17}{0.04} & \PRR{0.06}{0.08} & \PRR{-0.05}{0.06} \\
+12 & Logprob \ensuremath{-} Bayes UQ-only & Mean only & \PRR{-0.19}{0.01} & \PRR{0.05}{0.17} & \PRR{-0.07}{0.09} \\
+2 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.19}{0.11} & \PRR{0.26}{0.07} & \PRR{0.23}{0.09} \\
+1 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.28}{0.03} & \PRR{0.24}{0.03} & \PRR{0.26}{0.03} \\
+3 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.17}{0.06} & \PRR{0.24}{0.06} & \PRR{0.20}{0.06} \\
+4 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.18}{0.01} & \PRR{0.22}{0.04} & \PRR{0.20}{0.02} \\
+6 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.17}{0.03} & \PRR{0.16}{0.03} & \PRR{0.16}{0.03} \\
+5 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.15}{0.02} & \PRR{0.20}{0.04} & \PRR{0.18}{0.03} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Perplexity \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Perplexity \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+3 & Perplexity & last & \PRR{-0.06}{0.00} & \PRR{-0.09}{0.00} & \PRR{-0.07}{0.00} \\
+1 & Perplexity & mean & \PRR{-0.06}{0.00} & \PRR{0.25}{0.00} & \PRR{0.10}{0.00} \\
+2 & Perplexity & max & \PRR{-0.08}{0.00} & \PRR{0.02}{0.00} & \PRR{-0.03}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Perplexity \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Perplexity \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+10 & Perplexity \ensuremath{-} Bayes UQ-only & SEP & \PRR{-0.02}{0.12} & \PRR{0.06}{0.17} & \PRR{0.02}{0.15} \\
+7 & Perplexity \ensuremath{-} Bayes UQ-only & Double & \PRR{0.11}{0.06} & \PRR{0.16}{0.02} & \PRR{0.13}{0.04} \\
+9 & Perplexity \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.04}{0.13} & \PRR{0.10}{0.16} & \PRR{0.03}{0.14} \\
+8 & Perplexity \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{-0.04}{0.13} & \PRR{0.10}{0.16} & \PRR{0.03}{0.14} \\
+12 & Perplexity \ensuremath{-} Bayes UQ-only & Last only & \PRR{-0.17}{0.05} & \PRR{0.07}{0.09} & \PRR{-0.05}{0.07} \\
+11 & Perplexity \ensuremath{-} Bayes UQ-only & Mean only & \PRR{-0.08}{0.04} & \PRR{0.05}{0.17} & \PRR{-0.01}{0.11} \\
+2 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.19}{0.11} & \PRR{0.26}{0.07} & \PRR{0.23}{0.09} \\
+1 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.28}{0.03} & \PRR{0.24}{0.03} & \PRR{0.26}{0.03} \\
+3 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.21}{0.08} & \PRR{0.22}{0.06} & \PRR{0.22}{0.07} \\
+4 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.18}{0.02} & \PRR{0.22}{0.05} & \PRR{0.20}{0.03} \\
+6 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.17}{0.01} & \PRR{0.16}{0.03} & \PRR{0.16}{0.02} \\
+5 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.16}{0.01} & \PRR{0.20}{0.04} & \PRR{0.18}{0.03} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} MTE \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} MTE \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+2 & MTE & last & \PRR{-0.06}{0.00} & \PRR{0.15}{0.00} & \PRR{0.04}{0.00} \\
+1 & MTE & mean & \PRR{-0.02}{0.00} & \PRR{0.21}{0.00} & \PRR{0.10}{0.00} \\
+3 & MTE & max & \PRR{-0.08}{0.00} & \PRR{0.12}{0.00} & \PRR{0.02}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} MTE \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} MTE \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+8 & MTE \ensuremath{-} Bayes UQ-only & SEP & \PRR{-0.09}{0.02} & \PRR{0.18}{0.07} & \PRR{0.04}{0.05} \\
+4 & MTE \ensuremath{-} Bayes UQ-only & Double & \PRR{0.19}{0.04} & \PRR{0.18}{0.02} & \PRR{0.19}{0.03} \\
+10 & MTE \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.12}{0.11} & \PRR{0.08}{0.17} & \PRR{-0.02}{0.14} \\
+9 & MTE \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{-0.12}{0.11} & \PRR{0.08}{0.18} & \PRR{-0.02}{0.14} \\
+11 & MTE \ensuremath{-} Bayes UQ-only & Last only & \PRR{-0.14}{0.03} & \PRR{0.09}{0.09} & \PRR{-0.02}{0.06} \\
+12 & MTE \ensuremath{-} Bayes UQ-only & Mean only & \PRR{-0.22}{0.04} & \PRR{0.03}{0.18} & \PRR{-0.10}{0.11} \\
+2 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.15}{0.08} & \PRR{0.26}{0.06} & \PRR{0.21}{0.07} \\
+1 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.32}{0.06} & \PRR{0.25}{0.03} & \PRR{0.28}{0.04} \\
+5 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.17}{0.06} & \PRR{0.19}{0.08} & \PRR{0.18}{0.07} \\
+3 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.19}{0.02} & \PRR{0.20}{0.04} & \PRR{0.20}{0.03} \\
+7 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.17}{0.03} & \PRR{0.15}{0.03} & \PRR{0.16}{0.03} \\
+6 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.14}{0.01} & \PRR{0.19}{0.05} & \PRR{0.17}{0.03} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Self-certainty \ensuremath{-} raw UQ}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Self-certainty \ensuremath{-} raw UQ (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+2 & Self-certainty & last & \PRR{-0.07}{0.00} & \PRR{0.12}{0.00} & \PRR{0.02}{0.00} \\
+1 & Self-certainty & mean & \PRR{0.02}{0.00} & \PRR{0.04}{0.00} & \PRR{0.03}{0.00} \\
+3 & Self-certainty & max & \PRR{-0.14}{0.00} & \PRR{0.10}{0.00} & \PRR{-0.02}{0.00} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Self-certainty \ensuremath{-} Bayesian variants}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Self-certainty \ensuremath{-} Bayesian variants (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+8 & Self-certainty \ensuremath{-} Bayes UQ-only & SEP & \PRR{-0.10}{0.07} & \PRR{-0.15}{0.16} & \PRR{-0.12}{0.11} \\
+7 & Self-certainty \ensuremath{-} Bayes UQ-only & Double & \PRR{-0.02}{0.01} & \PRR{-0.17}{0.07} & \PRR{-0.09}{0.04} \\
+11 & Self-certainty \ensuremath{-} Bayes UQ-only & Continuous (\ensuremath{\lambda}=1) & \PRR{-0.13}{0.11} & \PRR{-0.20}{0.02} & \PRR{-0.17}{0.07} \\
+10 & Self-certainty \ensuremath{-} Bayes UQ-only & Tempered (\ensuremath{\lambda}=0.25) & \PRR{-0.13}{0.11} & \PRR{-0.20}{0.02} & \PRR{-0.16}{0.07} \\
+12 & Self-certainty \ensuremath{-} Bayes UQ-only & Last only & \PRR{-0.20}{0.10} & \PRR{-0.24}{0.05} & \PRR{-0.22}{0.08} \\
+9 & Self-certainty \ensuremath{-} Bayes UQ-only & Mean only & \PRR{-0.22}{0.05} & \PRR{-0.06}{0.03} & \PRR{-0.14}{0.04} \\
+4 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.18}{0.11} & \PRR{0.12}{0.01} & \PRR{0.15}{0.06} \\
+2 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.19}{0.01} & \PRR{0.13}{0.03} & \PRR{0.16}{0.02} \\
+3 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.19}{0.07} & \PRR{0.12}{0.04} & \PRR{0.16}{0.06} \\
+1 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.19}{0.03} & \PRR{0.14}{0.03} & \PRR{0.16}{0.03} \\
+5 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.17}{0.03} & \PRR{0.11}{0.01} & \PRR{0.14}{0.02} \\
+6 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.14}{0.02} & \PRR{0.14}{0.02} & \PRR{0.14}{0.02} \\
+\end{longtable}
+\endgroup
+
+\Needspace{20mm}\subsection*{Verb actions}
+Not available on this benchmark.
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} Reference methods}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} Reference methods (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+7 & N steps & \ensuremath{-}N & \PRR{0.16}{0.00} & \PRR{-0.11}{0.00} & \PRR{0.03}{0.00} \\
+8 & Tool success rate & mean of observed tool critics & \PRR{-0.18}{0.00} & \PRR{-0.13}{0.00} & \PRR{-0.16}{0.00} \\
+4 & Bayes tool-only & critic:all & \PRR{0.20}{0.01} & \PRR{0.15}{0.03} & \PRR{0.17}{0.02} \\
+2 & Bayes tool-only & Step critics, multiplied & \PRR{0.28}{0.00} & \PRR{0.12}{0.03} & \PRR{0.20}{0.02} \\
+3 & Bayes tool-only & Step critics, tempered & \PRR{0.20}{0.03} & \PRR{0.15}{0.04} & \PRR{0.18}{0.03} \\
+6 & Logistic regression & selected & \PRR{0.34}{0.08} & \PRR{-0.02}{0.04} & \PRR{0.16}{0.06} \\
+5 & Logistic regression & pinned & \PRR{0.33}{0.12} & \PRR{0.00}{0.04} & \PRR{0.17}{0.08} \\
+1 & TemporalBelief (B4) & final checkpoint & \PRR{0.28}{0.03} & \PRR{0.16}{0.07} & \PRR{0.22}{0.05} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} ID summary \ensuremath{-} best per UQ family}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} ID summary \ensuremath{-} best per UQ family (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG} & \textbf{DQ} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+11 & Logprob & mean & \PRR{-0.03}{0.00} & \PRR{0.24}{0.00} & \PRR{0.11}{0.00} \\
+3 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.28}{0.03} & \PRR{0.24}{0.03} & \PRR{0.26}{0.03} \\
+13 & Perplexity & mean & \PRR{-0.06}{0.00} & \PRR{0.25}{0.00} & \PRR{0.10}{0.00} \\
+2 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.28}{0.03} & \PRR{0.24}{0.03} & \PRR{0.26}{0.03} \\
+12 & MTE & mean & \PRR{-0.02}{0.00} & \PRR{0.21}{0.00} & \PRR{0.10}{0.00} \\
+1 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.32}{0.06} & \PRR{0.25}{0.03} & \PRR{0.28}{0.04} \\
+14 & Self-certainty & mean & \PRR{0.02}{0.00} & \PRR{0.04}{0.00} & \PRR{0.03}{0.00} \\
+9 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.19}{0.03} & \PRR{0.14}{0.03} & \PRR{0.16}{0.03} \\
+15 & N steps & \ensuremath{-}N & \PRR{0.16}{0.00} & \PRR{-0.11}{0.00} & \PRR{0.03}{0.00} \\
+16 & Tool success rate & mean of observed tool critics & \PRR{-0.18}{0.00} & \PRR{-0.13}{0.00} & \PRR{-0.16}{0.00} \\
+7 & Bayes tool-only & critic:all & \PRR{0.20}{0.01} & \PRR{0.15}{0.03} & \PRR{0.17}{0.02} \\
+5 & Bayes tool-only & Step critics, multiplied & \PRR{0.28}{0.00} & \PRR{0.12}{0.03} & \PRR{0.20}{0.02} \\
+6 & Bayes tool-only & Step critics, tempered & \PRR{0.20}{0.03} & \PRR{0.15}{0.04} & \PRR{0.18}{0.03} \\
+10 & Logistic regression & selected & \PRR{0.34}{0.08} & \PRR{-0.02}{0.04} & \PRR{0.16}{0.06} \\
+8 & Logistic regression & pinned & \PRR{0.33}{0.12} & \PRR{0.00}{0.04} & \PRR{0.17}{0.08} \\
+4 & TemporalBelief (B4) & final checkpoint & \PRR{0.28}{0.03} & \PRR{0.16}{0.07} & \PRR{0.22}{0.05} \\
+\end{longtable}
+\endgroup
+
+\Needspace{45mm}
+\section*{DeepSWE \ensuremath{-} OOD directions \ensuremath{-} same agent, different model}
+\begingroup
+\small
+\begin{longtable}{@{}C{7mm}L{70mm}L{37mm}C{40mm}C{40mm}C{40mm}@{}}
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG \ensuremath{\to} DQ} & \textbf{DQ \ensuremath{\to} DG} & \textbf{Avg} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{@{}l}{\emph{DeepSWE \ensuremath{-} OOD directions \ensuremath{-} same agent, different model (continued)}} \\
+\toprule
+\textbf{Rank} & \textbf{Method} & \textbf{Aggregation} & \textbf{DG \ensuremath{\to} DQ} & \textbf{DQ \ensuremath{\to} DG} & \textbf{Avg} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r@{}}{\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+14 & Logprob \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.13}{0.08} & \PRR{0.37}{0.06} & \PRR{0.25}{0.07} \\
+10 & Logprob \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.21}{0.12} & \PRR{0.33}{0.09} & \PRR{0.27}{0.10} \\
+27 & Logprob \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.21}{0.08} & \PRR{-0.03}{0.14} & \PRR{0.09}{0.11} \\
+18 & Logprob \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.24}{0.02} & \PRR{0.23}{0.06} & \PRR{0.24}{0.04} \\
+6 & Logprob \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.22}{0.04} & \PRR{0.34}{0.04} & \PRR{0.28}{0.04} \\
+21 & Logprob \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.23}{0.03} & \PRR{0.15}{0.08} & \PRR{0.19}{0.05} \\
+13 & Perplexity \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.13}{0.08} & \PRR{0.37}{0.06} & \PRR{0.25}{0.07} \\
+7 & Perplexity \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.21}{0.12} & \PRR{0.33}{0.09} & \PRR{0.27}{0.10} \\
+28 & Perplexity \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.19}{0.08} & \PRR{-0.03}{0.15} & \PRR{0.08}{0.12} \\
+24 & Perplexity \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.24}{0.03} & \PRR{0.05}{0.14} & \PRR{0.14}{0.08} \\
+4 & Perplexity \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.22}{0.04} & \PRR{0.34}{0.04} & \PRR{0.28}{0.04} \\
+23 & Perplexity \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.24}{0.02} & \PRR{0.11}{0.02} & \PRR{0.17}{0.02} \\
+8 & MTE \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.17}{0.10} & \PRR{0.36}{0.06} & \PRR{0.27}{0.08} \\
+11 & MTE \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.22}{0.06} & \PRR{0.31}{0.08} & \PRR{0.27}{0.07} \\
+25 & MTE \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.20}{0.08} & \PRR{0.05}{0.05} & \PRR{0.13}{0.06} \\
+15 & MTE \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.23}{0.01} & \PRR{0.27}{0.05} & \PRR{0.25}{0.03} \\
+20 & MTE \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.20}{0.05} & \PRR{0.22}{0.07} & \PRR{0.21}{0.06} \\
+22 & MTE \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.22}{0.03} & \PRR{0.14}{0.04} & \PRR{0.18}{0.04} \\
+9 & Self-certainty \ensuremath{-} Bayes UQ + tools & SEP & \PRR{0.19}{0.07} & \PRR{0.35}{0.08} & \PRR{0.27}{0.07} \\
+1 & Self-certainty \ensuremath{-} Bayes UQ + tools & Double & \PRR{0.24}{0.06} & \PRR{0.38}{0.05} & \PRR{0.31}{0.06} \\
+16 & Self-certainty \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & \PRR{0.20}{0.08} & \PRR{0.29}{0.04} & \PRR{0.25}{0.06} \\
+5 & Self-certainty \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & \PRR{0.23}{0.02} & \PRR{0.33}{0.06} & \PRR{0.28}{0.04} \\
+19 & Self-certainty \ensuremath{-} Bayes UQ + tools & Last only & \PRR{0.22}{0.04} & \PRR{0.20}{0.07} & \PRR{0.21}{0.06} \\
+17 & Self-certainty \ensuremath{-} Bayes UQ + tools & Mean only & \PRR{0.21}{0.04} & \PRR{0.27}{0.03} & \PRR{0.24}{0.04} \\
+33 & Verb actions \ensuremath{-} Bayes UQ + tools & SEP & n/a & n/a & n/a \\
+34 & Verb actions \ensuremath{-} Bayes UQ + tools & Double & n/a & n/a & n/a \\
+35 & Verb actions \ensuremath{-} Bayes UQ + tools & Continuous (\ensuremath{\lambda}=1) & n/a & n/a & n/a \\
+36 & Verb actions \ensuremath{-} Bayes UQ + tools & Tempered (\ensuremath{\lambda}=0.25) & n/a & n/a & n/a \\
+37 & Verb actions \ensuremath{-} Bayes UQ + tools & Last only & n/a & n/a & n/a \\
+38 & Verb actions \ensuremath{-} Bayes UQ + tools & Mean only & n/a & n/a & n/a \\
+30 & N steps & \ensuremath{-}N & \PRR{-0.11}{0.00} & \PRR{0.16}{0.00} & \PRR{0.03}{0.00} \\
+32 & Tool success rate & mean of observed tool critics & \PRR{-0.13}{0.00} & \PRR{-0.18}{0.00} & \PRR{-0.16}{0.00} \\
+2 & Bayes tool-only & critic:all & \PRR{0.21}{0.03} & \PRR{0.39}{0.07} & \PRR{0.30}{0.05} \\
+3 & Bayes tool-only & Step critics, multiplied & \PRR{0.25}{0.02} & \PRR{0.32}{0.04} & \PRR{0.29}{0.03} \\
+12 & Bayes tool-only & Step critics, tempered & \PRR{0.21}{0.05} & \PRR{0.32}{0.09} & \PRR{0.26}{0.07} \\
+29 & Logistic regression & selected & \PRR{0.05}{0.06} & \PRR{0.03}{0.05} & \PRR{0.04}{0.05} \\
+26 & Logistic regression & pinned & \PRR{0.17}{0.08} & \PRR{0.05}{0.07} & \PRR{0.11}{0.07} \\
+31 & TemporalBelief (B4) & final checkpoint & \PRR{0.08}{0.03} & \PRR{-0.06}{0.02} & \PRR{0.01}{0.03} \\
+\end{longtable}
+\endgroup
+
+\end{document}
