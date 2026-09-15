@@ -28,6 +28,19 @@ QUESTION = (
     "Reply with the integer only."
 )
 NUM = re.compile(r"(\d{1,3})")
+FINAL = re.compile(r"<\|channel\|>final<\|message\|>\s*(\d{1,3})")
+
+
+def parse_confidence(text: str) -> int | None:
+    """gpt-oss served without a reasoning parser returns raw harmony markup and
+    spends most of a short budget in the analysis channel (4708 of 6365 empty
+    answers at max_tokens=16). Prefer the number in the final channel, else the
+    last integer in the text."""
+    m = FINAL.search(text)
+    if m:
+        return min(100, int(m.group(1)))
+    nums = NUM.findall(re.sub(r"<\|[^|]*\|>", " ", text))
+    return min(100, int(nums[-1])) if nums else None
 
 
 def trajectories(jobs: str, run: str):
@@ -62,14 +75,16 @@ def clean(messages: list[dict]) -> list[dict]:
     return out
 
 
-def ask(client, model: str, prefix: list[dict], extra: dict) -> tuple[int | None, str]:
+def ask(client, model: str, prefix: list[dict], extra: dict, max_tokens: int) -> tuple[int | None, str]:
     for attempt in range(4):
         try:
             r = client.chat.completions.create(model=model, messages=prefix + [{"role": "user", "content": QUESTION}],
-                                               max_tokens=16, temperature=0.0, **extra)
-            text = (r.choices[0].message.content or "").strip()
-            m = NUM.search(text)
-            return (min(100, int(m.group(1))) if m else None), text
+                                               max_tokens=max_tokens, temperature=0.0, **extra)
+            msg = r.choices[0].message
+            text = (msg.content or "").strip()
+            if not text:  # a reasoning parser may have routed everything to reasoning_content
+                text = (getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None) or "").strip()
+            return parse_confidence(text), text
         except Exception as exc:  # noqa: BLE001
             err = str(exc)
             if "context" in err.lower() or "maximum" in err.lower():
@@ -90,8 +105,10 @@ def main() -> None:
     extra: dict = {}
     if a.reasoning_effort:
         extra["reasoning_effort"] = a.reasoning_effort
+        max_tokens = 512  # the analysis channel comes first and is not free
     else:
         extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+        max_tokens = 64
     done = set()
     if a.out.exists():
         done = {(json.loads(l)["id"], json.loads(l)["step"]) for l in open(a.out) if l.strip()}
@@ -110,8 +127,8 @@ def main() -> None:
         jobs = [(k, end) for k, end in cuts if (tid, k) not in done]
         total += len(cuts)
         with ThreadPoolExecutor(a.workers) as pool:
-            for (k, end), (conf, text) in zip(jobs, pool.map(lambda ke: ask(client, a.model, msgs[:ke[1]], extra), jobs)):
-                out.write(json.dumps({"id": tid, "step": k, "confidence": conf, "raw": text[:60]}) + "\n"); asked += 1
+            for (k, end), (conf, text) in zip(jobs, pool.map(lambda ke: ask(client, a.model, msgs[:ke[1]], extra, max_tokens), jobs)):
+                out.write(json.dumps({"id": tid, "step": k, "confidence": conf, "raw": text[-200:]}) + "\n"); asked += 1
         out.flush()
         print(f"[verb] {tid}: {len(cuts)} steps ({len(jobs)} asked)", flush=True)
     print(f"[verb] done: {asked} queries, {total} steps in total -> {a.out}")
