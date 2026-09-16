@@ -78,7 +78,9 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
             vals = [((r.get("uq") or {}).get(SEGMENT) or {}).get(key) for r in rows]
             seqs[name] = [float(v) for v in vals if v is not None and math.isfinite(float(v))]
         crit = [{c: bool(_step_critic_observation(r)[c]) for c in STEP_CRITIC_NAMES} for r in rows]
+        mean_lp = [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_logprob") for r in rows]
         episodes[e["episode_id"]] = {
+            "cross_logprob": [float(v) for v in mean_lp if v is not None and math.isfinite(float(v))],
             "id": e["episode_id"], "harness": harness,
             "score": float(bool(e["final_success"])), "label": int(bool(e["final_success"])),
             "signals": seqs, "critics": crit, "episode_critics": _critic_observations(rows),
@@ -147,6 +149,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             "no_format_errors": not any(s["format_error"] for s in steps),
         }
         rc0 = [s["returncode"] == 0 for s in steps if s["returncode"] is not None]
+        cross_crit = [{"format_valid": not s["format_error"], "tool_success": s["returncode"] == 0} for s in steps]
         gens = []
         for k, s in enumerate(steps):
             sig = {kk: float(v) for kk, v in (("mean_logprob", s["mean_logprob"]), ("perplexity", math.exp(-s["mean_logprob"]) if s["mean_logprob"] is not None else None),
@@ -154,7 +157,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             gens.append({"index": k, "signals": sig, "critics": dict(ep_crit)})
         episodes[r["id"]] = {
             "id": r["id"], "harness": harness, "score": float(rw.get("partial", 0.0)), "label": 0,
-            "signals": seqs, "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
+            "cross_critics": cross_crit, "signals": seqs, "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
             "n_steps": len(steps), "tool_rate": st.fmean(rc0) if rc0 else 0.0,
             "record": {"episode_id": r["id"], "environment": "deepswe", "success": 0, "generations": gens},
         }
@@ -167,6 +170,49 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             for g in e["record"]["generations"]:
                 g["signals"].pop("verbalized_confidence", None)
     return episodes
+
+
+# ----------------------------------------------------------------------------- cross-environment view
+#: the only step critics with a counterpart on both benchmarks: ALFWorld's
+#: format_valid / tool_success against DeepSWE's per-command "no format error"
+#: / "return code 0"; the other three ALFWorld critics and the DeepSWE test
+#: critics have no analogue and are dropped
+CROSS_CRITICS = ("format_valid", "tool_success")
+#: one name per shared signal so the toolkit models fit on one benchmark and
+#: score the other; Logprob becomes the per-step mean (ALFWorld's own table
+#: uses the sum, which is not comparable across a 5-token action and a shell command)
+CROSS_SIGNALS = {"Logprob": "mean_logprob", "Perplexity": "perplexity", "MTE": "mean_entropy",
+                 "Self-certainty": "self_certainty", "Verb actions": "verbalized_confidence"}
+
+
+def cross_view(eps: dict[str, dict], env: str) -> dict[str, dict]:
+    """Restrict a cohort to what ALFWorld and DeepSWE share (see CROSS_*)."""
+    out = {}
+    for i, e in eps.items():
+        signals = dict(e["signals"])
+        if env == "alfworld":
+            signals["Logprob"] = e["cross_logprob"]
+            crit = [{c: bool(step[c]) for c in CROSS_CRITICS} for step in e["critics"]]
+        else:
+            crit = [dict(step) for step in e["cross_critics"]]
+        gens = []
+        for k, g in enumerate(e["record"]["generations"]):
+            sig = {}
+            if env == "alfworld":
+                src = g["signals"]
+                pairs = (("mean_logprob", e["cross_logprob"][k] if k < len(e["cross_logprob"]) else None),
+                         ("perplexity", src.get("perplexity")), ("mean_entropy", src.get("mean_token_entropy")),
+                         ("self_certainty", src.get("self_certainty")), ("verbalized_confidence", src.get("verbalized_confidence")))
+                sig = {n: float(v) for n, v in pairs if v is not None}
+            else:
+                sig = {n: v for n, v in g["signals"].items() if n in CROSS_SIGNALS.values()}
+            gens.append({"index": k, "signals": sig, "critics": dict(crit[k]) if k < len(crit) else {}})
+        flat = [v for step in crit for v in step.values()]
+        out[i] = dict(e, signals=signals, critics=crit,
+                      episode_critics={c: all(step[c] for step in crit) for c in CROSS_CRITICS},
+                      tool_rate=st.fmean(flat) if flat else 0.0,
+                      record=dict(e["record"], generations=gens))
+    return out
 
 
 # ----------------------------------------------------------------------------- protocol
@@ -440,7 +486,12 @@ def render_dataset(name: str, cohorts: dict[str, dict], labels: dict[str, str], 
     ref_rows = [(m, a, [idcell(c, k) for c in cols]) for k in methods if k[0] == "Reference" for (_, m, a) in [k]]
     out.append(longtable(f"{name} \\ensuremath{{-}} Reference methods", col_labels, ref_rows, widths_for(len(cols))))
     out.append(longtable(f"{name} \\ensuremath{{-}} ID summary \\ensuremath{{-}} best per UQ family", col_labels, best_rows + ref_rows, widths_for(len(cols))))
-    # OOD
+    out += render_ood(name, cohorts, labels, groups, methods, seeds)
+    return "\n".join(out)
+
+
+def render_ood(name: str, cohorts: dict[str, dict], labels: dict[str, str], groups: list[tuple[str, list[tuple[str, str]]]], methods, seeds) -> list[str]:
+    out = []
     ood_methods = {k: fn for k, fn in methods.items() if k[0] == "Reference" or (k[1] != k[0] and "tools" in k[1])}
     overall: dict[tuple, list] = defaultdict(list)
     for title, dirs in groups:
@@ -457,6 +508,28 @@ def render_dataset(name: str, cohorts: dict[str, dict], labels: dict[str, str], 
     if len(groups) > 1:
         rows = [(m, MODE_LABEL.get(a, a), overall[k]) for k in ood_methods for (_, m, a) in [k]]
         out.append(longtable(f"{name} \\ensuremath{{-}} OOD overall \\ensuremath{{-}} all methods", [g[0] for g in groups], rows, widths_for(len(groups))))
+    return out
+
+
+def render_cross(alf: dict[str, dict], dsw: dict[str, dict], labels: dict[str, str], methods, seeds) -> str:
+    """OOD transfer between the two environments on the shared signals and critics."""
+    cohorts = {k: cross_view(v, "alfworld") for k, v in alf.items()} | {k: cross_view(v, "deepswe") for k, v in dsw.items()}
+    a_keys, d_keys = list(alf), [k for k in dsw if k[1] in {k2[1] for k2 in alf}]  # DeepSWE cohorts whose model also runs on ALFWorld
+    same = lambda x, y: x[1] == y[1]  # noqa: E731  (second key letter = model)
+    groups = [("ALFWorld \\ensuremath{\\to} DeepSWE \\ensuremath{-} same model", [(a, d) for a in a_keys for d in d_keys if same(a, d)]),
+              ("DeepSWE \\ensuremath{\\to} ALFWorld \\ensuremath{-} same model", [(d, a) for d in d_keys for a in a_keys if same(a, d)]),
+              ("ALFWorld \\ensuremath{\\to} DeepSWE \\ensuremath{-} different model", [(a, d) for a in a_keys for d in d_keys if not same(a, d)]),
+              ("DeepSWE \\ensuremath{\\to} ALFWorld \\ensuremath{-} different model", [(d, a) for d in d_keys for a in a_keys if not same(a, d)])]
+    notes = ("Transfer between environments on the signals and step critics both benchmarks share. Signals: per-step mean token "
+             "log-probability (ALFWorld's own tables use the sum), perplexity, MTE, self-certainty and Verb, under one name on both sides. "
+             "Step critics: format valid (ALFWorld) = no format error on the command (DeepSWE); tool success (ALFWorld) = return code 0 (DeepSWE). "
+             "ALFWorld's action-admissible, no-repeat and state-changed critics and DeepSWE's test-suite critics have no counterpart and are dropped, "
+             "so \\texttt{critic:all} and the tool-only rows are fitted on the two shared critics only. Protocol as above: fit on the source's four "
+             "training folds, score the target's matching test fold, three seeds; the source's labels are its own (binary success on ALFWorld, "
+             "the median split of the partial score on DeepSWE) and the target is scored on its native score. Cohorts as in the two sections above; "
+             "the gpt-oss-120b cohort is left out since no ALFWorld run uses that model.")
+    out = ["\\clearpage", "\\section*{Cross-environment OOD \\ensuremath{-} ALFWorld \\ensuremath{\\leftrightarrow} DeepSWE}", notes, ""]
+    out += render_ood("Cross-environment", cohorts, labels, groups, methods, seeds)
     return "\n".join(out)
 
 
@@ -498,6 +571,7 @@ def main() -> None:
                   ("directions 9\\ensuremath{-}12 \\ensuremath{-} different model, same agent", [(s, t) for s, t in pairs if model(s) != model(t) and agent(s) == agent(t)])]
         notes = "RG = ReAct/gpt-oss-20b; SG = smolagents/gpt-oss-20b; RQ = ReAct/Qwen3.6-35B-A3B; SQ = smolagents/Qwen3.6-35B-A3B. 140 episodes per setup before the finished-only filter, 50-step budget; ReAct with the give-up action."
         doc.append(render_dataset("ALFWorld", cohorts, labels, groups, methods, SEEDS, notes))
+        alfworld_cohorts, alfworld_labels = cohorts, labels
     if a.deepswe:
         labels = {}; cohorts = {}; verbs = dict(a.deepswe_verb)
         for kl, path in a.deepswe:
@@ -510,6 +584,9 @@ def main() -> None:
                  "Finished = submitted or stopped by the format-error cap (20 consecutive responses without a tool call); "
                  "gpt-oss-120b hits that cap in 79/113 tasks, gpt-oss-20b in 9/113, Qwen in none.")
         doc.append(render_dataset("DeepSWE", cohorts, labels, groups, methods, SEEDS, notes))
+        deepswe_cohorts, deepswe_labels = cohorts, labels
+    if a.alfworld and a.deepswe:
+        doc.append(render_cross(alfworld_cohorts, deepswe_cohorts, alfworld_labels | deepswe_labels, methods, SEEDS))
     doc.append("\\end{document}\n")
     a.out.parent.mkdir(parents=True, exist_ok=True); a.out.write_text("\n".join(doc)); print(f"wrote {a.out}")
 
