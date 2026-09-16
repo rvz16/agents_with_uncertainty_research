@@ -99,23 +99,41 @@ def main() -> None:
     p.add_argument("--run", required=True, help="top-level directory inside the archive, e.g. deepswe_gptoss_113_v2")
     p.add_argument("--out", type=Path, required=True, help="jsonl, one record per task")
     a = p.parse_args()
-    z = zipfile.ZipFile(a.zip)
     prefix = a.run.rstrip("/") + "/"
-    tasks = sorted({n[len(prefix):].split("/")[0] for n in z.namelist() if n.startswith(prefix) and "/" in n[len(prefix):]})
+    if a.zip.is_dir():
+        # an extracted jobs directory (on the cluster host, where the zip
+        # never had to be made): the same members, read from disk
+        root = a.zip / a.run
+        tasks = sorted(d.name for d in root.iterdir() if d.is_dir())
+        def read(member):
+            path = a.zip / member
+            if not path.exists():
+                raise KeyError(member)
+            return path.read_bytes()
+        def size(member):
+            path = a.zip / member
+            if not path.exists():
+                raise KeyError(member)
+            return path.stat().st_size
+    else:
+        z = zipfile.ZipFile(a.zip)
+        tasks = sorted({n[len(prefix):].split("/")[0] for n in z.namelist() if n.startswith(prefix) and "/" in n[len(prefix):]})
+        read = z.read
+        size = lambda member: z.getinfo(member).file_size  # noqa: E731
     written = 0
     with open(a.out, "w") as out:
         for t in tasks:
             base = f"{prefix}{t}/"
             try:
-                result = json.loads(z.read(base + "result.json"))
+                result = json.loads(read(base + "result.json"))
             except KeyError:
                 continue
             try:
-                patch_size = z.getinfo(base + "artifacts/model.patch").file_size
+                patch_size = size(base + "artifacts/model.patch")
             except KeyError:
                 patch_size = 0
             try:
-                tr = json.loads(z.read(base + "agent/mini-swe-agent.trajectory.json"))
+                tr = json.loads(read(base + "agent/mini-swe-agent.trajectory.json"))
             except KeyError:
                 tr = {}
             rec = {"id": t, "patch_bytes": patch_size,

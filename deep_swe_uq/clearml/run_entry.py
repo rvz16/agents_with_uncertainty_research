@@ -21,6 +21,25 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[2]
     script = repo / "deep_swe_uq" / "clearml" / "run.sh"
     run_root = Path(os.environ.setdefault("RUN_ROOT", "/tmp/deepswe_runs"))
+
+    # Collect mode: no agent run. A finished run whose archive never uploaded
+    # (a 6.4 GB zip of the whole shared jobs directory was refused) is reduced
+    # on the host to its compact per-step records and those are uploaded.
+    if os.environ.get("COLLECT_ONLY") == "1":
+        name = os.environ["RUN_NAME"]; jobs = run_root / "jobs"
+        out = Path("/tmp") / f"compact_{name}.jsonl"
+        rc = subprocess.call([sys.executable, str(repo / "deep_swe_uq" / "experiments" / "compact_jobs.py"),
+                              str(jobs), "--run", name, "--out", str(out)], cwd=str(repo))
+        print(f"[entry] compact rc={rc}", flush=True)
+        if out.exists():
+            task.upload_artifact("compact", artifact_object=out, wait_on_upload=True)
+            print(f"[entry] uploaded {out} ({out.stat().st_size} bytes)", flush=True)
+        for extra in sorted(jobs.glob("verb_*.jsonl")):
+            if extra.stat().st_size > 0:
+                task.upload_artifact(extra.stem, artifact_object=extra, wait_on_upload=True)
+                print(f"[entry] uploaded {extra}", flush=True)
+        return rc
+
     rc = subprocess.call(["bash", str(script)], cwd=str(repo))
     print(f"[entry] run rc={rc}", flush=True)
 
@@ -52,8 +71,12 @@ def main() -> int:
             task.upload_artifact("verb", artifact_object=out, wait_on_upload=True)
             print(f"[entry] uploaded {out}", flush=True)
     elif jobs.exists() and any(jobs.iterdir()):
-        task.upload_artifact("run_root", artifact_object=jobs, wait_on_upload=True)
-        print(f"[entry] uploaded {jobs}", flush=True)
+        # only this run's directory: the shared jobs directory on the host
+        # holds every earlier run and grows past what the file server takes
+        mine = jobs / os.environ.get("RUN_NAME", "")
+        target = mine if mine.is_dir() else jobs
+        task.upload_artifact("run_root", artifact_object=target, wait_on_upload=True)
+        print(f"[entry] uploaded {target}", flush=True)
     return rc
 
 
