@@ -144,7 +144,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
         gens = []
         for k, s in enumerate(steps):
             sig = {kk: float(v) for kk, v in (("mean_logprob", s["mean_logprob"]), ("perplexity", math.exp(-s["mean_logprob"]) if s["mean_logprob"] is not None else None),
-                                               ("mean_entropy", s["mean_entropy"]), ("self_certainty", s.get("self_certainty")), ("confidence", s.get("confidence"))) if v is not None}
+                                               ("mean_entropy", s["mean_entropy"]), ("self_certainty", s.get("self_certainty")), ("verbalized_confidence", s.get("confidence"))) if v is not None}  # B4 excludes verbalized by name
             gens.append({"index": k, "signals": sig, "critics": dict(ep_crit)})
         episodes[r["id"]] = {
             "id": r["id"], "harness": harness, "score": float(rw.get("partial", 0.0)), "label": 0,
@@ -159,7 +159,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
         for e in episodes.values():
             e["signals"]["Verb actions"] = []
             for g in e["record"]["generations"]:
-                g["signals"].pop("confidence", None)
+                g["signals"].pop("verbalized_confidence", None)
     return episodes
 
 
