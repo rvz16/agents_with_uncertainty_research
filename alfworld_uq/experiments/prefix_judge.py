@@ -29,11 +29,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 SYSTEM = (
-    "You are evaluating a partial trajectory of an autonomous agent. You see the task and the most recent "
-    "steps; the episode is still in progress and you do not know how it ends. Estimate the probability that "
-    "the agent will eventually complete the task successfully. Reply with a single integer from 0 to 100 and "
-    "nothing else."
+    "You are an evaluator, not the agent. You will be shown the task an autonomous agent was given and a "
+    "transcript of its most recent steps; the episode is still in progress and you do not know how it ends. "
+    "Do not continue the agent's work and do not propose next steps. Estimate the probability that the agent "
+    "will eventually complete the task successfully and reply with a single integer from 0 to 100 and nothing else."
 )
+QUESTION = "Probability (0-100) that the agent will complete the task successfully? Reply with the integer only."
 NUM = re.compile(r"(\d{1,3})")
 
 
@@ -50,10 +51,11 @@ def alfworld_view(run: Path) -> list[dict]:
 
 def prompt(task: str, steps: list[dict], window: int, obs_chars: int, act_chars: int) -> str:
     recent = steps[-window:]
-    lines = [f"Task: {task.strip()[:3000]}", "", "Most recent steps, oldest first:"]
+    lines = [f"<task>\n{task.strip()[:3000]}\n</task>", "", "<transcript>  (most recent steps, oldest first)"]
     for s in recent:
-        lines.append(f"[action] {s['action'].strip()[:act_chars]}")
-        lines.append(f"[result] {s['observation'].strip()[:obs_chars]}")
+        lines.append(f"[agent action] {s['action'].strip()[:act_chars]}")
+        lines.append(f"[environment result] {s['observation'].strip()[:obs_chars]}")
+    lines += ["</transcript>", "", QUESTION]
     return "\n".join(lines)
 
 
