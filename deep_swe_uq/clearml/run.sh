@@ -43,10 +43,20 @@ fi
 echo "[run] docker reachable"
 
 echo "=== [2/6] deps ==="
-python -m pip install --no-cache-dir "datacurve-pier==0.3.0" >/dev/null 2>&1 || {
-  echo "[run] VERDICT: pier install failed"; exit 21; }
-python -c "import pier; print('[probe] pier', pier.__version__ if hasattr(pier,'__version__') else 'ok')"
+if [ -n "${REPLAY_TASK_ID:-}" ]; then
+  echo "[run] replay mode: pier not needed"
+else
+  for attempt in 1 2 3; do
+    python -m pip install --no-cache-dir "datacurve-pier==0.3.0" >/tmp/pip_pier.log 2>&1 && break
+    echo "[run] pier install attempt ${attempt} failed: $(tail -n 2 /tmp/pip_pier.log | tr '\n' ' ' | cut -c1-200)"; sleep 60
+  done
+  python -c "import pier" 2>/dev/null || { echo "[run] VERDICT: pier install failed"; exit 21; }
+  python -c "import pier; print('[probe] pier', pier.__version__ if hasattr(pier,'__version__') else 'ok')"
+fi
 
+if [ -n "${REPLAY_TASK_ID:-}" ]; then
+  echo "[run] replay mode: skipping the task repository, image and capture steps"
+else
 echo "=== [3/6] tasks ==="
 # The task containers are started by the *host* daemon through the mounted
 # socket, so every bind mount it resolves is a host path. Anything living only
@@ -152,6 +162,8 @@ CAPTURE
   capture_patched=$((capture_patched + 1))
 done
 echo "[run] artifact capture extended in ${capture_patched} tasks"
+
+fi
 
 echo "=== [5/6] serve the model locally ==="
 # The cluster's egress filter answers OpenRouter with HTTP 403 ("Access denied
