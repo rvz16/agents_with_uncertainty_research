@@ -164,7 +164,11 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
     # A signal most episodes do not carry is unavailable for every method,
     # including the regression and B4 records (a column present on one
     # cohort and absent on another breaks fold-matched OOD scoring).
-    if episodes and sum(1 for e in episodes.values() if e["signals"]["Verb actions"]) < 0.5 * len(episodes):
+    # ... and so is one that most steps do not carry: the in-loop "# confidence"
+    # comment gpt-oss-120b writes on ~10% of its commands is not a per-step signal
+    n_steps = sum(e["n_steps"] for e in episodes.values())
+    n_verb = sum(len(e["signals"]["Verb actions"]) for e in episodes.values())
+    if episodes and (sum(1 for e in episodes.values() if e["signals"]["Verb actions"]) < 0.5 * len(episodes) or n_verb < 0.5 * n_steps):
         for e in episodes.values():
             e["signals"]["Verb actions"] = []
             for g in e["record"]["generations"]:
