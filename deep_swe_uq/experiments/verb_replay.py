@@ -110,8 +110,13 @@ def main() -> None:
         extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         max_tokens = 64
     done = set()
-    if a.out.exists():
-        done = {(json.loads(l)["id"], json.loads(l)["step"]) for l in open(a.out) if l.strip()}
+    if a.out.exists():  # resume, but only from rows that actually got an answer (the host /tmp survives between tasks)
+        rows = [json.loads(l) for l in open(a.out) if l.strip()]
+        rows = [r for r in rows if r.get("confidence") is not None]
+        with open(a.out, "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        done = {(r["id"], r["step"]) for r in rows}
+        print(f"[verb] resuming: {len(done)} answered rows kept from {a.out}", flush=True)
     out = open(a.out, "a"); total = asked = 0
     for tid, tr in trajectories(a.jobs, a.run):
         msgs = clean(tr.get("messages", []))
