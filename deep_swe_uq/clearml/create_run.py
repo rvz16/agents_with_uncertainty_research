@@ -74,6 +74,8 @@ def main() -> None:
     p.add_argument("--collect-only", action="store_true",
                    help="no agent run: compact a finished run's directory on the host and upload the records")
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
+    p.add_argument("--reasoning-parser", default=None,
+                   help="vLLM reasoning parser (gpt-oss: openai_gptoss); run.sh picks qwen3 for Qwen by itself")
     p.add_argument("--tool-call-parser", default=None,
                    help="vLLM parser for tool_choice=auto, which mini-swe-agent "
                         "always sends. Defaults to openai for gpt-oss and hermes "
@@ -119,6 +121,7 @@ def main() -> None:
         "Args/RUN_NAME": a.run_name,
         "Args/SERVE_MODEL": a.serve_model,
         "Args/TOOL_CALL_PARSER": a.tool_call_parser,
+        "Args/REASONING_PARSER": a.reasoning_parser or "",
         "Args/MAX_FORMAT_ERRORS": str(a.max_format_errors),
         "Args/MAX_MODEL_LEN": str(a.max_model_len),
         "Args/TOP_LOGPROBS": str(a.top_logprobs),

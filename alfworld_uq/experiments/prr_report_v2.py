@@ -103,6 +103,9 @@ def _record_alfworld(eid, rows, crit, label):
 DEEPSWE_CRITICS = ("ran_tests", "ran_tests_twice", "last_test_passed", "test_flipped", "committed_twice", "no_format_errors")
 
 
+DEEPSWE_FINISHED = ("Submitted", "RepeatedFormatError")
+
+
 def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str, dict[str, Any]]:
     confidences: dict[tuple[str, int], float] = {}
     if verb and verb.exists():
@@ -113,7 +116,10 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
     episodes = {}
     for line in open(path):
         r = json.loads(line); rw = r["rewards"]; steps = r["steps"]
-        if not rw or r["patch_bytes"] <= 0 or r["exit_status"] != "Submitted":
+        # finished = the agent stopped by itself: an explicit submit, or the
+        # format-error cap (the ALFWorld analogue of agent_stopped); episodes cut
+        # by the harness (step budget, context window, API error) are dropped
+        if not rw or r["patch_bytes"] <= 0 or r["exit_status"] not in DEEPSWE_FINISHED:
             continue
         for k, s in enumerate(steps):
             if (r["id"], k) in confidences:
@@ -499,7 +505,10 @@ def main() -> None:
             cohorts[key] = load_deepswe(Path(path), key, Path(verbs[key]) if key in verbs else None)
         keys = list(cohorts)
         groups = [("directions \\ensuremath{-} same agent, different model", [(s, t) for s in keys for t in keys if s != t])]
-        notes = "DG = mini-swe-agent/gpt-oss-20b; DQ = mini-swe-agent/Qwen3.6-35B-A3B. 113 DeepSWE tasks, 200-command budget, working-tree grading; the score is the verifier's partial credit."
+        notes = ("DG = mini-swe-agent/gpt-oss-20b; DL = mini-swe-agent/gpt-oss-120b; DQ = mini-swe-agent/Qwen3.6-35B-A3B. "
+                 "113 DeepSWE tasks, 200-command budget, working-tree grading; the score is the verifier's partial credit. "
+                 "Finished = submitted or stopped by the format-error cap (20 consecutive responses without a tool call); "
+                 "gpt-oss-120b hits that cap in 79/113 tasks, gpt-oss-20b in 9/113, Qwen in none.")
         doc.append(render_dataset("DeepSWE", cohorts, labels, groups, methods, SEEDS, notes))
     doc.append("\\end{document}\n")
     a.out.parent.mkdir(parents=True, exist_ok=True); a.out.write_text("\n".join(doc)); print(f"wrote {a.out}")
