@@ -54,7 +54,41 @@ SIGNALS = {
     "MTE": ("mean_token_entropy", "mean_entropy", True),
     "Self-certainty": ("self_certainty", "self_certainty", False),
     "Verb actions": ("verbalized_confidence", "confidence", False),
+    "LLM judge": ("llm_judge", "judge", False),
 }
+#: elicited per-step signals (an extra model call each); kept out of the
+#: main-table B4 / regression records, see cross_view for where they enter
+ELICITED = ("Verb actions", "LLM judge")
+
+
+def read_judge(path: Path) -> dict[tuple[str, int], float]:
+    """(episode, step) -> p from experiments.prefix_judge; missing file = no judge."""
+    out = {}
+    if path.exists():
+        for line in open(path):
+            if line.strip():
+                r = json.loads(line)
+                if r.get("p") is not None:
+                    out[(r["id"], r["step"])] = float(r["p"]) / 100.0
+    return out
+
+
+def sparse(episodes: dict, signal: str) -> None:
+    """A signal most episodes or most steps do not carry is unavailable for every method
+    (a column present on one cohort and absent on another breaks fold-matched OOD scoring);
+    e.g. the in-loop "# confidence" comment gpt-oss-120b writes on ~10% of its commands."""
+    if not episodes:
+        return
+    n_steps = sum(e["n_steps"] for e in episodes.values())
+    n_sig = sum(len(e["signals"][signal]) for e in episodes.values())
+    if sum(1 for e in episodes.values() if e["signals"][signal]) < 0.5 * len(episodes) or n_sig < 0.5 * n_steps:
+        key = SIGNALS[signal][0]
+        for e in episodes.values():
+            e["signals"][signal] = []
+            if signal == "LLM judge":
+                e["judge_steps"] = None
+            for g in e["record"]["generations"]:
+                g["signals"].pop(key, None)
 UQ_MODES = ("SEP", "Double", "Continuous", "Tempered", "Last only", "Mean only")
 OOD_MODES = ("Quantile", "SEP", "LR+", "LR-", "Double", "Continuous", "Tempered", "Last only", "Mean only")
 MODE_LABEL = {"Continuous": "Continuous (\\ensuremath{\\lambda}=1)", "Tempered": "Tempered (\\ensuremath{\\lambda}=0.25)", "LR-": "LR\\ensuremath{-}"}
@@ -66,6 +100,7 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
     for line in open(run / "trajectories.jsonl"):
         if line.strip():
             row = json.loads(line); steps[row["episode_id"]].append(row)
+    judge = read_judge(run / "judge.jsonl")
     episodes = {}
     for line in open(run / "episodes.jsonl"):
         if not line.strip():
@@ -77,16 +112,20 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
         for name, (key, _, _) in SIGNALS.items():
             vals = [((r.get("uq") or {}).get(SEGMENT) or {}).get(key) for r in rows]
             seqs[name] = [float(v) for v in vals if v is not None and math.isfinite(float(v))]
+        judge_steps = [judge.get((e["episode_id"], k)) for k in range(len(rows))]
+        seqs["LLM judge"] = [v for v in judge_steps if v is not None]
         crit = [{c: bool(_step_critic_observation(r)[c]) for c in STEP_CRITIC_NAMES} for r in rows]
         mean_lp = [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_logprob") for r in rows]
         episodes[e["episode_id"]] = {
             "cross_logprob": [float(v) for v in mean_lp if v is not None and math.isfinite(float(v))],
+            "judge_steps": judge_steps,
             "id": e["episode_id"], "harness": harness,
             "score": float(bool(e["final_success"])), "label": int(bool(e["final_success"])),
             "signals": seqs, "critics": crit, "episode_critics": _critic_observations(rows),
             "n_steps": len(rows), "tool_rate": st.fmean(v for c in crit for v in c.values()),
             "record": _record_alfworld(e["episode_id"], rows, crit, int(bool(e["final_success"]))),
         }
+    sparse(episodes, "LLM judge")
     return episodes
 
 
@@ -110,6 +149,7 @@ DEEPSWE_FINISHED = ("Submitted", "RepeatedFormatError")
 
 def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str, dict[str, Any]]:
     confidences: dict[tuple[str, int], float] = {}
+    judge = read_judge(path.parent / "judge.jsonl")
     if verb and verb.exists():
         for line in open(verb):
             r = json.loads(line)
@@ -126,6 +166,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
         for k, s in enumerate(steps):
             if (r["id"], k) in confidences:
                 s["confidence"] = confidences[(r["id"], k)]
+            s["judge"] = judge.get((r["id"], k))
         if len(steps) > 1:
             steps = steps[:-1]  # pre-terminal: before the submit command
         lp = [s["mean_logprob"] for s in steps if s["mean_logprob"] is not None]
@@ -137,6 +178,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             "MTE": [s["mean_entropy"] for s in steps if s["mean_entropy"] is not None],
             "Self-certainty": [s["self_certainty"] for s in steps if s.get("self_certainty") is not None],
             "Verb actions": [s["confidence"] for s in steps if s.get("confidence") is not None],
+            "LLM judge": [s["judge"] for s in steps if s.get("judge") is not None],
         }
         cmds = [s["command"] for s in steps if s["command"]]
         test_rcs = [s["returncode"] for s in steps if s["command"] and _TEST_CMD.search(s["command"]) and s["returncode"] is not None]
@@ -157,22 +199,11 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             gens.append({"index": k, "signals": sig, "critics": dict(ep_crit)})
         episodes[r["id"]] = {
             "id": r["id"], "harness": harness, "score": float(rw.get("partial", 0.0)), "label": 0,
-            "cross_critics": cross_crit, "signals": seqs, "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
+            "cross_critics": cross_crit, "judge_steps": [s.get("judge") for s in steps], "signals": seqs, "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
             "n_steps": len(steps), "tool_rate": st.fmean(rc0) if rc0 else 0.0,
             "record": {"episode_id": r["id"], "environment": "deepswe", "success": 0, "generations": gens},
         }
-    # A signal most episodes do not carry is unavailable for every method,
-    # including the regression and B4 records (a column present on one
-    # cohort and absent on another breaks fold-matched OOD scoring).
-    # ... and so is one that most steps do not carry: the in-loop "# confidence"
-    # comment gpt-oss-120b writes on ~10% of its commands is not a per-step signal
-    n_steps = sum(e["n_steps"] for e in episodes.values())
-    n_verb = sum(len(e["signals"]["Verb actions"]) for e in episodes.values())
-    if episodes and (sum(1 for e in episodes.values() if e["signals"]["Verb actions"]) < 0.5 * len(episodes) or n_verb < 0.5 * n_steps):
-        for e in episodes.values():
-            e["signals"]["Verb actions"] = []
-            for g in e["record"]["generations"]:
-                g["signals"].pop("verbalized_confidence", None)
+    sparse(episodes, "Verb actions"); sparse(episodes, "LLM judge")
     return episodes
 
 
@@ -181,12 +212,12 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
 #: format_valid / tool_success against DeepSWE's per-command "no format error"
 #: / "return code 0"; the other three ALFWorld critics and the DeepSWE test
 #: critics have no analogue and are dropped
-CROSS_CRITICS = ("format_valid", "tool_success")
+CROSS_CRITICS = ("format_valid", "tool_success", "judge_ok")  # judge_ok = prefix judge p >= 0.5
 #: one name per shared signal so the toolkit models fit on one benchmark and
 #: score the other; Logprob becomes the per-step mean (ALFWorld's own table
 #: uses the sum, which is not comparable across a 5-token action and a shell command)
 CROSS_SIGNALS = {"Logprob": "mean_logprob", "Perplexity": "perplexity", "MTE": "mean_entropy",
-                 "Self-certainty": "self_certainty", "Verb actions": "verbalized_confidence"}
+                 "Self-certainty": "self_certainty", "Verb actions": "verbalized_confidence", "LLM judge": "llm_judge"}
 
 
 def cross_view(eps: dict[str, dict], env: str) -> dict[str, dict]:
@@ -194,11 +225,21 @@ def cross_view(eps: dict[str, dict], env: str) -> dict[str, dict]:
     out = {}
     for i, e in eps.items():
         signals = dict(e["signals"])
+        judge = e.get("judge_steps") or []
+        has_judge = any(v is not None for v in judge)
         if env == "alfworld":
             signals["Logprob"] = e["cross_logprob"]
-            crit = [{c: bool(step[c]) for c in CROSS_CRITICS} for step in e["critics"]]
+            crit = [{c: bool(step[c]) for c in CROSS_CRITICS if c in step} for step in e["critics"]]
         else:
             crit = [dict(step) for step in e["cross_critics"]]
+        if has_judge:  # every step needs the critic; the rare unanswered step carries the neighbouring verdict
+            filled = list(judge[:len(crit)]) + [None] * (len(crit) - len(judge))
+            for k in range(1, len(filled)):
+                filled[k] = filled[k] if filled[k] is not None else filled[k - 1]
+            for k in range(len(filled) - 2, -1, -1):
+                filled[k] = filled[k] if filled[k] is not None else filled[k + 1]
+            for step, v in zip(crit, filled):
+                step["judge_ok"] = v >= 0.5
         gens = []
         for k, g in enumerate(e["record"]["generations"]):
             sig = {}
@@ -210,10 +251,13 @@ def cross_view(eps: dict[str, dict], env: str) -> dict[str, dict]:
                 sig = {n: float(v) for n, v in pairs if v is not None}
             else:
                 sig = {n: v for n, v in g["signals"].items() if n in CROSS_SIGNALS.values()}
+            if has_judge and k < len(judge) and judge[k] is not None:
+                sig["llm_judge"] = float(judge[k])
             gens.append({"index": k, "signals": sig, "critics": dict(crit[k]) if k < len(crit) else {}})
         flat = [v for step in crit for v in step.values()]
+        present = [c for c in CROSS_CRITICS if any(c in step for step in crit)]
         out[i] = dict(e, signals=signals, critics=crit,
-                      episode_critics={c: all(step[c] for step in crit) for c in CROSS_CRITICS},
+                      episode_critics={c: all(step.get(c, True) for step in crit) for c in present},
                       tool_rate=st.fmean(flat) if flat else 0.0,
                       record=dict(e["record"], generations=gens))
     return out

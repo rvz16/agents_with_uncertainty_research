@@ -59,18 +59,19 @@ def prompt(task: str, steps: list[dict], window: int, obs_chars: int, act_chars:
 
 def ask(client, model: str, text: str, extra: dict, max_tokens: int) -> tuple[int | None, str]:
     err = ""
-    for attempt in range(5):
+    for attempt in range(3):
         try:
             r = client.chat.completions.create(
                 model=model, messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}],
                 max_tokens=max_tokens, temperature=0.0, **extra)
             msg = r.choices[0].message
-            out = (msg.content or "").strip()
-            if not out:
-                out = (getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None) or "").strip()
+            out = (msg.content or "").strip()  # the answer channel only: digits inside the reasoning are not a verdict
             m = NUM.findall(out)
-            p = int(m[-1]) if m else None
-            return (min(max(p, 0), 100) if p is not None else None), out[-200:]
+            if not m:  # reasoning ate the budget, or prose: one more try is cheap
+                err = "no integer: " + (out or (getattr(msg, "reasoning", None) or ""))[-120:]
+                continue
+            p = int(m[-1])
+            return min(max(p, 0), 100), out[-200:]
         except Exception as exc:  # noqa: BLE001
             err = str(exc)[-200:]
             time.sleep(2 * (attempt + 1))
@@ -90,14 +91,17 @@ def main() -> None:
     p.add_argument("--obs-chars", type=int, default=400)
     p.add_argument("--act-chars", type=int, default=300)
     p.add_argument("--reasoning-effort", default="low")
-    p.add_argument("--max-tokens", type=int, default=64)
+    p.add_argument("--max-tokens", type=int, default=256, help="the reasoning channel is billed against it")
+    p.add_argument("--timeout", type=float, default=30.0)
     p.add_argument("--limit", type=int, default=0, help="episodes (debug)")
     a = p.parse_args()
     from openai import OpenAI
-    client = OpenAI(base_url=a.base_url, api_key=os.environ[a.api_key_env], timeout=120)
-    extra: dict = {}
+    client = OpenAI(base_url=a.base_url, api_key=os.environ[a.api_key_env], timeout=a.timeout, max_retries=0)
+    extra: dict = {"extra_body": {}}
     if a.reasoning_effort:
-        extra["extra_body"] = {"reasoning": {"effort": a.reasoning_effort}}
+        extra["extra_body"]["reasoning"] = {"effort": a.reasoning_effort}
+    if "openrouter" in a.base_url:  # a slow provider stalls a whole episode: prefer the fast ones
+        extra["extra_body"]["provider"] = {"sort": "throughput"}
     if a.alfworld:
         episodes = alfworld_view(a.alfworld)
     else:
