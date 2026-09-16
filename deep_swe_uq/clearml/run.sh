@@ -54,6 +54,7 @@ else
   python -c "import pier; print('[probe] pier', pier.__version__ if hasattr(pier,'__version__') else 'ok')"
 fi
 
+SHARED="${RUN_ROOT:-/tmp/probe_runs}"
 if [ -n "${REPLAY_TASK_ID:-}" ]; then
   echo "[run] replay mode: skipping the task repository, image and capture steps"
 else
