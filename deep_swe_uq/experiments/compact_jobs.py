@@ -90,7 +90,16 @@ def compact(tr: dict[str, Any]) -> dict[str, Any]:
                 pending["format_error"] = True
             pending = None
     info = tr.get("info", {}) or {}
-    return {"exit_status": info.get("exit_status"), "steps": steps}
+    # the agent's format-error turns are user messages without an assistant
+    # step in front of them; keep their count and the tail of the last one so
+    # a RepeatedFormatError exit can be explained without the archive
+    msgs = tr.get("messages", [])
+    errors = [m for m in msgs if ((m.get("extra") or {}).get("interrupt_type") == "FormatError")]
+    last_assistant = next((m for m in reversed(msgs) if m.get("role") == "assistant"), None)
+    return {"exit_status": info.get("exit_status"), "steps": steps,
+            "format_errors": len(errors),
+            "last_format_error": str(errors[-1].get("content") or "")[-300:] if errors else None,
+            "last_assistant": str((last_assistant or {}).get("content") or "")[-300:] if last_assistant else None}
 
 
 def main() -> None:
