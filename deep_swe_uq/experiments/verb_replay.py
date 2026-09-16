@@ -46,9 +46,12 @@ def parse_confidence(text: str) -> int | None:
 def trajectories(jobs: str, run: str):
     if jobs.endswith(".zip"):
         z = zipfile.ZipFile(jobs)
-        for n in sorted(z.namelist()):
-            if n.startswith(run + "/") and n.endswith("mini-swe-agent.trajectory.json"):
-                yield n.split("/")[1], json.loads(z.read(n))
+        names = sorted(z.namelist())
+        # a whole-jobs archive nests the run directory; a per-run archive does not
+        prefix = run + "/" if any(n.startswith(run + "/") for n in names) else ""
+        for n in names:
+            if n.startswith(prefix) and n.endswith("mini-swe-agent.trajectory.json") and n.count("/") == prefix.count("/") + 2:
+                yield n[len(prefix):].split("/")[0], json.loads(z.read(n))
     else:
         for p in sorted(Path(jobs, run).glob("*/agent/mini-swe-agent.trajectory.json")):
             yield p.parents[1].name, json.loads(p.read_text())
