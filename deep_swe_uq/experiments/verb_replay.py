@@ -84,6 +84,8 @@ def ask(client, model: str, prefix: list[dict], extra: dict, max_tokens: int) ->
             text = (msg.content or "").strip()
             if not text:  # a reasoning parser may have routed everything to reasoning_content
                 text = (getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None) or "").strip()
+            if not text and getattr(msg, "tool_calls", None):
+                text = "tool_call"
             return parse_confidence(text), text
         except Exception as exc:  # noqa: BLE001
             err = str(exc)
@@ -107,8 +109,12 @@ def main() -> None:
         extra["reasoning_effort"] = a.reasoning_effort
         max_tokens = 512  # the analysis channel comes first and is not free
     else:
-        extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-        max_tokens = 64
+        # Qwen answers most prefixes with a <tool_call> that the server's tool
+        # parser strips out of ``content``; a regex constraint leaves it no
+        # option but the integer.
+        extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False},
+                               "structured_outputs": {"regex": "(100|[1-9]?[0-9])"}}
+        max_tokens = 8
     done = set()
     if a.out.exists():  # resume, but only from rows that actually got an answer (the host /tmp survives between tasks)
         rows = [json.loads(l) for l in open(a.out) if l.strip()]
