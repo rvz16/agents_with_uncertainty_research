@@ -387,6 +387,59 @@ def covered(eps: list[dict], signal: str, minimum: float = 0.5) -> bool:
     return bool(eps) and sum(1 for e in eps if e["signals"][signal]) >= minimum * len(eps)
 
 
+def hl_trajectory(e: dict, names: list[str]) -> dict:
+    """A HistoryLastBayes trajectory: each signal's own finite sequence, history in
+    generations[:-1] and the last value in the physical final generation. Signals
+    with different lengths share the final generation; history is a per-signal
+    mean, so alignment between signals does not matter."""
+    seqs = {SIGNALS[n][0]: e["signals"][n] for n in names if e["signals"][n]}
+    length = max((len(v) for v in seqs.values()), default=1)
+    gens = [{"signals": {}} for _ in range(max(length, 1))]
+    for key, seq in seqs.items():
+        for i, v in enumerate(seq[:-1]):
+            gens[i]["signals"][key] = float(v)
+        gens[-1]["signals"][key] = float(seq[-1])
+    return {"generations": gens, "critics": {k: bool(v) for k, v in e["episode_critics"].items()}}
+
+
+def hl_method(names: list[str], with_critics: bool = True) -> Callable:
+    """Bayes Fused History + Last (agentic-uq main): prior + episode critics + Gaussian LLR of the
+    history mean + Gaussian LLR of the last value, lambda_history = lambda_last = 1."""
+    def fn(train, test):
+        from trajectory_uq_toolkit.history_last import HistoryLastBayes
+        if any(not covered(train, n) or not covered(test, n) for n in names):
+            return [None] * len(test)
+        keys = [SIGNALS[n][0] for n in names]
+        tr = [(hl_trajectory(e, names), e["label"]) for e in train if all(e["signals"][n] for n in names)]
+        if len({y for _, y in tr}) < 2:
+            return [None] * len(test)
+        critics = tuple(sorted(train[0]["episode_critics"])) if with_critics else ()
+        try:
+            model = HistoryLastBayes.fit([t for t, _ in tr], [y for _, y in tr], signals=keys, critic_names=critics)
+        except ValueError:
+            return [None] * len(test)
+        out = []
+        for e in test:
+            if all(e["signals"][n] for n in names):
+                out.append(model.predict_score(hl_trajectory(e, names)))
+            else:  # the rare episode without the signal keeps the prior + critic log-odds
+                out.append(_critic_logodds(model.critic_model, e["episode_critics"]))
+        return out
+    return fn
+
+
+def _critic_logodds(cm, critics: dict) -> float:
+    z = math.log(cm.prior / (1.0 - cm.prior))
+    for name, lk in cm.likelihoods.items():
+        passed = critics.get(name)
+        if passed is None:
+            continue
+        p1 = lk.p_pass_success if passed else 1.0 - lk.p_pass_success
+        p0 = lk.p_pass_failure if passed else 1.0 - lk.p_pass_failure
+        z += math.log(p1 / p0)
+    return z
+
+
 def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple[str, str, str], Callable]:
     """(family, method, aggregation) -> fn(train, test) -> confidences."""
     methods: dict[tuple[str, str, str], Callable] = {}
@@ -415,6 +468,8 @@ def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple
                     tools = fit_tools(train, tool_kind) if family.endswith("tools") else None
                     return [apply_uq(uq, e["signals"][signal], tool_belief(tools, e, tool_kind) if tools else prior, mode) for e in test]
                 methods[(signal, f"{signal} \\ensuremath{{-}} {family}", mode)] = bayes
+        if toolkit:
+            methods[(signal, f"{signal} \\ensuremath{{-}} Bayes Fused H+L + tools", "History + Last")] = hl_method([signal])
     # reference methods
     methods[("Reference", "N steps", "\\ensuremath{-}N")] = lambda train, test: [-float(e["n_steps"]) for e in test]
     methods[("Reference", "Tool success rate", "mean of observed tool critics")] = lambda train, test: [e["tool_rate"] for e in test]
@@ -442,6 +497,8 @@ def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple
             except (ValueError, KeyError):
                 return [None] * len(test)
         methods[("Reference", "TemporalBelief (B4)", "final checkpoint")] = b4
+        methods[("Reference", "Bayes Fused H+L + tools", "All5 (Logprob, Perplexity, MTE, Self-certainty, Verb)")] = hl_method(
+            ["Logprob", "Perplexity", "MTE", "Self-certainty", "Verb actions"])
     return methods
 
 
@@ -538,9 +595,9 @@ def render_dataset(name: str, cohorts: dict[str, dict], labels: dict[str, str], 
     return "\n".join(out)
 
 
-def render_ood(name: str, cohorts: dict[str, dict], labels: dict[str, str], groups: list[tuple[str, list[tuple[str, str]]]], methods, seeds) -> list[str]:
+def render_ood(name: str, cohorts: dict[str, dict], labels: dict[str, str], groups: list[tuple[str, list[tuple[str, str]]]], methods, seeds, raw: bool = False) -> list[str]:
     out = []
-    ood_methods = {k: fn for k, fn in methods.items() if k[0] == "Reference" or (k[1] != k[0] and "tools" in k[1])}
+    ood_methods = {k: fn for k, fn in methods.items() if k[0] == "Reference" or (k[1] != k[0] and "tools" in k[1]) or (raw and k[1] == k[0])}
     overall: dict[tuple, list] = defaultdict(list)
     for title, dirs in groups:
         cells_by_method = {k: [] for k in ood_methods}
@@ -577,7 +634,7 @@ def render_cross(alf: dict[str, dict], dsw: dict[str, dict], labels: dict[str, s
              "the median split of the partial score on DeepSWE) and the target is scored on its native score. Cohorts as in the two sections above; "
              "the gpt-oss-120b cohort is left out since no ALFWorld run uses that model.")
     out = ["\\clearpage", "\\section*{Cross-environment OOD \\ensuremath{-} ALFWorld \\ensuremath{\\leftrightarrow} DeepSWE}", notes, ""]
-    out += render_ood("Cross-environment", cohorts, labels, groups, methods, seeds)
+    out += render_ood("Cross-environment", cohorts, labels, groups, methods, seeds, raw=True)
     return "\n".join(out)
 
 
@@ -602,6 +659,7 @@ def main() -> None:
 \item \textbf{Bayes Fused:} start from the tempered step-critic posterior (log-likelihood ratios averaged over rows), then update with UQ. Tool success rate alone is the arithmetic mean of the step-critic flags (ALFWorld) / the share of commands with return code 0 (DeepSWE); Fused does not use that mean as its tool input.
 \item \textbf{UQ updates:} SEP/Double/Continuous/Tempered process the UQ sequence; Tempered uses \ensuremath{\lambda}=0.25. Last only fits and applies one update on the last UQ value; Mean only does so on the trajectory's arithmetic mean UQ. Raw last/mean/max have no learned transform.
 \item \textbf{Reference methods:} logistic regression = the unchanged main-branch \texttt{TrajectoryRegression} (pinned \ensuremath{C}=0.03 / selected), given the same signals and critics; TemporalBelief (B4) = the main-branch model at the final checkpoint, one harness per cohort; B4 excludes the elicited signals (Verb, judge) by construction; the regression sees every signal in the record, Verb included; the judge is not in the record for either, so it enters the main tables only through its own rows and the cross-environment section.
+\item \textbf{Bayes Fused H+L:} the main-branch \texttt{HistoryLastBayes} (\ensuremath{\lambda_H=\lambda_L=1}): prior + episode-critic log-likelihood ratios (the same episode critics as \texttt{critic:all}), plus for each selected signal a pooled-variance Gaussian LLR of the history mean (all generations but the last) and one of the last generation; unbounded log-odds. One row per signal and an All5 reference row that sums the five signals' evidence. In the cross-environment section the signals are the shared per-step definitions and the critics the three shared ones; raw last/mean/max rows (no fitting) are listed there as well.
 \item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
 \item \textbf{Averages and ranks:} Avg is the equal-weight mean over cohorts/directions of the seed means; its \ensuremath{\pm} is the mean of the per-cell SDs. Ranks are descriptive selections by Avg. Raw \ensuremath{\pm}0 reflects split-invariant rankings, not zero statistical uncertainty.
 \end{itemize}"""]
