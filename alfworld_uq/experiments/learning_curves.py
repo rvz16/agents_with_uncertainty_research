@@ -25,12 +25,16 @@ from experiments.prr_report_v2 import (FOLDS, SEEDS, load_alfworld, method_table
 CURVES = {
     "MTE — raw UQ, last (no training)": ("MTE", "MTE", "last"),
     "MTE — Bayes Fused, Last only": ("MTE", "MTE \\ensuremath{-} Bayes UQ + tools", "Last only"),
+    "Self-certainty — raw UQ, last (no training)": ("Self-certainty", "Self-certainty", "last"),
+    "Self-certainty — Bayes Fused, Last only": ("Self-certainty", "Self-certainty \\ensuremath{-} Bayes UQ + tools", "Last only"),
     "Logistic regression, pinned C=0.03": ("Reference", "Logistic regression", "pinned"),
     "TemporalBelief / B4": ("Reference", "TemporalBelief (B4)", "final checkpoint"),
 }
 STYLE = {
     "MTE — raw UQ, last (no training)": dict(color="0.3", ls="--", marker=None),
     "MTE — Bayes Fused, Last only": dict(color="#1f77b4", ls="-", marker="o"),
+    "Self-certainty — raw UQ, last (no training)": dict(color="#2ca25f", ls="--", marker=None),
+    "Self-certainty — Bayes Fused, Last only": dict(color="#2ca25f", ls="-", marker="^"),
     "Logistic regression, pinned C=0.03": dict(color="#e6550d", ls="-", marker="s"),
     "TemporalBelief / B4": dict(color="#7b4fbf", ls="-", marker="D"),
 }
@@ -77,6 +81,7 @@ def main() -> None:
     p.add_argument("--step", type=int, default=10)
     a = p.parse_args()
     methods = method_table(a.toolkit)
+    previous = json.load(open(a.out.with_suffix(".json"))) if a.out.with_suffix(".json").exists() else {}
     results: dict[str, dict] = {}
     for key, run in a.alfworld:
         eps = load_alfworld(Path(run), key)
@@ -85,7 +90,10 @@ def main() -> None:
         results[key] = {"n_episodes": len(eps), "full": full, "grid": grid, "curves": {}}
         for label, mkey in CURVES.items():
             fn = methods[mkey]
-            if label.startswith("MTE — raw"):
+            done = (previous.get(key) or {}).get("curves", {}).get(label)
+            if done and (previous[key].get("grid") == grid or "constant" in done):
+                results[key]["curves"][label] = done; continue
+            if "raw UQ" in label:
                 vals = [curve(eps, fn, full, s) for s in SEEDS]
                 results[key]["curves"][label] = {"constant": [st.fmean(v for v in vals if v is not None)]}
                 continue
@@ -133,10 +141,10 @@ def plot(results: dict, out: Path) -> None:
     axes[0].set_ylabel("PRR@0.5", fontsize=8.5)
     axes[0].set_ylim(min(-0.05, lo - 0.03), max(0.95, hi + 0.03))
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=4, fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.02))
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=8, frameon=False, bbox_to_anchor=(0.5, 0.0))
     fig.suptitle("Learning curves: ALFWorld", x=0.01, ha="left", fontsize=14, fontweight="bold")
     fig.text(0.01, 0.90, "PRR@0.5 · 3 seeds × 5 folds · mean ± 1 SD · common vertical scale · pre-terminal finished cohorts", fontsize=8.5, color="0.35")
-    fig.tight_layout(rect=(0, 0.07, 1, 0.9))
+    fig.tight_layout(rect=(0, 0.13, 1, 0.9))
     fig.savefig(out.with_suffix(".png"), dpi=170); fig.savefig(out.with_suffix(".pdf"))
     print(f"wrote {out.with_suffix('.png')} and .pdf")
 
