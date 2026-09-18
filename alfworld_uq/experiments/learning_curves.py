@@ -121,8 +121,9 @@ def plot(results: dict, out: Path) -> None:
             ax.plot(grid, m, color=sty["color"], ls=sty["ls"], marker=sty["marker"], ms=3, lw=1.4, label=label)
             ax.fill_between(grid, m - s, m + s, color=sty["color"], alpha=0.15, lw=0)
             lo, hi = min(lo, np.nanmin(m - s)), max(hi, np.nanmax(m + s))
-        ax.set_title(f"ALFWorld · {key}", loc="left", fontsize=11, fontweight="bold")
-        ax.text(0, 1.03, f"Full training: {r['full']}/fold · OOF episodes = {r['n_episodes']}", transform=ax.transAxes, fontsize=7.5, color="0.35")
+        ax.set_title(f"ALFWorld · {key}", loc="left", fontsize=11, fontweight="bold", pad=20)
+        ax.annotate(f"Full training: {r['full']}/fold · OOF episodes = {r['n_episodes']}", xy=(0, 1), xycoords="axes fraction",
+                    xytext=(0, 4), textcoords="offset points", fontsize=7.5, color="0.35")
         ax.set_xlabel("Training episodes per source fold", fontsize=8.5)
         ticks = [g for g in grid[:-1] if g % 20 == 0 or g == grid[0]] + [grid[-1]]
         ax.set_xticks(ticks); ax.set_xticklabels([str(t) if t != grid[-1] else f"Full\n{t}" for t in ticks], fontsize=7.5)
