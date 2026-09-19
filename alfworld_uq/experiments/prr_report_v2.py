@@ -61,6 +61,16 @@ SIGNALS = {
 ELICITED = ("Verb actions", "LLM judge")
 
 
+def read_saup(path: Path) -> dict[tuple[str, int], tuple[float, float]]:
+    """(episode, step) -> (inquiry drift, inference gap) from experiments.saup_distances."""
+    out = {}
+    if path.exists():
+        for line in open(path):
+            if line.strip():
+                r = json.loads(line); out[(r["id"], r["step"])] = (float(r["da"]), float(r["do"]))
+    return out
+
+
 def read_judge(path: Path) -> dict[tuple[str, int], float]:
     """(episode, step) -> p from experiments.prefix_judge; missing file = no judge."""
     out = {}
@@ -100,7 +110,7 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
     for line in open(run / "trajectories.jsonl"):
         if line.strip():
             row = json.loads(line); steps[row["episode_id"]].append(row)
-    judge = read_judge(run / "judge.jsonl")
+    judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl")
     episodes = {}
     for line in open(run / "episodes.jsonl"):
         if not line.strip():
@@ -119,6 +129,8 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
         episodes[e["episode_id"]] = {
             "cross_logprob": [float(v) for v in mean_lp if v is not None and math.isfinite(float(v))],
             "judge_steps": judge_steps,
+            "mte_steps": [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_entropy") for r in rows],
+            "saup": [saup.get((e["episode_id"], k)) for k in range(len(rows))],
             "id": e["episode_id"], "harness": harness,
             "score": float(bool(e["final_success"])), "label": int(bool(e["final_success"])),
             "signals": seqs, "critics": crit, "episode_critics": _critic_observations(rows),
@@ -149,7 +161,7 @@ DEEPSWE_FINISHED = ("Submitted", "RepeatedFormatError")
 
 def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str, dict[str, Any]]:
     confidences: dict[tuple[str, int], float] = {}
-    judge = read_judge(path.parent / "judge.jsonl")
+    judge = read_judge(path.parent / "judge.jsonl"); saup = read_saup(path.parent / "saup_dist.jsonl")
     if verb and verb.exists():
         for line in open(verb):
             r = json.loads(line)
@@ -199,7 +211,8 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             gens.append({"index": k, "signals": sig, "critics": dict(ep_crit)})
         episodes[r["id"]] = {
             "id": r["id"], "harness": harness, "score": float(rw.get("partial", 0.0)), "label": 0,
-            "cross_critics": cross_crit, "judge_steps": [s.get("judge") for s in steps], "signals": seqs, "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
+            "cross_critics": cross_crit, "judge_steps": [s.get("judge") for s in steps], "signals": seqs,
+            "mte_steps": [s["mean_entropy"] for s in steps], "saup": [saup.get((r["id"], k)) for k in range(len(steps))], "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
             "n_steps": len(steps), "tool_rate": st.fmean(rc0) if rc0 else 0.0,
             "record": {"episode_id": r["id"], "environment": "deepswe", "success": 0, "generations": gens},
         }
@@ -440,6 +453,66 @@ def _critic_logodds(cm, critics: dict) -> float:
     return z
 
 
+# ----------------------------------------------------------------------------- SAUP
+# Zhao et al., ACL 2025: U_agent = sqrt(mean_i (W_i U_i)^2) with per-step
+# uncertainty U_i (here MTE) and situational weights W_i from the position of
+# the step, from the two embedding distances (inquiry drift D_a, inference gap
+# D_o), from both, or from a 3-state Gaussian HMM over (D_a, D_o) fitted on the
+# source trajectories (the paper's CHMM surrogate, without its manual state
+# annotation: states are ordered by their mean distance).
+SAUP_VARIANTS = ("RMS, uniform weights", "P: position", "D: distance", "PD: position + distance", "HMMD: learned CHMM")
+
+
+def _saup_rows(e: dict) -> list[tuple[float, float, float]]:
+    """(U, D_a, D_o) for the steps that carry both; [] when the cohort has no distances."""
+    out = []
+    for u, d in zip(e.get("mte_steps") or [], e.get("saup") or []):
+        if u is not None and d is not None and math.isfinite(float(u)):
+            out.append((float(u), d[0], d[1]))
+    return out
+
+
+def _saup_score(rows: list[tuple[float, float, float]], weights: list[float]) -> float:
+    return -math.sqrt(st.fmean((w * u) ** 2 for (u, _, _), w in zip(rows, weights)))
+
+
+def saup_method(variant: str) -> Callable:
+    def fn(train, test):
+        if sum(1 for e in test if _saup_rows(e)) < 0.5 * len(test):
+            return [None] * len(test)
+        hmm = None
+        if variant.startswith("HMMD"):
+            from hmmlearn.hmm import GaussianHMM
+            seqs = [np.array([[d[1], d[2]] for d in _saup_rows(e)]) for e in train if _saup_rows(e)]
+            hmm = GaussianHMM(n_components=3, covariance_type="full", n_iter=100, random_state=0)
+            try:
+                hmm.fit(np.vstack(seqs), [len(q) for q in seqs])
+            except ValueError:
+                return [None] * len(test)
+            order = np.argsort(hmm.means_.sum(axis=1))  # least to most deviated
+            state_weight = np.empty(3); state_weight[order] = np.array([1.0, 2.0, 3.0]) / 3.0
+        out = []
+        for e in test:
+            rows = _saup_rows(e)
+            if not rows:
+                out.append(0.0); continue
+            n = len(rows)
+            if variant.startswith("RMS"):
+                w = [1.0] * n
+            elif variant.startswith("P:"):
+                w = [(i + 1) / n for i in range(n)]
+            elif variant.startswith("D:"):
+                w = [da + do for _, da, do in rows]
+            elif variant.startswith("PD"):
+                w = [(i + 1) / n + da + do for i, (_, da, do) in enumerate(rows)]
+            else:
+                post = hmm.predict_proba(np.array([[da, do] for _, da, do in rows]))
+                w = list(post @ state_weight)
+            out.append(_saup_score(rows, w))
+        return out
+    return fn
+
+
 def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple[str, str, str], Callable]:
     """(family, method, aggregation) -> fn(train, test) -> confidences."""
     methods: dict[tuple[str, str, str], Callable] = {}
@@ -473,6 +546,8 @@ def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple
     # reference methods
     methods[("Reference", "N steps", "\\ensuremath{-}N")] = lambda train, test: [-float(e["n_steps"]) for e in test]
     methods[("Reference", "Tool success rate", "mean of observed tool critics")] = lambda train, test: [e["tool_rate"] for e in test]
+    for variant in SAUP_VARIANTS:
+        methods[("Reference", "SAUP (MTE)", variant)] = saup_method(variant)
     methods[("Reference", "Bayes tool-only", "critic:all")] = lambda train, test: [tool_belief(fit_tools(train, "episode"), e, "episode") for e in test]
     methods[("Reference", "Bayes tool-only", "Step critics, multiplied")] = lambda train, test: [tool_belief(fit_tools(train, "multiplied"), e, "multiplied") for e in test]
     methods[("Reference", "Bayes tool-only", "Step critics, tempered")] = lambda train, test: [tool_belief(fit_tools(train, "tempered"), e, "tempered") for e in test]
@@ -660,6 +735,7 @@ def main() -> None:
 \item \textbf{UQ updates:} SEP/Double/Continuous/Tempered process the UQ sequence; Tempered uses \ensuremath{\lambda}=0.25. Last only fits and applies one update on the last UQ value; Mean only does so on the trajectory's arithmetic mean UQ. Raw last/mean/max have no learned transform.
 \item \textbf{Reference methods:} logistic regression = the unchanged main-branch \texttt{TrajectoryRegression} (pinned \ensuremath{C}=0.03 / selected), given the same signals and critics; TemporalBelief (B4) = the main-branch model at the final checkpoint, one harness per cohort; B4 excludes the elicited signals (Verb, judge) by construction; the regression sees every signal in the record, Verb included; the judge is not in the record for either, so it enters the main tables only through its own rows and the cross-environment section.
 \item \textbf{Bayes Fused H+L:} the main-branch \texttt{HistoryLastBayes} (\ensuremath{\lambda_H=\lambda_L=1}): prior + episode-critic log-likelihood ratios (the same episode critics as \texttt{critic:all}), plus for each selected signal a pooled-variance Gaussian LLR of the history mean (all generations but the last) and one of the last generation; unbounded log-odds. One row per signal and an All5 reference row that sums the five signals' evidence. In the cross-environment section the signals are the shared per-step definitions and the critics the three shared ones; raw last/mean/max rows (no fitting) are listed there as well.
+\item \textbf{SAUP:} Zhao et al. (ACL 2025), \ensuremath{U_{\mathrm{agent}} = \sqrt{\tfrac{1}{N}\sum_i (W_i U_i)^2}} with \ensuremath{U_i} = the step's MTE and situational weights \ensuremath{W_i}: uniform (plain RMS), position \ensuremath{i/N} (SAUP-P), the embedding distances inquiry drift + inference gap (SAUP-D; all-MiniLM-L6-v2 cosine distances between the task and the step, and between the observation and the thought/action), their sum (SAUP-PD), or the posterior of a 3-state Gaussian HMM over the two distances fitted on the source fold, states ordered by mean distance and weighted 1/3, 2/3, 1 (SAUP-HMMD; the paper's CHMM without its manual state labels). No public code exists; this is a re-implementation from the paper. Confidence = \ensuremath{-U_{\mathrm{agent}}}.
 \item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
 \item \textbf{Averages and ranks:} Avg is the equal-weight mean over cohorts/directions of the seed means; its \ensuremath{\pm} is the mean of the per-cell SDs. Ranks are descriptive selections by Avg. Raw \ensuremath{\pm}0 reflects split-invariant rankings, not zero statistical uncertainty.
 \end{itemize}"""]
