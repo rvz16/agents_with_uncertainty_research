@@ -71,6 +71,7 @@ def main() -> None:
                         "finished task's trajectories instead of running the agent")
     p.add_argument("--replay-run", default=None, help="run directory inside that task's archive")
     p.add_argument("--replay-reasoning", default=None, help="reasoning_effort for the side query (gpt-oss: low)")
+    p.add_argument("--replay-kind", default=None, choices=["verb", "uprop"], help="which replay script runs (default verb)")
     p.add_argument("--collect-only", action="store_true",
                    help="no agent run: compact a finished run's directory on the host and upload the records")
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
@@ -131,6 +132,7 @@ def main() -> None:
         "Args/REPLAY_TASK_ID": a.replay_task_id or "",
         "Args/REPLAY_RUN": a.replay_run or "",
         "Args/REPLAY_REASONING": a.replay_reasoning or "",
+        "Args/REPLAY_KIND": a.replay_kind or "",
         "Args/COLLECT_ONLY": "1" if a.collect_only else "",
         "Args/VLLM_VERSION": "0.28.0",
         "Args/HEALTH_TIMEOUT_STEPS": "720",

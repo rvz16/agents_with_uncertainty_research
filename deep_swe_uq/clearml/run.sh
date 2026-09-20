@@ -312,11 +312,12 @@ PY
   [ -f "${ZIP}" ] || { echo "[replay] VERDICT: archive not found: ${ZIP}"; exit 30; }
   echo "[replay] archive: ${ZIP} ($(du -h "${ZIP}" | cut -f1))"
   mkdir -p "${SHARED}/jobs"
-  python deep_swe_uq/experiments/verb_replay.py --jobs "${ZIP}" --run "${REPLAY_RUN}" \
+  KIND="${REPLAY_KIND:-verb}"   # verb: confidence side query; uprop: N resampled decisions per step
+  python "deep_swe_uq/experiments/${KIND}_replay.py" --jobs "${ZIP}" --run "${REPLAY_RUN}" \
     --base-url "${BASE_URL}" --model "${SERVE_MODEL}" --workers "${N_CONCURRENT:-8}" \
-    --out "${SHARED}/jobs/verb_${REPLAY_RUN}.jsonl" ${REPLAY_REASONING:+--reasoning-effort "${REPLAY_REASONING}"}
+    --out "${SHARED}/jobs/${KIND}_${REPLAY_RUN}.jsonl" ${REPLAY_REASONING:+--reasoning-effort "${REPLAY_REASONING}"}
   rc=$?
-  echo "[replay] rc=${rc}; $(wc -l < "${SHARED}/jobs/verb_${REPLAY_RUN}.jsonl") rows"
+  echo "[replay] rc=${rc}; $(wc -l < "${SHARED}/jobs/${KIND}_${REPLAY_RUN}.jsonl") rows"
   exit ${rc}
 fi
 

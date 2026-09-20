@@ -60,9 +60,32 @@ SIGNALS = {
     "Self-certainty (action)": ("self_certainty@action", None, False),
     # SAUP-PD as a per-step sequence: (i/N + inquiry drift + inference gap) * MTE, both benchmarks
     "SAUP-PD (MTE)": ("saup_pd_mte", None, True),
+    # UProp's per-step total H_t = IU_t + EU_t from N resampled decisions (where the prompt could be rebuilt)
+    "UProp H_t": ("uprop_h", None, True),
 }
 #: derived signals stay out of the B4 / regression records of the main tables
-DERIVED = ("Self-certainty (action)", "SAUP-PD (MTE)")
+DERIVED = ("Self-certainty (action)", "SAUP-PD (MTE)", "UProp H_t")
+
+
+def read_uprop(path: Path) -> dict[str, dict]:
+    """episode -> UProp decomposition from experiments.uprop_samples / deepswe uprop_replay rows."""
+    if not path.exists():
+        return {}
+    from uq.uprop import uprop
+    by: dict[str, list] = defaultdict(list)
+    for line in open(path):
+        if line.strip():
+            r = json.loads(line); by[r["id"]].append(r)
+    out = {}
+    for eid, rows in by.items():
+        rows.sort(key=lambda r: r["step"])
+        steps = [{"realised": r["realised"],
+                  "samples": [s.get("action") or s["text"] for s in r["samples"] if s.get("text")],
+                  "sample_nll": [s.get("nll") for s in r["samples"] if s.get("text")]} for r in rows]
+        u = uprop(steps)
+        if u["total"] is not None:
+            out[eid] = u
+    return out
 
 
 def saup_pd_sequence(mte_steps: list, saup_steps: list) -> list[float]:
@@ -123,7 +146,7 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
     for line in open(run / "trajectories.jsonl"):
         if line.strip():
             row = json.loads(line); steps[row["episode_id"]].append(row)
-    judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl")
+    judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl"); up = read_uprop(run / "uprop_samples.jsonl")
     episodes = {}
     for line in open(run / "episodes.jsonl"):
         if not line.strip():
@@ -140,11 +163,12 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
         seqs["LLM judge"] = [v for v in judge_steps if v is not None]
         mte_steps = [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_entropy") for r in rows]
         seqs["SAUP-PD (MTE)"] = saup_pd_sequence(mte_steps, [saup.get((e["episode_id"], k)) for k in range(len(rows))])
+        seqs["UProp H_t"] = list(up[e["episode_id"]]["h"]) if e["episode_id"] in up else []
         crit = [{c: bool(_step_critic_observation(r)[c]) for c in STEP_CRITIC_NAMES} for r in rows]
         mean_lp = [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_logprob") for r in rows]
         episodes[e["episode_id"]] = {
             "cross_logprob": [float(v) for v in mean_lp if v is not None and math.isfinite(float(v))],
-            "judge_steps": judge_steps,
+            "judge_steps": judge_steps, "uprop": up.get(e["episode_id"]),
             "mte_steps": [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_entropy") for r in rows],
             "saup": [saup.get((e["episode_id"], k)) for k in range(len(rows))],
             "id": e["episode_id"], "harness": harness,
@@ -153,7 +177,7 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
             "n_steps": len(rows), "tool_rate": st.fmean(v for c in crit for v in c.values()),
             "record": _record_alfworld(e["episode_id"], rows, crit, int(bool(e["final_success"]))),
         }
-    sparse(episodes, "LLM judge"); sparse(episodes, "SAUP-PD (MTE)")
+    sparse(episodes, "LLM judge"); sparse(episodes, "SAUP-PD (MTE)"); sparse(episodes, "UProp H_t")
     return episodes
 
 
@@ -179,7 +203,7 @@ DEEPSWE_FINISHED = ("Submitted", "RepeatedFormatError")
 
 def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str, dict[str, Any]]:
     confidences: dict[tuple[str, int], float] = {}
-    judge = read_judge(path.parent / "judge.jsonl"); saup = read_saup(path.parent / "saup_dist.jsonl")
+    judge = read_judge(path.parent / "judge.jsonl"); saup = read_saup(path.parent / "saup_dist.jsonl"); up = read_uprop(path.parent / "uprop_samples.jsonl")
     if verb and verb.exists():
         for line in open(verb):
             r = json.loads(line)
@@ -211,6 +235,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             "LLM judge": [s["judge"] for s in steps if s.get("judge") is not None],
             "Self-certainty (action)": [],
             "SAUP-PD (MTE)": saup_pd_sequence([s["mean_entropy"] for s in steps], [saup.get((r["id"], k)) for k in range(len(steps))]),
+            "UProp H_t": list(up[r["id"]]["h"][: len(steps)]) if r["id"] in up else [],
         }
         cmds = [s["command"] for s in steps if s["command"]]
         test_rcs = [s["returncode"] for s in steps if s["command"] and _TEST_CMD.search(s["command"]) and s["returncode"] is not None]
@@ -231,12 +256,12 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             gens.append({"index": k, "signals": sig, "critics": dict(ep_crit)})
         episodes[r["id"]] = {
             "id": r["id"], "harness": harness, "score": float(rw.get("partial", 0.0)), "label": 0,
-            "cross_critics": cross_crit, "judge_steps": [s.get("judge") for s in steps], "signals": seqs,
+            "cross_critics": cross_crit, "judge_steps": [s.get("judge") for s in steps], "signals": seqs, "uprop": up.get(r["id"]),
             "mte_steps": [s["mean_entropy"] for s in steps], "saup": [saup.get((r["id"], k)) for k in range(len(steps))], "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
             "n_steps": len(steps), "tool_rate": st.fmean(rc0) if rc0 else 0.0,
             "record": {"episode_id": r["id"], "environment": "deepswe", "success": 0, "generations": gens},
         }
-    sparse(episodes, "Verb actions"); sparse(episodes, "LLM judge"); sparse(episodes, "SAUP-PD (MTE)")
+    sparse(episodes, "Verb actions"); sparse(episodes, "LLM judge"); sparse(episodes, "SAUP-PD (MTE)"); sparse(episodes, "UProp H_t")
     return episodes
 
 
@@ -568,6 +593,12 @@ def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple
     methods[("Reference", "Tool success rate", "mean of observed tool critics")] = lambda train, test: [e["tool_rate"] for e in test]
     for variant in SAUP_VARIANTS:
         methods[("Reference", "SAUP (MTE)", variant)] = saup_method(variant)
+    for label, key in (("total (IU + EU, step-normalised)", "total"), ("IU only (mean LN-PE of samples)", "iu_mean"), ("EU only (mean accumulated PMI)", "eu_mean")):
+        def uprop_ref(train, test, key=key):
+            if sum(1 for e in test if e.get("uprop")) < 0.5 * len(test):
+                return [None] * len(test)
+            return [-float(e["uprop"][key]) if e.get("uprop") else 0.0 for e in test]
+        methods[("Reference", "UProp", label)] = uprop_ref
     methods[("Reference", "Bayes tool-only", "critic:all")] = lambda train, test: [tool_belief(fit_tools(train, "episode"), e, "episode") for e in test]
     methods[("Reference", "Bayes tool-only", "Step critics, multiplied")] = lambda train, test: [tool_belief(fit_tools(train, "multiplied"), e, "multiplied") for e in test]
     methods[("Reference", "Bayes tool-only", "Step critics, tempered")] = lambda train, test: [tool_belief(fit_tools(train, "tempered"), e, "tempered") for e in test]
@@ -757,6 +788,7 @@ def main() -> None:
 \item \textbf{Reference methods:} logistic regression = the unchanged main-branch \texttt{TrajectoryRegression} (pinned \ensuremath{C}=0.03 / selected), given the same signals and critics; TemporalBelief (B4) = the main-branch model at the final checkpoint, one harness per cohort; B4 excludes the elicited signals (Verb, judge) by construction; the regression sees every signal in the record, Verb included; the judge is not in the record for either, so it enters the main tables only through its own rows and the cross-environment section.
 \item \textbf{Bayes Fused H+L:} the main-branch \texttt{HistoryLastBayes} (\ensuremath{\lambda_H=\lambda_L=1}): prior + episode-critic log-likelihood ratios (the same episode critics as \texttt{critic:all}), plus for each selected signal a pooled-variance Gaussian LLR of the history mean (all generations but the last) and one of the last generation; unbounded log-odds. One row per signal and an All5 reference row that sums the five signals' evidence. In the cross-environment section the signals are the shared per-step definitions and the critics the three shared ones; raw last/mean/max rows (no fitting) are listed there as well.
 \item \textbf{Derived signals:} Self-certainty (action) = self-certainty of the action tokens only (ALFWorld; the thought tokens of a ReAct response carry a length-driven certainty, correlation \ensuremath{-0.73} with the token count on ReAct/gpt-oss, and on ReAct/Qwen the failed episodes' repeated actions are the \emph{most} certain steps, which inverts every token signal). SAUP-PD (MTE) = the per-step sequence \ensuremath{(i/N + D_a + D_o)\,\mathrm{MTE}_i}, so that the situational weighting can enter the Bayesian fusion with critics like any other signal. Neither derived signal is in the B4 / regression records of the main tables.
+\item \textbf{UProp:} Duan et al. (2025, arXiv:2506.17419), re-implemented from the paper (the authors' repository holds no code). At every recorded step \ensuremath{N=10} decisions are resampled from the same model at the same prompt (temperature 0.8; ALFWorld ReAct through OpenRouter with the prompt rebuilt from the rows, DeepSWE through the recorded message history on the cluster). Intrinsic \ensuremath{IU_t} = mean length-normalised NLL of the samples; extrinsic \ensuremath{PMI_t = -\log \tfrac{1}{N}\sum_n K(d(y_t^{(n)}, y_t^*))} with a Gaussian kernel over the fuzzy string distance between each sample and the realised decision; \ensuremath{EU_t = \sum_{i<t} PMI_i}, \ensuremath{H_t = IU_t + EU_t}, total \ensuremath{= \sum_t H_t / (T + \sum_t EU_t / IU_t)} (eq. 9, one decision process per episode). Rows: the total, IU only and EU only (the paper's two ablations) as references, and \ensuremath{H_t} as a per-step signal for the Bayesian fusion. Not available on the smolagents cohorts, whose prompts are assembled by the framework and cannot be rebuilt from the rows.
 \item \textbf{SAUP:} Zhao et al. (ACL 2025), \ensuremath{U_{\mathrm{agent}} = \sqrt{\tfrac{1}{N}\sum_i (W_i U_i)^2}} with \ensuremath{U_i} = the step's MTE and situational weights \ensuremath{W_i}: uniform (plain RMS), position \ensuremath{i/N} (SAUP-P), the embedding distances inquiry drift + inference gap (SAUP-D; all-MiniLM-L6-v2 cosine distances between the task and the step, and between the observation and the thought/action), their sum (SAUP-PD), or the posterior of a 3-state Gaussian HMM over the two distances fitted on the source fold, states ordered by mean distance and weighted 1/3, 2/3, 1 (SAUP-HMMD; the paper's CHMM without its manual state labels). No public code exists; this is a re-implementation from the paper. Confidence = \ensuremath{-U_{\mathrm{agent}}}.
 \item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
 \item \textbf{Averages and ranks:} Avg is the equal-weight mean over cohorts/directions of the seed means; its \ensuremath{\pm} is the mean of the per-cell SDs. Ranks are descriptive selections by Avg. Raw \ensuremath{\pm}0 reflects split-invariant rankings, not zero statistical uncertainty.

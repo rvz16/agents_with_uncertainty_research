@@ -66,9 +66,10 @@ def main() -> int:
     if replay:
         # replay mode writes one small jsonl; the shared jobs directory on the
         # host holds every earlier run and would be a multi-GB upload
-        out = jobs / f"verb_{replay}.jsonl"
+        kind = os.environ.get("REPLAY_KIND", "") or "verb"
+        out = jobs / f"{kind}_{replay}.jsonl"
         if out.exists():
-            task.upload_artifact("verb", artifact_object=out, wait_on_upload=True)
+            task.upload_artifact(kind, artifact_object=out, wait_on_upload=True)
             print(f"[entry] uploaded {out}", flush=True)
     elif jobs.exists() and any(jobs.iterdir()):
         # only this run's directory: the shared jobs directory on the host
