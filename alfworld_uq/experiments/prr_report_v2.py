@@ -688,7 +688,9 @@ def longtable(title: str, cols: list[str], rows: list[tuple[str, str, list[tuple
     rows = [r for r in rows if any(c is not None for c in r[2])]
     for method, agg, cells in rows:
         ok = [c for c in cells if c is not None]
-        avg = (st.fmean(c[0] for c in ok), st.fmean(c[1] for c in ok)) if ok else None
+        # a row that lacks a column (a signal one cohort cannot supply) gets no Avg and no rank:
+        # a mean over a subset of the columns is not comparable with the others
+        avg = (st.fmean(c[0] for c in ok), st.fmean(c[1] for c in ok)) if ok and len(ok) == len(cells) else None
         scored.append((method, agg, cells, avg))
     order = sorted(range(len(scored)), key=lambda k: -(scored[k][3][0] if scored[k][3] else -9))
     rank = {k: r + 1 for r, k in enumerate(order)}
@@ -698,7 +700,7 @@ def longtable(title: str, cols: list[str], rows: list[tuple[str, str, list[tuple
            f"\\multicolumn{{{n}}}{{@{{}}l}}{{\\emph{{{title} (continued)}}}} \\\\", "\\toprule", head, "\\midrule", "\\endhead", "\\midrule",
            f"\\multicolumn{{{n}}}{{r@{{}}}}{{\\emph{{Continued on next page}}}} \\\\", "\\endfoot", "\\bottomrule", "\\endlastfoot"]
     for k, (method, agg, cells, avg) in enumerate(scored):
-        out.append(f"{rank[k]} & {method} & {agg} & " + " & ".join(fmt(c) for c in cells) + f" & {fmt(avg)} \\\\")
+        out.append(f"{rank[k] if avg else '--'} & {method} & {agg} & " + " & ".join(fmt(c) for c in cells) + f" & {fmt(avg)} \\\\")
     out += ["\\end{longtable}", "\\endgroup"]
     return "\n".join(out) + "\n"
 
@@ -840,6 +842,7 @@ def main() -> None:
 \item \textbf{HTC:} Zhang, Xiong and Wu (ICML 2026, "Agentic Confidence Calibration"), re-implemented from Appendix D (the supplementary code is not public): 48 trajectory-level features of the per-token confidence trace (Dynamics 19, Position 14, Stability 10, Structure 5; token confidence = top-1 probability, top-\ensuremath{k} mean from the recorded top-20) and a liblinear logistic calibrator, L2 (HTC-Full) or L1 (HTC-Reduced), \ensuremath{\alpha} chosen on the training fold by inner 3-fold CV over the paper's 15-value grid (AUROC, ties by Brier); features standardised with training statistics. A third row drops the five Structure features (step count, tokens per step), which on ALFWorld carry the episode length. Fitted per fold like the regression; OOD = source fit applied unchanged.
 \item \textbf{UProp:} Duan et al. (2025, arXiv:2506.17419), re-implemented from the paper (the authors' repository holds no code). At every recorded step \ensuremath{N=10} decisions are resampled from the same model at the same prompt (temperature 0.8; ALFWorld ReAct through OpenRouter with the prompt rebuilt from the rows, DeepSWE through the recorded message history on the cluster). Intrinsic \ensuremath{IU_t} = mean length-normalised NLL of the samples; extrinsic \ensuremath{PMI_t = -\log \tfrac{1}{N}\sum_n K(d(y_t^{(n)}, y_t^*))} with a Gaussian kernel over the fuzzy string distance between each sample and the realised decision; \ensuremath{EU_t = \sum_{i<t} PMI_i}, \ensuremath{H_t = IU_t + EU_t}, total \ensuremath{= \sum_t H_t / (T + \sum_t EU_t / IU_t)} (eq. 9, one decision process per episode). Rows: the total, IU only and EU only (the paper's two ablations) as references, and \ensuremath{H_t} as a per-step signal for the Bayesian fusion. Not available on the smolagents cohorts, whose prompts are assembled by the framework and cannot be rebuilt from the rows.
 \item \textbf{SAUP:} Zhao et al. (ACL 2025), \ensuremath{U_{\mathrm{agent}} = \sqrt{\tfrac{1}{N}\sum_i (W_i U_i)^2}} with \ensuremath{U_i} = the step's MTE and situational weights \ensuremath{W_i}: uniform (plain RMS), position \ensuremath{i/N} (SAUP-P), the embedding distances inquiry drift + inference gap (SAUP-D; all-MiniLM-L6-v2 cosine distances between the task and the step, and between the observation and the thought/action), their sum (SAUP-PD), or the posterior of a 3-state Gaussian HMM over the two distances fitted on the source fold, states ordered by mean distance and weighted 1/3, 2/3, 1 (SAUP-HMMD; the paper's CHMM without its manual state labels). No public code exists; this is a re-implementation from the paper. Confidence = \ensuremath{-U_{\mathrm{agent}}}.
+\item \textbf{Avg and Rank:} only rows with a value in every column get an Avg and a rank; a row with an n/a cell (a signal one cohort cannot supply, e.g. UProp on smolagents) is listed unranked at the bottom.
 \item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
 \item \textbf{Averages and ranks:} Avg is the equal-weight mean over cohorts/directions of the seed means; its \ensuremath{\pm} is the mean of the per-cell SDs. Ranks are descriptive selections by Avg. Raw \ensuremath{\pm}0 reflects split-invariant rankings, not zero statistical uncertainty.
 \end{itemize}"""]
