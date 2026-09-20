@@ -114,7 +114,8 @@ def read_htc_tokens(path: Path) -> dict[str, tuple[list, list]]:
         for line in open(path):
             if line.strip():
                 r = json.loads(line); a, b = out.setdefault(r["id"], ([], []))
-                a.append(r["top1"]); b.append(r["topk"])
+                # float32 arrays: the Qwen run alone is ~15k steps of token lists
+                a.append(np.asarray(r["top1"], dtype=np.float32)); b.append(np.asarray(r["topk"], dtype=np.float32))
     return out
 
 
@@ -180,8 +181,8 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
         episodes[e["episode_id"]] = {
             "cross_logprob": [float(v) for v in mean_lp if v is not None and math.isfinite(float(v))],
             "judge_steps": judge_steps, "uprop": up.get(e["episode_id"]),
-            "htc_tokens": ([[math.exp(t["logprob"]) for t in (r.get("token_logprobs") or []) if t.get("logprob") is not None] for r in rows],
-                           [[t["topk_mass"] / 20.0 for t in (r.get("token_logprobs") or []) if t.get("topk_mass") is not None] for r in rows]),
+            "htc_tokens": ([np.asarray([math.exp(t["logprob"]) for t in (r.get("token_logprobs") or []) if t.get("logprob") is not None], dtype=np.float32) for r in rows],
+                           [np.asarray([t["topk_mass"] / 20.0 for t in (r.get("token_logprobs") or []) if t.get("topk_mass") is not None], dtype=np.float32) for r in rows]),
             "mte_steps": [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_entropy") for r in rows],
             "saup": [saup.get((e["episode_id"], k)) for k in range(len(rows))],
             "id": e["episode_id"], "harness": harness,
@@ -585,6 +586,7 @@ def _htc_x(e: dict):
         return None
     if "_htc_x" not in e:
         e["_htc_x"] = features(t[0], t[1])
+        e["htc_tokens"] = ([np.ones(1)], None)  # keep only a "has tokens" marker; free the token lists
     return e["_htc_x"]
 
 
