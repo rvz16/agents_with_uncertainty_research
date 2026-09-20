@@ -55,7 +55,20 @@ SIGNALS = {
     "Self-certainty": ("self_certainty", "self_certainty", False),
     "Verb actions": ("verbalized_confidence", "confidence", False),
     "LLM judge": ("llm_judge", "judge", False),
+    # derived, ALFWorld-only: self-certainty of the action tokens alone (the thought tokens of a ReAct
+    # response carry a length-driven, uninformative certainty; see the notes)
+    "Self-certainty (action)": ("self_certainty@action", None, False),
+    # SAUP-PD as a per-step sequence: (i/N + inquiry drift + inference gap) * MTE, both benchmarks
+    "SAUP-PD (MTE)": ("saup_pd_mte", None, True),
 }
+#: derived signals stay out of the B4 / regression records of the main tables
+DERIVED = ("Self-certainty (action)", "SAUP-PD (MTE)")
+
+
+def saup_pd_sequence(mte_steps: list, saup_steps: list) -> list[float]:
+    rows = [(float(u), d[0], d[1]) for u, d in zip(mte_steps, saup_steps) if u is not None and d is not None and math.isfinite(float(u))]
+    n = len(rows)
+    return [((i + 1) / n + da + do) * u for i, (u, da, do) in enumerate(rows)]
 #: elicited per-step signals (an extra model call each); kept out of the
 #: main-table B4 / regression records, see cross_view for where they enter
 ELICITED = ("Verb actions", "LLM judge")
@@ -92,7 +105,7 @@ def sparse(episodes: dict, signal: str) -> None:
     n_steps = sum(e["n_steps"] for e in episodes.values())
     n_sig = sum(len(e["signals"][signal]) for e in episodes.values())
     if sum(1 for e in episodes.values() if e["signals"][signal]) < 0.5 * len(episodes) or n_sig < 0.5 * n_steps:
-        key = SIGNALS[signal][0]
+        key = SIGNALS[signal][0].split("@")[0]
         for e in episodes.values():
             e["signals"][signal] = []
             if signal == "LLM judge":
@@ -120,10 +133,13 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
             continue
         seqs = {}
         for name, (key, _, _) in SIGNALS.items():
-            vals = [((r.get("uq") or {}).get(SEGMENT) or {}).get(key) for r in rows]
+            seg, key = (key.split("@")[1], key.split("@")[0]) if "@" in key else (SEGMENT, key)
+            vals = [((r.get("uq") or {}).get(seg) or {}).get(key) for r in rows]
             seqs[name] = [float(v) for v in vals if v is not None and math.isfinite(float(v))]
         judge_steps = [judge.get((e["episode_id"], k)) for k in range(len(rows))]
         seqs["LLM judge"] = [v for v in judge_steps if v is not None]
+        mte_steps = [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_entropy") for r in rows]
+        seqs["SAUP-PD (MTE)"] = saup_pd_sequence(mte_steps, [saup.get((e["episode_id"], k)) for k in range(len(rows))])
         crit = [{c: bool(_step_critic_observation(r)[c]) for c in STEP_CRITIC_NAMES} for r in rows]
         mean_lp = [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_logprob") for r in rows]
         episodes[e["episode_id"]] = {
@@ -137,7 +153,7 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
             "n_steps": len(rows), "tool_rate": st.fmean(v for c in crit for v in c.values()),
             "record": _record_alfworld(e["episode_id"], rows, crit, int(bool(e["final_success"]))),
         }
-    sparse(episodes, "LLM judge")
+    sparse(episodes, "LLM judge"); sparse(episodes, "SAUP-PD (MTE)")
     return episodes
 
 
@@ -146,6 +162,8 @@ def _record_alfworld(eid, rows, crit, label):
     for k, (row, c) in enumerate(zip(rows, crit)):
         sig = {}
         for name, (key, _, _) in SIGNALS.items():
+            if name in DERIVED:
+                continue
             v = ((row.get("uq") or {}).get(SEGMENT) or {}).get(key)
             if v is not None and math.isfinite(float(v)):
                 sig[key] = float(v)
@@ -191,6 +209,8 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             "Self-certainty": [s["self_certainty"] for s in steps if s.get("self_certainty") is not None],
             "Verb actions": [s["confidence"] for s in steps if s.get("confidence") is not None],
             "LLM judge": [s["judge"] for s in steps if s.get("judge") is not None],
+            "Self-certainty (action)": [],
+            "SAUP-PD (MTE)": saup_pd_sequence([s["mean_entropy"] for s in steps], [saup.get((r["id"], k)) for k in range(len(steps))]),
         }
         cmds = [s["command"] for s in steps if s["command"]]
         test_rcs = [s["returncode"] for s in steps if s["command"] and _TEST_CMD.search(s["command"]) and s["returncode"] is not None]
@@ -216,7 +236,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
             "n_steps": len(steps), "tool_rate": st.fmean(rc0) if rc0 else 0.0,
             "record": {"episode_id": r["id"], "environment": "deepswe", "success": 0, "generations": gens},
         }
-    sparse(episodes, "Verb actions"); sparse(episodes, "LLM judge")
+    sparse(episodes, "Verb actions"); sparse(episodes, "LLM judge"); sparse(episodes, "SAUP-PD (MTE)")
     return episodes
 
 
@@ -585,6 +605,7 @@ def fmt(v: tuple[float, float] | None) -> str:
 def longtable(title: str, cols: list[str], rows: list[tuple[str, str, list[tuple[float, float] | None]]], widths: str) -> str:
     """rows: (method, aggregation, per-column (mean, sd)); Avg and Rank are added."""
     scored = []
+    rows = [r for r in rows if any(c is not None for c in r[2])]
     for method, agg, cells in rows:
         ok = [c for c in cells if c is not None]
         avg = (st.fmean(c[0] for c in ok), st.fmean(c[1] for c in ok)) if ok else None
@@ -735,6 +756,7 @@ def main() -> None:
 \item \textbf{UQ updates:} SEP/Double/Continuous/Tempered process the UQ sequence; Tempered uses \ensuremath{\lambda}=0.25. Last only fits and applies one update on the last UQ value; Mean only does so on the trajectory's arithmetic mean UQ. Raw last/mean/max have no learned transform.
 \item \textbf{Reference methods:} logistic regression = the unchanged main-branch \texttt{TrajectoryRegression} (pinned \ensuremath{C}=0.03 / selected), given the same signals and critics; TemporalBelief (B4) = the main-branch model at the final checkpoint, one harness per cohort; B4 excludes the elicited signals (Verb, judge) by construction; the regression sees every signal in the record, Verb included; the judge is not in the record for either, so it enters the main tables only through its own rows and the cross-environment section.
 \item \textbf{Bayes Fused H+L:} the main-branch \texttt{HistoryLastBayes} (\ensuremath{\lambda_H=\lambda_L=1}): prior + episode-critic log-likelihood ratios (the same episode critics as \texttt{critic:all}), plus for each selected signal a pooled-variance Gaussian LLR of the history mean (all generations but the last) and one of the last generation; unbounded log-odds. One row per signal and an All5 reference row that sums the five signals' evidence. In the cross-environment section the signals are the shared per-step definitions and the critics the three shared ones; raw last/mean/max rows (no fitting) are listed there as well.
+\item \textbf{Derived signals:} Self-certainty (action) = self-certainty of the action tokens only (ALFWorld; the thought tokens of a ReAct response carry a length-driven certainty, correlation \ensuremath{-0.73} with the token count on ReAct/gpt-oss, and on ReAct/Qwen the failed episodes' repeated actions are the \emph{most} certain steps, which inverts every token signal). SAUP-PD (MTE) = the per-step sequence \ensuremath{(i/N + D_a + D_o)\,\mathrm{MTE}_i}, so that the situational weighting can enter the Bayesian fusion with critics like any other signal. Neither derived signal is in the B4 / regression records of the main tables.
 \item \textbf{SAUP:} Zhao et al. (ACL 2025), \ensuremath{U_{\mathrm{agent}} = \sqrt{\tfrac{1}{N}\sum_i (W_i U_i)^2}} with \ensuremath{U_i} = the step's MTE and situational weights \ensuremath{W_i}: uniform (plain RMS), position \ensuremath{i/N} (SAUP-P), the embedding distances inquiry drift + inference gap (SAUP-D; all-MiniLM-L6-v2 cosine distances between the task and the step, and between the observation and the thought/action), their sum (SAUP-PD), or the posterior of a 3-state Gaussian HMM over the two distances fitted on the source fold, states ordered by mean distance and weighted 1/3, 2/3, 1 (SAUP-HMMD; the paper's CHMM without its manual state labels). No public code exists; this is a re-implementation from the paper. Confidence = \ensuremath{-U_{\mathrm{agent}}}.
 \item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
 \item \textbf{Averages and ranks:} Avg is the equal-weight mean over cohorts/directions of the seed means; its \ensuremath{\pm} is the mean of the per-cell SDs. Ranks are descriptive selections by Avg. Raw \ensuremath{\pm}0 reflects split-invariant rankings, not zero statistical uncertainty.
