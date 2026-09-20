@@ -107,6 +107,17 @@ def read_saup(path: Path) -> dict[tuple[str, int], tuple[float, float]]:
     return out
 
 
+def read_htc_tokens(path: Path) -> dict[str, tuple[list, list]]:
+    """episode -> (top1 lists, topk lists) per step, from deepswe_htc_tokens.py."""
+    out: dict[str, tuple[list, list]] = {}
+    if path.exists():
+        for line in open(path):
+            if line.strip():
+                r = json.loads(line); a, b = out.setdefault(r["id"], ([], []))
+                a.append(r["top1"]); b.append(r["topk"])
+    return out
+
+
 def read_judge(path: Path) -> dict[tuple[str, int], float]:
     """(episode, step) -> p from experiments.prefix_judge; missing file = no judge."""
     out = {}
@@ -169,6 +180,8 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
         episodes[e["episode_id"]] = {
             "cross_logprob": [float(v) for v in mean_lp if v is not None and math.isfinite(float(v))],
             "judge_steps": judge_steps, "uprop": up.get(e["episode_id"]),
+            "htc_tokens": ([[math.exp(t["logprob"]) for t in (r.get("token_logprobs") or []) if t.get("logprob") is not None] for r in rows],
+                           [[t["topk_mass"] / 20.0 for t in (r.get("token_logprobs") or []) if t.get("topk_mass") is not None] for r in rows]),
             "mte_steps": [((r.get("uq") or {}).get(SEGMENT) or {}).get("mean_token_entropy") for r in rows],
             "saup": [saup.get((e["episode_id"], k)) for k in range(len(rows))],
             "id": e["episode_id"], "harness": harness,
@@ -204,6 +217,7 @@ DEEPSWE_FINISHED = ("Submitted", "RepeatedFormatError")
 def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str, dict[str, Any]]:
     confidences: dict[tuple[str, int], float] = {}
     judge = read_judge(path.parent / "judge.jsonl"); saup = read_saup(path.parent / "saup_dist.jsonl"); up = read_uprop(path.parent / "uprop_samples.jsonl")
+    htc = read_htc_tokens(path.parent / "htc_tokens.jsonl")
     if verb and verb.exists():
         for line in open(verb):
             r = json.loads(line)
@@ -257,6 +271,7 @@ def load_deepswe(path: Path, harness: str, verb: Path | None = None) -> dict[str
         episodes[r["id"]] = {
             "id": r["id"], "harness": harness, "score": float(rw.get("partial", 0.0)), "label": 0,
             "cross_critics": cross_crit, "judge_steps": [s.get("judge") for s in steps], "signals": seqs, "uprop": up.get(r["id"]),
+            "htc_tokens": (htc[r["id"]][0][: len(steps)], htc[r["id"]][1][: len(steps)]) if r["id"] in htc else None,
             "mte_steps": [s["mean_entropy"] for s in steps], "saup": [saup.get((r["id"], k)) for k in range(len(steps))], "critics": [dict(ep_crit) for _ in steps], "episode_critics": ep_crit,
             "n_steps": len(steps), "tool_rate": st.fmean(rc0) if rc0 else 0.0,
             "record": {"episode_id": r["id"], "environment": "deepswe", "success": 0, "generations": gens},
@@ -558,6 +573,38 @@ def saup_method(variant: str) -> Callable:
     return fn
 
 
+# ----------------------------------------------------------------------------- HTC
+HTC_VARIANTS = (("HTC-Full (L2, 48 features)", "l2", ()), ("HTC-Reduced (L1)", "l1", ()),
+                ("HTC-Full w/o Structure (43)", "l2", ("Structure",)))
+
+
+def _htc_x(e: dict):
+    from uq.htc import features
+    t = e.get("htc_tokens")
+    if not t or not any(len(s) for s in t[0]):
+        return None
+    if "_htc_x" not in e:
+        e["_htc_x"] = features(t[0], t[1])
+    return e["_htc_x"]
+
+
+def htc_method(penalty: str, exclude: tuple) -> Callable:
+    def fn(train, test):
+        from uq.htc import HTCCalibrator
+        if sum(1 for e in test if _htc_x(e) is not None) < 0.5 * len(test):
+            return [None] * len(test)
+        tr = [(x, e["label"]) for e in train if (x := _htc_x(e)) is not None]
+        if len({y for _, y in tr}) < 2:
+            return [None] * len(test)
+        model = HTCCalibrator(penalty, exclude=exclude).fit(np.array([x for x, _ in tr]), [y for _, y in tr])
+        out = []
+        for e in test:
+            x = _htc_x(e)
+            out.append(float(model.predict_proba(x[None, :])[0]) if x is not None else st.fmean(y for _, y in tr))
+        return out
+    return fn
+
+
 def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple[str, str, str], Callable]:
     """(family, method, aggregation) -> fn(train, test) -> confidences."""
     methods: dict[tuple[str, str, str], Callable] = {}
@@ -593,6 +640,8 @@ def method_table(toolkit: str | None, tool_kind: str = "tempered") -> dict[tuple
     methods[("Reference", "Tool success rate", "mean of observed tool critics")] = lambda train, test: [e["tool_rate"] for e in test]
     for variant in SAUP_VARIANTS:
         methods[("Reference", "SAUP (MTE)", variant)] = saup_method(variant)
+    for label, penalty, exclude in HTC_VARIANTS:
+        methods[("Reference", "HTC", label)] = htc_method(penalty, exclude)
     for label, key in (("total (IU + EU, step-normalised)", "total"), ("IU only (mean LN-PE of samples)", "iu_mean"), ("EU only (mean accumulated PMI)", "eu_mean")):
         def uprop_ref(train, test, key=key):
             if sum(1 for e in test if e.get("uprop")) < 0.5 * len(test):
@@ -788,6 +837,7 @@ def main() -> None:
 \item \textbf{Reference methods:} logistic regression = the unchanged main-branch \texttt{TrajectoryRegression} (pinned \ensuremath{C}=0.03 / selected), given the same signals and critics; TemporalBelief (B4) = the main-branch model at the final checkpoint, one harness per cohort; B4 excludes the elicited signals (Verb, judge) by construction; the regression sees every signal in the record, Verb included; the judge is not in the record for either, so it enters the main tables only through its own rows and the cross-environment section.
 \item \textbf{Bayes Fused H+L:} the main-branch \texttt{HistoryLastBayes} (\ensuremath{\lambda_H=\lambda_L=1}): prior + episode-critic log-likelihood ratios (the same episode critics as \texttt{critic:all}), plus for each selected signal a pooled-variance Gaussian LLR of the history mean (all generations but the last) and one of the last generation; unbounded log-odds. One row per signal and an All5 reference row that sums the five signals' evidence. In the cross-environment section the signals are the shared per-step definitions and the critics the three shared ones; raw last/mean/max rows (no fitting) are listed there as well.
 \item \textbf{Derived signals:} Self-certainty (action) = self-certainty of the action tokens only (ALFWorld; the thought tokens of a ReAct response carry a length-driven certainty, correlation \ensuremath{-0.73} with the token count on ReAct/gpt-oss, and on ReAct/Qwen the failed episodes' repeated actions are the \emph{most} certain steps, which inverts every token signal). SAUP-PD (MTE) = the per-step sequence \ensuremath{(i/N + D_a + D_o)\,\mathrm{MTE}_i}, so that the situational weighting can enter the Bayesian fusion with critics like any other signal. Neither derived signal is in the B4 / regression records of the main tables.
+\item \textbf{HTC:} Zhang, Xiong and Wu (ICML 2026, "Agentic Confidence Calibration"), re-implemented from Appendix D (the supplementary code is not public): 48 trajectory-level features of the per-token confidence trace (Dynamics 19, Position 14, Stability 10, Structure 5; token confidence = top-1 probability, top-\ensuremath{k} mean from the recorded top-20) and a liblinear logistic calibrator, L2 (HTC-Full) or L1 (HTC-Reduced), \ensuremath{\alpha} chosen on the training fold by inner 3-fold CV over the paper's 15-value grid (AUROC, ties by Brier); features standardised with training statistics. A third row drops the five Structure features (step count, tokens per step), which on ALFWorld carry the episode length. Fitted per fold like the regression; OOD = source fit applied unchanged.
 \item \textbf{UProp:} Duan et al. (2025, arXiv:2506.17419), re-implemented from the paper (the authors' repository holds no code). At every recorded step \ensuremath{N=10} decisions are resampled from the same model at the same prompt (temperature 0.8; ALFWorld ReAct through OpenRouter with the prompt rebuilt from the rows, DeepSWE through the recorded message history on the cluster). Intrinsic \ensuremath{IU_t} = mean length-normalised NLL of the samples; extrinsic \ensuremath{PMI_t = -\log \tfrac{1}{N}\sum_n K(d(y_t^{(n)}, y_t^*))} with a Gaussian kernel over the fuzzy string distance between each sample and the realised decision; \ensuremath{EU_t = \sum_{i<t} PMI_i}, \ensuremath{H_t = IU_t + EU_t}, total \ensuremath{= \sum_t H_t / (T + \sum_t EU_t / IU_t)} (eq. 9, one decision process per episode). Rows: the total, IU only and EU only (the paper's two ablations) as references, and \ensuremath{H_t} as a per-step signal for the Bayesian fusion. Not available on the smolagents cohorts, whose prompts are assembled by the framework and cannot be rebuilt from the rows.
 \item \textbf{SAUP:} Zhao et al. (ACL 2025), \ensuremath{U_{\mathrm{agent}} = \sqrt{\tfrac{1}{N}\sum_i (W_i U_i)^2}} with \ensuremath{U_i} = the step's MTE and situational weights \ensuremath{W_i}: uniform (plain RMS), position \ensuremath{i/N} (SAUP-P), the embedding distances inquiry drift + inference gap (SAUP-D; all-MiniLM-L6-v2 cosine distances between the task and the step, and between the observation and the thought/action), their sum (SAUP-PD), or the posterior of a 3-state Gaussian HMM over the two distances fitted on the source fold, states ordered by mean distance and weighted 1/3, 2/3, 1 (SAUP-HMMD; the paper's CHMM without its manual state labels). No public code exists; this is a re-implementation from the paper. Confidence = \ensuremath{-U_{\mathrm{agent}}}.
 \item \textbf{OOD:} fit only on the source's 4 training folds and reuse those parameters, unchanged, on the target's corresponding test fold; all 5 folds and 3 seeds, no target-side fitting. Avg is the equal-weight mean over directions; Overall is the mean over direction groups.
