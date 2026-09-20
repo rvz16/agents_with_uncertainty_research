@@ -261,7 +261,7 @@ nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv 2>/dev/n
 vllm serve "${SERVE_MODEL}" --host 0.0.0.0 --port "${PORT}" \
   --max-model-len "${MAX_MODEL_LEN:-32768}" \
   ${TOOL_ARGS[@]+"${TOOL_ARGS[@]}"} \
-  --tensor-parallel-size "${TENSOR_PARALLEL_SIZE:-1}" > /tmp/vllm.log 2>&1 &
+  --tensor-parallel-size "${TENSOR_PARALLEL_SIZE:-1}" ${VLLM_EXTRA_ARGS:-} > /tmp/vllm.log 2>&1 &
 VLLM_PID=$!
 trap 'kill ${VLLM_PID} 2>/dev/null || true' EXIT
 for i in $(seq 1 "${HEALTH_TIMEOUT_STEPS:-360}"); do
