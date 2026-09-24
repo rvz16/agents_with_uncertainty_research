@@ -67,8 +67,13 @@ SIGNALS = {
 DERIVED = ("Self-certainty (action)", "SAUP-PD (MTE)", "UProp H_t")
 
 
-def read_uprop(path: Path) -> dict[str, dict]:
-    """episode -> UProp decomposition from experiments.uprop_samples / deepswe uprop_replay rows."""
+def read_uprop(path: Path, keep: set[tuple[str, int]] | None = None) -> dict[str, dict]:
+    """episode -> UProp decomposition from experiments.uprop_samples / deepswe uprop_replay rows.
+
+    ``keep`` restricts the rows to the cohort's own (episode, step) pairs: the
+    smolagents sampling replayed whole runs, so its file also holds episodes and
+    terminal steps this cohort drops.
+    """
     if not path.exists():
         return {}
     from uq.uprop import uprop
@@ -78,6 +83,8 @@ def read_uprop(path: Path) -> dict[str, dict]:
     for line in open(path):
         if line.strip():
             r = json.loads(line); k = (r["id"], r["step"])
+            if keep is not None and k not in keep:
+                continue
             good = sum(1 for x in r["samples"] if x.get("text"))
             if k not in best or good > sum(1 for x in best[k]["samples"] if x.get("text")):
                 best[k] = r
@@ -166,7 +173,8 @@ def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
     for line in open(run / "trajectories.jsonl"):
         if line.strip():
             row = json.loads(line); steps[row["episode_id"]].append(row)
-    judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl"); up = read_uprop(run / "uprop_samples.jsonl")
+    judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl")
+    up = read_uprop(run / "uprop_samples.jsonl", {(eid, k) for eid, rows in steps.items() for k in range(len(rows))})
     episodes = {}
     for line in open(run / "episodes.jsonl"):
         if not line.strip():
