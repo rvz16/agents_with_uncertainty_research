@@ -1,0 +1,70 @@
+% UProp on the ALFWorld smolagents cohorts.
+% Fragment for Overleaf: \input{uprop_smolagents} inside the appendix.
+% Requires booktabs. Numbers are PRR@0.5, mean over three fold seeds; a zero
+% standard deviation marks a signal that needs no fitting.
+
+\subsection{UProp on the ALFWorld smolagents cohorts}
+\label{app:uprop-smolagents}
+
+UProp resamples $S=10$ alternative decisions at the prompt of every recorded step, so it needs
+that prompt. The ReAct cohorts store it, the smolagents cohorts do not: their prompt is assembled
+by the framework at run time. We therefore rebuild it, replaying the recorded steps into the memory
+of a \texttt{CodeAgent} configured exactly as the one that produced the trajectory (same code block
+tags, same step budget, same single action tool) and serializing that memory with
+\texttt{write\_memory\_to\_messages()} before each step. Sampling then proceeds as on ReAct, at
+temperature $0.8$ with token log-probabilities, using the model that generated the cohort.
+
+Two properties of the reconstruction matter for reading the numbers. The room description of the
+first ALFWorld observation was not recorded, so the task message marks it unavailable and the
+rebuilt prefix is an approximation of the original. And a share of the samples contains a bare
+thought with no code block: $25.8\%$ on SG and $4.5\%$ on SQ, of $32{,}890$ and $15{,}360$ samples
+respectively. We keep them verbatim as decisions, exactly as on ReAct, rather than discarding them.
+\Cref{tab:uprop-smol-sensitivity} shows why: discarding them costs most of the signal on SG, so
+failing to emit a command is itself predictive of failure. The consequence is that the extrinsic
+term of the smolagents cohorts is larger than that of the ReAct cohorts, and absolute values are
+not directly comparable between the two harnesses.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Method} & \textbf{Aggregation} & RG & SG & RQ & SQ & Avg \\
+\midrule
+UProp & total (IU${+}$EU) & $.71$ & $.43$ & $.14$ & $.34$ & $.40$ \\
+UProp & IU only & $.56$ & $.05$ & $.09$ & $.35$ & $.26$ \\
+UProp & EU only & $.64$ & $.57$ & $.48$ & $-.14$ & $.39$ \\
+UProp $H_t$ & raw, last & $.64$ & $.57$ & $.49$ & $-.13$ & $.39$ \\
+UProp $H_t$ & fused with critics & $.56{\pm}.01$ & $.68{\pm}.00$ & $.54{\pm}.03$ & $.65{\pm}.03$ & $\mathbf{.61{\pm}.02}$ \\
+\bottomrule
+\end{tabular}
+\caption{In-distribution PRR@0.5 of UProp on the four ALFWorld cohorts: ReAct and smolagents with
+GPT-OSS-20B (RG, SG) and Qwen3.6-35B-A3B (RQ, SQ). The two smolagents columns are the ones the
+prompt reconstruction makes available. The fused row adds the per-step total $H_t$ to the tempered
+step-critic posterior.}
+\label{tab:uprop-smol-cohorts}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Cohort} & \textbf{Samples with no code block} & \textbf{Kept} & \textbf{Discarded} \\
+\midrule
+SG (smolagents, GPT-OSS-20B) & $25.8\%$ & $.43$ & $.06$ \\
+SQ (smolagents, Qwen3.6) & $4.5\%$ & $.34$ & $.31$ \\
+\bottomrule
+\end{tabular}
+\caption{Effect of the samples that carry no code block on the UProp total (PRR@0.5). Keeping them
+as decisions is the setting used everywhere else in this report.}
+\label{tab:uprop-smol-sensitivity}
+\end{table}
+
+Averaged over the four cohorts, the UProp total reaches $.40$ and its fusion with the step critics
+$.61$, against $.43$ and $.56$ when only the two ReAct cohorts were available. Under transfer the
+picture changes in the other direction: averaged over the twelve ALFWorld directions, the fused
+estimator falls to $.32{\pm}.03$, where the two-cohort average was $.58$. The earlier figure
+averaged the single pair of ReAct directions; the directions that involve a smolagents cohort
+transfer considerably worse. On DeepSWE, which stores its prompts and needs no reconstruction, the
+same estimator reaches $.27{\pm}.03$ in distribution and $.18{\pm}.05$ under transfer.
