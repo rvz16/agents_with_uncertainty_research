@@ -168,11 +168,46 @@ MODE_LABEL = {"Continuous": "Continuous (\\ensuremath{\\lambda}=1)", "Tempered":
 
 
 # ----------------------------------------------------------------------------- loading
-def load_alfworld(run: Path, harness: str) -> dict[str, dict[str, Any]]:
+_REFUSAL_WORDS = ("sorry", "unable to", "cannot complete", "can't complete", "can\u2019t complete")
+
+
+def _is_refusal(row: dict) -> bool:
+    """A prose give-up: no action executed, no code block, an apology or refusal."""
+    if (row.get("action") or "").strip():
+        return False
+    text = (row.get("raw_response") or "").strip()
+    if not text or "```" in text:
+        return False
+    low = text.lower()
+    return any(w in low for w in _REFUSAL_WORDS)
+
+
+def load_alfworld(run: Path, harness: str, step_rule: str = "all") -> dict[str, dict[str, Any]]:
+    """``step_rule`` selects which recorded generations are scored.
+
+    "all" keeps every row. "acted" drops the generations that executed no
+    environment action (a smolagents step whose code called no tool).
+    "giveup" truncates the episode at the first prose refusal, which is what the
+    ReAct give-up action does explicitly and the smolagents harness does not
+    recognise; the episode keeps its own label.
+    """
     steps = defaultdict(list)
     for line in open(run / "trajectories.jsonl"):
         if line.strip():
             row = json.loads(line); steps[row["episode_id"]].append(row)
+    if step_rule != "all":
+        for eid, rows in list(steps.items()):
+            rows.sort(key=lambda r: int(r.get("step", 0)))
+            if step_rule == "acted":
+                kept = [r for r in rows if (r.get("action") or "").strip()]
+            elif step_rule in ("giveup", "giveup+acted"):
+                cut = next((i for i, r in enumerate(rows) if _is_refusal(r)), len(rows))
+                kept = rows[:cut]
+                if step_rule == "giveup+acted":
+                    kept = [r for r in kept if (r.get("action") or "").strip()]
+            else:
+                raise ValueError(f"unknown step rule {step_rule!r}")
+            steps[eid] = kept
     judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl")
     up = read_uprop(run / "uprop_samples.jsonl", {(eid, k) for eid, rows in steps.items() for k in range(len(rows))})
     episodes = {}
