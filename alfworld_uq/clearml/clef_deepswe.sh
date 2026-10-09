@@ -20,18 +20,21 @@ python -m pip install -q torch torchvision "transformers>=5.10" huggingface_hub 
 for entry in $ARCHIVES; do
     cohort="${entry%%:*}"; rest="${entry#*:}"; task_id="${rest%%:*}"; run_name="${rest#*:}"
     echo "[deepswe] $cohort <- $task_id ($run_name)"
-    archive=$(python - "$task_id" <<'PY'
+    # ClearML logs to stdout while it downloads, so the path goes to a file:
+    # captured with $(...) the log lines became part of the "path".
+    python - "$task_id" "$OUT_DIR/archive_path.txt" <<'PYX'
 import sys
 from clearml import Task
 task = Task.get_task(task_id=sys.argv[1])
 name = "run_root" if "run_root" in task.artifacts else list(task.artifacts)[0]
-print(task.artifacts[name].get_local_copy())
-PY
-)
+open(sys.argv[2], "w").write(str(task.artifacts[name].get_local_copy()))
+PYX
+    archive="$(cat "$OUT_DIR/archive_path.txt")"
     echo "[deepswe] archive at $archive"
     python deep_swe_uq/experiments/deepswe_decision_state.py "$archive" \
         --run "$run_name" --cohort "$cohort" --out "$STATES_DIR/$cohort.jsonl"
-    rm -rf ~/.clearml/cache/storage_manager/global/* || true
+    # the agent keeps ~70 GB free and these archives are gigabytes each
+    rm -rf /clearml_agent_cache/storage/https/* ~/.clearml/cache/storage_manager/global/* || true
 done
 
 cd alfworld_uq
