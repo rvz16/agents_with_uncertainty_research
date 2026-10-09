@@ -39,14 +39,11 @@ def load_liquid(model_id: str, device: str):
 
 
 def ask_liquid(model, states: list[str]) -> list[dict]:
-    """One call per batch where the release offers it, else one per state."""
+    """The release batches on a sequence of (state, questions) tuples; passing
+    dicts there indexes them with r[1] and raises KeyError(1)."""
     if hasattr(model, "system_one_batch"):
-        requests = [{"state": s, "questions": QUESTIONS} for s in states]
-        try:
-            return list(model.system_one_batch(requests))
-        except TypeError:
-            return list(model.system_one_batch(states, QUESTIONS))
-    return [model.system_one(s, QUESTIONS) for s in states]
+        return list(model.system_one_batch([(state, QUESTIONS) for state in states]))
+    return [model.system_one(state, QUESTIONS) for state in states]
 
 
 def load_clef(model_id: str, device: str):
