@@ -39,6 +39,8 @@ def main() -> None:
                    help="the longest state is ~1.6k tokens, so the default cache is ample")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--max-think", type=int, default=768)
+    p.add_argument("--states-dir", default="alfworld_uq/data/decision_states",
+                   help="decision_states (every recorded step) or decision_states_clean (giveup+acted)")
     p.add_argument("--think-modes", default="nothink think",
                    help="nothink answers in ~0.3 s per episode, think in ~3 s")
     a = p.parse_args()
@@ -63,7 +65,7 @@ def main() -> None:
         "Args/WORKERS": str(a.workers),
         "Args/MAX_THINK": str(a.max_think),
         "Args/THINK_MODES": a.think_modes,
-        "Args/STATES_DIR": "alfworld_uq/data/decision_states",
+        "Args/STATES_DIR": a.states_dir,
     })
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
