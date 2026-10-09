@@ -5,9 +5,9 @@ loads the release model directly and writes the same answer file as
 ``decision_model_query``: one JSON object per trajectory, with the probabilities
 under ``answer.answers``, so ``decision_model_score`` reads either unchanged.
 
-The first record's raw per-question output is printed, because the option order
-of a noul is a property of the release, not of the schema, and a silent guess
-there would invert every probability.
+The conversion to a SystemOne answer body is the release's own `systemone`
+helper, so a noul's positive column is the one the release names `true` rather
+than a column this script guessed at.
 """
 from __future__ import annotations
 
@@ -18,8 +18,6 @@ import time
 from pathlib import Path
 
 from experiments.decision_state import QUESTIONS
-
-TRUE_NAMES = ("true", "yes", "1")
 
 
 def load(model_id: str, device: str):
@@ -34,33 +32,12 @@ def load(model_id: str, device: str):
     return jsm, model, processor
 
 
-def probabilities(jsm, model, processor, state: str, device: str, max_length: int) -> dict:
-    import torch
-
-    record = {"state": state, "questions": QUESTIONS}
-    encoded = jsm.encode_record(processor.tokenizer, record, processor=processor, max_length=max_length)
-    batch = jsm.collate_records([encoded], processor.tokenizer.pad_token_id, device)
-    with torch.no_grad():
-        output = model(**batch)
-    answers = {}
-    logits = getattr(output, "question_logits", None)
-    if logits is None:
-        logits = output["question_logits"] if isinstance(output, dict) else output
-    for name, question in QUESTIONS.items():
-        per_question = logits[name][0] if isinstance(logits, dict) else logits[0][list(QUESTIONS).index(name)]
-        values = per_question.float().softmax(-1).tolist()
-        kind = question["type"]
-        if kind == "noul":
-            answers[name] = {"type": "noul", "noul": float(values[-1]), "options": values}
-        elif kind == "score":
-            levels = question.get("criteria") or []
-            expectation = sum(i * v for i, v in enumerate(values))
-            answers[name] = {"type": "score", "score": expectation,
-                             "legend": {str(i): l for i, l in enumerate(levels)},
-                             "probabilities": {str(i): v for i, v in enumerate(values)}}
-        else:
-            answers[name] = {"type": kind, "probabilities": values}
-    return answers
+def answer_for(jsm, model, processor, state: str, model_id: str, max_length: int) -> dict:
+    """The release ships the /v1/systemone conversion itself; use it rather than
+    reading the logits by hand. A noul's options are named, and `true` is one of
+    them, so nothing here has to guess which column is the positive one."""
+    request = {"model": model_id, "state": state, "questions": QUESTIONS}
+    return jsm.systemone(model, processor, request, max_length=max_length)
 
 
 def main() -> None:
@@ -92,9 +69,8 @@ def main() -> None:
     for index, row in enumerate(rows, 1):
         started = time.time()
         try:
-            answers = probabilities(jsm, model, processor, row["state"], a.device, a.max_length)
-            answer = {"model": a.model, "answers": answers,
-                      "latency_ms": (time.time() - started) * 1000}
+            answer = answer_for(jsm, model, processor, row["state"], a.model, a.max_length)
+            answer["latency_ms"] = (time.time() - started) * 1000
         except Exception as exc:  # noqa: BLE001 - one bad record must not end the sweep
             answer = {"error": repr(exc)}
         if index == 1:
