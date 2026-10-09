@@ -116,8 +116,12 @@ def main() -> None:
             handle.writelines(kept)
         done = {(json.loads(line)["id"], json.loads(line)["step"]) for line in kept}
         print(f"[decision-judge] resuming: {len(done)} usable verdicts kept", flush=True)
+    asked = len(jobs)
     jobs = [j for j in jobs if (j[0], j[1]) not in done]
     print(f"[decision-judge] {len(jobs)} prefixes to score with {a.model}", flush=True)
+    if done and not jobs:
+        print("[decision-judge] WARNING: every prefix was already answered in this file. "
+              "If this run meant to use a different model, its verdicts are not in it.", flush=True)
 
     backend = load_liquid(a.model, a.device) if a.backend == "liquid" else load_clef(a.model, a.device)
     out = open(a.out, "a")
