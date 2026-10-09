@@ -38,6 +38,20 @@ def _window(rows: list, head: int = HEAD_STEPS, tail: int = TAIL_STEPS) -> Itera
     yield from ((i + len(rows) - tail, r) for i, r in enumerate(rows[-tail:]))
 
 
+def apply_step_rule(rows: list[dict], rule: str) -> list[dict]:
+    """The report's step-selection rules, so the state covers what the tables score."""
+    if rule == "all":
+        return rows
+    from experiments.prr_report_v2 import _is_refusal
+
+    if rule in ("giveup", "giveup+acted"):
+        cut = next((i for i, r in enumerate(rows) if _is_refusal(r)), len(rows))
+        rows = rows[:cut]
+    if rule in ("acted", "giveup+acted"):
+        rows = [r for r in rows if (r.get("action") or "").strip()]
+    return rows
+
+
 def alfworld_state(rows: list[dict], task: str, harness: str) -> str:
     """ALFWorld: the task, then one line per step with the action and the reply."""
     lines = [f"Environment: ALFWorld, household task, {harness} agent.", f"Task: {task}", ""]
@@ -61,9 +75,11 @@ def alfworld_state(rows: list[dict], task: str, harness: str) -> str:
             shown = action
         lines.append(f"step {index + 1}: {shown}{note}")
         lines.append(f"   result: {_clip(row.get('observation') or '', OBS_CHARS)}")
-    lines += ["", f"The agent has taken {len(rows)} steps so far. "
-              f"{n_sub} of them proposed an action the environment did not allow, "
-              f"and in {n_noop} the model produced no executable action."]
+    summary = f"The agent has taken {len(rows)} steps so far, {n_sub} of which proposed an action " \
+              f"the environment did not allow."
+    if n_noop:
+        summary += f" In {n_noop} further steps the model produced no executable action."
+    lines += ["", summary]
     return "\n".join(lines)
 
 
@@ -127,6 +143,9 @@ def main() -> None:
     p.add_argument("--alfworld", nargs=2, action="append", metavar=("KEY", "RUN_DIR"), default=[])
     p.add_argument("--deepswe", nargs=2, action="append", metavar=("KEY", "COMPACT"), default=[])
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--step-rule", default="all", choices=["all", "acted", "giveup", "giveup+acted"],
+                   help="which recorded generations enter the state; see prr_report_v2.load_alfworld. "
+                        "giveup+acted is the rule under which a step means the same on both harnesses")
     p.add_argument("--show", action="store_true", help="print the first state of each cohort")
     a = p.parse_args()
 
@@ -145,6 +164,9 @@ def main() -> None:
             if not rows:
                 continue
             rows.sort(key=lambda r: int(r.get("step", 0)))
+            rows = apply_step_rule(rows, a.step_rule)
+            if not rows:
+                continue
             harness = "ReAct" if "react" in run.name else "smolagents CodeAgent"
             out.append({"id": episode["episode_id"], "cohort": key,
                         "label": int(bool(episode["final_success"])),
