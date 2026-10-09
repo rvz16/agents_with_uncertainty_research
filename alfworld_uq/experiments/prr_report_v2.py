@@ -182,7 +182,7 @@ def _is_refusal(row: dict) -> bool:
     return any(w in low for w in _REFUSAL_WORDS)
 
 
-def load_alfworld(run: Path, harness: str, step_rule: str = "all") -> dict[str, dict[str, Any]]:
+def load_alfworld(run: Path, harness: str, step_rule: str = "all", drop_last: int = 0) -> dict[str, dict[str, Any]]:
     """``step_rule`` selects which recorded generations are scored.
 
     "all" keeps every row. "acted" drops the generations that executed no
@@ -208,6 +208,10 @@ def load_alfworld(run: Path, harness: str, step_rule: str = "all") -> dict[str, 
             else:
                 raise ValueError(f"unknown step rule {step_rule!r}")
             steps[eid] = kept
+    if drop_last:
+        for eid, rows in list(steps.items()):
+            rows.sort(key=lambda r: int(r.get("step", 0)))
+            steps[eid] = rows[:-drop_last]
     judge = read_judge(run / "judge.jsonl"); saup = read_saup(run / "saup_dist.jsonl")
     up = read_uprop(run / "uprop_samples.jsonl", {(eid, k) for eid, rows in steps.items() for k in range(len(rows))})
     episodes = {}
