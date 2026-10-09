@@ -48,7 +48,7 @@ def main() -> None:
         script="alfworld_uq/clearml/decision_judge_entry.py",
         docker=f"{DOCKER_IMAGE} {DOCKER_ARGS}",
         docker_bash_setup_script=SETUP,
-        packages=["clearml", "boto3"],
+        packages=["clearml", "boto3<1.43"],
     )
     task.output_uri = FILE_STORE
     if a.commit:
