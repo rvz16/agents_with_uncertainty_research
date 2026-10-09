@@ -40,6 +40,22 @@ def answer_for(jsm, model, processor, state: str, model_id: str, max_length: int
     return jsm.systemone(model, processor, request, max_length=max_length)
 
 
+def _resume(path: Path, tag: str) -> set[str]:
+    """Keep the answers that carry a probability and re-ask the rest.
+
+    An errored row is not an answer: a sweep that treats it as one skips the
+    episode for good, which is how a whole run came back empty once already.
+    """
+    if not path.exists():
+        return set()
+    kept = [line for line in open(path) if line.strip() and "error" not in json.loads(line)["answer"]]
+    with open(path, "w") as handle:
+        handle.writelines(kept)
+    ids = {json.loads(line)["id"] for line in kept}
+    print(f"[{tag}] resuming: {len(ids)} usable answers kept", flush=True)
+    return ids
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--states", type=Path, nargs="+", required=True)
@@ -51,10 +67,7 @@ def main() -> None:
     a = p.parse_args()
 
     jsm, model, processor = load(a.model, a.device)
-    done = set()
-    if a.out.exists():
-        done = {json.loads(line)["id"] for line in open(a.out) if line.strip()}
-        print(f"[clef] resuming: {len(done)} answers kept", flush=True)
+    done = _resume(a.out, "clef")
     rows = []
     for path in a.states:
         for line in open(path):

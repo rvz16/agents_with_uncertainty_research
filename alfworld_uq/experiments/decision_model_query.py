@@ -54,10 +54,9 @@ def main() -> None:
     questions = dict(QUESTIONS)
     token = os.environ.get(a.token_env) if a.token_env else None
 
-    done = set()
-    if a.out.exists():
-        done = {json.loads(line)["id"] for line in open(a.out) if line.strip()}
-        print(f"[decision] resuming: {len(done)} answers kept", flush=True)
+    from experiments.decision_model_clef import _resume
+
+    done = _resume(a.out, "decision")
     out = open(a.out, "a")
 
     rows = []
