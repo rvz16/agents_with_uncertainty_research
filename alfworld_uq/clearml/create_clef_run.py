@@ -15,7 +15,7 @@ FILE_STORE = "https://files.clearai.innopolis.university"
 DOCKER_IMAGE = "python:3.12"
 DOCKER_ARGS = (
     "--entrypoint= --network=host "
-    "-v /tmp/decision_runs:/tmp/decision_runs "
+    "-v /tmp/clef_runs:/tmp/clef_runs "
     "-v /root/.clearml/hf-cache:/root/.cache/huggingface"
 )
 SETUP = """
@@ -54,7 +54,7 @@ def main() -> None:
         task.set_script(commit=a.commit)
     task.set_parameters({
         "Args/MODELS": a.models,
-        "Args/OUT_DIR": "/tmp/decision_runs",
+        "Args/OUT_DIR": "/tmp/clef_runs",
         "Args/MAX_LENGTH": str(a.max_length),
         "Args/STATES_DIR": a.states_dir,
     })

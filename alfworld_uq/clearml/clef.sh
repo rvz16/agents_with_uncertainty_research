@@ -4,7 +4,7 @@
 set -euo pipefail
 
 MODELS="${MODELS:-Cloudflare/clef-flash Cloudflare/clef}"
-OUT_DIR="${OUT_DIR:-/tmp/decision_runs}"
+OUT_DIR="${OUT_DIR:-/tmp/clef_runs}"
 STATES_DIR="${STATES_DIR:-alfworld_uq/data/decision_states_clean}"
 MAX_LENGTH="${MAX_LENGTH:-16384}"
 TORCH_SPEC="${TORCH_SPEC:-torch}"
@@ -14,7 +14,8 @@ mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
 
 python -m pip install -q --upgrade pip
-python -m pip install -q "$TORCH_SPEC" "$TRANSFORMERS_SPEC" "huggingface_hub[cli]" accelerate safetensors pillow
+# the processor of the release is a Qwen3-VL one: without torchvision it will not load
+python -m pip install -q "$TORCH_SPEC" torchvision "$TRANSFORMERS_SPEC" huggingface_hub accelerate safetensors pillow
 
 cd alfworld_uq
 for model in $MODELS; do

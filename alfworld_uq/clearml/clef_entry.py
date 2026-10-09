@@ -19,7 +19,7 @@ def main() -> int:
             os.environ[key] = str(value)
 
     repo = Path(__file__).resolve().parents[2]
-    out_dir = Path(os.environ.setdefault("OUT_DIR", "/tmp/decision_runs"))
+    out_dir = Path(os.environ.setdefault("OUT_DIR", "/tmp/clef_runs"))
     rc = subprocess.call(["bash", str(repo / "alfworld_uq" / "clearml" / "clef.sh")], cwd=str(repo))
     print(f"[entry] clef rc={rc}", flush=True)
 
