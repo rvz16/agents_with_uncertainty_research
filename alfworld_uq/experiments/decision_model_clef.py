@@ -40,20 +40,22 @@ def answer_for(jsm, model, processor, state: str, model_id: str, max_length: int
     return jsm.systemone(model, processor, request, max_length=max_length)
 
 
-def _resume(path: Path, tag: str) -> set[str]:
+def _resume(path: Path, tag: str) -> set[tuple[str, str]]:
     """Keep the answers that carry a probability and re-ask the rest.
 
-    An errored row is not an answer: a sweep that treats it as one skips the
-    episode for good, which is how a whole run came back empty once already.
+    Keyed by (cohort, id): the four ALFWorld cohorts run the same 140 tasks, so
+    an episode id alone names four different trajectories, and a sweep keyed by
+    id drops three quarters of its work. An errored row is not an answer either:
+    treating it as one is how a whole sweep came back empty.
     """
     if not path.exists():
         return set()
     kept = [line for line in open(path) if line.strip() and "error" not in json.loads(line)["answer"]]
     with open(path, "w") as handle:
         handle.writelines(kept)
-    ids = {json.loads(line)["id"] for line in kept}
-    print(f"[{tag}] resuming: {len(ids)} usable answers kept", flush=True)
-    return ids
+    keys = {(json.loads(line)["cohort"], json.loads(line)["id"]) for line in kept}
+    print(f"[{tag}] resuming: {len(keys)} usable answers kept", flush=True)
+    return keys
 
 
 def main() -> None:
@@ -73,7 +75,7 @@ def main() -> None:
         for line in open(path):
             if line.strip():
                 row = json.loads(line)
-                if row["id"] not in done:
+                if (row["cohort"], row["id"]) not in done:
                     rows.append(row)
     rows = rows[: a.limit or None]
     print(f"[clef] {len(rows)} trajectories to ask about with {a.model}", flush=True)

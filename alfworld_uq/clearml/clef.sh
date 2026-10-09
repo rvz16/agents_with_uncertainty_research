@@ -23,7 +23,7 @@ for model in $MODELS; do
     echo "[clef] $model"
     python -m experiments.decision_model_clef \
         --states ../"$STATES_DIR"/*.jsonl \
-        --out "$OUT_DIR/answers_${tag}.jsonl" \
+        --out "$OUT_DIR/answers_${tag}_$(basename "$STATES_DIR").jsonl" \
         --model "$model" --max-length "$MAX_LENGTH" || echo "[clef] $model failed, continuing"
 done
 echo "[clef] done"

@@ -64,7 +64,7 @@ def main() -> None:
         for line in open(path):
             if line.strip():
                 row = json.loads(line)
-                if (row["cohort"], row["id"]) not in done and row["id"] not in done:
+                if (row["cohort"], row["id"]) not in done:
                     rows.append(row)
     rows = rows[: a.limit or None]
     print(f"[decision] {len(rows)} trajectories to ask about", flush=True)
