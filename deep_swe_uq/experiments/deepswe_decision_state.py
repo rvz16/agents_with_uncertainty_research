@@ -106,7 +106,15 @@ def main() -> None:
 
     prefix = a.run.rstrip("/") + "/"
     if a.archive.is_dir():
+        # One run archive wraps its tasks in a directory named after the run,
+        # another is the run directory itself: find the level that holds them.
         root = a.archive / a.run
+        if not root.is_dir():
+            root = a.archive
+            if not any((d / "result.json").exists() for d in root.iterdir() if d.is_dir()):
+                nested = [d for d in root.iterdir() if d.is_dir()]
+                root = nested[0] if len(nested) == 1 else root
+        prefix = str(root.relative_to(a.archive)) + "/" if root != a.archive else ""
         tasks = sorted(d.name for d in root.iterdir() if d.is_dir())
         read = lambda member: (a.archive / member).read_bytes()  # noqa: E731
     else:

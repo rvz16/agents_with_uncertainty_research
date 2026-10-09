@@ -35,7 +35,7 @@ def main() -> None:
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
     p.add_argument("--models", default="Cloudflare/clef-flash Cloudflare/clef")
     p.add_argument("--max-length", type=int, default=16384)
-    p.add_argument("--states-dir", default="alfworld_uq/data/decision_states_clean",
+    p.add_argument("--states-dir", default="/tmp/clef_runs/deepswe_states",
                    help="decision_states (every recorded step) or decision_states_clean (giveup+acted)")
     a = p.parse_args()
 
