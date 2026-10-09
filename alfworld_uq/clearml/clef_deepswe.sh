@@ -19,6 +19,10 @@ python -m pip install -q torch torchvision "transformers>=5.10" huggingface_hub 
 
 for entry in $ARCHIVES; do
     cohort="${entry%%:*}"; rest="${entry#*:}"; task_id="${rest%%:*}"; run_name="${rest#*:}"
+    if [ -s "$STATES_DIR/$cohort.jsonl" ]; then
+        echo "[deepswe] $cohort already built, skipping the archive"
+        continue
+    fi
     echo "[deepswe] $cohort <- $task_id ($run_name)"
     # ClearML logs to stdout while it downloads, so the path goes to a file:
     # captured with $(...) the log lines became part of the "path".
@@ -27,7 +31,14 @@ import sys
 from clearml import Task
 task = Task.get_task(task_id=sys.argv[1])
 name = "run_root" if "run_root" in task.artifacts else list(task.artifacts)[0]
-open(sys.argv[2], "w").write(str(task.artifacts[name].get_local_copy()))
+artifact = task.artifacts[name]
+# Keep the zip zipped: the Qwen archive expands past the agent's free disk,
+# and the state builder reads members out of the zip without extracting.
+try:
+    path = artifact.get_local_copy(extract_archive=False)
+except TypeError:
+    path = artifact.get_local_copy()
+open(sys.argv[2], "w").write(str(path))
 PYX
     archive="$(cat "$OUT_DIR/archive_path.txt")"
     echo "[deepswe] archive at $archive"
