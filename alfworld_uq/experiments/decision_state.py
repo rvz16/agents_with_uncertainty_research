@@ -146,6 +146,9 @@ def main() -> None:
     p.add_argument("--step-rule", default="all", choices=["all", "acted", "giveup", "giveup+acted"],
                    help="which recorded generations enter the state; see prr_report_v2.load_alfworld. "
                         "giveup+acted is the rule under which a step means the same on both harnesses")
+    p.add_argument("--drop-last", type=int, default=0,
+                   help="drop this many further steps from the end of every episode; an audit of "
+                        "whether a high score lives in the last steps or across the trajectory")
     p.add_argument("--show", action="store_true", help="print the first state of each cohort")
     a = p.parse_args()
 
@@ -165,6 +168,8 @@ def main() -> None:
                 continue
             rows.sort(key=lambda r: int(r.get("step", 0)))
             rows = apply_step_rule(rows, a.step_rule)
+            if a.drop_last:
+                rows = rows[: -a.drop_last]
             if not rows:
                 continue
             harness = "ReAct" if "react" in run.name else "smolagents CodeAgent"
