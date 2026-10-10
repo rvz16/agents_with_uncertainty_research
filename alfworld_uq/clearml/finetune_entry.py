@@ -23,7 +23,7 @@ def main() -> int:
     rc = subprocess.call(["bash", str(repo / "alfworld_uq" / "clearml" / "finetune.sh")], cwd=str(repo))
     print(f"[entry] finetune rc={rc}", flush=True)
 
-    for answers in sorted(out_dir.glob("*.jsonl.jsonl")):
+    for answers in sorted(out_dir.glob("*.jsonl")):
         if answers.stat().st_size > 0:
             task.upload_artifact(answers.stem, artifact_object=answers, wait_on_upload=True)
             print(f"[entry] uploaded {answers} ({answers.stat().st_size} bytes)", flush=True)

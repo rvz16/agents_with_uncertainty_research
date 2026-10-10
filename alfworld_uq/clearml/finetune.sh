@@ -22,6 +22,6 @@ flag=""
 [ "$OOD" = "1" ] && flag="--ood"
 python -m experiments.finetune_outcome \
     --views "$VIEWS_DIR" --states "$STATES_DIR" --out "$OUT_DIR" \
-    --model "$MODEL" --epochs "$EPOCHS" --batch "$BATCH" --max-length "$MAX_LENGTH" $flag
+    --model "$MODEL" --epochs "$EPOCHS" --batch "$BATCH" --max-length "$MAX_LENGTH" --skip-existing $flag
 echo "[finetune] done"
 ls -la "$OUT_DIR"

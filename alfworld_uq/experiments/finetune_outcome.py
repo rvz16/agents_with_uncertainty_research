@@ -141,6 +141,8 @@ def main() -> None:
     p.add_argument("--epochs", type=int, default=2)
     p.add_argument("--lr", type=float, default=2e-5)
     p.add_argument("--ood", action="store_true", help="also train on each cohort and score the others")
+    p.add_argument("--skip-existing", action="store_true",
+                   help="leave a cohort or direction whose output file is already there; the output\n                        directory is mounted from the host, so a rerun need not retrain everything")
     a = p.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
@@ -150,6 +152,9 @@ def main() -> None:
               f"{sum(len(e['prefixes']) for e in episodes)} prefixes", flush=True)
 
     for cohort, episodes in data.items():
+        if a.skip_existing and (a.out / f"answers_modernbert_last_{cohort}.jsonl").exists():
+            print(f"[finetune] {cohort} already written, skipping", flush=True)
+            continue
         per_seed: list[dict[tuple[int, int], float]] = []
         for seed in SEEDS:
             predictions: dict[tuple[int, int], float] = {}
@@ -187,6 +192,9 @@ def main() -> None:
             rows, labels, _ = flatten(src_eps, range(len(src_eps)))
             for target, tgt_eps in data.items():
                 if target == source:
+                    continue
+                if a.skip_existing and (a.out / f"ood_{source}_to_{target}.jsonl").exists():
+                    print(f"[finetune] {source} -> {target} already written, skipping", flush=True)
                     continue
                 eval_rows, _, owner = flatten(tgt_eps, range(len(tgt_eps)))
                 values = train_once(a.model, rows, labels, eval_rows, a)
