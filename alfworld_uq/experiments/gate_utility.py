@@ -202,6 +202,9 @@ def main() -> None:
     p.add_argument("--step-rule", default="giveup+acted")
     p.add_argument("--c-step", type=float, default=0.02)
     p.add_argument("--c-ask", type=float, default=0.5)
+    p.add_argument("--fixed-sweep", action="store_true",
+                   help="report a grid of unfitted threshold pairs instead of the policy table, so the\n"
+                        "off-the-shelf result cannot be an artefact of the one pair we picked")
     p.add_argument("--no-ask", action="store_true",
                    help="drop the escalation action: the gate only chooses between continuing and\n"
                         "abandoning, which is the setting where a signal has to discriminate rather\n"
@@ -254,6 +257,17 @@ def main() -> None:
             tail = (f"   stop {st.fmean(s for s, _ in fired) * 100:3.0f}%"
                     f" ask {st.fmean(a for _, a in fired) * 100:3.0f}%")
         print(f"{name:34} " + " ".join(cells) + f" {avg}{tail}")
+
+    if a.fixed_sweep:
+        pairs = [(lo, hi) for lo in (0.02, 0.05, 0.1, 0.2, 0.3) for hi in ((0.3, 0.5, 0.7) if ask else (-1.0,))
+                 if hi < 0 or hi >= lo]
+        for label in ("Decision p(success)", "Encoder p(success)"):
+            for lo, hi in pairs:
+                name = f"{label}, fixed {lo:g}" + (f"/{hi:g}" if ask else "")
+                row(name, {c: evaluate(cohorts[c], lambda s, c=c, l=label: external_sequences(cohorts[c], l),
+                                       a.c_step, a.c_ask, fixed=(lo, hi), ask=ask) for c in order})
+            print()
+        return
 
     row("never gate (the agent as it ran)", {c: refs[c][0] for c in order})
     if ask:
