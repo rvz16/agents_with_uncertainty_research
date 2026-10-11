@@ -30,14 +30,16 @@ from experiments.prr_report_v2 import (SEEDS, SIGNALS, load_alfworld, method_tab
 
 RUNS = {"RG": "react_gptoss_140_giveup_sc_finished_nolast", "SG": "smol_gptoss_140_sc_finished_nolast",
         "RQ": "react_qwen_140_giveup_sc_finished_nolast", "SQ": "smol_qwen_140_sc_finished_nolast"}
-#: label -> (file stem, field, higher value means more uncertain)
-EXTERNAL = {
-    "Decision p(success)": ("judge_Cloudflare_clef-flash", "p", False),
-    "Decision stuck": ("judge_Cloudflare_clef-flash", "stuck", True),
-    "Decision stale": ("judge_Cloudflare_clef-flash", "stale", True),
-    "Decision progress": ("judge_Cloudflare_clef-flash", "progress", False),
-    "Encoder p(success)": ("steps", "p", False),
-}
+#: label -> (field, higher value means more uncertain); the judge's file stem is
+#: the model under test, so a second decision model needs no edit here
+JUDGE_FIELDS = {"Decision p(success)": ("p", False), "Decision stuck": ("stuck", True),
+                "Decision stale": ("stale", True), "Decision progress": ("progress", False)}
+ENCODER = {"Encoder p(success)": ("steps", "p", False)}
+
+
+def external_for(model: str) -> dict[str, tuple[str, str, bool]]:
+    stem = f"judge_{model}"
+    return {label: (stem, field, hiu) for label, (field, hiu) in JUDGE_FIELDS.items()} | ENCODER
 
 
 def read_steps(path: Path, field: str) -> dict[str, list[tuple[int, float]]]:
@@ -61,9 +63,12 @@ def main() -> None:
     p.add_argument("--encoder-dir", type=Path, required=True, help="steps_*.jsonl from finetune_outcome")
     p.add_argument("--toolkit", required=True)
     p.add_argument("--step-rule", default="giveup+acted")
+    p.add_argument("--judge-model", default="Cloudflare_clef-flash",
+                   help="the per-step verdict files are judge_<model>_<cohort>.jsonl")
     a = p.parse_args()
 
-    for label, (_, _, hiu) in EXTERNAL.items():
+    external = external_for(a.judge_model)
+    for label, (_, _, hiu) in external.items():
         SIGNALS[label] = (label, None, hiu)  # the key is unused: the sequence is injected directly
     methods = method_table(a.toolkit)
 
@@ -76,7 +81,7 @@ def main() -> None:
     for cohort, run in RUNS.items():
         episodes = load_alfworld(a.runs / run, "react" if "react" in run else "smolagents", a.step_rule)
         episodes = {k: v for k, v in episodes.items() if v["n_steps"]}
-        for label, (stem, field, _) in EXTERNAL.items():
+        for label, (stem, field, _) in external.items():
             directory = a.encoder_dir if stem == "steps" else a.judge_dir
             sequences = read_steps(directory / f"{stem}_{cohort}.jsonl", field)
             missing = 0
@@ -87,7 +92,7 @@ def main() -> None:
             if missing:
                 print(f"[fuse] {cohort} {label}: {missing} episodes without the signal", flush=True)
 
-        for label in EXTERNAL:
+        for label in external:
             for name, aggregate in variants:
                 key = (label, aggregate)
                 fn = methods[(label, label, aggregate)]
@@ -105,7 +110,7 @@ def main() -> None:
     order = list(RUNS)
     print(f"\n{'signal':24} {'aggregation':28} " + " ".join(f"{c:>6}" for c in order) + f" {'Avg':>7}")
     print("-" * 92)
-    for label in EXTERNAL:
+    for label in external:
         for name, _ in variants + [(n, m) for n, m in families]:
             row = results.get((label, name))
             if not row or len(row) < len(order):
