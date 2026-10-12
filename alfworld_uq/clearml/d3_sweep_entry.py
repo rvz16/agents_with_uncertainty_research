@@ -23,7 +23,7 @@ def main() -> int:
     rc = subprocess.call(["bash", str(repo / "alfworld_uq" / "clearml" / "d3_sweep.sh")], cwd=str(repo))
     print(f"[entry] sweep rc={rc}", flush=True)
 
-    for answers in sorted(out_dir.glob("answers_*.jsonl")):
+    for answers in sorted(list(out_dir.glob("answers_*.jsonl")) + list(out_dir.glob("ood_*.jsonl"))):
         if answers.stat().st_size > 0:
             task.upload_artifact(answers.stem, artifact_object=answers, wait_on_upload=True)
             print(f"[entry] uploaded {answers.name} ({answers.stat().st_size} bytes)", flush=True)

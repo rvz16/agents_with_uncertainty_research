@@ -41,6 +41,7 @@ def main() -> None:
     p.add_argument("--backbones", default=SMALL_BACKBONES)
     p.add_argument("--stages", default="decision backbone head")
     p.add_argument("--epochs", type=int, default=40)
+    p.add_argument("--ood", default="0", help="1 also transfers each trained head across cohorts")
     a = p.parse_args()
 
     task = Task.create(
@@ -64,6 +65,7 @@ def main() -> None:
         "Args/STATES_DIR": "data/decision_states_clean",
         "Args/VIEWS_DIR": "data/judge_views",
         "Args/EPOCHS": str(a.epochs),
+        "Args/OOD": a.ood,
     })
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)

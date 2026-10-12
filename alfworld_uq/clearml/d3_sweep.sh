@@ -11,6 +11,9 @@ STATES_DIR="${STATES_DIR:-data/decision_states_clean}"
 VIEWS_DIR="${VIEWS_DIR:-data/judge_views}"
 EPOCHS="${EPOCHS:-40}"
 STAGES="${STAGES:-decision backbone head}"
+OOD="${OOD:-0}"
+OOD_FLAG=""
+[ "$OOD" = "1" ] && OOD_FLAG="--ood"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
@@ -42,7 +45,7 @@ case "$stage" in
     for b in $BACKBONES; do
       echo "=== trained head on $b ==="
       python -m experiments.schema_head --states "$STATES_DIR" --views "$VIEWS_DIR" \
-          --out "$OUT_DIR" --model "$b" --epochs "$EPOCHS" --kinds logreg schema \
+          --out "$OUT_DIR" --model "$b" --epochs "$EPOCHS" --kinds logreg schema $OOD_FLAG \
           || echo "[sweep] head on $b failed, continuing"
     done ;;
 esac
