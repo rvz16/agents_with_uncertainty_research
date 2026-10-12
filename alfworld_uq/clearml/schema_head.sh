@@ -14,6 +14,7 @@ EPOCHS="${EPOCHS:-40}"
 KINDS="${KINDS:-logreg mlp schema}"
 SHUFFLE="${SHUFFLE:-0}"
 AUX="${AUX:-1}"
+OOD="${OOD:-0}"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"

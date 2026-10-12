@@ -43,6 +43,7 @@ def main() -> None:
     p.add_argument("--epochs", type=int, default=40)
     p.add_argument("--aux", default="1")
     p.add_argument("--shuffle", default="0", help="1 runs the permuted-label control instead")
+    p.add_argument("--ood", default="0", help="1 also trains on each cohort and scores the others")
     a = p.parse_args()
 
     task = Task.create(
@@ -68,6 +69,7 @@ def main() -> None:
         "Args/EPOCHS": str(a.epochs),
         "Args/AUX": a.aux,
         "Args/SHUFFLE": a.shuffle,
+        "Args/OOD": a.ood,
     })
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)

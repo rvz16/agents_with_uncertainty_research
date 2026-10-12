@@ -24,7 +24,7 @@ def main() -> int:
     print(f"[entry] schema head rc={rc}", flush=True)
 
     # the answer files are what the scorer reads; the cached features stay on the host
-    for answers in sorted(out_dir.glob("answers_*.jsonl")):
+    for answers in sorted(list(out_dir.glob("answers_*.jsonl")) + list(out_dir.glob("ood_*.jsonl"))):
         if answers.stat().st_size > 0:
             task.upload_artifact(answers.stem, artifact_object=answers, wait_on_upload=True)
             print(f"[entry] uploaded {answers.name} ({answers.stat().st_size} bytes)", flush=True)

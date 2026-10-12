@@ -200,6 +200,10 @@ def main() -> None:
     p.add_argument("--brier", type=float, default=1.0)
     p.add_argument("--aux-weight", type=float, default=0.3)
     p.add_argument("--inverse-penalty", type=float, default=0.1)
+    p.add_argument("--ood", action="store_true",
+                   help="also train on each cohort and score the other three. A probe fitted in "
+                        "distribution is expected to win there; whether it survives a change of "
+                        "harness or model is the question that decides what the number is worth")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="permute the labels within each cohort before the folds are cut. The control "
                         "for everything else here: a probe on 8192 features trained on some 350 "
@@ -264,6 +268,26 @@ def main() -> None:
                                "answers": {"success": {"type": "noul",
                                                        "noul": st.fmean(predictions[position])}}}}) + "\n")
         print(f"[schema] wrote {path}", flush=True)
+
+    if a.ood:
+        for kind in a.kinds:
+            for source, src in by_cohort.items():
+                for target, tgt in by_cohort.items():
+                    if target == source:
+                        continue
+                    aux = structural[src] if (a.aux and kind != "logreg") else None
+                    values = train_head(features[src], labels[src], aux, features[tgt], kind, a)
+                    path = a.out / f"ood_schema_{kind}_{source}_to_{target}.jsonl"
+                    with open(path, "w") as handle:
+                        for position, value in zip(tgt, values):
+                            row = rows[int(position)]
+                            handle.write(json.dumps({
+                                "id": row["id"], "cohort": row["cohort"], "label": row["label"],
+                                "score": row["score"],
+                                "answer": {"model": f"{a.model} + {kind} head, trained on {source}",
+                                           "answers": {"success": {"type": "noul",
+                                                                   "noul": float(value)}}}}) + "\n")
+                print(f"[schema] {kind} transfer from {source} written", flush=True)
     print("[schema] done")
 
 
