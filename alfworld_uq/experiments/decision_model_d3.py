@@ -35,12 +35,23 @@ def to_our_shape(name: str, answer: dict, question: dict) -> dict:
     if question.get("type") != "score" or not isinstance(answer, dict):
         return answer
     probabilities = answer.get("probabilities")
-    legend = question.get("criteria") or []
+    legend = list(question.get("criteria") or [])
     if not isinstance(probabilities, dict) or not legend:
         return answer
-    expected = sum(index * float(probabilities.get(key, 0.0))
-                   for index, key in enumerate(legend) if key in probabilities)
-    return {"type": "score", "score": expected, "legend": list(legend),
+
+    def share(index: int, key: str) -> float:
+        """The release keys these by position -- "0", "1" -- not by the legend text."""
+        for candidate in (str(index), index, key):
+            if candidate in probabilities:
+                return float(probabilities[candidate])
+        return 0.0
+
+    weights = [share(index, key) for index, key in enumerate(legend)]
+    total = sum(weights)
+    if total <= 0:
+        return answer
+    expected = sum(index * weight for index, weight in enumerate(weights)) / total
+    return {"type": "score", "score": expected, "legend": legend,
             "probabilities": probabilities}
 
 
