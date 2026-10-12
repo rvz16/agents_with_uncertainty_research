@@ -19,6 +19,9 @@ from typing import Any, Iterable
 
 OBS_CHARS = 180
 CMD_CHARS = 160
+#: head and tail of a shell command's own output, when the state carries it
+OUT_HEAD_CHARS = 220
+OUT_TAIL_CHARS = 120
 HEAD_STEPS = 12
 TAIL_STEPS = 18
 
@@ -83,8 +86,27 @@ def alfworld_state(rows: list[dict], task: str, harness: str) -> str:
     return "\n".join(lines)
 
 
-def deepswe_state(record: dict) -> str:
-    """DeepSWE: the shell commands the agent ran and their return codes."""
+def _clip_output(text: str) -> str:
+    """The head and the tail of a command's output, with the middle counted.
+
+    A test run says what matters in its first and last lines -- the command it
+    expanded to, and the pass or fail summary -- while the middle is a file
+    listing or a stack trace that no amount of it changes the judgement.
+    """
+    text = " ".join((text or "").split())
+    if len(text) <= OUT_HEAD_CHARS + OUT_TAIL_CHARS:
+        return text
+    dropped = len(text) - OUT_HEAD_CHARS - OUT_TAIL_CHARS
+    return f"{text[:OUT_HEAD_CHARS]} [... {dropped} chars ...] {text[-OUT_TAIL_CHARS:]}"
+
+
+def deepswe_state(record: dict, outputs: dict[int, str] | None = None) -> str:
+    """DeepSWE: the shell commands the agent ran and their return codes.
+
+    With ``outputs`` the state also carries the head and tail of what each
+    command printed, which is the variant that answers whether a decision
+    model's failure on these tasks is the state or the model.
+    """
     rows = record.get("steps") or []
     lines = ["Environment: DeepSWE, a software engineering task in a repository, mini-swe-agent.",
              f"Task instance: {record.get('id')}", "",
@@ -101,6 +123,8 @@ def deepswe_state(record: dict) -> str:
             continue
         rc = row.get("returncode")
         lines.append(f"cmd {index + 1}: {_clip(row.get('command') or '', CMD_CHARS)}   -> exit {rc}")
+        if outputs is not None and (text := _clip_output(outputs.get(index, ""))):
+            lines.append(f"   output: {text}")
     lines += ["", f"The agent has run {len(rows)} commands so far: {bad} returned a non-zero exit status, "
               f"{tests} invoked the test suite, and {fmt} responses called no tool at all."]
     return "\n".join(lines)
@@ -142,6 +166,9 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--alfworld", nargs=2, action="append", metavar=("KEY", "RUN_DIR"), default=[])
     p.add_argument("--deepswe", nargs=2, action="append", metavar=("KEY", "COMPACT"), default=[])
+    p.add_argument("--deepswe-output", action="store_true",
+                   help="also carry the head and tail of every command's own output, read from the "
+                        "judge_view.jsonl beside the compact file; the richer-state variant")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--step-rule", default="all", choices=["all", "acted", "giveup", "giveup+acted"],
                    help="which recorded generations enter the state; see prr_report_v2.load_alfworld. "
@@ -180,6 +207,15 @@ def main() -> None:
         _write(a.out / f"{key}.jsonl", out, key, a.show)
     for key, compact in a.deepswe:
         out = []
+        views: dict[str, dict[int, str]] = {}
+        if a.deepswe_output:
+            view_path = Path(compact).parent / "judge_view.jsonl"
+            for line in open(view_path):
+                if line.strip():
+                    view = json.loads(line)
+                    views[view["id"]] = {k: (step.get("observation") or "")
+                                         for k, step in enumerate(view.get("steps") or [])}
+            print(f"{key}: command output for {len(views)} instances from {view_path.name}")
         for line in open(compact):
             if not line.strip():
                 continue
@@ -189,7 +225,7 @@ def main() -> None:
                 continue
             out.append({"id": record["id"], "cohort": key,
                         "label": None, "score": float(rewards["partial"]),
-                        "state": deepswe_state(record)})
+                        "state": deepswe_state(record, views.get(record["id"]) if a.deepswe_output else None)})
         _write(a.out / f"{key}.jsonl", out, key, a.show)
 
 
