@@ -15,6 +15,8 @@ KINDS="${KINDS:-logreg mlp schema}"
 SHUFFLE="${SHUFFLE:-0}"
 AUX="${AUX:-1}"
 OOD="${OOD:-0}"
+OOD_FLAG=""
+[ "$OOD" = "1" ] && OOD_FLAG="--ood"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
@@ -36,7 +38,8 @@ fi
 # the plain heads first, so a failure in the auxiliary variant still leaves a result
 python -m experiments.schema_head \
     --states "$STATES_DIR" --views "$VIEWS_DIR" --out "$OUT_DIR" --model "$MODEL" \
-    --max-length "$MAX_LENGTH" --feature-batch "$FEATURE_BATCH" --epochs "$EPOCHS" --kinds $KINDS
+    --max-length "$MAX_LENGTH" --feature-batch "$FEATURE_BATCH" --epochs "$EPOCHS" \
+    --kinds $KINDS $OOD_FLAG
 if [ "$AUX" = "1" ]; then
     python -m experiments.schema_head \
         --states "$STATES_DIR" --views "$VIEWS_DIR" --out "$OUT_DIR" --model "$MODEL" \
