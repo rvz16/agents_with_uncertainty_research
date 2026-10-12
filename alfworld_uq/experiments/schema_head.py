@@ -277,7 +277,10 @@ def main() -> None:
                         continue
                     aux = structural[src] if (a.aux and kind != "logreg") else None
                     values = train_head(features[src], labels[src], aux, features[tgt], kind, a)
-                    path = a.out / f"ood_schema_{kind}_{source}_to_{target}.jsonl"
+                    # the model belongs in the name: a sweep over backbones writes into one
+                    # directory, and without it each size silently overwrites the last
+                    path = (a.out /
+                            f"ood_schema_{kind}_{a.model.split('/')[-1]}_{source}_to_{target}.jsonl")
                     with open(path, "w") as handle:
                         for position, value in zip(tgt, values):
                             row = rows[int(position)]
