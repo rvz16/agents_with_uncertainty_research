@@ -68,7 +68,9 @@ def main() -> None:
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--model", default="vllm-sr/d3-flash")
     p.add_argument("--tag", default="", help="names the state set in the output file")
-    p.add_argument("--device", default="cuda")
+    p.add_argument("--device", default="cuda:0",
+                   help="the family's loader rejects a device without an index: 'cuda' raises "
+                        "ValueError, 'cuda:0' is what it wants")
     p.add_argument("--limit", type=int, default=0)
     a = p.parse_args()
 
