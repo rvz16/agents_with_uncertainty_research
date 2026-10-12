@@ -100,7 +100,7 @@ def main() -> None:
               f"({path.stat().st_size // 1024} KB)")
         return
 
-    from environments.alfworld_env import AlfWorldEnvironment
+    from environments.alfworld_env import ALFWorldTextEnv
 
     print(f"[replay] {a.cohort}: {len(episodes)} episodes from {a.run.name}", flush=True)
 
@@ -111,7 +111,7 @@ def main() -> None:
         if not gamefile.exists():
             missing += 1
             continue
-        env = AlfWorldEnvironment(data_root=a.data_root, gamefile=gamefile,
+        env = ALFWorldTextEnv(data_root=a.data_root, gamefile=gamefile,
                                   max_steps=len(episode["rows"]) + 5)
         try:
             env.reset()
