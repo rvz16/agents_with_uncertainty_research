@@ -200,6 +200,11 @@ def main() -> None:
     p.add_argument("--brier", type=float, default=1.0)
     p.add_argument("--aux-weight", type=float, default=0.3)
     p.add_argument("--inverse-penalty", type=float, default=0.1)
+    p.add_argument("--shuffle-labels", action="store_true",
+                   help="permute the labels within each cohort before the folds are cut. The control "
+                        "for everything else here: a probe on 8192 features trained on some 350 "
+                        "episodes can separate noise, so a high score is only evidence if this run "
+                        "comes back at zero")
     a = p.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
@@ -218,6 +223,12 @@ def main() -> None:
     assert features.shape[0] == len(rows), (features.shape, len(rows))
 
     labels = np.asarray([int(r["label"]) for r in rows])
+    if a.shuffle_labels:
+        rng = np.random.RandomState(12345)
+        for cohort in COHORTS:
+            index = np.where(np.asarray([r["cohort"] for r in rows]) == cohort)[0]
+            labels[index] = labels[rng.permutation(index)]
+        print("[schema] labels permuted within cohort: this run is the control", flush=True)
     structural = np.asarray([[r["repeated"], r["stale"]] for r in rows], dtype=np.float32)
     print(f"[schema] auxiliary targets: repeat share {structural[:, 0].mean():.2f}, "
           f"stale share {structural[:, 1].mean():.2f}", flush=True)
@@ -239,6 +250,8 @@ def main() -> None:
                     for position, value in zip(index[held], values):
                         predictions[int(position)].append(float(value))
             print(f"[schema] {name} {cohort} done", flush=True)
+        if a.shuffle_labels:
+            name = f"{name}_shuffled"
         path = a.out / f"answers_schema_{name}_{a.model.split('/')[-1]}.jsonl"
         with open(path, "w") as handle:
             for position, row in enumerate(rows):
@@ -246,7 +259,7 @@ def main() -> None:
                     continue
                 handle.write(json.dumps({
                     "id": row["id"], "cohort": row["cohort"], "label": row["label"],
-                    "score": row["score"],
+                    "score": row["score"],  # always the real outcome, so a control scores against truth
                     "answer": {"model": f"{a.model} + {name} head",
                                "answers": {"success": {"type": "noul",
                                                        "noul": st.fmean(predictions[position])}}}}) + "\n")

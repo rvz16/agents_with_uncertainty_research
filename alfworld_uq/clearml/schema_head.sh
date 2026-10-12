@@ -12,6 +12,7 @@ MAX_LENGTH="${MAX_LENGTH:-4096}"
 FEATURE_BATCH="${FEATURE_BATCH:-4}"
 EPOCHS="${EPOCHS:-40}"
 KINDS="${KINDS:-logreg mlp schema}"
+SHUFFLE="${SHUFFLE:-0}"
 AUX="${AUX:-1}"
 
 mkdir -p "$OUT_DIR"
@@ -20,6 +21,17 @@ python -m pip install -q --upgrade pip
 python -m pip install -q torch "transformers>=5.10" huggingface_hub accelerate safetensors scikit-learn numpy
 
 cd alfworld_uq
+if [ "$SHUFFLE" = "1" ]; then
+    # the control: identical pipeline, labels permuted within cohort, cached features reused
+    python -m experiments.schema_head \
+        --states "$STATES_DIR" --views "$VIEWS_DIR" --out "$OUT_DIR" --model "$MODEL" \
+        --max-length "$MAX_LENGTH" --feature-batch "$FEATURE_BATCH" --epochs "$EPOCHS" \
+        --kinds $KINDS --shuffle-labels
+    echo "[schema] control done"
+    ls -la "$OUT_DIR"
+    exit 0
+fi
+
 # the plain heads first, so a failure in the auxiliary variant still leaves a result
 python -m experiments.schema_head \
     --states "$STATES_DIR" --views "$VIEWS_DIR" --out "$OUT_DIR" --model "$MODEL" \

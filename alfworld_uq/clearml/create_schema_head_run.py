@@ -42,6 +42,7 @@ def main() -> None:
     p.add_argument("--feature-batch", type=int, default=4)
     p.add_argument("--epochs", type=int, default=40)
     p.add_argument("--aux", default="1")
+    p.add_argument("--shuffle", default="0", help="1 runs the permuted-label control instead")
     a = p.parse_args()
 
     task = Task.create(
@@ -66,6 +67,7 @@ def main() -> None:
         "Args/FEATURE_BATCH": str(a.feature_batch),
         "Args/EPOCHS": str(a.epochs),
         "Args/AUX": a.aux,
+        "Args/SHUFFLE": a.shuffle,
     })
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
