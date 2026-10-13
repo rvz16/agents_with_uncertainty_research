@@ -149,6 +149,11 @@ def build(model_id: str, args):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # The question sits at the end of the prompt, and the coding prefixes run to
+    # 10k characters. Truncating from the right -- the default -- would cut the
+    # question off and leave the model guessing what it was asked. Cutting from
+    # the left drops the oldest part of the issue text instead.
+    tokenizer.truncation_side = "left"
     backbone = AutoModel.from_pretrained(model_id, dtype=torch.bfloat16, device_map=args.device)
     if args.lora_rank:
         backbone = get_peft_model(backbone, LoraConfig(
@@ -251,7 +256,9 @@ def main() -> None:
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--obs-chars", type=int, default=400)
     p.add_argument("--act-chars", type=int, default=300)
-    p.add_argument("--max-length", type=int, default=1536)
+    p.add_argument("--max-length", type=int, default=2048,
+                   help="coding prefixes average 6.4k characters and reach 10k, so 1536 cut most "
+                        "of them; with left truncation the question always survives")
     p.add_argument("--batch", type=int, default=8)
     p.add_argument("--eval-batch", type=int, default=16)
     p.add_argument("--epochs", type=int, default=2)
