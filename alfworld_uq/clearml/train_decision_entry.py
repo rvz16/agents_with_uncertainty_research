@@ -17,7 +17,11 @@ def main() -> int:
         if value not in (None, ""):
             os.environ[key] = str(value)
     repo = Path(__file__).resolve().parents[2]
-    out_dir = Path(os.environ.setdefault("OUT_DIR", "/tmp/decision_runs"))
+    # one directory per task: /tmp/decision_runs is mounted from the host, and a
+    # previous job's files there were uploaded as this run's results once already
+    out_dir = Path(os.environ.get("OUT_DIR", "/tmp/decision_runs")) / task.id
+    os.environ["OUT_DIR"] = str(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     rc = subprocess.call(["bash", str(repo / "alfworld_uq" / "clearml" / "train_decision.sh")],
                          cwd=str(repo))
     print(f"[entry] train rc={rc}", flush=True)

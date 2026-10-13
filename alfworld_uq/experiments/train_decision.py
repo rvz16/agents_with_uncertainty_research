@@ -154,27 +154,34 @@ def build(model_id: str, args):
     else:
         for parameter in backbone.parameters():
             parameter.requires_grad = False
-    hidden = backbone.config.hidden_size
+    return tokenizer, backbone
+
+
+def make_head(width: int, args):
+    """Sized from a real forward pass. Reading it from the config is not portable:
+    Qwen3_5Config has no ``hidden_size`` and the first run died on exactly that."""
+    import torch
     head = torch.nn.Sequential(
-        torch.nn.Linear(hidden, args.hidden), torch.nn.GELU(), torch.nn.Dropout(args.dropout),
+        torch.nn.Linear(width, args.hidden), torch.nn.GELU(), torch.nn.Dropout(args.dropout),
         torch.nn.Linear(args.hidden, Head.OUTPUTS)).to(args.device).to(torch.float32)
-    return tokenizer, backbone, head
+    return head
 
 
-def forward(backbone, head, tokenizer, texts: list[str], args):
+def pool(backbone, tokenizer, texts: list[str], args):
     import torch
     encoded = tokenizer(texts, truncation=True, max_length=args.max_length, padding=True,
                         return_tensors="pt").to(args.device)
     states = backbone(**encoded).last_hidden_state
     index = encoded["attention_mask"].sum(1) - 1
-    pooled = states[torch.arange(states.shape[0], device=states.device), index]
-    return head(pooled.to(torch.float32))
+    return states[torch.arange(states.shape[0], device=states.device), index].to(torch.float32)
 
 
 def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
     import torch
 
-    tokenizer, backbone, head = build(args.model, args)
+    tokenizer, backbone = build(args.model, args)
+    head = make_head(pool(backbone, tokenizer, [rows[int(train_idx[0])]["text"]], args).shape[-1],
+                     args)
     parameters = [p for p in list(backbone.parameters()) + list(head.parameters())
                   if p.requires_grad]
     optimiser = torch.optim.AdamW(parameters, lr=args.lr, weight_decay=0.01)
@@ -189,7 +196,7 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
     for epoch in range(args.epochs):
         for number, batch in enumerate(batches, 1):
             texts = [rows[i]["text"] for i in batch]
-            logits = forward(backbone, head, tokenizer, texts, args)
+            logits = head(pool(backbone, tokenizer, texts, args))
             device = logits.device
             y = torch.tensor([rows[i]["label"] for i in batch], dtype=torch.float32, device=device)
             q = torch.tensor([rows[i]["posterior"] for i in batch], dtype=torch.float32, device=device)
@@ -217,7 +224,7 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
     with torch.no_grad():
         for i in range(0, len(eval_idx), args.eval_batch):
             chunk = list(eval_idx)[i: i + args.eval_batch]
-            logits = forward(backbone, head, tokenizer, [rows[j]["text"] for j in chunk], args)
+            logits = head(pool(backbone, tokenizer, [rows[j]["text"] for j in chunk], args))
             probabilities = torch.sigmoid(logits).float().cpu().tolist()
             for j, values in zip(chunk, probabilities):
                 out.append({"index": j, "success": values[0], "stuck": values[1], "stale": values[2]})
