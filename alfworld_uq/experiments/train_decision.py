@@ -45,7 +45,10 @@ import numpy as np
 
 from experiments.prefix_judge import prompt
 
-COHORTS = ("RG", "SG", "RQ", "SQ")
+COHORTS = ("RG", "SG", "RQ", "SQ", "DG", "DL", "DQ")
+#: the coding cohorts are scored on partial credit, so their target is the score
+#: itself rather than a binary; a cross-entropy takes a soft target unchanged
+CONTINUOUS = ("DG", "DL", "DQ")
 FOLDS = 5
 
 
@@ -77,7 +80,8 @@ def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int
                 rows.append({
                     "cohort": cohort, "episode": episode_id, "step": k,
                     "text": prompt(view["task"], view["steps"][: k + 1], window, obs_chars, act_chars),
-                    "label": float(t["label"]), "posterior": float(t["posterior"]),
+                    "label": float(t["score"] if cohort in CONTINUOUS else t["label"]),
+                    "posterior": float(t["posterior"]),
                     "repeat": t.get("repeat_share"), "stale": t.get("stale_share"),
                 })
     print(f"[train] {len(rows)} prefixes over "
@@ -120,7 +124,7 @@ def folds_by_episode(rows: list[dict], seed: int) -> list[list[int]]:
     for i, r in enumerate(rows):
         episodes[(r["cohort"], r["episode"])].append(i)
     keys = sorted(episodes)
-    strata = {k: int(rows[episodes[k][0]]["label"] > 0.5) for k in keys}
+    strata = {k: int(rows[episodes[k][0]]["label"] > 0.5) for k in keys}  # median-ish split
     rng = np.random.RandomState(seed)
     folds: list[list[int]] = [[] for _ in range(FOLDS)]
     for value in (0, 1):

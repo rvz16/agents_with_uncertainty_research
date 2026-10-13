@@ -37,7 +37,8 @@ from belief.continuous_bayes import ContinuousBayesUQ
 from belief.critic_bayes import CriticBayesState
 from experiments.decision_model_score import apply_temperature, ece, fit_temperature
 from experiments.deepswe_table import prr_continuous
-from experiments.prr_report_v2 import SEEDS, SIGNALS, load_alfworld, method_table, stratified_folds, with_labels
+from experiments.prr_report_v2 import (SEEDS, SIGNALS, is_continuous, load_alfworld, load_deepswe,
+                                       method_table, stratified_folds, with_labels)
 from experiments.schema_head import structural_labels
 
 #: label -> the method-table key that produces it, for the teachers that are not
@@ -50,6 +51,14 @@ TEACHERS = {
 
 RUNS = {"RG": "react_gptoss_140_giveup_sc_finished_nolast", "SG": "smol_gptoss_140_sc_finished_nolast",
         "RQ": "react_qwen_140_giveup_sc_finished_nolast", "SQ": "smol_qwen_140_sc_finished_nolast"}
+DEEPSWE_RUNS = {"DG": "deepswe_gptoss_113_v5", "DL": "deepswe_gptoss120_113_rp",
+                "DQ": "deepswe_qwen_113_v8"}
+#: a command that reads, against one that changes the repository. The stale-evidence
+#: analogue on these tasks is an edit after a test run: the last result no longer
+#: describes the tree.
+_TEST = ("pytest", "go test", "tox", "nosetests", "npm test", "cargo test", "make test")
+_EDIT = ("sed -i", "python - <<", "cat >", "tee ", "patch ", "git apply", "apply_patch",
+         "mv ", "cp ", "rm ", "touch ", "mkdir ")
 
 
 def posteriors(episodes: dict[str, dict], signal: str | None, seed: int,
@@ -59,13 +68,14 @@ def posteriors(episodes: dict[str, dict], signal: str | None, seed: int,
     for fold in stratified_folds(episodes, seed):
         held = set(fold)
         train = [episodes[i] for i in episodes if i not in held]
-        tools = CriticBayesState.fit([c for e in train for c in e["critics"]],
-                                     [e["label"] for e in train for _ in e["critics"]],
-                                     prior=st.fmean(e["label"] for e in train))
+        labelled = with_labels(train, is_continuous(episodes))
+        tools = CriticBayesState.fit([c for e in labelled for c in e["critics"]],
+                                     [e["label"] for e in labelled for _ in e["critics"]],
+                                     prior=st.fmean(e["label"] for e in labelled))
         uq = None
         if signal:
-            sequences = [s for e in train if (s := [v for v in e["signals"].get(signal, []) if v is not None])]
-            labels = [e["label"] for e in train if e["signals"].get(signal)]
+            sequences = [s for e in labelled if (s := [v for v in e["signals"].get(signal, []) if v is not None])]
+            labels = [e["label"] for e in labelled if e["signals"].get(signal)]
             if sequences and len(set(labels)) > 1:
                 uq = ContinuousBayesUQ.fit(sequences, labels, lambda_=lambda_)
         for i in fold:
@@ -94,12 +104,20 @@ def prefix_records(episode: dict, cut: int) -> dict:
 
 
 def teacher_curves(episodes: dict[str, dict], key, methods, seed: int) -> dict[str, list[float]]:
-    """A method-table teacher, evaluated at every prefix, out of fold."""
+    """A method-table teacher, evaluated at every prefix, out of fold.
+
+    The training label has to follow the score: the coding cohorts are graded on
+    partial credit, and treating that as a binary truncates every score below one
+    to zero. The first run did exactly that and the teacher came back at .006
+    mean belief against a .62 mean outcome -- a teacher convinced nothing ever
+    works.
+    """
     fn = methods[key]
+    continuous = is_continuous(episodes)
     out: dict[str, list[float]] = {}
     for fold in stratified_folds(episodes, seed):
         held = set(fold)
-        train = with_labels([episodes[i] for i in episodes if i not in held], False)
+        train = with_labels([episodes[i] for i in episodes if i not in held], continuous)
         for i in fold:
             episode = episodes[i]
             cuts = [prefix_records(episode, k + 1) for k in range(episode["n_steps"])]
@@ -140,6 +158,34 @@ def report(name: str, cohort: str, curves: dict[str, list[float]], episodes: dic
           f"ECE {ece(y, p):.3f}  mean {st.fmean(p):.2f} vs base {st.fmean(y):.2f}", flush=True)
 
 
+def deepswe_structural(steps: list[dict]) -> list[tuple[float, float]]:
+    """Per prefix: the share of commands that repeat, and the share issued while the
+    last test run no longer describes the tree."""
+    out, seen = [], set()
+    repeats = stale = tested = 0
+    for k, step in enumerate(steps, 1):
+        command = " ".join((step.get("action") or "").lower().split())
+        repeats += command in seen
+        seen.add(command)
+        if any(t in command for t in _TEST):
+            tested = 0
+        elif tested and any(command.startswith(e) or f"; {e}" in command for e in _EDIT):
+            stale += 1
+        if any(t in command for t in _TEST):
+            tested = 1
+        out.append((repeats / k, stale / k))
+    return out
+
+
+def trim_view(view: dict, obs_chars: int) -> dict:
+    """The run's judge view, cut to what a prefix prompt can use. The Qwen run's
+    file is 22 MB; the prompt never reads past a few hundred characters."""
+    return {"id": view["id"], "task": (view.get("task") or "")[:3000],
+            "steps": [{"action": (s.get("action") or "")[:400],
+                       "observation": (s.get("observation") or "")[:obs_chars]}
+                      for s in (view.get("steps") or [])]}
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--runs", type=Path, required=True)
@@ -159,21 +205,42 @@ def main() -> None:
                         "are already near-calibrated, and one temperature fitted on the last step "
                         "distorts the early ones (tools on SG .048 -> .106, judge on RQ .097 -> .167)")
     p.add_argument("--compare", action="store_true", help="report every teacher and write none")
+    p.add_argument("--env", default="alfworld", choices=["alfworld", "deepswe"])
+    p.add_argument("--view-out", type=Path, default=None,
+                   help="also write the trimmed per-cohort views the trainer reads")
+    p.add_argument("--view-obs-chars", type=int, default=600)
     p.add_argument("--step-rule", default="giveup+acted")
     a = p.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
-    for cohort, run in RUNS.items():
-        episodes = load_alfworld(a.runs / run, "react" if "react" in run else "smolagents", a.step_rule)
-        episodes = {k: v for k, v in episodes.items() if v["n_steps"]}
-        structural = {}
-        view_path = a.views / f"{cohort}.jsonl"
-        if view_path.exists():
-            for line in open(view_path):
+    if a.view_out:
+        a.view_out.mkdir(parents=True, exist_ok=True)
+    for cohort, run in (DEEPSWE_RUNS if a.env == "deepswe" else RUNS).items():
+        if a.env == "deepswe":
+            episodes = load_deepswe(a.runs / run / "compact.jsonl", "mini-swe-agent")
+            views = {}
+            for line in open(a.runs / run / "judge_view.jsonl"):
                 if line.strip():
                     view = json.loads(line)
-                    structural[view["id"]] = [structural_labels(view["steps"][: k + 1])
-                                              for k in range(len(view["steps"]))]
+                    views[view["id"]] = view
+            structural = {i: deepswe_structural(v["steps"]) for i, v in views.items()}
+            if a.view_out:
+                with open(a.view_out / f"{cohort}.jsonl", "w") as handle:
+                    for i, v in views.items():
+                        if i in episodes:
+                            handle.write(json.dumps(trim_view(v, a.view_obs_chars)) + "\n")
+        else:
+            episodes = load_alfworld(a.runs / run, "react" if "react" in run else "smolagents",
+                                     a.step_rule)
+            episodes = {k: v for k, v in episodes.items() if v["n_steps"]}
+            structural = {}
+            view_path = a.views / f"{cohort}.jsonl"
+            if view_path.exists():
+                for line in open(view_path):
+                    if line.strip():
+                        view = json.loads(line)
+                        structural[view["id"]] = [structural_labels(view["steps"][: k + 1])
+                                                  for k in range(len(view["steps"]))]
 
         methods = method_table(a.toolkit) if (a.toolkit and (a.compare or a.teacher != "tools")) else {}
         wanted = list(TEACHERS) if a.compare else ([] if a.teacher == "tools" else [a.teacher])
