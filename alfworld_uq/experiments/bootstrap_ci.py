@@ -147,6 +147,19 @@ def main() -> None:
     add_answers("Qwen3.5-9B, P(yes)", "answers_Qwen_Qwen3_5-9B_token.jsonl")
     add_answers("Qwen3.8-27B, P(yes)", "answers_Qwen_Qwen3_8-27B_token.jsonl")
     add_encoder("ModernBERT 149M")
+    add_answers("Logistic on frozen Qwen3.5-9B", "answers_schema_logreg_Qwen3.5-9B.jsonl")
+    add_answers("Our head on frozen Qwen3.5-9B", "answers_schema_schema_Qwen3.5-9B.jsonl")
+    add_answers("Control: permuted labels", "answers_schema_schema_shuffled_Qwen3.5-9B.jsonl")
+    # Decision 3.0 against the Qwen each release is built on -- the pairing is exact
+    for label, filename in (("d3-lite 0.85B", "answers_d3_vllm-sr_d3-lite_clean.jsonl"),
+                            ("d3-nano 2.2B", "answers_d3_vllm-sr_d3-nano_clean.jsonl"),
+                            ("d3-mini 4.5B", "answers_d3_vllm-sr_d3-mini_clean.jsonl"),
+                            ("d3-flash 8.4B", "answers_d3_vllm-sr_d3-flash_clean.jsonl"),
+                            ("d3 26B", "answers_d3_vllm-sr_d3_clean.jsonl"),
+                            ("Qwen3.5-0.8B", "answers_Qwen_Qwen3_5-0_8B_token.jsonl"),
+                            ("Qwen3.5-2B", "answers_Qwen_Qwen3_5-2B_token.jsonl"),
+                            ("Qwen3.5-4B", "answers_Qwen_Qwen3_5-4B_token.jsonl")):
+        add_answers(label, filename)
 
     if a.metric == "prr":
         for cohort in COHORTS:
@@ -216,7 +229,18 @@ def main() -> None:
         print(f"{name:34} " + " ".join(f"{s:>18}" for s in cells)
               + f" {f'{m:+5.2f} [{lo:+5.2f},{hi:+5.2f}]':>18}")
 
-    contrasts = [("Qwen3.5-9B, P(yes)", "Clef-flash 9B, p(success)"),
+    contrasts = [("d3-lite 0.85B", "Qwen3.5-0.8B"),
+                 ("d3-nano 2.2B", "Qwen3.5-2B"),
+                 ("d3-mini 4.5B", "Qwen3.5-4B"),
+                 ("d3-flash 8.4B", "Qwen3.5-9B, P(yes)"),
+                 ("d3 26B", "Qwen3.8-27B, P(yes)"),
+                 ("d3 26B", "Clef 27B, p(success)"),
+                 ("Our head on frozen Qwen3.5-9B", "Clef-flash 9B, p(success)"),
+                 ("Our head on frozen Qwen3.5-9B", "Qwen3.5-9B, P(yes)"),
+                 ("Our head on frozen Qwen3.5-9B", "ModernBERT 149M"),
+                 ("Our head on frozen Qwen3.5-9B", "Control: permuted labels"),
+                 ("Logistic on frozen Qwen3.5-9B", "Our head on frozen Qwen3.5-9B"),
+                 ("Qwen3.5-9B, P(yes)", "Clef-flash 9B, p(success)"),
                  ("Qwen3.8-27B, P(yes)", "Clef 27B, p(success)"),
                  ("ModernBERT 149M", "Clef-flash 9B, p(success)"),
                  ("ModernBERT 149M", "Clef 27B, p(success)"),
