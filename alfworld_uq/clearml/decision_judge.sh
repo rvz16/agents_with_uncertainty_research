@@ -15,7 +15,11 @@ WINDOW="${WINDOW:-10}"
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
 python -m pip install -q --upgrade pip
-python -m pip install -q torch torchvision "transformers>=5.10" huggingface_hub accelerate safetensors pillow
+# d3 pins transformers 5.17 and needs its vision deps even for text-only requests
+TRANSFORMERS="${TRANSFORMERS:-transformers>=5.10}"
+[ "$BACKEND" = "d3" ] && TRANSFORMERS="transformers==5.17.0"
+python -m pip install -q torch torchvision "$TRANSFORMERS" huggingface_hub accelerate \
+    safetensors pillow opencv-python-headless
 
 # the answer file carries the model's name: this directory is mounted from the
 # host and a previous model's verdicts here were re-uploaded as a new model's

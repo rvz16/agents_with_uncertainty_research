@@ -23,6 +23,7 @@ import json
 import time
 from pathlib import Path
 
+from experiments.decision_model_d3 import to_our_shape
 from experiments.decision_state import GATE_QUESTIONS, QUESTIONS
 from experiments.prefix_judge import alfworld_view, prompt
 
@@ -48,6 +49,30 @@ def ask_liquid(model, states: list[str]) -> list[dict]:
     if hasattr(model, "system_one_batch"):
         return list(model.system_one_batch([(state, SCHEMA) for state in states]))
     return [model.system_one(state, SCHEMA) for state in states]
+
+
+def load_d3(model_id: str, device: str):
+    """Decision 3.0: its own released remote code, one call per state.
+
+    The loader rejects a device without an index -- plain "cuda" raises -- which
+    cost a whole sweep the first time.
+    """
+    import torch
+    from transformers import AutoModel
+    return AutoModel.from_pretrained(model_id, trust_remote_code=True, dtype=torch.bfloat16,
+                                     device_map=device).eval()
+
+
+def ask_d3(model, states: list[str]) -> list[dict]:
+    import torch
+    out = []
+    for state in states:
+        try:
+            with torch.no_grad():
+                out.append(model.system_one(state=state, questions=SCHEMA))
+        except Exception as exc:  # noqa: BLE001 - one bad state must not end the sweep
+            out.append({"error": repr(exc)[:200]})
+    return out
 
 
 def load_clef(model_id: str, device: str):
@@ -88,12 +113,12 @@ def main() -> None:
     p.add_argument("--alfworld", type=Path, default=None, help="run directory with trajectories.jsonl")
     p.add_argument("--view", type=Path, default=None, help="judge view jsonl (DeepSWE)")
     p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--backend", choices=["liquid", "clef"], default="liquid")
+    p.add_argument("--backend", choices=["liquid", "clef", "d3"], default="liquid")
     p.add_argument("--schema", choices=list(SCHEMAS), default="outcome",
                    help="outcome asks the four questions scored everywhere else; gate asks the one "
                         "choice question these models are sold for -- continue, retry, ask or stop")
     p.add_argument("--model", default="LiquidAI/d1-omni-600M")
-    p.add_argument("--device", default="cuda")
+    p.add_argument("--device", default="cuda:0")
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--obs-chars", type=int, default=400)
     p.add_argument("--act-chars", type=int, default=300)
@@ -134,15 +159,19 @@ def main() -> None:
         print("[decision-judge] WARNING: every prefix was already answered in this file. "
               "If this run meant to use a different model, its verdicts are not in it.", flush=True)
 
-    backend = load_liquid(a.model, a.device) if a.backend == "liquid" else load_clef(a.model, a.device)
+    backend = {"liquid": load_liquid, "clef": load_clef, "d3": load_d3}[a.backend](a.model, a.device)
     out = open(a.out, "a")
     started = time.time()
     for index in range(0, len(jobs), a.batch):
         chunk = jobs[index: index + a.batch]
         states = [text for _, _, text in chunk]
         try:
-            answers = (ask_liquid(backend, states) if a.backend == "liquid"
-                       else ask_clef(backend, states, a.model, a.max_length))
+            if a.backend == "liquid":
+                answers = ask_liquid(backend, states)
+            elif a.backend == "d3":
+                answers = ask_d3(backend, states)
+            else:
+                answers = ask_clef(backend, states, a.model, a.max_length)
         except Exception as exc:  # noqa: BLE001 - a bad batch must not end the sweep
             answers = [{"error": repr(exc)} for _ in chunk]
         if index == 0:
@@ -156,6 +185,10 @@ def main() -> None:
                 if row["choice"] is None:
                     row["raw"] = json.dumps(answer)[:300]
             else:
+                node = (answer.get("answers") or {}).get("progress")
+                if node is not None:
+                    answer = dict(answer, answers=dict(answer["answers"],
+                                  progress=to_our_shape("progress", node, QUESTIONS["progress"])))
                 row = {"id": episode_id, "step": step,
                        "p": value_of(answer, "success"),
                        "stuck": value_of(answer, "stuck"),
