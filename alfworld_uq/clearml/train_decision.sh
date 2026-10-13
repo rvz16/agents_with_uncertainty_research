@@ -16,6 +16,7 @@ W_DISTILL="${W_DISTILL:-1.0}"
 W_AUX="${W_AUX:-0.3}"
 SHUFFLE="${SHUFFLE:-0}"
 TAG="${TAG:-ours}"
+HOLDOUT="${HOLDOUT:-}"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
@@ -25,6 +26,7 @@ python -m pip install -q torch "transformers>=5.10" peft accelerate safetensors 
 cd alfworld_uq
 flag=""
 [ "$SHUFFLE" = "1" ] && flag="--shuffle-labels"
+[ -n "$HOLDOUT" ] && flag="$flag --holdout $HOLDOUT"
 python -m experiments.train_decision \
     --views "$VIEWS" --targets "$TARGETS" --out "$OUT_DIR" --model "$MODEL" --tag "$TAG" \
     --lora-rank "$LORA_RANK" --epochs "$EPOCHS" --batch "$BATCH" --lr "$LR" \

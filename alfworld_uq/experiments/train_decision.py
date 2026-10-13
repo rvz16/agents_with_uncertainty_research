@@ -259,6 +259,11 @@ def main() -> None:
                    help="0 ablates the distillation of our posterior")
     p.add_argument("--w-aux", type=float, default=0.3,
                    help="0 ablates the structural questions")
+    p.add_argument("--holdout", default=None, choices=[*COHORTS],
+                   help="train on the other cohorts and score this one: the closest thing to a "
+                        "zero-shot claim this data allows. Pooled folds are in-distribution -- a "
+                        "held-out episode's own cohort is still in training -- and a fitted readout "
+                        "is a ceiling measurement, not something a reader could deploy")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="the control: permute within cohort, which must score at zero")
     a = p.parse_args()
@@ -271,16 +276,26 @@ def main() -> None:
         rows = permute(rows)
 
     predictions: dict[int, list[dict]] = defaultdict(list)
-    for seed in a.seeds:
-        for number, fold in enumerate(folds_by_episode(rows, seed), 1):
-            held = set(fold)
-            train_idx = [i for i in range(len(rows)) if i not in held]
-            print(f"[train] seed {seed} fold {number}/{FOLDS}: "
-                  f"{len(train_idx)} train, {len(fold)} eval", flush=True)
-            for row in train_fold(rows, train_idx, fold, a):
-                predictions[row["index"]].append(row)
+    if a.holdout:
+        train_idx = [i for i, r in enumerate(rows) if r["cohort"] != a.holdout]
+        eval_idx = [i for i, r in enumerate(rows) if r["cohort"] == a.holdout]
+        print(f"[train] holding out {a.holdout}: {len(train_idx)} train prefixes from "
+              f"{sorted({r['cohort'] for r in rows}) }, {len(eval_idx)} eval", flush=True)
+        for row in train_fold(rows, train_idx, eval_idx, a):
+            predictions[row["index"]].append(row)
+    else:
+        for seed in a.seeds:
+            for number, fold in enumerate(folds_by_episode(rows, seed), 1):
+                held = set(fold)
+                train_idx = [i for i in range(len(rows)) if i not in held]
+                print(f"[train] seed {seed} fold {number}/{FOLDS}: "
+                      f"{len(train_idx)} train, {len(fold)} eval", flush=True)
+                for row in train_fold(rows, train_idx, fold, a):
+                    predictions[row["index"]].append(row)
 
     tag = f"{a.tag}_shuffled" if a.shuffle_labels else a.tag
+    if a.holdout:
+        tag = f"{tag}_holdout{a.holdout}"
     name = a.model.split("/")[-1]
     per_cohort: dict[str, list] = defaultdict(list)
     for index, values in predictions.items():

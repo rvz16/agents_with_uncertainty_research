@@ -36,6 +36,7 @@ def main() -> None:
     p.add_argument("--w-distill", default="1.0")
     p.add_argument("--w-aux", default="0.3")
     p.add_argument("--shuffle", default="0")
+    p.add_argument("--holdout", default="", help="train on the other cohorts and score this one")
     p.add_argument("--name", default="our decision model: full recipe")
     a = p.parse_args()
     task = Task.create(project_name="agentic-uq", task_name=a.name, repo=REPO, branch=a.branch,
@@ -48,7 +49,7 @@ def main() -> None:
     task.set_parameters({"Args/MODEL": a.model, "Args/TAG": a.tag, "Args/OUT_DIR": "/tmp/decision_runs",
                          "Args/LORA_RANK": a.lora_rank, "Args/EPOCHS": a.epochs, "Args/BATCH": a.batch,
                          "Args/W_DISTILL": a.w_distill, "Args/W_AUX": a.w_aux,
-                         "Args/SHUFFLE": a.shuffle})
+                         "Args/SHUFFLE": a.shuffle, "Args/HOLDOUT": a.holdout})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
     print(f"Enqueued to '{a.queue}'")
