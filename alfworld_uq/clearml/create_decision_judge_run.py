@@ -34,7 +34,7 @@ def main() -> None:
     p.add_argument("--branch", default="alfworld_smolagents")
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
     p.add_argument("--model", default="LiquidAI/d1-omni-600M")
-    p.add_argument("--backend", default="liquid", choices=["liquid", "clef"])
+    p.add_argument("--backend", default="liquid", choices=["liquid", "clef", "d3"])
     p.add_argument("--schema", default="outcome", choices=["outcome", "gate"],
                    help="gate asks the choice question these models are sold for")
     p.add_argument("--batch", type=int, default=16)
