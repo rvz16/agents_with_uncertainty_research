@@ -21,7 +21,7 @@ apt-get install -y -qq --no-install-recommends git curl || true
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--queue", default="high_q")
+    p.add_argument("--queue", default="high_q_2xA100_80")
     p.add_argument("--branch", default="decision-models-audit")
     p.add_argument("--commit", default=None)
     p.add_argument("--command", default="validate", choices=["validate", "grade"])

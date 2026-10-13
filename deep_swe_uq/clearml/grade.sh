@@ -11,12 +11,21 @@ LIMIT="${LIMIT:-5}"
 ONLY="${ONLY:-}"
 
 mkdir -p "$OUT_DIR" "$SHARED"
-command -v docker >/dev/null 2>&1 || {
-  apt-get update -qq -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true
-  apt-get install -y -qq --no-install-recommends docker.io >/dev/null 2>&1 || true; }
-docker ps >/dev/null 2>&1 || { echo "[grade] VERDICT: docker daemon unreachable"; exit 20; }
-echo "[grade] docker $(docker version --format '{{.Server.Version}}' 2>/dev/null)"
-echo "[grade] arch $(uname -m)"
+# The same client install the full DeepSWE runs use, curl fallback included: the
+# first attempt dropped that fallback and died with "docker daemon unreachable"
+# on a worker where apt could not reach the package.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[grade] no docker client, installing"
+  (apt-get update -qq -o Acquire::AllowInsecureRepositories=true >/dev/null 2>&1 || true)
+  (apt-get install -y -qq --no-install-recommends docker.io >/dev/null 2>&1 || true)
+  command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || true
+fi
+ls -la /var/run/docker.sock 2>&1 | head -2
+docker version --format 'client={{.Client.Version}} server={{.Server.Version}}' 2>&1 | head -2
+if ! docker ps >/dev/null 2>&1; then
+  echo "[grade] VERDICT: docker daemon unreachable from this worker"; exit 20
+fi
+echo "[grade] docker reachable, arch $(uname -m)"
 
 if [ ! -d "${SHARED}/deep-swe/tasks" ]; then
   git clone -q https://github.com/datacurve-ai/deep-swe "${SHARED}/deep-swe" || {
