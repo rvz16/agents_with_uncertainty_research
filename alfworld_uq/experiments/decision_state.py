@@ -242,3 +242,23 @@ def _write(path: Path, rows: list[dict], key: str, show: bool) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+#: The question type we never used, in the scenario these models are actually sold
+#: for. Everywhere else we read a probability and fit thresholds around it; here
+#: the model is asked for the decision itself, which is what a `choice` is for,
+#: and the harness simply does what it says. That makes the released model's own
+#: policy directly comparable with a policy we fit, on identical prefixes.
+GATE_QUESTIONS = {
+    "action": {
+        "type": "choice",
+        "instructions": "An agent is partway through this task and has not finished. "
+                        "What should the harness do now?",
+        "criteria": {
+            "continue": "Let it keep working: it is making progress towards the goal",
+            "retry": "Make it abandon the current approach and try a different one",
+            "ask": "Hand the task to a human or a stronger model",
+            "stop": "Abandon the task: it will not be completed",
+        },
+    },
+}

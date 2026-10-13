@@ -35,6 +35,8 @@ def main() -> None:
     p.add_argument("--commit", default=None, help="commit to pin; the branch head otherwise")
     p.add_argument("--model", default="LiquidAI/d1-omni-600M")
     p.add_argument("--backend", default="liquid", choices=["liquid", "clef"])
+    p.add_argument("--schema", default="outcome", choices=["outcome", "gate"],
+                   help="gate asks the choice question these models are sold for")
     p.add_argument("--batch", type=int, default=16)
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--views-dir", default="alfworld_uq/data/judge_views")
@@ -56,6 +58,7 @@ def main() -> None:
     task.set_parameters({
         "Args/MODEL": a.model,
         "Args/BACKEND": a.backend,
+        "Args/SCHEMA": a.schema,
         "Args/BATCH": str(a.batch),
         "Args/WINDOW": str(a.window),
         "Args/OUT_DIR": "/tmp/decision_judge",

@@ -5,6 +5,7 @@
 set -euo pipefail
 
 BACKEND="${BACKEND:-liquid}"
+SCHEMA="${SCHEMA:-outcome}"
 MODEL="${MODEL:-LiquidAI/d1-omni-600M}"
 OUT_DIR="${OUT_DIR:-/tmp/decision_judge}"
 VIEWS_DIR="${VIEWS_DIR:-alfworld_uq/data/judge_views}"
@@ -19,13 +20,17 @@ python -m pip install -q torch torchvision "transformers>=5.10" huggingface_hub 
 # the answer file carries the model's name: this directory is mounted from the
 # host and a previous model's verdicts here were re-uploaded as a new model's
 TAG="$(echo "$MODEL" | tr '/.' '__')"
+# the gate schema answers a different question: its verdicts must not land in the
+# outcome file, or a later read would mix two question sets silently
+[ "$SCHEMA" = "gate" ] && PREFIX="gate" || PREFIX="judge"
 cd alfworld_uq
 for view in ../"$VIEWS_DIR"/*.jsonl; do
     cohort="$(basename "$view" .jsonl)"
     echo "[judge] $cohort with $MODEL"
     python -m experiments.prefix_decision \
-        --view "$view" --out "$OUT_DIR/judge_${TAG}_${cohort}.jsonl" \
+        --view "$view" --out "$OUT_DIR/${PREFIX}_${TAG}_${cohort}.jsonl" \
         --backend "$BACKEND" --model "$MODEL" --batch "$BATCH" --window "$WINDOW" \
+        --schema "$SCHEMA" \
         || echo "[judge] $cohort failed, continuing"
 done
 echo "[judge] done"

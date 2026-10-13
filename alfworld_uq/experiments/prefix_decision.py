@@ -23,7 +23,7 @@ import json
 import time
 from pathlib import Path
 
-from experiments.decision_state import QUESTIONS
+from experiments.decision_state import GATE_QUESTIONS, QUESTIONS
 from experiments.prefix_judge import alfworld_view, prompt
 
 ANSWER_KEYS = ("success", "stuck", "stale_evidence", "progress")
@@ -38,12 +38,16 @@ def load_liquid(model_id: str, device: str):
     return model
 
 
+SCHEMAS = {"outcome": QUESTIONS, "gate": GATE_QUESTIONS}
+SCHEMA = QUESTIONS  # set from --schema before any backend call
+
+
 def ask_liquid(model, states: list[str]) -> list[dict]:
     """The release batches on a sequence of (state, questions) tuples; passing
     dicts there indexes them with r[1] and raises KeyError(1)."""
     if hasattr(model, "system_one_batch"):
-        return list(model.system_one_batch([(state, QUESTIONS) for state in states]))
-    return [model.system_one(state, QUESTIONS) for state in states]
+        return list(model.system_one_batch([(state, SCHEMA) for state in states]))
+    return [model.system_one(state, SCHEMA) for state in states]
 
 
 def load_clef(model_id: str, device: str):
@@ -61,7 +65,7 @@ def load_clef(model_id: str, device: str):
 
 def ask_clef(bundle, states: list[str], model_id: str, max_length: int) -> list[dict]:
     jsm, model, processor = bundle
-    return [jsm.systemone(model, processor, {"model": model_id, "state": s, "questions": QUESTIONS},
+    return [jsm.systemone(model, processor, {"model": model_id, "state": s, "questions": SCHEMA},
                           max_length=max_length) for s in states]
 
 
@@ -85,6 +89,9 @@ def main() -> None:
     p.add_argument("--view", type=Path, default=None, help="judge view jsonl (DeepSWE)")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--backend", choices=["liquid", "clef"], default="liquid")
+    p.add_argument("--schema", choices=list(SCHEMAS), default="outcome",
+                   help="outcome asks the four questions scored everywhere else; gate asks the one "
+                        "choice question these models are sold for -- continue, retry, ask or stop")
     p.add_argument("--model", default="LiquidAI/d1-omni-600M")
     p.add_argument("--device", default="cuda")
     p.add_argument("--window", type=int, default=10)
@@ -94,6 +101,9 @@ def main() -> None:
     p.add_argument("--max-length", type=int, default=16384)
     p.add_argument("--limit", type=int, default=0, help="episodes (debug)")
     a = p.parse_args()
+
+    global SCHEMA
+    SCHEMA = SCHEMAS[a.schema]
 
     if a.alfworld:
         view = alfworld_view(a.alfworld)
@@ -110,8 +120,9 @@ def main() -> None:
 
     done: set[tuple[str, int]] = set()
     if a.out.exists():
+        field = "choice" if a.schema == "gate" else "p"
         kept = [line for line in open(a.out)
-                if line.strip() and json.loads(line).get("p") is not None]
+                if line.strip() and json.loads(line).get(field) is not None]
         with open(a.out, "w") as handle:
             handle.writelines(kept)
         done = {(json.loads(line)["id"], json.loads(line)["step"]) for line in kept}
@@ -137,13 +148,21 @@ def main() -> None:
         if index == 0:
             print("[decision-judge] first answer:", json.dumps(answers[0])[:500], flush=True)
         for (episode_id, step, _), answer in zip(chunk, answers):
-            row = {"id": episode_id, "step": step,
-                   "p": value_of(answer, "success"),
-                   "stuck": value_of(answer, "stuck"),
-                   "stale": value_of(answer, "stale_evidence"),
-                   "progress": value_of(answer, "progress")}
-            if row["p"] is None:
-                row["raw"] = json.dumps(answer)[:300]
+            if a.schema == "gate":
+                node = (answer.get("answers") or {}).get("action") or {}
+                shares = node.get("probabilities") or {}
+                row = {"id": episode_id, "step": step, "choice": node.get("choice"),
+                       **{f"p_{k}": float(v) for k, v in shares.items()}}
+                if row["choice"] is None:
+                    row["raw"] = json.dumps(answer)[:300]
+            else:
+                row = {"id": episode_id, "step": step,
+                       "p": value_of(answer, "success"),
+                       "stuck": value_of(answer, "stuck"),
+                       "stale": value_of(answer, "stale_evidence"),
+                       "progress": value_of(answer, "progress")}
+                if row["p"] is None:
+                    row["raw"] = json.dumps(answer)[:300]
             out.write(json.dumps(row) + "\n")
         if (index // a.batch) % 20 == 0:
             out.flush()
