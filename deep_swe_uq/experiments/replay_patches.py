@@ -20,6 +20,7 @@ few hours rather than a few days.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import re
@@ -41,12 +42,20 @@ def run(cmd: list[str], timeout: int) -> tuple[int, str]:
         return 124, "timeout"
 
 
+def _open(path: Path):
+    """The Qwen cohort's commands run to 16 MB of text; the inputs ship gzipped."""
+    return gzip.open(path, "rt") if path.suffix == ".gz" else open(path)
+
+
 def episodes_of(compact: Path) -> list[dict]:
     out = []
-    for line in open(compact):
+    for line in _open(compact):
         if not line.strip():
             continue
         record = json.loads(line)
+        if "commands" in record:  # already the trimmed input
+            out.append(record)
+            continue
         if "partial" not in (record.get("rewards") or {}):
             continue
         out.append({"id": record["id"],
@@ -113,7 +122,11 @@ def replay(episode: dict, task_dir: Path, out_dir: Path, a) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--compact", type=Path, required=True)
+    p.add_argument("--compact", type=Path, required=True,
+                   help="a run's compact.jsonl, or the trimmed replay input --dump writes")
+    p.add_argument("--dump", type=Path, default=None,
+                   help="write the trimmed input (id, commands, rewards) and stop: the run "
+                        "directories are local artifacts and never reach a worker")
     p.add_argument("--tasks", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--limit", type=int, default=0)
@@ -127,9 +140,19 @@ def main() -> None:
     p.add_argument("--start-timeout", type=int, default=900)
     a = p.parse_args()
 
+    episodes = episodes_of(a.compact)
+    if a.dump:
+        a.dump.parent.mkdir(parents=True, exist_ok=True)
+        opener = gzip.open if a.dump.suffix == ".gz" else open
+        with opener(a.dump, "wt") as handle:
+            for e in episodes:
+                handle.write(json.dumps(e) + "\n")
+        print(f"[replay] {len(episodes)} episodes -> {a.dump} "
+              f"({a.dump.stat().st_size // 1024} KB)")
+        return
+
     a.out.mkdir(parents=True, exist_ok=True)
     names = {d.name for d in a.tasks.iterdir() if d.is_dir()}
-    episodes = episodes_of(a.compact)
     if a.limit:
         episodes = episodes[: a.limit]
     print(f"[replay] {len(episodes)} episodes, {len(names)} tasks available", flush=True)

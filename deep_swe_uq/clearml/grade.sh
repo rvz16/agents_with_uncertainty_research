@@ -36,14 +36,12 @@ if [ ! -d "${SHARED}/deep-swe/tasks" ]; then
 fi
 echo "[grade] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) at ${DEEPSWE_COMMIT}"
 
-declare -A COMPACT=( [DG]=deepswe_gptoss_113_v5 [DL]=deepswe_gptoss120_113_rp [DQ]=deepswe_qwen_113_v8 )
-
 cd deep_swe_uq
 if [ "$COMMAND" = "replay" ]; then
     # reconstruct the repository partway through each trajectory, then grade those
     # snapshots with the task's own verifier -- the golden check gates this
     python -m experiments.replay_patches \
-        --compact "runs/${COMPACT[$COHORT]}/compact.jsonl" \
+        --compact "data/replay_inputs/${COHORT}.jsonl.gz" \
         --tasks "${SHARED}/deep-swe/tasks" --out "${SHARED}/patches_${COHORT}" \
         --snapshots "$SNAPSHOTS" ${LIMIT:+--limit "$LIMIT"} || exit 31
     python -m experiments.grade_patch grade \
