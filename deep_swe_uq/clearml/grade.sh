@@ -7,6 +7,8 @@ OUT_DIR="${OUT_DIR:-/tmp/grade_runs}"
 SHARED="${SHARED:-/tmp/grade_shared}"
 DEEPSWE_COMMIT="${DEEPSWE_COMMIT:-e016041}"
 COMMAND="${COMMAND:-validate}"
+COHORT="${COHORT:-DG}"
+SNAPSHOTS="${SNAPSHOTS:-8}"
 LIMIT="${LIMIT:-5}"
 ONLY="${ONLY:-}"
 
@@ -34,8 +36,23 @@ if [ ! -d "${SHARED}/deep-swe/tasks" ]; then
 fi
 echo "[grade] tasks: $(ls "${SHARED}/deep-swe/tasks" | wc -l) at ${DEEPSWE_COMMIT}"
 
+declare -A COMPACT=( [DG]=deepswe_gptoss_113_v5 [DL]=deepswe_gptoss120_113_rp [DQ]=deepswe_qwen_113_v8 )
+
 cd deep_swe_uq
-python -m experiments.grade_patch "$COMMAND" \
-    --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work" \
-    ${LIMIT:+--limit "$LIMIT"} ${ONLY:+--only $ONLY}
+if [ "$COMMAND" = "replay" ]; then
+    # reconstruct the repository partway through each trajectory, then grade those
+    # snapshots with the task's own verifier -- the golden check gates this
+    python -m experiments.replay_patches \
+        --compact "runs/${COMPACT[$COHORT]}/compact.jsonl" \
+        --tasks "${SHARED}/deep-swe/tasks" --out "${SHARED}/patches_${COHORT}" \
+        --snapshots "$SNAPSHOTS" ${LIMIT:+--limit "$LIMIT"} || exit 31
+    python -m experiments.grade_patch grade \
+        --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work" \
+        --patches "${SHARED}/patches_${COHORT}"
+    mv "$OUT_DIR/labels.jsonl" "$OUT_DIR/labels_${COHORT}.jsonl" 2>/dev/null || true
+else
+    python -m experiments.grade_patch "$COMMAND" \
+        --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work" \
+        ${LIMIT:+--limit "$LIMIT"} ${ONLY:+--only $ONLY}
+fi
 echo "[grade] done"; ls -la "$OUT_DIR"

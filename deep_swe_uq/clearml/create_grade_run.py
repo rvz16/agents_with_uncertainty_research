@@ -24,8 +24,10 @@ def main() -> None:
     p.add_argument("--queue", default="high_q_2xA100_80")
     p.add_argument("--branch", default="decision-models-audit")
     p.add_argument("--commit", default=None)
-    p.add_argument("--command", default="validate", choices=["validate", "grade"])
-    p.add_argument("--limit", default="5")
+    p.add_argument("--command", default="validate", choices=["validate", "grade", "replay"])
+    p.add_argument("--cohort", default="DG", choices=["DG", "DL", "DQ"])
+    p.add_argument("--snapshots", default="8")
+    p.add_argument("--limit", default="")
     p.add_argument("--only", default="")
     p.add_argument("--name", default="deepswe: golden validation")
     a = p.parse_args()
@@ -37,7 +39,8 @@ def main() -> None:
     if a.commit:
         task.set_script(commit=a.commit)
     task.set_parameters({"Args/COMMAND": a.command, "Args/LIMIT": a.limit, "Args/ONLY": a.only,
-                         "Args/OUT_DIR": "/tmp/grade_runs", "Args/SHARED": "/tmp/grade_shared"})
+                         "Args/OUT_DIR": "/tmp/grade_runs", "Args/SHARED": "/tmp/grade_shared",
+                         "Args/COHORT": a.cohort, "Args/SNAPSHOTS": a.snapshots})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
     print(f"Enqueued to '{a.queue}'")
