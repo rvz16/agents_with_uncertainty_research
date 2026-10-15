@@ -17,6 +17,7 @@ W_AUX="${W_AUX:-0.3}"
 SHUFFLE="${SHUFFLE:-0}"
 TAG="${TAG:-ours}"
 HOLDOUT="${HOLDOUT:-}"
+DROP="${DROP:-}"
 TASK_ONLY="${TASK_ONLY:-0}"
 W_ACTION="${W_ACTION:-0}"
 W_ENTROPY="${W_ENTROPY:-0.01}"
@@ -32,6 +33,7 @@ cd alfworld_uq
 flag=""
 [ "$SHUFFLE" = "1" ] && flag="--shuffle-labels"
 [ -n "$HOLDOUT" ] && flag="$flag --holdout $HOLDOUT"
+[ -n "$DROP" ] && flag="$flag --drop $DROP"
 [ "$TASK_ONLY" = "1" ] && flag="$flag --task-only"
 python -m experiments.train_decision \
     --views "$VIEWS" --targets "$TARGETS" --out "$OUT_DIR" --model "$MODEL" --tag "$TAG" \

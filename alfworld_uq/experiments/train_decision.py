@@ -123,6 +123,27 @@ def utilities(row: dict, c_step: float, c_ask: float) -> tuple[float, float, flo
             -c_step * (k + 1))
 
 
+ENVS = {"alfworld": ("RG", "SG", "RQ", "SQ"), "deepswe": ("DG", "DL", "DQ")}
+
+
+def cohort_spec(spec: str) -> tuple[str, ...]:
+    """Resolve "SQ", "deepswe", or "RQ,SQ" to cohort names.
+
+    A single cohort is not enough for a cross-domain claim: holding out DG leaves
+    DL and DQ in training, which is transfer between two DeepSWE cohorts, not
+    transfer to coding. So the whole environment has to be nameable.
+    """
+    out: list[str] = []
+    for part in (x.strip() for x in spec.split(",") if x.strip()):
+        if part in ENVS:
+            out += list(ENVS[part])
+        elif part in COHORTS:
+            out.append(part)
+        else:
+            raise SystemExit(f"unknown cohort or environment: {part!r}")
+    return tuple(dict.fromkeys(out))
+
+
 def permute(rows: list[dict]) -> list[dict]:
     """The control: move each episode's label to another episode of similar length.
 
@@ -334,11 +355,17 @@ def main() -> None:
                    help="0 ablates the distillation of our posterior")
     p.add_argument("--w-aux", type=float, default=0.3,
                    help="0 ablates the structural questions")
-    p.add_argument("--holdout", default=None, choices=[*COHORTS],
-                   help="train on the other cohorts and score this one: the closest thing to a "
-                        "zero-shot claim this data allows. Pooled folds are in-distribution -- a "
-                        "held-out episode's own cohort is still in training -- and a fitted readout "
-                        "is a ceiling measurement, not something a reader could deploy")
+    p.add_argument("--holdout", default=None,
+                   help="cohorts to keep out of training and score instead: a cohort name, an "
+                        "environment (alfworld, deepswe), or a comma-separated list. The closest "
+                        "thing to a zero-shot claim this data allows. Pooled folds are "
+                        "in-distribution -- a held-out episode's own cohort is still in training -- "
+                        "and a fitted readout is a ceiling measurement, not something a reader "
+                        "could deploy")
+    p.add_argument("--drop", default=None,
+                   help="cohorts to discard entirely, neither trained on nor scored. Use it to keep "
+                        "a cross-cohort test inside one environment, so the result is not the "
+                        "two-environment interference measured elsewhere")
     p.add_argument("--task-only", action="store_true",
                    help="drop the transcript and keep one row per episode: how much of an early "
                         "estimate is task difficulty rather than watching the agent")
@@ -348,6 +375,11 @@ def main() -> None:
 
     a.out.mkdir(parents=True, exist_ok=True)
     rows = load(a.views, a.targets, a.window, a.obs_chars, a.act_chars, a.task_only)
+    if a.drop:
+        dropped = cohort_spec(a.drop)
+        before = len(rows)
+        rows = [r for r in rows if r["cohort"] not in dropped]
+        print(f"[train] dropped {','.join(dropped)}: {before} -> {len(rows)} prefixes", flush=True)
     if not rows:
         raise SystemExit("no prefixes: check --views and --targets")
     if a.shuffle_labels:
@@ -355,10 +387,16 @@ def main() -> None:
 
     predictions: dict[int, list[dict]] = defaultdict(list)
     if a.holdout:
-        train_idx = [i for i, r in enumerate(rows) if r["cohort"] != a.holdout]
-        eval_idx = [i for i, r in enumerate(rows) if r["cohort"] == a.holdout]
-        print(f"[train] holding out {a.holdout}: {len(train_idx)} train prefixes from "
-              f"{sorted({r['cohort'] for r in rows}) }, {len(eval_idx)} eval", flush=True)
+        held_cohorts = cohort_spec(a.holdout)
+        train_idx = [i for i, r in enumerate(rows) if r["cohort"] not in held_cohorts]
+        eval_idx = [i for i, r in enumerate(rows) if r["cohort"] in held_cohorts]
+        if not train_idx or not eval_idx:
+            raise SystemExit(f"--holdout {a.holdout}: {len(train_idx)} train and {len(eval_idx)} "
+                             f"eval prefixes, one side is empty")
+        print(f"[train] holding out {','.join(held_cohorts)}: {len(train_idx)} train prefixes "
+              f"from {sorted({rows[i]['cohort'] for i in train_idx})}, "
+              f"{len(eval_idx)} eval from {sorted({rows[i]['cohort'] for i in eval_idx})}",
+              flush=True)
         for row in train_fold(rows, train_idx, eval_idx, a):
             predictions[row["index"]].append(row)
     else:
@@ -373,7 +411,7 @@ def main() -> None:
 
     tag = f"{a.tag}_shuffled" if a.shuffle_labels else a.tag
     if a.holdout:
-        tag = f"{tag}_holdout{a.holdout}"
+        tag = f"{tag}_holdout{a.holdout.replace(',', '-')}"
     if a.task_only:
         tag = f"{tag}_taskonly"
     name = a.model.split("/")[-1]
