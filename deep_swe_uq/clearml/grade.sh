@@ -9,7 +9,8 @@ DEEPSWE_COMMIT="${DEEPSWE_COMMIT:-e016041}"
 COMMAND="${COMMAND:-validate}"
 COHORT="${COHORT:-DG}"
 SNAPSHOTS="${SNAPSHOTS:-8}"
-LIMIT="${LIMIT:-5}"
+# no default: a run that silently covers 5 of 112 episodes looks like a success
+LIMIT="${LIMIT:-}"
 ONLY="${ONLY:-}"
 
 mkdir -p "$OUT_DIR" "$SHARED"

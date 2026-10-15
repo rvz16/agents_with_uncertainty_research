@@ -36,6 +36,18 @@ def image_for(task_dir: Path) -> str:
     return f"deepswe-verif:{task_dir.name}"
 
 
+def reclaim(task_dir: Path | None) -> None:
+    """Drop the task image and the build cache it left behind.
+
+    ``docker rmi`` alone is not enough: each verifier image pulls a full language
+    runtime, and the layers stay in the buildx/containerd content store, which
+    filled the worker's disk after fourteen tasks.
+    """
+    if task_dir is not None:
+        run(["docker", "rmi", "-f", image_for(task_dir)], 300)
+    run(["docker", "builder", "prune", "-f"], 600)
+
+
 def build(task_dir: Path, timeout: int) -> bool:
     rc, out = run(["docker", "build", "-q", "-t", image_for(task_dir), str(task_dir / "tests")],
                   timeout)
@@ -81,6 +93,13 @@ def main() -> None:
     names = sorted(d.name for d in a.tasks.iterdir() if (d / "tests" / "test.sh").exists())
     if a.only:
         names = [n for n in names if n in set(a.only)]
+    if a.command == "grade":
+        # only the tasks a replay actually produced snapshots for; building an
+        # image for a task with no patches costs a couple of minutes of disk
+        # churn and grades nothing
+        available = len(names)
+        names = [n for n in names if a.patches and any((a.patches / n).glob("*.patch"))]
+        print(f"[grade] {len(names)} tasks with patches, of {available} available", flush=True)
     if a.limit:
         names = names[: a.limit]
     print(f"[grade] {len(names)} tasks", flush=True)
@@ -93,6 +112,7 @@ def main() -> None:
         started = time.time()
         if not build(task_dir, a.build_timeout):
             bad += 1
+            reclaim(task_dir)  # a failed build leaves its layers behind too
             continue
         if a.command == "validate":
             golden = task_dir / "solution" / "solution.patch"
@@ -114,7 +134,7 @@ def main() -> None:
                 handle.flush()
                 print(f"[grade] {name} step {patch.stem}: "
                       f"{(reward or {}).get('partial')}", flush=True)
-        run(["docker", "rmi", "-f", image_for(task_dir)], 300)
+        reclaim(task_dir)
     handle.close()
     print(f"[grade] done: {ok} ok, {bad} failed -> {out_path}")
 
