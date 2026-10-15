@@ -52,8 +52,17 @@ CONTINUOUS = ("DG", "DL", "DQ")
 FOLDS = 5
 
 
-def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int) -> list[dict]:
-    """One row per prefix: its text, the outcome, our posterior, the structural facts."""
+def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int,
+         task_only: bool = False) -> list[dict]:
+    """One row per prefix: its text, the outcome, our posterior, the structural facts.
+
+    With ``task_only`` the transcript is dropped and one row per episode remains:
+    the baseline that says how much of an early estimate is reading the task
+    rather than watching the agent. Our model scores .42 having seen a tenth of
+    an episode, which at sixteen steps is one or two actions -- far too little to
+    see anything go wrong, so the honest question is what the task text alone is
+    worth.
+    """
     rows: list[dict] = []
     for cohort in COHORTS:
         view_path, target_path = views / f"{cohort}.jsonl", targets / f"targets_{cohort}.jsonl"
@@ -77,9 +86,13 @@ def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int
                 k = t["step"]
                 if k >= len(view["steps"]):
                     continue
+                if task_only and k:
+                    continue  # every prefix would carry the same text
                 rows.append({
                     "cohort": cohort, "episode": episode_id, "step": k,
-                    "text": prompt(view["task"], view["steps"][: k + 1], window, obs_chars, act_chars),
+                    "n_steps": len(view["steps"]),
+                    "text": prompt(view["task"], [] if task_only else view["steps"][: k + 1],
+                                    window, obs_chars, act_chars),
                     "label": float(t["score"] if cohort in CONTINUOUS else t["label"]),
                     "posterior": float(t["posterior"]),
                     "repeat": t.get("repeat_share"), "stale": t.get("stale_share"),
@@ -87,6 +100,27 @@ def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int
     print(f"[train] {len(rows)} prefixes over "
           f"{len({(r['cohort'], r['episode']) for r in rows})} episodes", flush=True)
     return rows
+
+
+def utilities(row: dict, c_step: float, c_ask: float) -> tuple[float, float, float]:
+    """What each action would really have been worth on this prefix.
+
+    The episode was recorded to the end, so this is not an estimate: we know the
+    counterfactual payoff of every action, and the accounting is the one
+    gate_utility scores the threshold policies with.
+
+      continue  the episode runs on and pays for every step it took
+      ask       a human is paid for, and the task is then solved
+      stop      nothing is gained, and the steps so far are still paid for
+
+    Because all three are known, the controller does not need a policy gradient:
+    the expected utility of a stochastic policy is an exact differentiable
+    function of its probabilities.
+    """
+    k = row["step"]
+    return (row["label"] - c_step * row["n_steps"],
+            1.0 - c_step * (k + 1) - c_ask,
+            -c_step * (k + 1))
 
 
 def permute(rows: list[dict]) -> list[dict]:
@@ -136,9 +170,21 @@ def folds_by_episode(rows: list[dict], seed: int) -> list[list[int]]:
 
 
 class Head:
-    """success, repeats, stale -- the three facts we can supervise."""
+    """Six outputs: the three facts we can supervise, then the controller.
 
-    OUTPUTS = 3
+    0 success, 1 repeats, 2 stale -- supervised against labels.
+    3 continue, 4 ask, 5 stop -- a policy, supervised against realised utility.
+
+    Three actions, not the four the released schema names, because ``retry`` and
+    ``continue`` have the same utility on a recorded trajectory: the agent cannot
+    be made to restart, so the honest reading of either answer is that the
+    episode runs on. Splitting probability between two identical columns would be
+    arbitrary. When comparing against a released model's own choice we fold its
+    ``retry`` into ``continue``, which is what gate_choice does.
+    """
+
+    OUTPUTS = 6
+    ACTIONS = ("continue", "ask", "stop")
 
 
 def build(model_id: str, args):
@@ -213,6 +259,15 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
             loss = args.w_outcome * bce(logits[:, 0], y) + args.w_brier * ((p - y) ** 2).mean()
             if args.w_distill:
                 loss = loss + args.w_distill * ((p - q) ** 2).mean()
+            if args.w_action:
+                u = torch.tensor([utilities(rows[i], args.c_step, args.c_ask) for i in batch],
+                                 dtype=torch.float32, device=device)
+                policy = torch.softmax(logits[:, 3:6], dim=1)
+                # maximise expected utility; the entropy bonus keeps the policy
+                # from collapsing onto one column before it has seen the costs
+                expected = (policy * u).sum(1).mean()
+                entropy = -(policy * policy.clamp_min(1e-9).log()).sum(1).mean()
+                loss = loss - args.w_action * expected - args.w_entropy * entropy
             if args.w_aux:
                 for position, field in ((1, "repeat"), (2, "stale")):
                     have = [(j, rows[i][field]) for j, i in enumerate(batch)
@@ -235,8 +290,12 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
             chunk = list(eval_idx)[i: i + args.eval_batch]
             logits = head(pool(backbone, tokenizer, [rows[j]["text"] for j in chunk], args))
             probabilities = torch.sigmoid(logits).float().cpu().tolist()
-            for j, values in zip(chunk, probabilities):
-                out.append({"index": j, "success": values[0], "stuck": values[1], "stale": values[2]})
+            policies = torch.softmax(logits[:, 3:6], dim=1).float().cpu().tolist()
+            for j, values, policy in zip(chunk, probabilities, policies):
+                out.append({"index": j, "success": values[0], "stuck": values[1],
+                            "stale": values[2],
+                            "policy": dict(zip(Head.ACTIONS, policy)),
+                            "action": Head.ACTIONS[max(range(3), key=policy.__getitem__)]})
     del backbone, head
     torch.cuda.empty_cache()
     return out
@@ -259,6 +318,11 @@ def main() -> None:
     p.add_argument("--max-length", type=int, default=2048,
                    help="coding prefixes average 6.4k characters and reach 10k, so 1536 cut most "
                         "of them; with left truncation the question always survives")
+    p.add_argument("--w-action", type=float, default=0.0,
+                   help="weight on expected realised utility: trains the controller head")
+    p.add_argument("--w-entropy", type=float, default=0.01)
+    p.add_argument("--c-step", type=float, default=0.02, help="as in gate_utility")
+    p.add_argument("--c-ask", type=float, default=0.5, help="as in gate_utility")
     p.add_argument("--batch", type=int, default=8)
     p.add_argument("--eval-batch", type=int, default=16)
     p.add_argument("--epochs", type=int, default=2)
@@ -275,12 +339,15 @@ def main() -> None:
                         "zero-shot claim this data allows. Pooled folds are in-distribution -- a "
                         "held-out episode's own cohort is still in training -- and a fitted readout "
                         "is a ceiling measurement, not something a reader could deploy")
+    p.add_argument("--task-only", action="store_true",
+                   help="drop the transcript and keep one row per episode: how much of an early "
+                        "estimate is task difficulty rather than watching the agent")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="the control: permute within cohort, which must score at zero")
     a = p.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
-    rows = load(a.views, a.targets, a.window, a.obs_chars, a.act_chars)
+    rows = load(a.views, a.targets, a.window, a.obs_chars, a.act_chars, a.task_only)
     if not rows:
         raise SystemExit("no prefixes: check --views and --targets")
     if a.shuffle_labels:
@@ -307,6 +374,8 @@ def main() -> None:
     tag = f"{a.tag}_shuffled" if a.shuffle_labels else a.tag
     if a.holdout:
         tag = f"{tag}_holdout{a.holdout}"
+    if a.task_only:
+        tag = f"{tag}_taskonly"
     name = a.model.split("/")[-1]
     per_cohort: dict[str, list] = defaultdict(list)
     for index, values in predictions.items():
