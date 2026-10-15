@@ -59,7 +59,11 @@ def main() -> None:
     if a.commit:
         task.set_script(commit=a.commit)
     # the entry still runs; validate on nothing is a no-op that proves the clone works
-    task.set_parameters({"Args/COMMAND": "validate", "Args/LIMIT": "1",
+    # A probe should cost nothing: naming a task that does not exist leaves
+    # validate with an empty list, so the report runs and no verifier is built.
+    task.set_parameters({"Args/COMMAND": "validate",
+                         "Args/LIMIT": "0" if a.report_only else "1",
+                         "Args/ONLY": "__no_such_task__" if a.report_only else "",
                          "Args/OUT_DIR": "/tmp/grade_runs", "Args/SHARED": "/tmp/grade_shared"})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
