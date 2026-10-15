@@ -17,6 +17,11 @@ W_AUX="${W_AUX:-0.3}"
 SHUFFLE="${SHUFFLE:-0}"
 TAG="${TAG:-ours}"
 HOLDOUT="${HOLDOUT:-}"
+TASK_ONLY="${TASK_ONLY:-0}"
+W_ACTION="${W_ACTION:-0}"
+W_ENTROPY="${W_ENTROPY:-0.01}"
+C_STEP="${C_STEP:-0.02}"
+C_ASK="${C_ASK:-0.5}"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
@@ -27,8 +32,10 @@ cd alfworld_uq
 flag=""
 [ "$SHUFFLE" = "1" ] && flag="--shuffle-labels"
 [ -n "$HOLDOUT" ] && flag="$flag --holdout $HOLDOUT"
+[ "$TASK_ONLY" = "1" ] && flag="$flag --task-only"
 python -m experiments.train_decision \
     --views "$VIEWS" --targets "$TARGETS" --out "$OUT_DIR" --model "$MODEL" --tag "$TAG" \
     --lora-rank "$LORA_RANK" --epochs "$EPOCHS" --batch "$BATCH" --lr "$LR" \
+    --w-action "$W_ACTION" --w-entropy "$W_ENTROPY" --c-step "$C_STEP" --c-ask "$C_ASK" \
     --w-distill "$W_DISTILL" --w-aux "$W_AUX" $flag
 echo "[train] done"; ls -la "$OUT_DIR"

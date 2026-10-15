@@ -37,6 +37,11 @@ def main() -> None:
     p.add_argument("--w-aux", default="0.3")
     p.add_argument("--shuffle", default="0")
     p.add_argument("--holdout", default="", help="train on the other cohorts and score this one")
+    p.add_argument("--task-only", default="0", help="1 drops the transcript: the difficulty baseline")
+    p.add_argument("--w-action", default="0", help="non-zero trains the controller head on utility")
+    p.add_argument("--w-entropy", default="0.01")
+    p.add_argument("--c-step", default="0.02")
+    p.add_argument("--c-ask", default="0.5")
     p.add_argument("--name", default="our decision model: full recipe")
     a = p.parse_args()
     task = Task.create(project_name="agentic-uq", task_name=a.name, repo=REPO, branch=a.branch,
@@ -49,7 +54,10 @@ def main() -> None:
     task.set_parameters({"Args/MODEL": a.model, "Args/TAG": a.tag, "Args/OUT_DIR": "/tmp/decision_runs",
                          "Args/LORA_RANK": a.lora_rank, "Args/EPOCHS": a.epochs, "Args/BATCH": a.batch,
                          "Args/W_DISTILL": a.w_distill, "Args/W_AUX": a.w_aux,
-                         "Args/SHUFFLE": a.shuffle, "Args/HOLDOUT": a.holdout})
+                         "Args/SHUFFLE": a.shuffle, "Args/HOLDOUT": a.holdout,
+                         "Args/TASK_ONLY": a.task_only, "Args/W_ACTION": a.w_action,
+                         "Args/W_ENTROPY": a.w_entropy, "Args/C_STEP": a.c_step,
+                         "Args/C_ASK": a.c_ask})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
     print(f"Enqueued to '{a.queue}'")
