@@ -12,6 +12,12 @@ SNAPSHOTS="${SNAPSHOTS:-8}"
 # no default: a run that silently covers 5 of 112 episodes looks like a success
 LIMIT="${LIMIT:-}"
 ONLY="${ONLY:-}"
+# SHARD is "I/N": replay every Nth episode from I. Each shard keeps its own
+# patches directory and labels file, so shards can share a worker and a failure
+# costs one shard rather than the cohort.
+SHARD="${SHARD:-}"
+TAG=""
+if [ -n "$SHARD" ]; then TAG="_s${SHARD//\//of}"; fi
 
 mkdir -p "$OUT_DIR" "$SHARED"
 # The same client install the full DeepSWE runs use, curl fallback included: the
@@ -43,12 +49,12 @@ if [ "$COMMAND" = "replay" ]; then
     # snapshots with the task's own verifier -- the golden check gates this
     python -m experiments.replay_patches \
         --compact "data/replay_inputs/${COHORT}.jsonl.gz" \
-        --tasks "${SHARED}/deep-swe/tasks" --out "${SHARED}/patches_${COHORT}" \
-        --snapshots "$SNAPSHOTS" ${LIMIT:+--limit "$LIMIT"} || exit 31
+        --tasks "${SHARED}/deep-swe/tasks" --out "${SHARED}/patches_${COHORT}${TAG}" \
+        --snapshots "$SNAPSHOTS" ${LIMIT:+--limit "$LIMIT"} ${SHARD:+--shard "$SHARD"} || exit 31
     python -m experiments.grade_patch grade \
-        --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work" \
-        --patches "${SHARED}/patches_${COHORT}"
-    mv "$OUT_DIR/labels.jsonl" "$OUT_DIR/labels_${COHORT}.jsonl" 2>/dev/null || true
+        --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work${TAG}" \
+        --patches "${SHARED}/patches_${COHORT}${TAG}"
+    mv "$OUT_DIR/labels.jsonl" "$OUT_DIR/labels_${COHORT}${TAG}.jsonl" 2>/dev/null || true
 else
     python -m experiments.grade_patch "$COMMAND" \
         --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work" \

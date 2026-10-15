@@ -130,6 +130,10 @@ def main() -> None:
     p.add_argument("--tasks", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--shard", default=None, metavar="I/N",
+                   help="take every Nth episode starting at I; strided rather than contiguous so "
+                        "a shard is a fair sample of episode lengths, and one slow shard does not "
+                        "hold the whole cohort")
     p.add_argument("--snapshots", type=int, default=8,
                    help="keep at most this many graded points per episode, the latest ones")
     p.add_argument("--skip-tests", action="store_true", default=True)
@@ -155,6 +159,13 @@ def main() -> None:
     names = {d.name for d in a.tasks.iterdir() if d.is_dir()}
     if a.limit:
         episodes = episodes[: a.limit]
+    if a.shard:
+        index, count = (int(x) for x in a.shard.split("/"))
+        if not 0 <= index < count:
+            raise SystemExit(f"--shard {a.shard}: index must be in [0, {count})")
+        whole = len(episodes)
+        episodes = episodes[index::count]
+        print(f"[replay] shard {index} of {count}: {len(episodes)} of {whole} episodes", flush=True)
     print(f"[replay] {len(episodes)} episodes, {len(names)} tasks available", flush=True)
 
     total, done = 0, 0
