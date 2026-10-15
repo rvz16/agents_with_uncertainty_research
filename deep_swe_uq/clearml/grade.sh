@@ -74,6 +74,19 @@ if [ "$COMMAND" = "replay" ]; then
         --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work${TAG}" \
         --patches "${SHARED}/patches_${COHORT}${TAG}"
     mv "$OUT_DIR/labels.jsonl" "$OUT_DIR/labels_${COHORT}${TAG}.jsonl" 2>/dev/null || true
+elif [ "$COMMAND" = "grade" ]; then
+    # grade snapshots a previous replay already wrote. The patches live under the
+    # host-mounted SHARED directory, and both high_q workers are on one host, so a
+    # replay that cost two hours does not have to be repeated after a grading bug.
+    PATCHES="${PATCHES:-${SHARED}/patches_${COHORT}${TAG}}"
+    if [ ! -d "$PATCHES" ]; then
+        echo "[grade] VERDICT: no patches at $PATCHES"; exit 24
+    fi
+    echo "[grade] grading snapshots already in $PATCHES ($(ls "$PATCHES" | wc -l) episodes)"
+    python -m experiments.grade_patch grade \
+        --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work${TAG}" \
+        --patches "$PATCHES" ${LIMIT:+--limit "$LIMIT"}
+    mv "$OUT_DIR/labels.jsonl" "$OUT_DIR/labels_${COHORT}${TAG}.jsonl" 2>/dev/null || true
 else
     python -m experiments.grade_patch "$COMMAND" \
         --tasks "${SHARED}/deep-swe/tasks" --out "$OUT_DIR" --work "${SHARED}/work" \

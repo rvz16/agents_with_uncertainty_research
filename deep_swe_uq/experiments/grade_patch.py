@@ -94,20 +94,41 @@ def main() -> None:
     if a.only:
         names = [n for n in names if n in set(a.only)]
     if a.command == "grade":
-        # only the tasks a replay actually produced snapshots for; building an
+        # Only the episodes a replay actually produced snapshots for: building an
         # image for a task with no patches costs a couple of minutes of disk
-        # churn and grades nothing
+        # churn and grades nothing.
+        #
+        # replay names its output directory by episode id, which carries a suffix
+        # the task directory does not -- abs-module-cache-flags__A4bbkQC against
+        # abs-module-cache-flags -- so a lookup by task name misses every time.
+        # The first sharded run completed with "0 of 113" for exactly that reason.
+        # Resolve it the way replay does; on DG all 112 episodes resolve to one
+        # task each.
         available = len(names)
-        names = [n for n in names if a.patches and any((a.patches / n).glob("*.patch"))]
-        print(f"[grade] {len(names)} tasks with patches, of {available} available", flush=True)
+        known = set(names)
+        work = []
+        for directory in sorted(d for d in (a.patches.iterdir() if a.patches and a.patches.is_dir()
+                                            else []) if d.is_dir()):
+            if not any(directory.glob("*.patch")):
+                continue
+            stem = directory.name.split("__")[0]
+            hits = [n for n in known if n == stem or n.startswith(stem)]
+            if len(hits) != 1:
+                print(f"[grade] {directory.name}: {len(hits)} matching tasks, skipped", flush=True)
+                continue
+            work.append((hits[0], directory))
+        print(f"[grade] {len(work)} episodes with patches, of {available} tasks available",
+              flush=True)
+    else:
+        work = [(n, None) for n in names]
     if a.limit:
-        names = names[: a.limit]
-    print(f"[grade] {len(names)} tasks", flush=True)
+        work = work[: a.limit]
+    print(f"[grade] {len(work)} to process", flush=True)
 
     out_path = a.out / ("validation.jsonl" if a.command == "validate" else "labels.jsonl")
     handle = open(out_path, "a")
     ok = bad = 0
-    for index, name in enumerate(names, 1):
+    for index, (name, patch_dir) in enumerate(work, 1):
         task_dir = a.tasks / name
         started = time.time()
         if not build(task_dir, a.build_timeout):
@@ -123,14 +144,16 @@ def main() -> None:
             handle.write(json.dumps({"task": name, "golden_ok": passed, "reward": reward,
                                      "seconds": round(time.time() - started, 1)}) + "\n")
             handle.flush()
-            print(f"[grade] {index}/{len(names)} {name}: golden "
+            print(f"[grade] {index}/{len(work)} {name}: golden "
                   f"{'OK' if passed else 'FAILED'} {reward} ({time.time() - started:.0f}s)",
                   flush=True)
         else:
-            for patch in sorted((a.patches / name).glob("*.patch")) if a.patches else []:
+            for patch in sorted(patch_dir.glob("*.patch"), key=lambda f: int(f.stem)):
                 reward = grade(task_dir, patch, a.work, a.run_timeout)
-                handle.write(json.dumps({"task": name, "step": int(patch.stem),
-                                         "reward": reward}) + "\n")
+                # the episode id is what joins these labels back to a trajectory;
+                # the task name alone cannot do it
+                handle.write(json.dumps({"episode": patch_dir.name, "task": name,
+                                         "step": int(patch.stem), "reward": reward}) + "\n")
                 handle.flush()
                 print(f"[grade] {name} step {patch.stem}: "
                       f"{(reward or {}).get('partial')}", flush=True)
