@@ -11,6 +11,7 @@ that follows has room.
 from __future__ import annotations
 
 import argparse
+from base64 import b64encode
 from pathlib import Path
 
 from clearml import Task
@@ -33,19 +34,23 @@ def main() -> None:
     p.add_argument("--name", default="deepswe: reclaim our disk on the worker")
     a = p.parse_args()
 
-    # one source of truth: the committed scripts, embedded so they run pre-clone
-    client = (HERE / "docker_client.sh").read_text()
-    reclaim = (HERE / "reclaim_disk.sh").read_text()
-    reclaim = reclaim.replace(
-        'source "$(dirname "${BASH_SOURCE[0]}")/docker_client.sh" || exit 20', "")
-    setup = "\n".join([
+    # ClearML joins the setup script's lines with " ; " into one bash -c, which
+    # destroys every multi-line construct: a heredoc, an if block and a for loop
+    # all came back as "syntax error near unexpected token ';'". So each line here
+    # has to stand alone, and the scripts travel base64-encoded. They are read
+    # from the committed files, so there is one source of truth.
+    def deliver(name: str) -> str:
+        blob = b64encode((HERE / name).read_bytes()).decode()
+        return f"echo {blob} | base64 -d > /tmp/{name}"
+
+    setup = " \n".join([
         "apt-get install -y -qq --no-install-recommends curl >/dev/null 2>&1 || true",
         f"export DO_CLEAN={'0' if a.report_only else '1'}",
-        "cat > /tmp/docker_client.sh <<'CLIENT_EOF'", client, "CLIENT_EOF",
-        "cat > /tmp/reclaim_disk.sh <<'RECLAIM_EOF'", reclaim, "RECLAIM_EOF",
-        "source /tmp/docker_client.sh || true",
+        deliver("docker_client.sh"),
+        deliver("reclaim_disk.sh"),
+        # both land in /tmp, so reclaim_disk.sh finds its sibling where it looks
         "bash /tmp/reclaim_disk.sh || true",
-    ])
+    ]).replace(" \n", "\n")
 
     task = Task.create(project_name="agentic-uq", task_name=a.name, repo=REPO, branch=a.branch,
                        script="deep_swe_uq/clearml/grade_entry.py",
