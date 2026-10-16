@@ -144,6 +144,11 @@ def cohort_spec(spec: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(out))
 
 
+def args_have_policy(values: list[dict]) -> bool:
+    """True when the controller head ran, so its policy is there to carry through."""
+    return bool(values) and "policy" in values[0]
+
+
 def permute(rows: list[dict]) -> list[dict]:
     """The control: move each episode's label to another episode of similar length.
 
@@ -418,14 +423,26 @@ def main() -> None:
     per_cohort: dict[str, list] = defaultdict(list)
     for index, values in predictions.items():
         row = rows[index]
-        per_cohort[row["cohort"]].append((row, {k: st.fmean(v[k] for v in values)
-                                                for k in ("success", "stuck", "stale")}))
+        mean = {k: st.fmean(v[k] for v in values) for k in ("success", "stuck", "stale")}
+        if args_have_policy(values):
+            # average the policy over folds the same way, then take the action from
+            # the averaged policy -- a per-fold argmax would throw the margins away
+            mean["policy"] = {a: st.fmean(v["policy"][a] for v in values) for a in Head.ACTIONS}
+            mean["action"] = max(Head.ACTIONS, key=mean["policy"].__getitem__)
+        per_cohort[row["cohort"]].append((row, mean))
     for cohort, items in per_cohort.items():
         with open(a.out / f"steps_{tag}_{name}_{cohort}.jsonl", "w") as handle:
             for row, value in sorted(items, key=lambda t: (t[0]["episode"], t[0]["step"])):
-                handle.write(json.dumps({"id": row["episode"], "step": row["step"],
-                                         "p": value["success"], "stuck": value["stuck"],
-                                         "stale": value["stale"]}) + "\n")
+                record = {"id": row["episode"], "step": row["step"],
+                          "p": value["success"], "stuck": value["stuck"],
+                          "stale": value["stale"]}
+                if "policy" in value:
+                    # named "choice" and "p_<action>" so gate_choice scores this file
+                    # exactly as it scores a released model's own answers: same
+                    # accounting, same references, no second scorer to keep honest
+                    record["choice"] = value["action"]
+                    record.update({f"p_{a}": value["policy"][a] for a in Head.ACTIONS})
+                handle.write(json.dumps(record) + "\n")
         last: dict[str, tuple] = {}
         for row, value in items:
             if row["episode"] not in last or row["step"] > last[row["episode"]][0]["step"]:
