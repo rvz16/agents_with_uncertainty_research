@@ -10,6 +10,9 @@ TOP_K="${TOP_K:-20}"
 WINDOW="${WINDOW:-10}"
 OBS_CHARS="${OBS_CHARS:-400}"
 LIMIT="${LIMIT:-}"
+# this image ships mkl-service alongside libgomp; torch aborts at import unless the
+# threading layer is named, and the abort is a plain exit that a shell without -e hides
+export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-GNU}"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "[score] no nvidia-smi"
@@ -20,4 +23,6 @@ python -m experiments.score_signals \
     --model "$MODEL" --out "${OUT_DIR}/compact_${COHORT}.jsonl" \
     --top-k "$TOP_K" --window "$WINDOW" --obs-chars "$OBS_CHARS" \
     ${LIMIT:+--limit "$LIMIT"}
-echo "[score] done"; ls -la "$OUT_DIR"
+rc=$?
+echo "[score] done rc=$rc"; ls -la "$OUT_DIR"
+exit $rc

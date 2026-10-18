@@ -35,6 +35,8 @@ class StepResult:
     done: bool
     won: bool
     progress: float | None
+    goal_conditions: tuple[int, int] | None = None
+    expert_plan_length: int | None = None
 
 
 def _first(value: Any, default: Any = None) -> Any:
@@ -60,6 +62,7 @@ class ALFWorldTextEnv:
         seed: int = 0,
         task_types: list[int] | None = None,
         gamefile: Path | None = None,
+        graded: bool = False,
     ) -> None:
         if split not in SPLITS:
             raise ValueError(f"Unknown split {split!r}; choose from {sorted(SPLITS)}")
@@ -110,9 +113,62 @@ class ALFWorldTextEnv:
             )
         manager.game_files = games[episode_offset : episode_offset + num_episodes]
         manager.num_games = len(manager.game_files)
-        self.env = manager.init_env(batch_size=1)
+        self.env = self._graded_env(manager, max_steps) if graded else manager.init_env(batch_size=1)
+        self.graded = graded
         self.data_root = data_root
         self._episode_number = 0
+
+    @staticmethod
+    def _graded_env(manager: AlfredTWEnv, max_steps: int) -> Any:
+        """The same games, asked for the goal formula as well as the outcome.
+
+        ``AlfredTWEnv.init_env`` registers ``EnvInfos(won, admissible_commands,
+        extras=["gamefile"])`` and nothing else, so the text environment never
+        reports ``goal_condition_success_rate`` -- that is computed only by the
+        embodied THOR environment, which we do not run. The quest is still
+        available as logic: ``win_facts`` is the winning conjunction and
+        ``facts`` is everything true in the current state, so the fraction of
+        goal conditions satisfied can be computed at any step.
+        """
+        import textworld
+        import textworld.gym
+        from alfworld.agents.environment.alfred_tw_env import (
+            AlfredDemangler, AlfredExpert, AlfredInfos,
+        )
+
+        infos = textworld.EnvInfos(won=True, admissible_commands=True, facts=True,
+                                   win_facts=True, extras=["gamefile", "expert_plan"])
+        wrappers = [AlfredDemangler(shuffle=False), AlfredInfos, AlfredExpert(expert_type="handcoded")]
+        env_id = textworld.gym.register_games(
+            manager.game_files, infos, batch_size=1, asynchronous=True,
+            max_episode_steps=max_steps, wrappers=wrappers)
+        return textworld.gym.make(env_id)
+
+    @staticmethod
+    def _satisfied(infos: dict) -> tuple[int, int] | None:
+        """How many of the quest's winning conditions hold right now.
+
+        ``win_facts`` arrives as one list of propositions per winning quest;
+        a state satisfies a quest when every proposition in it is in ``facts``.
+        We report the best-satisfied quest, since any one of them ends the
+        episode. Shapes differ between TextWorld backends, so anything we do
+        not recognise returns None rather than a made-up number.
+        """
+        facts = _first(infos.get("facts"))
+        wins = _first(infos.get("win_facts"))
+        if not facts or not wins:
+            return None
+        present = {str(fact) for fact in facts}
+        quests = wins if isinstance(wins[0], (list, tuple)) else [wins]
+        best = (0, 0)
+        for quest in quests:
+            need = [str(fact) for fact in quest]
+            if not need:
+                continue
+            hit = sum(1 for fact in need if fact in present)
+            if not best[1] or hit / len(need) > best[0] / best[1]:
+                best = (hit, len(need))
+        return best if best[1] else None
 
     @staticmethod
     def _metadata(gamefile: str, observation: str) -> tuple[str, str, str]:
@@ -146,13 +202,16 @@ class ALFWorldTextEnv:
 
     def step(self, action: str) -> StepResult:
         observations, _, dones, infos = self.env.step([action])
-        progress = _first(infos.get("goal_condition_success_rate"))
+        conditions = self._satisfied(infos)
+        plan = _first(infos.get("extra.expert_plan"))
         return StepResult(
             observation=str(_first(observations, "")),
             admissible_actions=list(_first(infos.get("admissible_commands"), [])),
             done=bool(_first(dones, False)),
             won=bool(_first(infos.get("won"), False)),
-            progress=float(progress) if progress is not None else None,
+            progress=(conditions[0] / conditions[1]) if conditions else None,
+            goal_conditions=conditions,
+            expert_plan_length=len(plan) if isinstance(plan, (list, tuple)) else None,
         )
 
     def close(self) -> None:

@@ -102,7 +102,8 @@ def main() -> None:
 
     from environments.alfworld_env import ALFWorldTextEnv
 
-    print(f"[replay] {a.cohort}: {len(episodes)} episodes from {a.run.name}", flush=True)
+    source = a.run.name if a.run else a.input.name
+    print(f"[replay] {a.cohort}: {len(episodes)} episodes from {source}", flush=True)
 
     handle = None if a.probe else open(a.out / f"labels_{a.cohort}.jsonl", "w")
     agree = diverged = missing = 0
@@ -111,8 +112,8 @@ def main() -> None:
         if not gamefile.exists():
             missing += 1
             continue
-        env = ALFWorldTextEnv(data_root=a.data_root, gamefile=gamefile,
-                                  max_steps=len(episode["rows"]) + 5)
+        env = ALFWorldTextEnv(data_root=a.data_root, gamefile=gamefile, graded=True,
+                              max_steps=len(episode["rows"]) + 5)
         try:
             env.reset()
             ok = True
@@ -125,9 +126,17 @@ def main() -> None:
                 if a.probe:
                     observations, _, dones, infos = env.env.step([action])
                     print(f"  step {k}: info keys = {sorted(infos.keys())}", flush=True)
-                    for key in ("goal_condition_success_rate", "won", "expert_plan", "extra.expert_plan"):
-                        if key in infos:
-                            print(f"      {key} = {str(infos[key])[:120]}", flush=True)
+                    facts = infos.get("facts")
+                    wins = infos.get("win_facts")
+                    first_facts = facts[0] if isinstance(facts, list) and facts else None
+                    first_wins = wins[0] if isinstance(wins, list) and wins else None
+                    print(f"      facts: {len(first_facts) if first_facts else 0} propositions, "
+                          f"sample {[str(f) for f in (first_facts or [])[:3]]}", flush=True)
+                    print(f"      win_facts: {type(first_wins).__name__}, "
+                          f"{str(first_wins)[:200]}", flush=True)
+                    print(f"      satisfied = {ALFWorldTextEnv._satisfied(infos)}", flush=True)
+                    plan = infos.get("extra.expert_plan")
+                    print(f"      expert_plan = {str(plan)[:120]}", flush=True)
                     if k >= 2:
                         break
                     continue
@@ -135,7 +144,10 @@ def main() -> None:
                 match = norm(result.observation) == norm(row.get("observation") or "")
                 ok = ok and match
                 rows.append({"step": k, "action": action, "executed": True,
-                             "progress": result.progress, "won": bool(result.won),
+                             "progress": result.progress,
+                             "goal_conditions": list(result.goal_conditions or ()),
+                             "plan_left": result.expert_plan_length,
+                             "won": bool(result.won),
                              "done": bool(result.done), "obs_match": match})
             if a.probe:
                 print(f"[probe] episode {index} done", flush=True)

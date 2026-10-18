@@ -31,16 +31,25 @@ fi
 echo "[replay] ${games} games available"
 
 cd alfworld_uq
+extra=()
+if [ "$PROBE" != "0" ]; then
+    # before building anything on a graded label, see what the environment returns
+    extra=(--probe "$PROBE")
+fi
+
+# a cohort may legitimately fail while the others run, but the task must not
+# report success when every one of them failed -- two probes already did
+failed=0
+total=0
 for c in $COHORTS; do
     echo "=== cohort $c ==="
-    if [ "$PROBE" != "0" ]; then
-        # before building anything on a graded label, see what the environment returns
-        python -m experiments.replay_labels --input "$INPUTS/$c.jsonl" --cohort "$c" \
-            --out "$OUT_DIR" --probe "$PROBE" || echo "[replay] $c probe failed"
-    else
-        python -m experiments.replay_labels --input "$INPUTS/$c.jsonl" --cohort "$c" \
-            --out "$OUT_DIR" || echo "[replay] $c failed, continuing"
+    total=$((total + 1))
+    if ! python -m experiments.replay_labels --input "$INPUTS/$c.jsonl" --cohort "$c" \
+            --out "$OUT_DIR" "${extra[@]+"${extra[@]}"}"; then
+        failed=$((failed + 1))
+        echo "[replay] $c failed"
     fi
 done
-echo "[replay] done"
+echo "[replay] done, $failed of $total cohorts failed"
 ls -la "$OUT_DIR"
+[ "$failed" -lt "$total" ]
