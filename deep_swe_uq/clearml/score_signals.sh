@@ -10,9 +10,10 @@ TOP_K="${TOP_K:-20}"
 WINDOW="${WINDOW:-10}"
 OBS_CHARS="${OBS_CHARS:-400}"
 LIMIT="${LIMIT:-}"
-# this image ships mkl-service alongside libgomp; torch aborts at import unless the
-# threading layer is named, and the abort is a plain exit that a shell without -e hides
-export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-GNU}"
+# this image ships mkl-service alongside libgomp and already exports
+# MKL_THREADING_LAYER=INTEL, so torch aborts at import; a :- default never applied
+# because the variable was set. libgomp is the one present, so name GNU outright.
+export MKL_THREADING_LAYER=GNU
 
 mkdir -p "$OUT_DIR"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "[score] no nvidia-smi"
