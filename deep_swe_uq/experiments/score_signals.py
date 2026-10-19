@@ -1,32 +1,35 @@
-"""Recover per-step uncertainty signals for DeepSWE by re-scoring recorded actions.
+"""Recover DeepSWE's per-step uncertainty signals by re-scoring, not by re-running.
 
-The signals the method table needs -- logprob, perplexity, mean token entropy,
-self-certainty -- are properties of the executor's own generation, not of the
-environment, so a verified label cannot supply them. But they do not need the
-agent re-run either: the actions were recorded, so one teacher-forced forward
-pass per step reproduces them. No environment, no agent loop, no sampling.
+The recorded runs kept the executed command and the observation at every step
+but not the token statistics, so every signal the paper compares -- logprob,
+perplexity, entropy, self-certainty, and the fusions built on them -- is missing
+on this environment. They do not need the agent back: the command the agent
+emitted is in the log, so one teacher-forced pass over it under the same model
+recovers the statistics it was generated with. No sampling, no environment, no
+docker, one forward pass per step.
 
-Three fidelity notes, because the numbers are not identical to the originals and
-the difference is not uniform:
+Three places where this is a re-score and not the original measurement:
 
-1. Commands come from ``data/replay_inputs``, where they are complete (DG runs to
-   11.9k characters, DQ to 55k). They are NOT taken from ``judge_views``, where
-   458 of DG's 5887 actions sit exactly at the 400-character cap -- and those are
-   the long apply_patch heredocs, which is to say exactly the repository-changing
-   steps the verified labels are attached to. Scoring the truncated form would
-   bias the signal on precisely the steps being measured.
+1. Commands come from ``replay_inputs``, which holds them whole. ``judge_views``
+   truncates at 400 characters and 458 of DG's 5887 actions sit exactly at that
+   bound -- the apply_patch heredocs, which is to say the repo-changing steps the
+   labels attach to. The observations still come from ``judge_views`` and are
+   still truncated, so the context is thinner than the agent's.
+2. Hence the conditioning is not identical: the logprobs are conditioned on less
+   than the agent saw. The direction is knowable -- a thinner context cannot
+   raise the model's certainty about a command it did not write -- but the size
+   is not, so these numbers belong to this experiment and are not to be pasted
+   into the ALFWorld tables.
+3. The prefix and the command are tokenised separately and concatenated as ids,
+   which fixes the boundary between them exactly. A joint tokenisation could
+   merge the last prefix token with the first command token; generation could
+   not, so separate encoding is the closer of the two.
 
-2. The *context* is still the trimmed view: 35% of DeepSWE observations hit the
-   400/600-character cap and the full ones are gone. So a conditional logprob here
-   is conditioned on less than the agent saw. This is a real departure and it is
-   why these signals belong to this experiment rather than to the ALFWorld tables.
-
-3. Entropy is computed over the full vocabulary while the originals used a
-   truncated top-k. The surviving ALFWorld records put ``topk_mass`` at 0.998, so
-   the two agree to within 0.2% of the mass and this is not worth correcting.
-   ``self_certainty`` is different: it is ``-mean(logps) - log(k)`` and depends on
-   k outright. ``--calibrate-k`` re-scores ALFWorld steps whose stored
-   per-token self-certainty survives and reports the k that reproduces it.
+Top-k is no longer a caveat. vLLM's ``prompt_logprobs`` returns the same
+truncated distribution the original API responses carried, so entropy and
+self-certainty are computed over the requested k rather than the full
+vocabulary, and ``self_certainty = -mean(logps) - log(k)`` is on the project's
+scale by construction.
 """
 from __future__ import annotations
 
@@ -62,38 +65,79 @@ def context(task: str, steps: list[dict], window: int, obs_chars: int) -> str:
     return "\n".join(lines)
 
 
-def score_block(model, tokenizer, prefix: str, target: str, top_k: int, device: str) -> dict:
-    """Teacher-forced statistics for ``target`` conditioned on ``prefix``."""
-    import torch
+def build_ids(tokenizer, prefix: str, target: str, max_len: int) -> tuple[list[int], int]:
+    """The prompt as token ids, with the index where the command starts.
 
-    ids_prefix = tokenizer(prefix, return_tensors="pt").input_ids
-    ids_full = tokenizer(prefix + target, return_tensors="pt").input_ids
-    if ids_full.shape[1] <= ids_prefix.shape[1]:
-        return {}
-    ids_full = ids_full[:, -model.config.max_position_embeddings:] \
-        if hasattr(model.config, "max_position_embeddings") else ids_full
-    start = max(1, ids_prefix.shape[1])
-    with torch.no_grad():
-        logits = model(ids_full.to(device)).logits[0].float()
-    logprobs = torch.log_softmax(logits, dim=-1)
-    chosen, entropies, certainties = [], [], []
-    for position in range(start - 1, ids_full.shape[1] - 1):
-        row = logprobs[position]
-        nxt = int(ids_full[0, position + 1])
-        chosen.append(float(row[nxt]))
-        top = torch.topk(row, k=min(top_k, row.shape[-1])).values
-        # renormalise over the top-k, the way a truncated API response forces
-        probs = torch.softmax(top, dim=-1)
-        entropies.append(float(-(probs * probs.clamp_min(1e-12).log()).sum()))
-        certainties.append(float(-top.mean() - math.log(top.shape[-1])))
+    Building the prompt from ids rather than text means the command's first
+    token is the command's, never a merge with the tail of the prefix, so the
+    scored span is exactly the command. When the pair does not fit, the prefix
+    loses its oldest tokens: the command has to stay whole, it is the target.
+    """
+    target_ids = tokenizer(target, add_special_tokens=False).input_ids
+    if not target_ids:
+        return [], 0
+    room = max_len - 4
+    if len(target_ids) >= room:
+        return target_ids[:room], 1
+    prefix_ids = tokenizer(prefix, add_special_tokens=False).input_ids if prefix else []
+    budget = room - len(target_ids)
+    prefix_ids = prefix_ids[-budget:] if budget > 0 else []
+    return prefix_ids + target_ids, max(1, len(prefix_ids))
+
+
+def summarise(token_ids: list[int], prompt_logprobs: list, start: int, top_k: int) -> dict:
+    """Reduce the teacher-forced distributions the way the toolkit does."""
+    chosen: list[float] = []
+    entropies: list[float] = []
+    certainties: list[float] = []
+    for position in range(start, min(len(token_ids), len(prompt_logprobs))):
+        entry = prompt_logprobs[position]
+        if not entry:
+            continue
+        realised = entry.get(token_ids[position])
+        if realised is None:
+            continue
+        chosen.append(float(realised.logprob))
+        # vLLM returns the top-k plus the realised token when it falls outside
+        # them, so the dict can hold k+1 entries; take the k best, not all.
+        tops = sorted((float(v.logprob) for v in entry.values()), reverse=True)[:top_k]
+        if len(tops) < 2:
+            continue
+        highest = max(tops)
+        weights = [math.exp(value - highest) for value in tops]
+        total = sum(weights)
+        probabilities = [value / total for value in weights]
+        entropies.append(-sum(p * math.log(p) for p in probabilities if p > 0.0))
+        certainties.append(-sum(tops) / len(tops) - math.log(len(tops)))
     if not chosen:
         return {}
     mean = sum(chosen) / len(chosen)
-    return {"mean_logprob": mean, "sum_logprob": sum(chosen),
-            "perplexity": math.exp(min(700.0, -mean)),
-            "mean_entropy": sum(entropies) / len(entropies),
-            "self_certainty": sum(certainties) / len(certainties),
-            "num_tokens": len(chosen)}
+    result = {"mean_logprob": mean, "sum_logprob": sum(chosen),
+              "perplexity": math.exp(min(700.0, -mean)), "num_tokens": len(chosen)}
+    if entropies:
+        result["mean_entropy"] = sum(entropies) / len(entropies)
+        result["self_certainty"] = sum(certainties) / len(certainties)
+    return result
+
+
+def score(engine, params, tokenizer, pairs: list[tuple[str, str]], top_k: int,
+          max_len: int) -> list[dict]:
+    """One batched teacher-forced pass over every (prefix, command) pair."""
+    built = [build_ids(tokenizer, prefix, target, max_len) for prefix, target in pairs]
+    prompts = [{"prompt_token_ids": ids} for ids, _ in built if ids]
+    if not prompts:
+        return [{} for _ in pairs]
+    outputs = engine.generate(prompts, params, use_tqdm=False)
+    stats: list[dict] = []
+    served = iter(outputs)
+    for ids, start in built:
+        if not ids:
+            stats.append({})
+            continue
+        out = next(served)
+        stats.append(summarise(list(out.prompt_token_ids), out.prompt_logprobs or [],
+                               start, top_k))
+    return stats
 
 
 def main() -> None:
@@ -102,39 +146,44 @@ def main() -> None:
     p.add_argument("--views", type=Path, required=True, help="judge_views/<cohort>.jsonl")
     p.add_argument("--model", required=True)
     p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--device", default="cuda:0")
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--obs-chars", type=int, default=400)
     p.add_argument("--top-k", type=int, default=20,
                    help="the truncation the originals were computed under; "
                         "self_certainty depends on it, entropy barely does")
+    p.add_argument("--max-len", type=int, default=32768)
+    p.add_argument("--gpu-util", type=float, default=0.90)
+    p.add_argument("--tensor-parallel-size", type=int, default=1)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--calibrate-k", type=Path, default=None,
                    help="an ALFWorld trajectories.jsonl: re-score its actions and report "
                         "which top-k reproduces the stored self_certainty")
     a = p.parse_args()
 
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(a.model)
-    model = AutoModelForCausalLM.from_pretrained(
-        a.model, torch_dtype=torch.bfloat16, device_map=a.device).eval()
+    from vllm import LLM, SamplingParams
+    engine = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_len,
+                 gpu_memory_utilization=a.gpu_util,
+                 tensor_parallel_size=a.tensor_parallel_size, trust_remote_code=True)
+    tokenizer = engine.get_tokenizer()
+    # one token is generated and thrown away: prompt_logprobs is what we came for
+    params = SamplingParams(max_tokens=1, temperature=0.0, prompt_logprobs=a.top_k)
 
     if a.calibrate_k:
         rows = [json.loads(l) for l in open(a.calibrate_k) if l.strip()][:40]
         print(f"[calibrate] {len(rows)} steps from {a.calibrate_k.name}", flush=True)
+        wanted = [(r, ((r.get("uq") or {}).get("combined") or {}).get("self_certainty"))
+                  for r in rows]
+        wanted = [(r, s) for r, s in wanted if s is not None and (r.get("raw_response") or r.get("action"))]
         for k in (5, 10, 20, 50, 100):
-            errs = []
-            for r in rows:
-                stored = ((r.get("uq") or {}).get("combined") or {}).get("self_certainty")
-                text = r.get("raw_response") or r.get("action")
-                if stored is None or not text:
-                    continue
-                got = score_block(model, tokenizer, "", text, k, a.device)
-                if got:
-                    errs.append(abs(got["self_certainty"] - stored))
+            local = SamplingParams(max_tokens=1, temperature=0.0, prompt_logprobs=k)
+            got = score(engine, local, tokenizer,
+                        [("", r.get("raw_response") or r["action"]) for r, _ in wanted],
+                        k, a.max_len)
+            errs = [abs(g["self_certainty"] - s) for g, (_, s) in zip(got, wanted)
+                    if g.get("self_certainty") is not None]
             if errs:
-                print(f"[calibrate] top_k={k:3}  mean |error| {sum(errs)/len(errs):.3f}", flush=True)
+                print(f"[calibrate] top_k={k:3}  mean |error| {sum(errs)/len(errs):.3f} "
+                      f"over {len(errs)} steps", flush=True)
         return
 
     views = read_views(a.views)
@@ -150,11 +199,11 @@ def main() -> None:
                 print(f"[score] {episode['id']}: no view, skipped", flush=True)
                 continue
             commands = episode.get("commands") or []
+            pairs = [(context(view["task"], view["steps"][:k], a.window, a.obs_chars), command)
+                     for k, command in enumerate(commands)]
+            stats = score(engine, params, tokenizer, pairs, a.top_k, a.max_len)
             steps = []
-            for k, command in enumerate(commands):
-                stats = score_block(model, tokenizer,
-                                    context(view["task"], view["steps"][:k], a.window, a.obs_chars),
-                                    command, a.top_k, a.device)
+            for k, (command, numbers) in enumerate(zip(commands, stats)):
                 observation = (view["steps"][k].get("observation") or "") if k < len(view["steps"]) else ""
                 rc = None
                 if observation.startswith("[rc="):
@@ -163,16 +212,18 @@ def main() -> None:
                     except ValueError:
                         rc = None
                 steps.append({"command": command, "returncode": rc, "format_error": False,
-                              **{key: stats.get(key) for key in
-                                 ("mean_logprob", "mean_entropy", "self_certainty", "num_tokens")}})
+                              **{key: numbers.get(key) for key in
+                                 ("mean_logprob", "sum_logprob", "perplexity",
+                                  "mean_entropy", "self_certainty", "num_tokens")}})
             # patch_bytes and exit_status exist only to pass load_deepswe's filter;
             # every episode in replay_inputs was already scored by the benchmark
             handle.write(json.dumps({"id": episode["id"], "rewards": episode["rewards"],
                                      "patch_bytes": 1, "exit_status": "submitted",
                                      "steps": steps}) + "\n")
             written += 1
-            print(f"[score] {index}/{len(episodes)} {episode['id'][:34]}: {len(steps)} steps",
-                  flush=True)
+            scored = sum(1 for s in steps if s.get("mean_logprob") is not None)
+            print(f"[score] {index}/{len(episodes)} {episode['id'][:34]}: "
+                  f"{scored}/{len(steps)} steps scored", flush=True)
     print(f"[score] done: {written} episodes -> {a.out}")
 
 
