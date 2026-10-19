@@ -13,6 +13,7 @@ OBS_CHARS="${OBS_CHARS:-400}"
 MAX_LEN="${MAX_LEN:-32768}"
 TP="${TP:-1}"
 GPU_UTIL="${GPU_UTIL:-0.90}"
+BATCH="${BATCH:-8}"
 LIMIT="${LIMIT:-}"
 
 mkdir -p "$OUT_DIR"
@@ -36,6 +37,7 @@ python -m experiments.score_signals \
     --model "$MODEL" --out "${OUT_DIR}/compact_${COHORT}.jsonl" \
     --top-k "$TOP_K" --window "$WINDOW" --obs-chars "$OBS_CHARS" \
     --max-len "$MAX_LEN" --tensor-parallel-size "$TP" --gpu-util "$GPU_UTIL" \
+    --batch "$BATCH" \
     ${LIMIT:+--limit "$LIMIT"}
 rc=$?
 echo "[score] done rc=$rc"; ls -la "$OUT_DIR"

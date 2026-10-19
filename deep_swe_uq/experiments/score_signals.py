@@ -121,22 +121,24 @@ def summarise(token_ids: list[int], prompt_logprobs: list, start: int, top_k: in
 
 
 def score(engine, params, tokenizer, pairs: list[tuple[str, str]], top_k: int,
-          max_len: int) -> list[dict]:
-    """One batched teacher-forced pass over every (prefix, command) pair."""
+          max_len: int, batch: int = 8) -> list[dict]:
+    """Teacher-forced statistics for each (prefix, command) pair.
+
+    Scored in fixed-size chunks rather than one call per episode. A
+    prompt_logprobs tensor is tokens x k wide, so a 189-step episode asked for
+    in one go tried to allocate 1.8 GiB beside the weights and killed the
+    engine; the chunk bounds that by the chunk, not by the longest episode.
+    """
     built = [build_ids(tokenizer, prefix, target, max_len) for prefix, target in pairs]
-    prompts = [{"prompt_token_ids": ids} for ids, _ in built if ids]
-    if not prompts:
-        return [{} for _ in pairs]
-    outputs = engine.generate(prompts, params, use_tqdm=False)
-    stats: list[dict] = []
-    served = iter(outputs)
-    for ids, start in built:
-        if not ids:
-            stats.append({})
-            continue
-        out = next(served)
-        stats.append(summarise(list(out.prompt_token_ids), out.prompt_logprobs or [],
-                               start, top_k))
+    stats: list[dict] = [{} for _ in built]
+    pending = [(index, ids, start) for index, (ids, start) in enumerate(built) if ids]
+    for position in range(0, len(pending), batch):
+        chunk = pending[position : position + batch]
+        outputs = engine.generate([{"prompt_token_ids": ids} for _, ids, _ in chunk],
+                                  params, use_tqdm=False)
+        for (index, ids, start), out in zip(chunk, outputs):
+            stats[index] = summarise(list(out.prompt_token_ids), out.prompt_logprobs or [],
+                                     start, top_k)
     return stats
 
 
@@ -153,6 +155,8 @@ def main() -> None:
                         "self_certainty depends on it, entropy barely does")
     p.add_argument("--max-len", type=int, default=32768)
     p.add_argument("--gpu-util", type=float, default=0.90)
+    p.add_argument("--batch", type=int, default=8,
+                   help="prompts per engine call; bounds the logprobs tensor")
     p.add_argument("--tensor-parallel-size", type=int, default=1)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--calibrate-k", type=Path, default=None,
@@ -181,7 +185,7 @@ def main() -> None:
             local = SamplingParams(max_tokens=1, temperature=0.0, prompt_logprobs=k)
             got = score(engine, local, tokenizer,
                         [("", r.get("raw_response") or r["action"]) for r, _ in wanted],
-                        k, a.max_len)
+                        k, a.max_len, a.batch)
             errs = [abs(g["self_certainty"] - s) for g, (_, s) in zip(got, wanted)
                     if g.get("self_certainty") is not None]
             if errs:
@@ -204,7 +208,7 @@ def main() -> None:
             commands = episode.get("commands") or []
             pairs = [(context(view["task"], view["steps"][:k], a.window, a.obs_chars), command)
                      for k, command in enumerate(commands)]
-            stats = score(engine, params, tokenizer, pairs, a.top_k, a.max_len)
+            stats = score(engine, params, tokenizer, pairs, a.top_k, a.max_len, a.batch)
             steps = []
             for k, (command, numbers) in enumerate(zip(commands, stats)):
                 observation = (view["steps"][k].get("observation") or "") if k < len(view["steps"]) else ""
