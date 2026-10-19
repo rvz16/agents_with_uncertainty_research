@@ -156,7 +156,11 @@ def main() -> None:
     p.add_argument("--max-len", type=int, default=32768)
     p.add_argument("--gpu-util", type=float, default=0.90)
     p.add_argument("--batch", type=int, default=8,
-                   help="prompts per engine call; bounds the logprobs tensor")
+                   help="prompts per engine call")
+    p.add_argument("--max-batched-tokens", type=int, default=0,
+                   help="cap the tokens the engine scores in one forward pass; "
+                        "prompt_logprobs needs logits at every prompt position, so "
+                        "this and not the chunk is what bounds the transient tensor")
     p.add_argument("--tensor-parallel-size", type=int, default=1)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--calibrate-k", type=Path, default=None,
@@ -168,9 +172,18 @@ def main() -> None:
     # enforce_eager, and the checkpoint's own dtype rather than a forced one:
     # the compiled path wants nvcc, which a plain python image does not carry,
     # and this is a single forward pass per step where graph capture buys little
+    # prompt_logprobs materialises a (prompt tokens x vocabulary) logits tensor:
+    # 6.5k tokens against gpt-oss's 201k vocabulary is some 5 GB on its own, which
+    # is what killed DL twice. Chunked prefill scores the prompt in slices and
+    # accumulates the prompt logprobs across them, bounding that tensor.
+    extra = {}
+    if a.max_batched_tokens:
+        extra = {"enable_chunked_prefill": True,
+                 "max_num_batched_tokens": a.max_batched_tokens}
     engine = LLM(model=a.model, dtype="auto", max_model_len=a.max_len,
                  gpu_memory_utilization=a.gpu_util, enforce_eager=True,
-                 tensor_parallel_size=a.tensor_parallel_size, trust_remote_code=True)
+                 tensor_parallel_size=a.tensor_parallel_size, trust_remote_code=True,
+                 **extra)
     tokenizer = engine.get_tokenizer()
     # one token is generated and thrown away: prompt_logprobs is what we came for
     params = SamplingParams(max_tokens=1, temperature=0.0, prompt_logprobs=a.top_k)

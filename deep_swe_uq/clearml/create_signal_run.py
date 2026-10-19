@@ -37,6 +37,7 @@ def main() -> None:
     p.add_argument("--tp", default="1", help="tensor parallel; the 120B needs 2")
     p.add_argument("--gpu-util", default="0.90")
     p.add_argument("--batch", default="8")
+    p.add_argument("--max-batched-tokens", default="0")
     p.add_argument("--limit", default="", help="episodes, for a smoke run")
     p.add_argument("--name", default=None)
     a = p.parse_args()
@@ -54,6 +55,7 @@ def main() -> None:
                          "Args/TOP_K": a.top_k, "Args/LIMIT": a.limit,
                          "Args/MAX_LEN": a.max_len, "Args/TP": a.tp,
                          "Args/GPU_UTIL": a.gpu_util, "Args/BATCH": a.batch,
+                         "Args/MAX_BATCHED_TOKENS": a.max_batched_tokens,
                          "Args/OUT_DIR": "/tmp/signal_runs"})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
