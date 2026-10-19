@@ -32,6 +32,12 @@ def norm(text: str) -> str:
     return " ".join((text or "").lower().split())
 
 
+#: the scaffold's own tools, which never reached the environment. Their recorded
+#: observation comes from the reviewer, so comparing it against the environment's
+#: "Nothing happens" counts a divergence where the replay is in fact correct.
+SCAFFOLD = {"check progress", "give up"}
+
+
 def remap(gamefile: str, data_root: Path) -> Path:
     """The recorded path is the container's; keep it rooted at this data_root."""
     marker = "json_2.1.1"
@@ -122,8 +128,11 @@ def main() -> None:
             rows = []
             for k, row in enumerate(episode["rows"]):
                 action = (row.get("action") or "").strip()
-                if not action:  # a generation that executed nothing: the state does not move
-                    rows.append({"step": k, "action": None, "executed": False})
+                if not action or action.lower() in SCAFFOLD:
+                    # a generation that executed nothing in the environment: the
+                    # state does not move and there is nothing to compare
+                    rows.append({"step": k, "action": action or None, "executed": False,
+                                 "scaffold": bool(action)})
                     continue
                 if a.probe:
                     observations, _, dones, infos = env.env.step([action])
@@ -155,10 +164,13 @@ def main() -> None:
             # the reconstructed conditions are only worth using if "all of them
             # hold" agrees with the outcome the episode actually recorded
             complete = [r["goal_conditions"] for r in rows if r.get("goal_conditions")]
-            final_full = any(c[0] == c[1] for c in complete)
             agree += int(final_won == bool(episode["label"]))
-            graded_agree += int(final_full == bool(episode["label"]))
-            graded_seen += int(bool(complete))
+            if complete:
+                # only episodes the conditions were evaluated on belong in this
+                # ratio, numerator and denominator alike
+                graded_seen += 1
+                graded_agree += int(any(c[0] == c[1] for c in complete)
+                                    == bool(episode["label"]))
             diverged += int(not ok)
             for r in rows:
                 handle.write(json.dumps({"id": episode["id"], "cohort": a.cohort,
