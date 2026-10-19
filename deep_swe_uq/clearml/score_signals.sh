@@ -25,6 +25,9 @@ python -m pip install -q --no-cache-dir "vllm==${VLLM_VERSION:-0.28.0}" || {
     echo "[score] vllm install failed"; exit 20; }
 python -c "import vllm, torch; print('[score] vllm', vllm.__version__, 'torch', torch.__version__)" || {
     echo "[score] vllm imports but does not load"; exit 21; }
+# the sampler this project already runs these three models with
+export VLLM_USE_FLASHINFER_SAMPLER=0
+which nvcc >/dev/null 2>&1 || echo "[score] no nvcc: the engine must stay eager"
 
 cd deep_swe_uq
 python -m experiments.score_signals \

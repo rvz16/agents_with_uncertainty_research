@@ -161,8 +161,11 @@ def main() -> None:
     a = p.parse_args()
 
     from vllm import LLM, SamplingParams
-    engine = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_len,
-                 gpu_memory_utilization=a.gpu_util,
+    # enforce_eager, and the checkpoint's own dtype rather than a forced one:
+    # the compiled path wants nvcc, which a plain python image does not carry,
+    # and this is a single forward pass per step where graph capture buys little
+    engine = LLM(model=a.model, dtype="auto", max_model_len=a.max_len,
+                 gpu_memory_utilization=a.gpu_util, enforce_eager=True,
                  tensor_parallel_size=a.tensor_parallel_size, trust_remote_code=True)
     tokenizer = engine.get_tokenizer()
     # one token is generated and thrown away: prompt_logprobs is what we came for
