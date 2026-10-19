@@ -10,6 +10,8 @@ from typing import Any
 
 from alfworld.agents.environment.alfred_tw_env import AlfredTWEnv
 
+from experiments.goal_conditions import goal_conditions
+
 
 SPLITS = {
     "train": "train",
@@ -36,7 +38,6 @@ class StepResult:
     won: bool
     progress: float | None
     goal_conditions: tuple[int, int] | None = None
-    expert_plan_length: int | None = None
 
 
 def _first(value: Any, default: Any = None) -> Any:
@@ -115,6 +116,7 @@ class ALFWorldTextEnv:
         manager.num_games = len(manager.game_files)
         self.env = self._graded_env(manager, max_steps) if graded else manager.init_env(batch_size=1)
         self.graded = graded
+        self.quest: tuple[str, dict] | None = None
         self.data_root = data_root
         self._episode_number = 0
 
@@ -125,50 +127,41 @@ class ALFWorldTextEnv:
         ``AlfredTWEnv.init_env`` registers ``EnvInfos(won, admissible_commands,
         extras=["gamefile"])`` and nothing else, so the text environment never
         reports ``goal_condition_success_rate`` -- that is computed only by the
-        embodied THOR environment, which we do not run. The quest is still
-        available as logic: ``win_facts`` is the winning conjunction and
-        ``facts`` is everything true in the current state, so the fraction of
-        goal conditions satisfied can be computed at any step.
+        embodied THOR environment, which we do not run. Asking for ``facts``
+        gets the state as logic instead, which is what the goal conditions are
+        evaluated against. ``win_facts`` would have been the direct route and
+        comes back None on these games, so the quest itself is read from
+        traj_data.json; see ``experiments.goal_conditions``.
         """
         import textworld
         import textworld.gym
-        from alfworld.agents.environment.alfred_tw_env import (
-            AlfredDemangler, AlfredExpert, AlfredInfos,
-        )
+        from alfworld.agents.environment.alfred_tw_env import AlfredDemangler, AlfredInfos
 
+        # the handcoded expert returns one action, not a plan, so it is no
+        # distance-to-goal and not worth the wrapper's failure modes
         infos = textworld.EnvInfos(won=True, admissible_commands=True, facts=True,
-                                   win_facts=True, extras=["gamefile", "expert_plan"])
-        wrappers = [AlfredDemangler(shuffle=False), AlfredInfos, AlfredExpert(expert_type="handcoded")]
+                                   extras=["gamefile"])
+        wrappers = [AlfredDemangler(shuffle=False), AlfredInfos]
         env_id = textworld.gym.register_games(
             manager.game_files, infos, batch_size=1, asynchronous=True,
             max_episode_steps=max_steps, wrappers=wrappers)
         return textworld.gym.make(env_id)
 
     @staticmethod
-    def _satisfied(infos: dict) -> tuple[int, int] | None:
-        """How many of the quest's winning conditions hold right now.
+    def _quest(gamefile: str) -> tuple[str, dict] | None:
+        """The task type and its parameters, which define the goal conditions.
 
-        ``win_facts`` arrives as one list of propositions per winning quest;
-        a state satisfies a quest when every proposition in it is in ``facts``.
-        We report the best-satisfied quest, since any one of them ends the
-        episode. Shapes differ between TextWorld backends, so anything we do
-        not recognise returns None rather than a made-up number.
+        ``win_facts`` would be the direct route and the text environment
+        returns None for it on these games (measured, not assumed), so the
+        quest comes from the trajectory's own parameters instead.
         """
-        facts = _first(infos.get("facts"))
-        wins = _first(infos.get("win_facts"))
-        if not facts or not wins:
+        traj_path = Path(gamefile).parent / "traj_data.json"
+        if not traj_path.exists():
             return None
-        present = {str(fact) for fact in facts}
-        quests = wins if isinstance(wins[0], (list, tuple)) else [wins]
-        best = (0, 0)
-        for quest in quests:
-            need = [str(fact) for fact in quest]
-            if not need:
-                continue
-            hit = sum(1 for fact in need if fact in present)
-            if not best[1] or hit / len(need) > best[0] / best[1]:
-                best = (hit, len(need))
-        return best if best[1] else None
+        payload = json.loads(traj_path.read_text(encoding="utf-8"))
+        params = payload.get("pddl_params")
+        task_type = payload.get("task_type")
+        return (task_type, params) if task_type and params else None
 
     @staticmethod
     def _metadata(gamefile: str, observation: str) -> tuple[str, str, str]:
@@ -190,6 +183,7 @@ class ALFWorldTextEnv:
         observation = str(_first(observations, ""))
         gamefile = str(_first(infos.get("extra.gamefile"), ""))
         episode_id, task_type, task = self._metadata(gamefile, observation)
+        self.quest = self._quest(gamefile) if self.graded else None
         self._episode_number += 1
         return EpisodeState(
             episode_id=episode_id,
@@ -202,8 +196,8 @@ class ALFWorldTextEnv:
 
     def step(self, action: str) -> StepResult:
         observations, _, dones, infos = self.env.step([action])
-        conditions = self._satisfied(infos)
-        plan = _first(infos.get("extra.expert_plan"))
+        conditions = (goal_conditions(*self.quest, _first(infos.get("facts")) or [])
+                      if self.quest else None)
         return StepResult(
             observation=str(_first(observations, "")),
             admissible_actions=list(_first(infos.get("admissible_commands"), [])),
@@ -211,7 +205,6 @@ class ALFWorldTextEnv:
             won=bool(_first(infos.get("won"), False)),
             progress=(conditions[0] / conditions[1]) if conditions else None,
             goal_conditions=conditions,
-            expert_plan_length=len(plan) if isinstance(plan, (list, tuple)) else None,
         )
 
     def close(self) -> None:

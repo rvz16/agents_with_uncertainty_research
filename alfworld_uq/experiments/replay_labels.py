@@ -101,12 +101,14 @@ def main() -> None:
         return
 
     from environments.alfworld_env import ALFWorldTextEnv
+    from experiments.goal_conditions import goal_conditions
 
     source = a.run.name if a.run else a.input.name
     print(f"[replay] {a.cohort}: {len(episodes)} episodes from {source}", flush=True)
 
     handle = None if a.probe else open(a.out / f"labels_{a.cohort}.jsonl", "w")
     agree = diverged = missing = 0
+    graded_agree = graded_seen = 0
     for index, episode in enumerate(episodes[: a.probe or None], 1):
         gamefile = remap(episode["gamefile"] or "", a.data_root)
         if not gamefile.exists():
@@ -127,16 +129,13 @@ def main() -> None:
                     observations, _, dones, infos = env.env.step([action])
                     print(f"  step {k}: info keys = {sorted(infos.keys())}", flush=True)
                     facts = infos.get("facts")
-                    wins = infos.get("win_facts")
                     first_facts = facts[0] if isinstance(facts, list) and facts else None
-                    first_wins = wins[0] if isinstance(wins, list) and wins else None
-                    print(f"      facts: {len(first_facts) if first_facts else 0} propositions, "
-                          f"sample {[str(f) for f in (first_facts or [])[:3]]}", flush=True)
-                    print(f"      win_facts: {type(first_wins).__name__}, "
-                          f"{str(first_wins)[:200]}", flush=True)
-                    print(f"      satisfied = {ALFWorldTextEnv._satisfied(infos)}", flush=True)
-                    plan = infos.get("extra.expert_plan")
-                    print(f"      expert_plan = {str(plan)[:120]}", flush=True)
+                    print(f"      facts: {len(first_facts) if first_facts else 0} propositions",
+                          flush=True)
+                    print(f"      quest = {env.quest}", flush=True)
+                    print(f"      conditions = "
+                          f"{goal_conditions(*env.quest, first_facts or []) if env.quest else None}",
+                          flush=True)
                     if k >= 2:
                         break
                     continue
@@ -146,7 +145,6 @@ def main() -> None:
                 rows.append({"step": k, "action": action, "executed": True,
                              "progress": result.progress,
                              "goal_conditions": list(result.goal_conditions or ()),
-                             "plan_left": result.expert_plan_length,
                              "won": bool(result.won),
                              "done": bool(result.done), "obs_match": match})
             if a.probe:
@@ -154,7 +152,13 @@ def main() -> None:
                 env.close()
                 continue
             final_won = any(r.get("won") for r in rows)
+            # the reconstructed conditions are only worth using if "all of them
+            # hold" agrees with the outcome the episode actually recorded
+            complete = [r["goal_conditions"] for r in rows if r.get("goal_conditions")]
+            final_full = any(c[0] == c[1] for c in complete)
             agree += int(final_won == bool(episode["label"]))
+            graded_agree += int(final_full == bool(episode["label"]))
+            graded_seen += int(bool(complete))
             diverged += int(not ok)
             for r in rows:
                 handle.write(json.dumps({"id": episode["id"], "cohort": a.cohort,
@@ -163,12 +167,15 @@ def main() -> None:
         finally:
             env.close()
         if index % 20 == 0:
-            print(f"[replay] {index}/{len(episodes)}  agree={agree} diverged={diverged}", flush=True)
+            print(f"[replay] {index}/{len(episodes)}  outcome={agree} graded={graded_agree}"
+                  f"/{graded_seen} diverged={diverged}", flush=True)
     if handle:
         handle.close()
         print(f"[replay] {a.cohort}: final outcome reproduced for {agree}/{len(episodes) - missing}, "
               f"{diverged} episodes with a diverging observation, {missing} gamefiles missing",
               flush=True)
+        print(f"[replay] {a.cohort}: reconstructed goal conditions agree with the recorded "
+              f"label for {graded_agree}/{graded_seen} episodes", flush=True)
 
 
 if __name__ == "__main__":
