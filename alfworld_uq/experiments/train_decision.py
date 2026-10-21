@@ -45,10 +45,11 @@ import numpy as np
 
 from experiments.prefix_judge import prompt
 
-COHORTS = ("RG", "SG", "RQ", "SQ", "DG", "DL", "DQ")
+COHORTS = ("RG", "SG", "RQ", "SQ", "DG", "DL", "DQ", "OQ")
 #: the coding cohorts are scored on partial credit, so their target is the score
 #: itself rather than a binary; a cross-entropy takes a soft target unchanged
-CONTINUOUS = ("DG", "DL", "DQ")
+#: cohorts graded on partial credit, where the training label follows the score
+CONTINUOUS = ("DG", "DL", "DQ", "OQ")
 FOLDS = 5
 
 
@@ -123,7 +124,8 @@ def utilities(row: dict, c_step: float, c_ask: float) -> tuple[float, float, flo
             -c_step * (k + 1))
 
 
-ENVS = {"alfworld": ("RG", "SG", "RQ", "SQ"), "deepswe": ("DG", "DL", "DQ")}
+ENVS = {"alfworld": ("RG", "SG", "RQ", "SQ"), "deepswe": ("DG", "DL", "DQ"),
+        "osworld": ("OQ",)}
 
 
 def cohort_spec(spec: str) -> tuple[str, ...]:
