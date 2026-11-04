@@ -205,8 +205,8 @@ def evaluate(backbone, head, tokenizer, rows, eval_idx, args, c_step):
             chunk = list(eval_idx)[i: i + args.eval_batch]
             logits = head(pool(backbone, tokenizer, [rows[j]["text"] for j in chunk], args))
             values = expected(logits).float().cpu().tolist()
-            entropy = (-(torch.softmax(logits, 1) * torch.log_softmax(logits, 1)).sum(1)
-                       .float().cpu().tolist())
+            spread = -(torch.softmax(logits, 1) * torch.log_softmax(logits, 1)).sum(1)
+            entropy = spread.float().cpu().tolist()
             for j, value, h in zip(chunk, values, entropy):
                 row = rows[j]
                 choice = action_of(value, args.tau_stop, args.tau_ask)
