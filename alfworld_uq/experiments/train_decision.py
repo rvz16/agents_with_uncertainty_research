@@ -45,7 +45,12 @@ import numpy as np
 
 from experiments.prefix_judge import prompt
 
-COHORTS = ("RG", "SG", "RQ", "SQ", "DG", "DL", "DQ", "OQ")
+#: CB/CL/CC/CS/CP are the colleague's five code benchmarks (BigCodeBench-Hard,
+#: LiveCodeBench-Hard, CodeContests, SWE-bench Verified, Polyglot). Their episode
+#: ids are "<arm>::<instance>": one task was run by up to 62 arms, so the fold key
+#: is the instance, not the episode -- see folds_by_episode.
+COHORTS = ("RG", "SG", "RQ", "SQ", "DG", "DL", "DQ", "OQ",
+           "CB", "CL", "CC", "CS", "CP")
 #: the coding cohorts are scored on partial credit, so their target is the score
 #: itself rather than a binary; a cross-entropy takes a soft target unchanged
 #: cohorts graded on partial credit, where the training label follows the score
@@ -91,6 +96,10 @@ def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int
                     continue  # every prefix would carry the same text
                 rows.append({
                     "cohort": cohort, "episode": episode_id, "step": k,
+                    # the task behind the episode: the same task reappears in
+                    # every arm that ran it, and those copies must not straddle
+                    # a fold. Unchanged for the cohorts whose ids carry no arm.
+                    "task": episode_id.split("::")[-1],
                     "n_steps": len(view["steps"]),
                     "text": prompt(view["task"], [] if task_only else view["steps"][: k + 1],
                                     window, obs_chars, act_chars),
@@ -101,6 +110,39 @@ def load(views: Path, targets: Path, window: int, obs_chars: int, act_chars: int
     print(f"[train] {len(rows)} prefixes over "
           f"{len({(r['cohort'], r['episode']) for r in rows})} episodes", flush=True)
     return rows
+
+
+def logger():
+    """The ClearML logger when a task is attached, else None.
+
+    Nothing but hardware telemetry was ever reported, so the only record of eight
+    runs was the loss line printed every 50 batches and parsed back out of stdout.
+    Everything below goes through here so a local run still works unchanged.
+    """
+    try:
+        from clearml import Task
+        task = Task.current_task()
+        return task.get_logger() if task else None
+    except Exception:
+        return None
+
+
+def report(series: str, name: str, value: float, step: int) -> None:
+    log = logger()
+    if log is not None:
+        try:
+            log.report_scalar(title=series, series=name, value=float(value), iteration=int(step))
+        except Exception:
+            pass
+
+
+def auroc(labels, scores) -> float:
+    """Rank AUROC, binarised at 0.5 so the continuous cohorts are comparable."""
+    pos = [s for s, y in zip(scores, labels) if y > 0.5]
+    neg = [s for s, y in zip(scores, labels) if y <= 0.5]
+    if not pos or not neg:
+        return float("nan")
+    return sum((a > b) + 0.5 * (a == b) for a in pos for b in neg) / (len(pos) * len(neg))
 
 
 def utilities(row: dict, c_step: float, c_ask: float) -> tuple[float, float, float]:
@@ -182,9 +224,16 @@ def permute(rows: list[dict]) -> list[dict]:
 
 
 def folds_by_episode(rows: list[dict], seed: int) -> list[list[int]]:
+    """Split on the task, then expand to its prefixes in every arm that ran it.
+
+    For the original cohorts the task and the episode are the same string, so
+    this is the split those tables were built with. For the code cohorts one
+    task has up to 62 arm-level episodes, and grouping by episode would put the
+    same task on both sides of the split.
+    """
     episodes: dict[tuple[str, str], list[int]] = defaultdict(list)
     for i, r in enumerate(rows):
-        episodes[(r["cohort"], r["episode"])].append(i)
+        episodes[(r["cohort"], r.get("task") or r["episode"])].append(i)
     keys = sorted(episodes)
     strata = {k: int(rows[episodes[k][0]]["label"] > 0.5) for k in keys}  # median-ish split
     rng = np.random.RandomState(seed)
@@ -228,7 +277,14 @@ def build(model_id: str, args):
     # question off and leave the model guessing what it was asked. Cutting from
     # the left drops the oldest part of the issue text instead.
     tokenizer.truncation_side = "left"
-    backbone = AutoModel.from_pretrained(model_id, dtype=torch.bfloat16, device_map=args.device)
+    # ``device_map=`` hangs forever on MPS: the shard bar sits at 0/617 with no
+    # progress and no error (observed twice, 1h46m). Loading on the CPU and moving
+    # the module takes ten seconds, so take that path there and keep device_map
+    # where it does work.
+    if str(args.device).startswith("mps"):
+        backbone = AutoModel.from_pretrained(model_id, dtype=torch.bfloat16).to(args.device)
+    else:
+        backbone = AutoModel.from_pretrained(model_id, dtype=torch.bfloat16, device_map=args.device)
     if args.lora_rank:
         backbone = get_peft_model(backbone, LoraConfig(
             r=args.lora_rank, lora_alpha=2 * args.lora_rank, lora_dropout=0.05, bias="none",
@@ -259,14 +315,53 @@ def pool(backbone, tokenizer, texts: list[str], args):
     return states[torch.arange(states.shape[0], device=states.device), index].to(torch.float32)
 
 
-def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
+def evaluate(backbone, head, tokenizer, rows, eval_idx, shift, args):
+    """Success probability and label over the eval split; no gradients, no state."""
+    import torch
+    backbone.eval(); head.eval()
+    scores, labels = [], []
+    with torch.no_grad():
+        for i in range(0, len(eval_idx), args.eval_batch):
+            chunk = list(eval_idx)[i: i + args.eval_batch]
+            logits = head(pool(backbone, tokenizer, [rows[j]["text"] for j in chunk], args))
+            success = logits[:, 0] + shift([rows[j] for j in chunk], training=False)
+            scores += torch.sigmoid(success).float().cpu().tolist()
+            labels += [rows[j]["label"] for j in chunk]
+    return scores, labels, len(eval_idx)
+
+
+def train_fold(rows: list[dict], train_idx, eval_idx, args, fold_tag: str = "") -> list[dict]:
     import torch
 
     tokenizer, backbone = build(args.model, args)
     head = make_head(pool(backbone, tokenizer, [rows[int(train_idx[0])]["text"]], args).shape[-1],
                      args)
+    # One scalar per cohort, added to the success logit. Base rates run from 0.34
+    # to 0.90 across cohorts, so without it the shared trunk spends capacity
+    # fitting which environment it is looking at; held out, that is exactly the
+    # part that cannot transfer and the part that made the model confidently
+    # wrong (ECE 0.53 on ALFWorld). Scoring an unseen cohort uses the mean of the
+    # trained biases, which is the only honest choice: its own is unknowable.
+    bias = torch.nn.Parameter(torch.zeros(len(COHORTS), device=args.device),
+                              requires_grad=bool(args.domain_bias))
+    cohort_index = {c: i for i, c in enumerate(COHORTS)}
+    trained_cohorts = sorted({rows[i]["cohort"] for i in train_idx})
+
+    def shift(batch_rows, training: bool):
+        if not args.domain_bias:
+            return torch.zeros(len(batch_rows), device=args.device)
+        if training:
+            return bias[torch.tensor([cohort_index[r["cohort"]] for r in batch_rows],
+                                     device=args.device)]
+        seen = torch.tensor([cohort_index[c] for c in trained_cohorts], device=args.device)
+        return torch.stack([bias[cohort_index[r["cohort"]]]
+                            if r["cohort"] in trained_cohorts else bias[seen].mean()
+                            for r in batch_rows])
+
     parameters = [p for p in list(backbone.parameters()) + list(head.parameters())
                   if p.requires_grad]
+    if args.domain_bias:
+        parameters.append(bias)
     optimiser = torch.optim.AdamW(parameters, lr=args.lr, weight_decay=0.01)
     order = np.random.RandomState(0).permutation(list(train_idx))
     batches = [order[i: i + args.batch] for i in range(0, len(order), args.batch)]
@@ -283,8 +378,9 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
             device = logits.device
             y = torch.tensor([rows[i]["label"] for i in batch], dtype=torch.float32, device=device)
             q = torch.tensor([rows[i]["posterior"] for i in batch], dtype=torch.float32, device=device)
-            p = torch.sigmoid(logits[:, 0])
-            loss = args.w_outcome * bce(logits[:, 0], y) + args.w_brier * ((p - y) ** 2).mean()
+            success = logits[:, 0] + shift([rows[i] for i in batch], training=True)
+            p = torch.sigmoid(success)
+            loss = args.w_outcome * bce(success, y) + args.w_brier * ((p - y) ** 2).mean()
             if args.w_distill:
                 loss = loss + args.w_distill * ((p - q) ** 2).mean()
             if args.w_action:
@@ -308,8 +404,27 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
             torch.nn.utils.clip_grad_norm_(parameters, 1.0)
             optimiser.step(); schedule.step(); optimiser.zero_grad(set_to_none=True)
             if number % 50 == 0:
+                step = epoch * len(batches) + number
                 print(f"[train] epoch {epoch + 1} batch {number}/{len(batches)} "
                       f"loss {float(loss):.4f}", flush=True)
+                report(f"loss{fold_tag}", "train", float(loss), step)
+                report(f"lr{fold_tag}", "lr", schedule.get_last_lr()[0], step)
+
+        # A validation pass at the end of every epoch. Training loss alone cannot
+        # show overfitting, which is the gap this project actually lives in: the
+        # loss falls while the ranking still loses to counting steps.
+        if args.eval_each_epoch:
+            scores, labels, held = evaluate(backbone, head, tokenizer, rows, eval_idx,
+                                            shift, args)
+            value = auroc(labels, scores)
+            report(f"eval{fold_tag}", "auroc", value, epoch + 1)
+            report(f"eval{fold_tag}", "mean_p", st.fmean(scores), epoch + 1)
+            report(f"eval{fold_tag}", "mean_label", st.fmean(labels), epoch + 1)
+            report(f"eval{fold_tag}", "brier",
+                   st.fmean((a - b) ** 2 for a, b in zip(scores, labels)), epoch + 1)
+            print(f"[train] epoch {epoch + 1} eval: AUROC {value:.3f}, "
+                  f"mean p {st.fmean(scores):.3f} vs label {st.fmean(labels):.3f}", flush=True)
+            backbone.train(); head.train()
 
     backbone.eval(); head.eval()
     out = []
@@ -317,6 +432,8 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
         for i in range(0, len(eval_idx), args.eval_batch):
             chunk = list(eval_idx)[i: i + args.eval_batch]
             logits = head(pool(backbone, tokenizer, [rows[j]["text"] for j in chunk], args))
+            logits = logits.clone()
+            logits[:, 0] = logits[:, 0] + shift([rows[j] for j in chunk], training=False)
             probabilities = torch.sigmoid(logits).float().cpu().tolist()
             policies = torch.softmax(logits[:, 3:6], dim=1).float().cpu().tolist()
             for j, values, policy in zip(chunk, probabilities, policies):
@@ -324,12 +441,36 @@ def train_fold(rows: list[dict], train_idx, eval_idx, args) -> list[dict]:
                             "stale": values[2],
                             "policy": dict(zip(Head.ACTIONS, policy)),
                             "action": Head.ACTIONS[max(range(3), key=policy.__getitem__)]})
+    if args.save_weights:
+        # Eight runs were trained and every adapter thrown away, which blocks any
+        # few-shot or probing experiment that would start from one. Local disk on
+        # a remote worker is not retrievable either, so upload as well.
+        target = Path(args.save_weights) / (fold_tag.strip("_") or "fold")
+        target.mkdir(parents=True, exist_ok=True)
+        try:
+            backbone.save_pretrained(target)          # LoRA adapter only
+        except Exception as error:
+            print(f"[train] adapter not saved: {error}", flush=True)
+        torch.save({"head": head.state_dict(), "bias": bias.detach().cpu(),
+                    "cohorts": list(COHORTS), "trained_cohorts": trained_cohorts,
+                    "model": args.model, "hidden": args.hidden,
+                    "domain_bias": bool(args.domain_bias)}, target / "head.pt")
+        try:
+            from clearml import Task
+            task = Task.current_task()
+            if task:
+                task.upload_artifact(f"weights_{target.name}", artifact_object=target)
+                print(f"[train] uploaded weights_{target.name}", flush=True)
+        except Exception as error:
+            print(f"[train] weights not uploaded: {error}", flush=True)
+
     del backbone, head
     torch.cuda.empty_cache()
     return out
 
 
 def main() -> None:
+    global FOLDS
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--views", type=Path, default=Path("data/judge_views"))
     p.add_argument("--targets", type=Path, default=Path("data/distill_targets"))
@@ -362,6 +503,17 @@ def main() -> None:
                    help="0 ablates the distillation of our posterior")
     p.add_argument("--w-aux", type=float, default=0.3,
                    help="0 ablates the structural questions")
+    p.add_argument("--domain-bias", type=int, default=0,
+                   help="one learned scalar per cohort added to the success logit, so the "
+                        "shared trunk is not spending capacity on base rates that run from "
+                        "0.34 to 0.90. An unseen cohort is scored with the mean of the "
+                        "trained biases")
+    p.add_argument("--save-weights", type=Path, default=None,
+                   help="directory for the LoRA adapter and head of every fold; also uploaded "
+                        "as a ClearML artifact, without which a remote run keeps nothing")
+    p.add_argument("--eval-each-epoch", type=int, default=1,
+                   help="validation pass after every epoch, reported as a scalar: training "
+                        "loss alone cannot show overfitting")
     p.add_argument("--holdout", default=None,
                    help="cohorts to keep out of training and score instead: a cohort name, an "
                         "environment (alfworld, deepswe), or a comma-separated list. The closest "
@@ -373,6 +525,13 @@ def main() -> None:
                    help="cohorts to discard entirely, neither trained on nor scored. Use it to keep "
                         "a cross-cohort test inside one environment, so the result is not the "
                         "two-environment interference measured elsewhere")
+    p.add_argument("--folds", type=int, default=5,
+                   help="cross-validation folds. A fold is the held-out part, so 1 leaves nothing "
+                        "to train on; 2 is the smallest that runs")
+    p.add_argument("--fold-limit", type=int, default=0,
+                   help="run only the first N folds of the partition, keeping the usual 80/20 "
+                        "split. A pipeline check, not a comparable number: out-of-fold coverage "
+                        "is then partial")
     p.add_argument("--task-only", action="store_true",
                    help="drop the transcript and keep one row per episode: how much of an early "
                         "estimate is task difficulty rather than watching the agent")
@@ -381,6 +540,7 @@ def main() -> None:
     a = p.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
+    FOLDS = a.folds
     rows = load(a.views, a.targets, a.window, a.obs_chars, a.act_chars, a.task_only)
     if a.drop:
         dropped = cohort_spec(a.drop)
@@ -404,16 +564,18 @@ def main() -> None:
               f"from {sorted({rows[i]['cohort'] for i in train_idx})}, "
               f"{len(eval_idx)} eval from {sorted({rows[i]['cohort'] for i in eval_idx})}",
               flush=True)
-        for row in train_fold(rows, train_idx, eval_idx, a):
+        for row in train_fold(rows, train_idx, eval_idx, a, "_holdout"):
             predictions[row["index"]].append(row)
     else:
         for seed in a.seeds:
             for number, fold in enumerate(folds_by_episode(rows, seed), 1):
+                if a.fold_limit and number > a.fold_limit:
+                    break
                 held = set(fold)
                 train_idx = [i for i in range(len(rows)) if i not in held]
                 print(f"[train] seed {seed} fold {number}/{FOLDS}: "
                       f"{len(train_idx)} train, {len(fold)} eval", flush=True)
-                for row in train_fold(rows, train_idx, fold, a):
+                for row in train_fold(rows, train_idx, fold, a, f"_s{seed}f{number}"):
                     predictions[row["index"]].append(row)
 
     tag = f"{a.tag}_shuffled" if a.shuffle_labels else a.tag

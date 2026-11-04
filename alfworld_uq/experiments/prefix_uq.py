@@ -29,6 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
+from experiments.deepswe_table import _TEST_CMD
 from experiments.prr_report_v2 import (FOLDS, SEEDS, SIGNALS, load_deepswe, method_table, prr,
                                        with_labels)
 
@@ -44,9 +45,71 @@ def read_labels(path: Path) -> dict[str, list[tuple[int, float]]]:
     return {k: sorted(v) for k, v in out.items()}
 
 
+def _cut(seq, cut):
+    """Slice a per-step sequence, keeping a missing one missing.
+
+    DeepSWE runs carry no judge or HTC sidecar, so those arrive as None. A
+    method that reads them sees None here exactly as it would for a whole
+    episode, rather than the prefix cutter failing on the first one.
+    """
+    return None if seq is None else seq[:cut]
+
+
+def step_primitives(path: Path) -> dict[str, list[tuple[str | None, int | None, bool]]]:
+    """Per-step command / returncode / format error, sliced as load_deepswe slices.
+
+    The critics have to be rebuilt from the prefix's own steps, and the episode
+    dict does not keep the raw steps, so they are read again here. The last step
+    is dropped exactly as there, or the indices would not line up with the cut.
+    """
+    out: dict[str, list[tuple[str | None, int | None, bool]]] = {}
+    for line in open(path):
+        row = json.loads(line)
+        steps = row["steps"]
+        if len(steps) > 1:
+            steps = steps[:-1]  # pre-terminal, as in load_deepswe
+        out[row["id"]] = [(s["command"], s["returncode"], bool(s["format_error"])) for s in steps]
+    return out
+
+
+def critics_at(steps: list[tuple[str | None, int | None, bool]]) -> dict[str, bool]:
+    """The five tool critics over these steps only.
+
+    load_deepswe computes them over the whole episode and stamps the same dict on
+    every step, so a prefix that keeps them reads its own future: the last test of
+    the episode, a commit that has not happened yet. Same definitions, prefix scope.
+    """
+    commands = [c for c, _, _ in steps if c]
+    test_rcs = [rc for c, rc, _ in steps if c and _TEST_CMD.search(c) and rc is not None]
+    first_fail = next((k for k, rc in enumerate(test_rcs) if rc != 0), None)
+    return {
+        "ran_tests": len(test_rcs) > 0,
+        "ran_tests_twice": len(test_rcs) >= 2,
+        "last_test_passed": bool(test_rcs) and test_rcs[-1] == 0,
+        "test_flipped": first_fail is not None and any(rc == 0 for rc in test_rcs[first_fail:]),
+        "committed_twice": sum("git commit" in c for c in commands) >= 2,
+        "no_format_errors": not any(fe for _, _, fe in steps),
+    }
+
+
+def tool_rate_at(steps: list[tuple[str | None, int | None, bool]]) -> float:
+    """Return-code-0 rate over these steps only, not over the episode."""
+    observed = [rc == 0 for _, rc, _ in steps if rc is not None]
+    return st.fmean(observed) if observed else 0.0
+
+
 def prefixes(episodes: dict[str, dict], labels: dict[str, list[tuple[int, float]]],
-             carry: bool, stride: int) -> dict[str, dict]:
-    """One scored unit per label point, with every sequence cut at that step."""
+             carry: bool, stride: int,
+             primitives: dict[str, list[tuple[str | None, int | None, bool]]] | None = None,
+             uncut_critics: bool = False) -> dict[str, dict]:
+    """One scored unit per label point, with every sequence cut at that step.
+
+    ``primitives`` lets the tool critics and the tool-success rate be rebuilt from
+    the prefix's own steps. Without it (or with ``uncut_critics``) they keep the
+    whole-episode values load_deepswe produced, which is hindsight: that is what
+    the 2026-11-04 correction is about, and the flag exists only to reproduce the
+    earlier numbers.
+    """
     out: dict[str, dict] = {}
     for eid, episode in episodes.items():
         points = labels.get(eid)
@@ -65,20 +128,33 @@ def prefixes(episodes: dict[str, dict], labels: dict[str, list[tuple[int, float]
             if stride > 1 and k % stride and k not in graded:
                 continue
             cut = k + 1
+            prefix_steps = None if primitives is None else primitives.get(eid, [])[:cut]
+            honest = prefix_steps is not None and not uncut_critics
+            crit = critics_at(prefix_steps) if honest else None
             record = dict(episode["record"])
-            record["generations"] = record["generations"][:cut]
+            generations = record["generations"][:cut]
+            if honest:
+                # new dicts: the generations are shared with every other prefix
+                generations = [{**g, "critics": dict(crit)} for g in generations]
+            record["generations"] = generations
             out[f"{eid}@{k}"] = {
                 "id": f"{eid}@{k}", "episode": eid, "harness": episode["harness"],
                 "score": float(current), "label": int(current > 0.5),
                 "signals": {name: list(seq)[:cut] for name, seq in episode["signals"].items()},
-                "critics": episode["critics"][:cut],
-                "episode_critics": episode["episode_critics"],
-                "judge_steps": episode["judge_steps"][:cut],
-                "mte_steps": episode["mte_steps"][:cut], "saup": episode["saup"][:cut],
-                "uprop": episode.get("uprop"),
-                "cross_critics": episode.get("cross_critics"),
-                "htc_tokens": tuple(side[:cut] for side in episode["htc_tokens"]),
-                "n_steps": cut, "tool_rate": episode["tool_rate"], "record": record,
+                "critics": ([dict(crit) for _ in range(cut)] if honest
+                            else _cut(episode["critics"], cut)),
+                "episode_critics": dict(crit) if honest else episode["episode_critics"],
+                "judge_steps": _cut(episode["judge_steps"], cut),
+                "mte_steps": _cut(episode["mte_steps"], cut), "saup": _cut(episode["saup"], cut),
+                # an episode-level decomposition cannot be cut, so it is dropped
+                # rather than carried into a prefix as a constant
+                "uprop": None if honest else episode.get("uprop"),
+                "cross_critics": _cut(episode.get("cross_critics"), cut),
+                "htc_tokens": (None if episode["htc_tokens"] is None
+                               else tuple(side[:cut] for side in episode["htc_tokens"])),
+                "n_steps": cut,
+                "tool_rate": tool_rate_at(prefix_steps) if honest else episode["tool_rate"],
+                "record": record,
             }
     return out
 
@@ -124,6 +200,10 @@ def main() -> None:
                         "repository, which is exact rather than an approximation")
     p.add_argument("--stride", type=int, default=1)
     p.add_argument("--methods", nargs="+", default=None, help="restrict to these method labels")
+    p.add_argument("--uncut-critics", action="store_true",
+                   help="keep load_deepswe's whole-episode critics and tool rate on every "
+                        "prefix, as the tables before 2026-11-04 did; hindsight, for "
+                        "reproducing those numbers only")
     a = p.parse_args()
 
     methods = method_table(a.toolkit)
@@ -132,7 +212,8 @@ def main() -> None:
     for cohort in a.cohorts:
         episodes = load_deepswe(a.runs / RUNS[cohort] / "compact.jsonl", "mini-swe-agent")
         labels = read_labels(a.labels / f"labels_{cohort}.jsonl")
-        units = prefixes(episodes, labels, a.carry, a.stride)
+        primitives = step_primitives(a.runs / RUNS[cohort] / "compact.jsonl")
+        units = prefixes(episodes, labels, a.carry, a.stride, primitives, a.uncut_critics)
         covered = len({u["episode"] for u in units.values()})
         print(f"[prefix] {cohort}: {len(units)} scored prefixes over {covered} episodes "
               f"(of {len(episodes)}), score mean {st.fmean(u['score'] for u in units.values()):.2f}",
