@@ -184,6 +184,16 @@ def soft_bins(targets, sigma: float, device):
     return weight / weight.sum(1, keepdim=True).clamp_min(1e-9)
 
 
+def jsonable(value: float):
+    """NaN out of json.dumps is not JSON any reader has to accept.
+
+    A cohort whose prefixes are all on one side of the label threshold has no
+    AUROC, and that is a fact about the fold rather than a failure -- null says
+    so, where NaN makes jq and every strict parser refuse the whole file.
+    """
+    return None if value != value else float(value)
+
+
 def expected(logits):
     import torch
     centres = torch.tensor(VALUES, dtype=torch.float32, device=logits.device)
@@ -465,7 +475,8 @@ def main() -> None:
                         "success": {"type": "noul", "noul": value["p"]}}}}) + "\n")
         summary[cohort] = {
             "prefixes": len(items), "episodes": len(last),
-            "auroc": auroc([r["label"] for r, _ in items], [v["p"] for _, v in items]),
+            "auroc": jsonable(auroc([r["label"] for r, _ in items],
+                                     [v["p"] for _, v in items])),
             "brier": st.fmean((v["p"] - r["label"]) ** 2 for r, v in items),
             "utility": st.fmean(v["utility"] for _, v in items),
             "mean_p": st.fmean(v["p"] for _, v in items),
