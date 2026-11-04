@@ -44,6 +44,9 @@ def main() -> None:
     p.add_argument("--w-entropy", default="0.01")
     p.add_argument("--c-step", default="0.02")
     p.add_argument("--c-ask", default="0.5")
+    p.add_argument("--data-task", default="",
+                   help="task id whose artifacts carry cohort inputs git cannot: see "
+                        "clearml/upload_cohort_data.py")
     p.add_argument("--name", default="our decision model: full recipe")
     a = p.parse_args()
     task = Task.create(project_name="agentic-uq", task_name=a.name, repo=REPO, branch=a.branch,
@@ -59,7 +62,7 @@ def main() -> None:
                          "Args/SHUFFLE": a.shuffle, "Args/HOLDOUT": a.holdout, "Args/DROP": a.drop,
                          "Args/TASK_ONLY": a.task_only, "Args/W_ACTION": a.w_action,
                          "Args/W_ENTROPY": a.w_entropy, "Args/C_STEP": a.c_step,
-                         "Args/C_ASK": a.c_ask})
+                         "Args/C_ASK": a.c_ask, "Args/DATA_TASK": a.data_task})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
     print(f"Enqueued to '{a.queue}'")
