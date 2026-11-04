@@ -44,6 +44,11 @@ def main() -> None:
     p.add_argument("--w-entropy", default="0.01")
     p.add_argument("--c-step", default="0.02")
     p.add_argument("--c-ask", default="0.5")
+    p.add_argument("--folds", default="5")
+    p.add_argument("--fold-limit", default="0",
+                   help="run only the first N folds of the partition: the same 80/20 split on a "
+                        "fraction of the episodes, when a whole partition costs more wall time "
+                        "than a shared queue should carry")
     p.add_argument("--data-task", default="",
                    help="task id whose artifacts carry cohort inputs git cannot: see "
                         "clearml/upload_cohort_data.py")
@@ -62,7 +67,8 @@ def main() -> None:
                          "Args/SHUFFLE": a.shuffle, "Args/HOLDOUT": a.holdout, "Args/DROP": a.drop,
                          "Args/TASK_ONLY": a.task_only, "Args/W_ACTION": a.w_action,
                          "Args/W_ENTROPY": a.w_entropy, "Args/C_STEP": a.c_step,
-                         "Args/C_ASK": a.c_ask, "Args/DATA_TASK": a.data_task})
+                         "Args/C_ASK": a.c_ask, "Args/DATA_TASK": a.data_task,
+                         "Args/FOLDS": a.folds, "Args/FOLD_LIMIT": a.fold_limit})
     print(f"Created task {task.id}")
     Task.enqueue(task, queue_name=a.queue)
     print(f"Enqueued to '{a.queue}'")

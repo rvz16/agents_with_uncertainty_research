@@ -23,6 +23,14 @@ W_ACTION="${W_ACTION:-0}"
 W_ENTROPY="${W_ENTROPY:-0.01}"
 C_STEP="${C_STEP:-0.02}"
 C_ASK="${C_ASK:-0.5}"
+DOMAIN_BIAS="${DOMAIN_BIAS:-0}"
+SAVE_WEIGHTS="${SAVE_WEIGHTS:-1}"
+EVAL_EACH_EPOCH="${EVAL_EACH_EPOCH:-1}"
+FOLDS="${FOLDS:-5}"
+# a whole 12-cohort partition is 90k optimiser steps, measured at 0.42 a second
+# on one 80GB card: sixty hours, and nothing is written until the last fold ends.
+# Two folds of the same partition is the same 80/20 split on 40% of the episodes
+FOLD_LIMIT="${FOLD_LIMIT:-0}"
 
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
@@ -35,9 +43,13 @@ flag=""
 [ -n "$HOLDOUT" ] && flag="$flag --holdout $HOLDOUT"
 [ -n "$DROP" ] && flag="$flag --drop $DROP"
 [ "$TASK_ONLY" = "1" ] && flag="$flag --task-only"
+# default on: eight runs were trained before this and every adapter was lost
+[ "$SAVE_WEIGHTS" = "1" ] && flag="$flag --save-weights $OUT_DIR/weights"
 python -m experiments.train_decision \
     --views "$VIEWS" --targets "$TARGETS" --out "$OUT_DIR" --model "$MODEL" --tag "$TAG" \
     --lora-rank "$LORA_RANK" --epochs "$EPOCHS" --batch "$BATCH" --lr "$LR" \
     --w-action "$W_ACTION" --w-entropy "$W_ENTROPY" --c-step "$C_STEP" --c-ask "$C_ASK" \
-    --w-distill "$W_DISTILL" --w-aux "$W_AUX" $flag
+    --w-distill "$W_DISTILL" --w-aux "$W_AUX" \
+    --domain-bias "$DOMAIN_BIAS" --eval-each-epoch "$EVAL_EACH_EPOCH" \
+    --folds "$FOLDS" --fold-limit "$FOLD_LIMIT" $flag
 echo "[train] done"; ls -la "$OUT_DIR"
