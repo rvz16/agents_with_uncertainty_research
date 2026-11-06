@@ -31,7 +31,10 @@ so distilling it there teaches the base rate and nothing else. The per-cohort
 report is there to make that visible rather than let it average away.
 
 Folds are cut by episode and expanded to prefixes, never by prefix.
-``--shuffle-labels`` permutes within cohort and must come back at zero.
+``--shuffle-labels`` permutes within cohort *inside length terciles*, so it
+is a floor for signal beyond coarse episode length, not a chance floor: it comes
+back at .588 AUROC on the code cohorts, with Brier exactly at the constant
+base-rate predictor. Read every AUROC in this file against that number.
 """
 from __future__ import annotations
 
