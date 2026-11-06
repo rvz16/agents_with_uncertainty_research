@@ -52,4 +52,8 @@ python -m experiments.train_decision \
     --w-distill "$W_DISTILL" --w-aux "$W_AUX" \
     --domain-bias "$DOMAIN_BIAS" --eval-each-epoch "$EVAL_EACH_EPOCH" \
     --folds "$FOLDS" --fold-limit "$FOLD_LIMIT" $flag
-echo "[train] done"; ls -la "$OUT_DIR"
+# The trailing diagnostics would otherwise overwrite $? and report a crashed
+# run as completed; set -e is not used here because those lines must still run.
+rc=$?
+echo "[train] done rc=$rc"; ls -la "$OUT_DIR"
+exit $rc

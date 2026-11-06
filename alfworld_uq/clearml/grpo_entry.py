@@ -7,10 +7,12 @@ per-fold adapters, which are laid out here as the trainer expects to find them.
 """
 import os
 import subprocess
+import shutil
+import zipfile
 import sys
 from pathlib import Path
 
-from clearml import Task
+from clearml import StorageManager, Task
 
 FILE_STORE = "https://files.clearai.innopolis.university"
 
@@ -31,6 +33,49 @@ def fetch_data(task, repo: Path) -> None:
               flush=True)
 
 
+def adapter_dir(local: Path, artifact, name: str, root: Path):
+    """The directory holding adapter_config.json, however the store hands it over.
+
+    Three shapes have been observed for the same artifact: the extracted
+    directory (locally and on aiagent01:gpu0), the .zip itself, and -- on
+    aiagent01:gpu1 -- an extraction directory that is EMPTY, because the agent
+    cache held a broken unpack from an earlier run and ClearML reused it without
+    re-extracting. The first two are cheap to handle; the third needs the archive
+    pulled again and unpacked by hand, so do that rather than trust the cache.
+    """
+    def marker(path: Path):
+        if (path / "adapter_config.json").exists():
+            return path
+        found = list(path.rglob("adapter_config.json")) if path.is_dir() else []
+        return found[0].parent if found else None
+
+    def unzip(archive_path: Path):
+        target = root / f"_unpacked_{name}"
+        if target.is_dir():
+            shutil.rmtree(target)
+        target.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive_path) as archive:
+            archive.extractall(target)
+        print(f"[entry] {name}: unpacked {archive_path} -> {target}", flush=True)
+        return marker(target)
+
+    if local.is_file() and local.suffix.lower() == ".zip":
+        return unzip(local)
+    hit = marker(local)
+    if hit is not None:
+        return hit
+    # the cache lied: fetch the archive itself and unpack it ourselves
+    url = getattr(artifact, "url", "") or ""
+    if not url:
+        return None
+    print(f"[entry] {name}: cached copy has no adapter, refetching {url[:90]}", flush=True)
+    raw = StorageManager.get_local_copy(url, extract_archive=False)
+    if not raw:
+        return None
+    raw = Path(raw)
+    return unzip(raw) if zipfile.is_zipfile(raw) else marker(raw)
+
+
 def fetch_adapters(root: Path) -> str:
     """Lay the supervised run's weights_s0f* artifacts out as <root>/s0f*/.
 
@@ -47,14 +92,12 @@ def fetch_adapters(root: Path) -> str:
         if not name.startswith("weights_"):
             continue
         local = Path(artifact.get_local_copy())
-        # a directory artifact comes back either as the directory itself or as a
-        # single wrapper holding it; the adapter config is the marker either way
-        if not (local / "adapter_config.json").exists():
-            inner = [p for p in local.rglob("adapter_config.json")]
-            if not inner:
-                print(f"[entry] {name}: no adapter_config.json, skipped", flush=True)
-                continue
-            local = inner[0].parent
+        print(f"[entry] {name}: get_local_copy -> {local} "
+              f"({'file' if local.is_file() else 'dir'})", flush=True)
+        local = adapter_dir(local, artifact, name, root)
+        if local is None:
+            print(f"[entry] {name}: no adapter_config.json, skipped", flush=True)
+            continue
         target = root / name[len("weights_"):]
         target.mkdir(parents=True, exist_ok=True)
         for item in local.iterdir():
@@ -70,6 +113,7 @@ def fetch_adapters(root: Path) -> str:
 
 
 def main() -> int:
+    print("[entry] adapter-fetch patch active (2026-11-06)", flush=True)
     task = Task.current_task() or Task.init(project_name="agentic-uq", task_name="grpo-decision")
     task.output_uri = FILE_STORE
     for key, value in (task.get_parameters_as_dict().get("Args", {}) or {}).items():

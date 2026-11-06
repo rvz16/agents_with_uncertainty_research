@@ -28,6 +28,9 @@ TAG="${TAG:-grpo}"
 SAVE_WEIGHTS="${SAVE_WEIGHTS:-1}"
 EVAL_EACH_EPOCH="${EVAL_EACH_EPOCH:-1}"
 
+# 8.89 GiB sat reserved-but-unallocated when this OOMed on 2026-11-05; the
+# allocator message asks for this flag by name.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 mkdir -p "$OUT_DIR"
 nvidia-smi || echo "no nvidia-smi"
 python -m pip install -q --upgrade pip
@@ -43,4 +46,8 @@ python -m experiments.grpo_decision \
     --group "$GROUP" --warmup "$WARMUP" --w-entropy "$W_ENTROPY" --w-cal "$W_CAL" \
     --kappa "$KAPPA" --c-ask "$C_ASK" --tau-stop "$TAU_STOP" --tau-ask "$TAU_ASK" \
     --folds "$FOLDS" --fold-limit "$FOLD_LIMIT" --eval-each-epoch "$EVAL_EACH_EPOCH" $flag
-echo "[grpo] done"; ls -la "$OUT_DIR"
+# Without this the trailing diagnostics overwrite $? and a crashed run is
+# reported to ClearML as completed -- which is how an OOM hid for three hours.
+rc=$?
+echo "[grpo] done rc=$rc"; ls -la "$OUT_DIR"
+exit $rc
