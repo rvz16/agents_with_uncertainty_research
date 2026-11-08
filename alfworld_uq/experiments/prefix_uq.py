@@ -176,11 +176,23 @@ def folds_by_episode(units: dict[str, dict], seed: int) -> list[list[str]]:
     return folds
 
 
-def oof_by_episode(units: dict[str, dict], fn, seed: int) -> float | None:
+def oof_by_episode(units: dict[str, dict], fn, seed: int,
+                   continuous: bool | None = None) -> float | None:
+    """Out-of-fold PRR over prefix units, folds cut by episode.
+
+    ``continuous`` decides how the trained methods get their binary training
+    label. With a continuous target (DeepSWE partial credit) the fold's own
+    median split is right. With a target that is already 0/1 -- an ALFWorld or
+    tau3 terminal label -- the median is itself 0.0 or 1.0, so every training
+    label collapses to one class and every fitted method silently returns None
+    and drops out of the table. Left as None it is inferred from the scores.
+    """
+    if continuous is None:
+        continuous = len({round(u["score"], 6) for u in units.values()}) > 2
     pred: dict[str, float] = {}
     for fold in folds_by_episode(units, seed):
         held = set(fold)
-        train = with_labels([units[i] for i in units if i not in held], True)
+        train = with_labels([units[i] for i in units if i not in held], continuous)
         for key, value in zip(fold, fn(train, [units[i] for i in fold])):
             if value is None:
                 return None

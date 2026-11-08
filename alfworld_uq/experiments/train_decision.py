@@ -52,8 +52,14 @@ from experiments.prefix_judge import prompt
 #: LiveCodeBench-Hard, CodeContests, SWE-bench Verified, Polyglot). Their episode
 #: ids are "<arm>::<instance>": one task was run by up to 62 arms, so the fold key
 #: is the instance, not the episode -- see folds_by_episode.
+#: TA/TB/TR are tau3-bench (airline planning-agent, airline llm-agent, retail
+#: llm-agent), the colleague's raw release. One structural difference from every
+#: other cohort: the task is revealed by the user turn by turn rather than stated
+#: at step 0, so an early prefix there is missing part of the specification, not
+#: only the agent's future. Their reward is strictly 0/1 -- tau3 grades on several
+#: bases but requires all of them, so no cohort of it reaches a partial score.
 COHORTS = ("RG", "SG", "RQ", "SQ", "DG", "DL", "DQ", "OQ",
-           "CB", "CL", "CC", "CS", "CP")
+           "CB", "CL", "CC", "CS", "CP", "TA", "TB", "TR")
 #: the coding cohorts are scored on partial credit, so their target is the score
 #: itself rather than a binary; a cross-entropy takes a soft target unchanged
 #: cohorts graded on partial credit, where the training label follows the score
@@ -170,7 +176,8 @@ def utilities(row: dict, c_step: float, c_ask: float) -> tuple[float, float, flo
 
 
 ENVS = {"alfworld": ("RG", "SG", "RQ", "SQ"), "deepswe": ("DG", "DL", "DQ"),
-        "osworld": ("OQ",)}
+        "osworld": ("OQ",), "tau3": ("TA", "TB", "TR"),
+        "code": ("CB", "CL", "CC", "CS", "CP")}
 
 
 def cohort_spec(spec: str) -> tuple[str, ...]:
@@ -617,7 +624,10 @@ def main() -> None:
         with open(a.out / f"answers_{tag}_{name}_{cohort}.jsonl", "w") as handle:
             for episode, (row, value) in sorted(last.items()):
                 handle.write(json.dumps({
-                    "id": episode, "cohort": cohort, "label": int(row["label"]),
+                    # int() truncates, so a continuous cohort scored .9 was
+                    # written as a negative and DQ came out 0/22 positive.
+                    "id": episode, "cohort": cohort,
+                    "label": int(row["label"] > 0.5),
                     "score": row["label"],
                     "answer": {"model": f"{a.model}+lora", "answers": {
                         "success": {"type": "noul", "noul": value["success"]}}}}) + "\n")

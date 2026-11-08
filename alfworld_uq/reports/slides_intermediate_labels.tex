@@ -1,0 +1,157 @@
+% Two-minute version of the intermediate-labels ablation.
+% Compile: tectonic -X compile slides_intermediate_labels.tex
+\documentclass[11pt, aspectratio=169]{beamer}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{tikz}
+
+\usetheme{default}
+\useinnertheme{rectangles}
+\setbeamertemplate{navigation symbols}{}
+
+\definecolor{accent}{HTML}{1A4789}
+\definecolor{accent2}{HTML}{2D7A55}
+\definecolor{warn}{HTML}{B8001F}
+\definecolor{boxbg}{HTML}{F4F6F8}
+\newcommand{\g}[1]{\textcolor{accent2}{\textbf{#1}}}
+\newcommand{\bad}[1]{\textcolor{warn}{\textbf{#1}}}
+
+\setbeamertemplate{itemize item}{\textcolor{accent}{\(\blacktriangleright\)}}
+\setbeamercolor{frametitle}{fg=accent}
+\setbeamercolor{structure}{fg=accent}
+\setbeamercolor{block title}{fg=white, bg=accent}
+\setbeamercolor{block body}{bg=boxbg}
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+
+\setbeamertemplate{frametitle}{%
+  \vskip0.35em%
+  \begin{beamercolorbox}[wd=\paperwidth,leftskip=0.5cm,rightskip=0.5cm]{frametitle}%
+    \usebeamerfont{frametitle}\insertframetitle\par%
+    {\color{accent}\rule{\dimexpr\paperwidth-1cm\relax}{0.6pt}}%
+  \end{beamercolorbox}%
+  \vskip0.35em%
+}
+\setbeamertemplate{footline}{%
+  \hfill\textcolor{gray}{\insertframenumber\,/\,\inserttotalframenumber}%
+  \hspace{0.3cm}\vspace{0.12cm}%
+}
+
+\begin{document}
+
+% ---------------------------------------------------------------- 1
+\begin{frame}{Should a half-finished run be labelled by how it ended?}
+\scriptsize
+\begin{columns}[t]
+\begin{column}{0.54\textwidth}
+To train a model that predicts whether an agent will succeed, we cut each
+recorded attempt into prefixes and give every prefix the attempt's \emph{final}
+outcome. That looks wrong: at step 10 the work may be going fine and still
+collapse later, or be half-done and then thrown away.
+
+\medskip
+\textbf{So we bought the real answer.} A task verifier re-ran the repository
+\emph{as it actually stood} at each step and returned a partial-credit score:
+282 graded points over 76 coding episodes.
+
+\medskip
+\textbf{The two labels do disagree.} On \g{36\,\%} of shared points the graded
+state differs from the final outcome --- 83 of them below it (progress not yet
+made) and 14 above it: the agent had more tests passing mid-run than it
+finished with.
+
+\medskip
+We then scored the whole 72-method uncertainty table twice --- identical
+prefixes, folds and code, only the label's value changed.
+\end{column}
+\begin{column}{0.44\textwidth}
+\begin{block}{The answer is no}
+\begin{center}\scriptsize
+\begin{tabular}{lcc}
+\toprule
+mean score & step label & final label \\
+\midrule
+all prefixes    & +0.14 & +0.12 \\
+graded only     & +0.14 & \g{+0.22} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\smallskip
+Swapping the label moves the average by \textbf{+0.017} one way and
+\bad{$-$0.089} the other --- the sign depends on which way you cut the
+prefixes. The ranking of the 72 methods barely moves ($\rho=0.76$--$0.82$) and
+the same family stays on top.
+
+\medskip
+\textbf{Practical conclusion: per-step verifier labels are not worth
+collecting.} One outcome per finished attempt is enough.
+\end{block}
+\end{column}
+\end{columns}
+\end{frame}
+
+% ---------------------------------------------------------------- 2
+\begin{frame}{What we had to withdraw along the way}
+\scriptsize
+\begin{columns}[t]
+\begin{column}{0.51\textwidth}
+\textbf{1. The one positive number in it was an artefact.}
+
+\smallskip
+Our Bayesian teacher looked $+0.23$ better against the step label than against
+the outcome --- which would have meant it measures progress, not forecasting.
+On graded points only the gap is \g{+0.04}: the effect was \textbf{unequal
+replication}, since carrying a label across unchanged steps duplicates some
+episodes $5.9\times$. \bad{+0.23 is withdrawn.}
+
+\medskip
+\textbf{2. A leak underneath the whole table.}
+
+\smallskip
+The tool critics were computed over the \emph{whole episode} and stamped on
+every step, so every critic-based method saw the future. On the 37 rows that
+avoid them the signal averages about \textbf{zero}, best $+0.33$ against a
+length baseline of $+0.24$. Every absolute number there is withdrawn until the
+critics are recomputed per prefix. The A/B above survives --- both arms share
+the construction.
+\end{column}
+\begin{column}{0.47\textwidth}
+\textbf{3. The graded sample is not a random half.}
+
+\smallskip
+\begin{center}\scriptsize
+\begin{tabular}{lccc}
+\toprule
+ & $n$ & mean score & median steps \\
+\midrule
+graded   & 79 & 0.414 & 64 \\
+ungraded & 33 & \bad{0.722} & \bad{29} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\smallskip
+The attempts we failed to grade are the short successful ones. Within-subset
+comparison is unaffected, but no absolute number from this page can sit beside
+the main table.
+
+\medskip
+\begin{block}{Three ways in, three negatives}
+\begin{tabular}{@{}ll@{}}
+as model \textbf{input} & $+0.73 \rightarrow -0.02$, retracted \\
+as \textbf{augmentation} & $-0.01$ to $-0.26$ \\
+as the \textbf{target} & $+0.017$ / $-0.089$ \\
+\end{tabular}
+
+\smallskip
+Tried everywhere they could enter the pipeline. Spend the collection budget on
+a \emph{new environment} instead.
+\end{block}
+\end{column}
+\end{columns}
+\end{frame}
+
+\end{document}
